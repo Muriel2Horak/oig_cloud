@@ -261,6 +261,21 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.panel.circ_label': 'Cirkulace',
     'boiler.panel.circ_before_peak': 'před špičkou',
     'boiler.panel.circ_off': 'vypnuta',
+
+    // hero flow card
+    'boiler.hero.kpi_ready': 'Připraveno',
+    'boiler.hero.kpi_mode': 'Režim',
+    'boiler.hero.vs_plan': 'vs plán',
+    'boiler.hero.mode_ele': 'ELE',
+    'boiler.hero.mode_idle': 'Klid',
+    'boiler.hero.node_demand': 'Další očekávaný odběr',
+    'boiler.hero.heating_done_prefix': 'na dohřev',
+    'boiler.hero.done_at': 'hotovo',
+
+    // chart FVE overlay
+    'boiler.chart.fve_overlay_legend': 'FVE (kW)',
+    'boiler.chart.overflow_legend': 'Přetok do bojleru',
+    'boiler.chart.overflow_label': 'baterie 100 % → přebytek do bojleru',
   },
   en: {
     'boiler.status.heading': 'Boiler status',
@@ -517,6 +532,21 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.panel.circ_label': 'Circulation',
     'boiler.panel.circ_before_peak': 'before peak',
     'boiler.panel.circ_off': 'off',
+
+    // hero flow card
+    'boiler.hero.kpi_ready': 'Ready',
+    'boiler.hero.kpi_mode': 'Mode',
+    'boiler.hero.vs_plan': 'vs plan',
+    'boiler.hero.mode_ele': 'ELE',
+    'boiler.hero.mode_idle': 'Idle',
+    'boiler.hero.node_demand': 'Next expected draw',
+    'boiler.hero.heating_done_prefix': 'to finish',
+    'boiler.hero.done_at': 'done at',
+
+    // chart FVE overlay
+    'boiler.chart.fve_overlay_legend': 'PV (kW)',
+    'boiler.chart.overflow_legend': 'Overflow to boiler',
+    'boiler.chart.overflow_label': 'battery 100% → surplus to boiler',
   },
 };
 

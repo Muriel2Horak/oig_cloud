@@ -1,7 +1,7 @@
 import { LitElement, html, css, svg, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { BOILER_SOURCE_COLORS, type BoilerV2Data, type BoilerConfig, type BoilerV2PlanSlot, type BoilerV2SourceSegment } from './types';
+import { BOILER_SOURCE_COLORS, type BoilerV2Data, type BoilerConfig, type BoilerV2PlanSlot, type BoilerV2SourceSegment, type BatteryForecastEntry } from './types';
 import { t, sourceLabel, type Lang } from '@/i18n/boiler';
 
 const u = unsafeCSS;
@@ -20,6 +20,12 @@ const SOC_COLOR = '#22d3ee';
 const SPOT_Y_TOP = 12;
 const SPOT_Y_BOTTOM = VIEWBOX_H - 12;
 const DEFAULT_CAPACITY_LITERS = 200;
+// FVE overlay + overflow marker: amber, matches the existing FVE legend swatch
+const FVE_COLOR = '#f5b800';
+// FVE overlay shares the kWh band's vertical span with the charge/draw bars
+// (0..POWER_BASELINE_Y going up) but scales to its own dynamic max — a distinct
+// scale from POWER_MAX_KW, not the left liters/SoC axis.
+const FVE_BAND_BASELINE_Y = POWER_BASELINE_Y;
 
 export function resolveTimelineNowMs(nowOverrideMs?: number): number {
   return nowOverrideMs ?? Date.now();
@@ -158,6 +164,12 @@ interface PowerBar {
   isEstimated: boolean;
 }
 
+interface OverflowSlice {
+  x: number;
+  y: number;
+  h: number;
+}
+
 interface SpotStep {
   x1: number;
   x2: number;
@@ -215,6 +227,108 @@ export function buildSpotSteps(
     price: p.price,
   }));
   return { steps, min, max };
+}
+
+export interface FveOverlayPoint {
+  x: number;
+  y: number;
+  kw: number;
+}
+
+export interface FveOverlay {
+  points: FveOverlayPoint[];
+  maxKw: number;
+  usedFallback: boolean;
+}
+
+/**
+ * Amber FVE-production area for the kWh band. Prefers `batteryForecast[].solarKwh`
+ * (confirmed real field, see boiler-data.ts buildBatteryForecast); falls back to
+ * `planSlots[].pvKwh` when the forecast timeline doesn't cover this day (`usedFallback`
+ * flags which source was used). Both are per-15-min-interval kWh, converted to an
+ * instantaneous kW estimate (`kwh * 4`) matching the existing power-bar convention.
+ * Returns null when fewer than 2 points carry data — a lone point reads as noise.
+ */
+export function buildFveOverlay(
+  batteryForecast: BatteryForecastEntry[] | null | undefined,
+  planSlots: BoilerV2PlanSlot[],
+  dayStartMs: number,
+): FveOverlay | null {
+  const dayEndMs = dayStartMs + MINUTES_PER_DAY * 60000;
+
+  const fromForecast: Array<{ startMs: number; kw: number }> = [];
+  if (Array.isArray(batteryForecast)) {
+    for (const entry of batteryForecast) {
+      if (!isFinite(entry.timestampMs)) continue;
+      if (entry.timestampMs < dayStartMs || entry.timestampMs > dayEndMs) continue;
+      fromForecast.push({ startMs: entry.timestampMs, kw: Math.max(0, entry.solarKwh) * 4 });
+    }
+  }
+
+  let usedFallback = false;
+  let raw = fromForecast;
+  if (raw.length < 2) {
+    usedFallback = true;
+    raw = [];
+    for (const slot of planSlots) {
+      const startMs = Date.parse(slot.start);
+      if (!isFinite(startMs)) continue;
+      if (startMs < dayStartMs || startMs > dayEndMs) continue;
+      raw.push({ startMs, kw: Math.max(0, slot.pvKwh ?? 0) * 4 });
+    }
+  }
+
+  if (raw.length < 2) return null;
+  raw.sort((a, b) => a.startMs - b.startMs);
+
+  const maxRawKw = Math.max(...raw.map((r) => r.kw));
+  if (maxRawKw <= 0) return null;
+  const maxKw = Math.max(0.5, maxRawKw);
+
+  const points: FveOverlayPoint[] = raw.map((r) => {
+    const minsIntoDay = (r.startMs - dayStartMs) / 60000;
+    return {
+      x: xFromMinutes(minsIntoDay),
+      y: FVE_BAND_BASELINE_Y - (r.kw / maxKw) * FVE_BAND_BASELINE_Y,
+      kw: r.kw,
+    };
+  });
+
+  return { points, maxKw, usedFallback };
+}
+
+export interface OverflowWindow {
+  startMs: number;
+  endMs: number;
+}
+
+/**
+ * First contiguous run of plan slots where PV alone covers heating (no grid/alt
+ * sourcing) — the fallback marker for "battery at 100% -> PV surplus routed to the
+ * boiler" onset. Used because no confirmed 0-100 battery-SoC-percent field exists on
+ * the battery-forecast payload (see boiler-data.ts buildBatteryForecast /
+ * BatteryForecastEntry.batterySocPct).
+ */
+export function findOverflowWindow(slots: BoilerV2PlanSlot[]): OverflowWindow | null {
+  let startMs: number | null = null;
+  let endMs: number | null = null;
+  for (const slot of slots) {
+    const pv = slot.pvKwh ?? 0;
+    const grid = slot.gridKwh ?? 0;
+    const alt = slot.altKwh ?? 0;
+    const isOverflow = pv > 0 && grid <= 0 && alt <= 0;
+    if (isOverflow) {
+      const slotStartMs = Date.parse(slot.start);
+      const slotEndMs = Date.parse(slot.end);
+      if (!isFinite(slotStartMs) || !isFinite(slotEndMs)) continue;
+      if (startMs == null) startMs = slotStartMs;
+      endMs = slotEndMs;
+    } else if (startMs != null) {
+      break;
+    }
+  }
+  if (startMs == null || endMs == null) return null;
+  return { startMs, endMs };
 }
 
 function buildAriaLabel(
@@ -369,6 +483,27 @@ export class OigBoilerTimelineChart extends LitElement {
       opacity: 0.4;
     }
 
+    .fve-area {
+      fill: ${u(FVE_COLOR)};
+      opacity: 0.22;
+    }
+
+    .overflow-band {
+      fill: ${u(FVE_COLOR)};
+      opacity: 0.12;
+    }
+
+    .overflow-slice {
+      fill: ${u(FVE_COLOR)};
+      opacity: 0.95;
+    }
+
+    .overflow-marker {
+      stroke: ${u(FVE_COLOR)};
+      stroke-width: 2;
+      stroke-dasharray: 3 2;
+    }
+
     .timeline-axis {
       display: flex;
       justify-content: space-between;
@@ -518,6 +653,34 @@ export class OigBoilerTimelineChart extends LitElement {
           .join(' ')
       : null;
 
+    let fveOverlay: FveOverlay | null = null;
+    try {
+      fveOverlay = buildFveOverlay(data?.batteryForecast ?? null, planSlots, dayStartMs);
+    } catch {
+      fveOverlay = null;
+    }
+    const fveAreaPath =
+      fveOverlay && fveOverlay.points.length >= 2
+        ? `M${fveOverlay.points[0].x.toFixed(2)} ${FVE_BAND_BASELINE_Y}` +
+          fveOverlay.points.map((p) => ` L${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('') +
+          ` L${fveOverlay.points[fveOverlay.points.length - 1].x.toFixed(2)} ${FVE_BAND_BASELINE_Y} Z`
+        : null;
+
+    const dayEndMsForOverflow = dayStartMs + MINUTES_PER_DAY * 60000;
+    let overflowWindow: OverflowWindow | null = null;
+    try {
+      overflowWindow = findOverflowWindow(planSlots);
+    } catch {
+      overflowWindow = null;
+    }
+    const overflowInDay = overflowWindow != null
+      && overflowWindow.startMs >= dayStartMs
+      && overflowWindow.startMs <= dayEndMsForOverflow;
+    const overflowX = overflowInDay ? xFromMinutes((overflowWindow!.startMs - dayStartMs) / 60000) : null;
+    const overflowBandX1 = overflowInDay ? xFromMinutes((Math.max(overflowWindow!.startMs, dayStartMs) - dayStartMs) / 60000) : null;
+    const overflowBandX2 = overflowInDay ? xFromMinutes((Math.min(overflowWindow!.endMs, dayEndMsForOverflow) - dayStartMs) / 60000) : null;
+    const overflowSlices = overflowInDay ? this._buildOverflowSlices(planSlots, dayStartMs, overflowWindow!) : [];
+
     const capacityL = this.capacityLiters ?? cfg?.volumeL ?? DEFAULT_CAPACITY_LITERS;
     const socPoints = this._buildSocPointsFromSlots(planSlots, dayStartMs, capacityL);
     const socPolyline =
@@ -610,6 +773,14 @@ export class OigBoilerTimelineChart extends LitElement {
                 />`;
               })}
 
+              ${overflowBandX1 != null && overflowBandX2 != null && overflowBandX2 > overflowBandX1 ? svg`
+                <rect class="overflow-band"
+                  data-testid="boiler-overflow-band"
+                  x="${overflowBandX1.toFixed(2)}" y="0"
+                  width="${(overflowBandX2 - overflowBandX1).toFixed(2)}" height="${VIEWBOX_H}"
+                />
+              ` : ''}
+
               ${svg`<line x1="0" y1="${POWER_BASELINE_Y}" x2="${VIEWBOX_W}" y2="${POWER_BASELINE_Y}" stroke="rgba(255,255,255,.08)" stroke-width="1"/>`}
 
               ${svg`<line
@@ -629,6 +800,10 @@ export class OigBoilerTimelineChart extends LitElement {
                 />
                 <text x="${(deadlineX + 3).toFixed(2)}" y="12" font-size="8" fill="#E65100">${deadlineTime}</text>
               ` : ''}
+
+              ${fveAreaPath != null
+                ? svg`<path class="fve-area" data-testid="boiler-fve-area" d="${fveAreaPath}" />`
+                : ''}
 
               ${powerBars.map((bar) => {
                 if (bar.isCharge) {
@@ -653,6 +828,10 @@ export class OigBoilerTimelineChart extends LitElement {
                     x="${(bar.x - 2).toFixed(2)}" y="${POWER_BASELINE_Y}" width="4" height="${bar.barH.toFixed(2)}"/>`;
                 }
               })}
+
+              ${overflowSlices.map((slice) => svg`<rect class="overflow-slice"
+                data-testid="boiler-overflow-slice"
+                x="${(slice.x - 2).toFixed(2)}" y="${slice.y.toFixed(2)}" width="4" height="${slice.h.toFixed(2)}"/>`)}
 
               ${timelinePoints.map((pt) => {
                 let ptMs: number;
@@ -708,6 +887,21 @@ export class OigBoilerTimelineChart extends LitElement {
                 <text x="${VIEWBOX_W - 4}" y="${(SPOT_Y_BOTTOM + 10).toFixed(2)}" font-size="8" fill="${SPOT_COLOR}" text-anchor="end" opacity="0.8">${spotOverlay.min.toFixed(2)} Kč</text>
               ` : ''}
 
+              ${fveOverlay != null ? svg`
+                <text x="${VIEWBOX_W - 4}" y="24" font-size="8" fill="${FVE_COLOR}" text-anchor="end" opacity="0.85">☀ ${fveOverlay.maxKw.toFixed(1)} kW</text>
+                <text x="${VIEWBOX_W - 4}" y="${(POWER_BASELINE_Y - 2).toFixed(2)}" font-size="8" fill="${FVE_COLOR}" text-anchor="end" opacity="0.6">0 kW</text>
+              ` : ''}
+
+              ${overflowX != null ? svg`
+                <line class="overflow-marker"
+                  data-testid="boiler-overflow-marker"
+                  data-overflow-x="${formatX(overflowX)}"
+                  x1="${formatX(overflowX)}" y1="0"
+                  x2="${formatX(overflowX)}" y2="${VIEWBOX_H}"
+                />
+                <text x="${(overflowX + 3).toFixed(2)}" y="${VIEWBOX_H - 6}" font-size="7.5" fill="${FVE_COLOR}">${t('boiler.chart.overflow_label', this.lang)}</text>
+              ` : ''}
+
               ${svg`<line
                 class="now-marker"
                 data-testid="boiler-now-marker"
@@ -733,6 +927,8 @@ export class OigBoilerTimelineChart extends LitElement {
             <div class="legend-item"><span class="legend-dot" style="background:#ff7a45"></span>°C predikce</div>
             ${socPolyline != null ? html`<div class="legend-item"><span class="legend-dot" style="background:${SOC_COLOR}"></span>SoC (L)</div>` : ''}
             ${spotPolyline != null ? html`<div class="legend-item"><span class="legend-dot" style="background:${SPOT_COLOR}"></span>Spot Kč/kWh</div>` : ''}
+            ${fveOverlay != null ? html`<div class="legend-item" data-testid="boiler-fve-overlay-legend"><span class="legend-dot" style="background:${FVE_COLOR};opacity:.4"></span>${t('boiler.chart.fve_overlay_legend', this.lang)}</div>` : ''}
+            ${overflowX != null ? html`<div class="legend-item" data-testid="boiler-overflow-legend"><span class="legend-dot" style="background:${FVE_COLOR}"></span>${t('boiler.chart.overflow_legend', this.lang)}</div>` : ''}
           </div>
         `}
 
@@ -834,6 +1030,44 @@ export class OigBoilerTimelineChart extends LitElement {
       }
     }
     return bars;
+  }
+
+  /**
+   * Amber top-slices on the existing charge bars inside the overflow window, sized by
+   * pvKwh's share of heatingKwh per slot — reuses _buildPowerBarsFromSlots' bar-height
+   * math so the slice aligns exactly with the top edge of the bar it sits on.
+   */
+  private _buildOverflowSlices(
+    slots: BoilerV2PlanSlot[],
+    dayStartMs: number,
+    overflow: OverflowWindow,
+  ): OverflowSlice[] {
+    const slices: OverflowSlice[] = [];
+    const dayEndMs = dayStartMs + MINUTES_PER_DAY * 60000;
+    for (const slot of slots) {
+      try {
+        const slotStartMs = Date.parse(slot.start);
+        if (!isFinite(slotStartMs)) continue;
+        if (slotStartMs < dayStartMs || slotStartMs > dayEndMs) continue;
+        if (slotStartMs < overflow.startMs || slotStartMs >= overflow.endMs) continue;
+        const heatingKwh = slot.heatingKwh ?? 0;
+        if (heatingKwh <= 0) continue;
+        const pvKwh = slot.pvKwh ?? 0;
+        const powerKwh = pvKwh + (slot.gridKwh ?? 0) + (slot.altKwh ?? 0);
+        if (powerKwh <= 0) continue;
+        const powerKw = powerKwh * 4;
+        const clamped = Math.min(powerKw, POWER_MAX_KW);
+        const barH = (clamped / POWER_MAX_KW) * POWER_BASELINE_Y;
+        const pvShare = Math.max(0, Math.min(1, pvKwh / powerKwh));
+        if (pvShare <= 0) continue;
+        const minsIntoDay = (slotStartMs - dayStartMs) / 60000;
+        const sliceH = barH * pvShare;
+        slices.push({ x: xFromMinutes(minsIntoDay), y: POWER_BASELINE_Y - barH, h: sliceH });
+      } catch {
+        continue;
+      }
+    }
+    return slices;
   }
 
   private _buildPlanBands(slots: BoilerV2PlanSlot[], dayStartMs: number): PlanBand[] {

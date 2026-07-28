@@ -178,6 +178,20 @@ export interface PlanSummary {
   deadlineTime: string; // "HH:MM"
 }
 
+/**
+ * One interval of the battery-forecast timeline (`/battery_forecast/{sn}/timeline?type=active`).
+ * `solarKwh`/`gridChargeKwh` map to confirmed raw fields (same endpoint consumed by
+ * `pricing-data.ts` buildBatteryArrays / `TimelinePoint.solar_charge_kwh` etc).
+ * `batterySocPct` is null — no confirmed 0-100 SoC field on this payload (see boiler-data.ts
+ * buildBatteryForecast); overflow-marker derivation falls back to the plan_slots pv_kwh onset.
+ */
+export interface BatteryForecastEntry {
+  timestampMs: number;
+  solarKwh: number;
+  gridChargeKwh: number;
+  batterySocPct: number | null;
+}
+
 /** Energy-today breakdown from energy_today DTO (Task C / F4) */
 export interface EnergyToday {
   totalKwh: number;
@@ -216,6 +230,9 @@ export interface BoilerV2Data {
   loadError: string | null;
   /** F5/Task C: alt source type from config ("gas"|"heat_pump"|"fireplace"|"other") */
   altSourceType?: string | null;
+  /** M2b: battery-forecast timeline for the FVE-production chart overlay. Additive, optional
+   *  so existing BoilerV2Data literals across the codebase stay valid. */
+  batteryForecast?: BatteryForecastEntry[];
 }
 
 // --- State ---

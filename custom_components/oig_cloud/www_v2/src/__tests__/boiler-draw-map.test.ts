@@ -96,4 +96,70 @@ describe('OigBoilerDrawMap render', () => {
     const html = el.shadowRoot!.innerHTML;
     expect(html).toContain('<svg');
   });
+
+  it('compact mode still renders both heatmap and profile', async () => {
+    el.data = SAMPLE;
+    el.month = 7;
+    el.compact = true;
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    const svgCount = (html.match(/<svg/g) ?? []).length;
+    expect(svgCount).toBe(2);
+    expect(html).toMatch(/Pracovní den|Workday/i);
+  });
+
+  it('compact mode caps the biggest-draws chip row to 2', async () => {
+    const many: DrawMapData = {
+      ...SAMPLE,
+      profiles: {
+        workday_summer: {
+          slotsLitersP90: withSlots([[10, 8], [20, 9], [40, 10], [60, 11], [80, 12]]),
+          days: 6,
+        },
+        weekend_summer: SAMPLE.profiles.weekend_summer,
+      },
+    };
+    el.data = many;
+    el.month = 7;
+    el.compact = true;
+    await el.updateComplete;
+    const chips = el.shadowRoot!.querySelectorAll('.chip');
+    expect(chips.length).toBe(2);
+  });
+
+  it('non-compact mode keeps the chip row at up to 4', async () => {
+    const many: DrawMapData = {
+      ...SAMPLE,
+      profiles: {
+        workday_summer: {
+          slotsLitersP90: withSlots([[10, 8], [20, 9], [40, 10], [60, 11], [80, 12]]),
+          days: 6,
+        },
+        weekend_summer: SAMPLE.profiles.weekend_summer,
+      },
+    };
+    el.data = many;
+    el.month = 7;
+    el.compact = false;
+    await el.updateComplete;
+    const chips = el.shadowRoot!.querySelectorAll('.chip');
+    expect(chips.length).toBe(4);
+  });
+
+  it('compact mode preserves the empty-state guard', async () => {
+    el.data = null;
+    el.compact = true;
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('boiler-draw-map');
+    expect(html).toMatch(/Sbírám data|Collecting/i);
+  });
+
+  it('compact mode applies the compact card class', async () => {
+    el.data = SAMPLE;
+    el.month = 7;
+    el.compact = true;
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.card.compact')).not.toBeNull();
+  });
 });
