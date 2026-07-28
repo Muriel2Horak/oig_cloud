@@ -1856,7 +1856,11 @@ export class OigBoilerOverridePanel extends LitElement {
     // A fresh prop from the parent poll wins over any local optimistic update.
     if (changed.has('currentOverride')) {
       this.effectiveOverride = null;
-      this.overrideUntil = null;
+      // BoilerV2ManualOverride carries no `until` field, so the poll can't refresh
+      // this — only drop it once the poll confirms the override is no longer active.
+      if (!this.currentOverride?.active) {
+        this.overrideUntil = null;
+      }
     }
   }
 
