@@ -95,3 +95,24 @@
 - Vitest emitted existing Lit dev-mode/update warnings (pre-existing).
 - Nothing could NOT be established: all acceptance points from the brief
   verified against the diff and confirmed green under foreground gates.
+
+## Post-review verification
+
+Commit cae431915 fixed `onboarding-pricing-distribution.test.ts` to resolve
+`REAL_PRICELISTS` relative to `import.meta.url` instead of a hardcoded
+absolute worktree path. The gates below re-verify the full tree at that
+commit on a fresh worktree.
+
+- FE vitest:
+  - Command: `npx vitest run` (from `custom_components/oig_cloud/www_v2`)
+  - Result: `Test Files 88 passed (88)`, `Tests 1754 passed (1754)`, `Duration 21.24s`
+  - `onboarding-pricing-distribution.test.ts`: 39 tests passed (not skipped, no file-not-found error).
+- FE typecheck:
+  - Command: `npx tsc --noEmit` (from `custom_components/oig_cloud/www_v2`)
+  - Result: exit code `0`, no output.
+- BE targeted regression:
+  - Command: `/repos/oig-cloud/.ha-env/bin/python -m pytest tests/test_build_pricelists.py tests/test_ha_rest_api_views.py -v`
+  - Result: `107 passed in 4.93s`
+- Path-portability fix (cae431915) is covered: the test file loads the real
+  pricelist JSON via a URL-relative path and all 39 distribution-pricing
+  assertions pass on this worktree.
