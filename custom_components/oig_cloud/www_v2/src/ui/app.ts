@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { OigGridChargingDialog } from '@/ui/features/flow/grid-charging-dialog';
+import type { OigPricingChart } from '@/ui/features/pricing/chart';
 import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
 import { createEntityStore, EntityStore } from '@/data/entity-store';
@@ -1213,6 +1214,13 @@ export class OigApp extends LitElement {
     dialog?.show();
   }
 
+  private onZoomToBlock(e: CustomEvent<{ startTime: string; endTime: string }>): void {
+    const { startTime, endTime } = e.detail ?? {};
+    if (!startTime || !endTime) return;
+    const chart = this.shadowRoot?.querySelector('oig-pricing-chart') as OigPricingChart | null;
+    chart?.zoomToTimeRange(startTime, endTime);
+  }
+
   private onEditClick(): void {
     this.editMode = !this.editMode;
   }
@@ -1630,7 +1638,7 @@ export class OigApp extends LitElement {
                     <span>Načítání cen...</span>
                   </div>
                 ` : nothing}
-                <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData}></oig-pricing-stats>
+                <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData} @zoom-to-block=${this.onZoomToBlock}></oig-pricing-stats>
                 <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
 
                 <oig-timeline-tile
