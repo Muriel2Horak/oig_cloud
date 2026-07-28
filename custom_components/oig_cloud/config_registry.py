@@ -188,6 +188,10 @@ def _derive_pricing_enums() -> tuple[
             for item in distributors_block.values()
             if isinstance(item, dict)
             for tariff in item.keys()
+            # POZE rides along in the dataset as a sibling of the sazby, but it
+            # is a regulated line item (state-paid since 2026), not a tariff —
+            # it must never appear in the sazba enum/select.
+            if str(tariff) != "POZE"
         }
     )
 

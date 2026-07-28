@@ -647,7 +647,7 @@ describe('owner UX rev — distributor names, tariff description, editable price
     }
   });
 
-  it('does not overwrite an already-customized distribution fee (review-mode "existing values stay")', async () => {
+  it('keeps the stored custom fee on load, but a sazba change always pulls the decree price (owner 28.7.)', async () => {
     fetchOIGAPI.mockImplementation(moduleConfigFetch({
       pricing: {
         confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D01d',
@@ -657,10 +657,38 @@ describe('owner UX rev — distributor names, tariff description, editable price
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');
 
+    // On load the user's stored value is shown untouched.
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(9.99);
+
+    // Explicitly switching the sazba refreshes the draft to the decree price
+    // of the NEW sazba — the 9.99 belonged to the old one.
     internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
     internals(wizard).applyDistributionFeeSuggestion();
     await settle(wizard);
 
-    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(9.99);
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2.25);
+  });
+
+  it('flags a stored fee that differs from the decree price and adopts it on click (owner 28.7.)', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D25d',
+        distribution_fee_vt_kwh: 9.99,
+      },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+    await settle(wizard);
+
+    // Stored 9.99 differs from the decree 2.25 -> hint + adopt button render.
+    const hint = wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-hint"]');
+    expect(hint?.textContent).toContain('Cenové rozhodnutí ERÚ: 2.25');
+    const adopt = wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-adopt"]') as HTMLButtonElement;
+    adopt.click();
+    await settle(wizard);
+
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2.25);
+    // Hint disappears once the values match.
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-hint"]')).toBeNull();
   });
 });

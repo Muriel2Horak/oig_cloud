@@ -852,7 +852,6 @@ export class OigOnboardingWizard extends LitElement {
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
-  private lastAutoSuggestedDistributionFees: Partial<Record<DistributionFeeKey, number>> = {};
 
   /** Connection step (Task 20): draft form values for the `basic` registry
    * section — seeded from `entry.options` FIRST, registry `default` otherwise
@@ -2161,7 +2160,6 @@ export class OigOnboardingWizard extends LitElement {
       resetPricing[key] = this.originalValues[key];
     }
     this.pricingDraft = resetPricing;
-    this.lastAutoSuggestedDistributionFees = {};
     this.boilerDraft = {};
     this.tariffMatrixOverride = {};
     this.tariffMatrixError = {};
@@ -2273,7 +2271,6 @@ export class OigOnboardingWizard extends LitElement {
     this.originalValues = {};
     this.pricing = null;
     this.pricingLoadFailed = false;
-    this.lastAutoSuggestedDistributionFees = {};
     this._pendingPrereqOff = null;
     this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
 
@@ -2657,11 +2654,13 @@ export class OigOnboardingWizard extends LitElement {
       </span>`;
   }
 
-  /** Item 3: prefills `distribution_fee_vt_kwh`/`_nt_kwh` from the selected
-   * distributor+tariff's dataset price (Kc/MWh -> Kc/kWh, /1000) ONLY while
-   * the field is still at its untouched registry default — an existing
-   * user's already-customized value is never overwritten (UX-SPEC §3 review
-   * mode: "existing users see THEIR values, not dataset defaults"). */
+  /** Item 3 (owner decision 28.7.): changing distributor or sazba ALWAYS
+   * refreshes both fee fields to the official decree prices of the newly
+   * selected sazba — the previous value belonged to the previous sazba, so
+   * keeping it reads as "the select is broken". Manual edits therefore live
+   * only until the next sazba/distributor change. This touches the DRAFT
+   * only; stored config changes require the explicit save. Seeding on load
+   * still shows the user's stored values (this runs on change events only). */
   private applyDistributionFeeSuggestion(): void {
     if (!this._registry) return;
     const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
@@ -2670,28 +2669,16 @@ export class OigOnboardingWizard extends LitElement {
     const rate = this.pricing?.distributors?.[distributor]?.[tariff];
     if (!rate) return;
 
-    const suggest = (
-      key: DistributionFeeKey,
-      leg?: { price_excl_vat: number },
-    ): [DistributionFeeKey, number] | null => {
-      if (!leg) return null;
-      const current = this.pricingDraft[key];
-      const registryDefault = this._registry!.fields[key]?.default;
-      const previous = this.lastAutoSuggestedDistributionFees[key];
-      const untouched = current == null || current === registryDefault || current === previous;
-      if (!untouched) return null;
-      const suggested = Math.round((leg.price_excl_vat / 1000) * 100) / 100;
-      this.lastAutoSuggestedDistributionFees[key] = suggested;
-      return [key, suggested];
-    };
+    const toFee = (leg?: { price_excl_vat: number }): number | undefined =>
+      leg ? Math.round((leg.price_excl_vat / 1000) * 100) / 100 : undefined;
 
-    const updates: Array<[DistributionFeeKey, number]> = [];
-    const vtSuggestion = suggest('distribution_fee_vt_kwh', rate.vt);
-    if (vtSuggestion) updates.push(vtSuggestion);
-    const ntSuggestion = suggest('distribution_fee_nt_kwh', rate.nt);
-    if (ntSuggestion) updates.push(ntSuggestion);
-    if (updates.length === 0) return;
-    this.pricingDraft = { ...this.pricingDraft, ...Object.fromEntries(updates) };
+    const updates: Partial<Record<DistributionFeeKey, number>> = {};
+    const vt = toFee(rate.vt);
+    if (vt !== undefined) updates['distribution_fee_vt_kwh'] = vt;
+    const nt = toFee(rate.nt);
+    if (nt !== undefined) updates['distribution_fee_nt_kwh'] = nt;
+    if (Object.keys(updates).length === 0) return;
+    this.pricingDraft = { ...this.pricingDraft, ...updates };
   }
 
   /** Item 3: VT (+ NT, when dual) distribution price excl. VAT, side by
@@ -2705,10 +2692,21 @@ export class OigOnboardingWizard extends LitElement {
     vatRatePercent: number,
   ) {
     const vatMultiplier = 1 + vatRatePercent / 100;
-    const cell = (field: FieldDef, testid: string) => {
+    // Owner 28.7.: a stored fee that differs from the current decree price
+    // must be visibly flagged with a one-click adopt — otherwise a new
+    // decree release changes nothing for existing users (everyone has a
+    // stored value that silently wins forever).
+    const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
+    const tariff = this.pricingDraft['confirmed_distribution_tariff'] as string | undefined;
+    const rate = distributor && tariff ? this.pricing?.distributors?.[distributor]?.[tariff] : undefined;
+    const decreeFee = (leg?: { price_excl_vat: number }): number | undefined =>
+      leg ? Math.round((leg.price_excl_vat / 1000) * 100) / 100 : undefined;
+    const cell = (field: FieldDef, testid: string, leg?: { price_excl_vat: number }) => {
       const raw = this.pricingDraft[field.key];
       const excl = raw == null || raw === '' ? null : Number(raw);
       const incl = excl == null ? null : Math.round(excl * vatMultiplier * 100) / 100;
+      const decree = decreeFee(leg);
+      const mismatch = decree !== undefined && excl != null && Math.abs(excl - decree) >= 0.005;
       return html`
         <div class="price-cell pcard" data-testid=${testid}>
           <span class="lab">${field.label}</span>
@@ -2724,12 +2722,25 @@ export class OigOnboardingWizard extends LitElement {
           <span class="hint" data-testid="${testid}-incl-vat">
             ${incl == null ? nothing : html`s DPH ${vatRatePercent} %: ${incl.toFixed(2)} Kč/kWh`}
           </span>
+          ${mismatch
+            ? html`
+                <span class="hint decree-mismatch" data-testid="${testid}-decree-hint">
+                  Cenové rozhodnutí ERÚ: ${decree!.toFixed(2)} Kč/kWh
+                  <button
+                    type="button" class="link-button" data-testid="${testid}-decree-adopt"
+                    @click=${() => {
+                      this.pricingDraft = { ...this.pricingDraft, [field.key]: decree };
+                    }}
+                  >Převzít</button>
+                </span>
+              `
+            : nothing}
         </div>`;
     };
     return html`
       <div class="row distribution-price-pair" data-testid="distribution-price-pair">
-        ${cell(vtField, 'distribution-fee-vt')}
-        ${dual && ntField ? cell(ntField, 'distribution-fee-nt') : nothing}
+        ${cell(vtField, 'distribution-fee-vt', rate?.vt)}
+        ${dual && ntField ? cell(ntField, 'distribution-fee-nt', rate?.nt) : nothing}
       </div>
       ${vatField
         ? html`

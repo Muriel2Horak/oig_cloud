@@ -1589,7 +1589,9 @@ async def test_module_config_post_pricing_supplier_rejects_unknown_field():
 @pytest.mark.parametrize("tariff_code,expected", [
     ("D25d", True), ("D26d", True), ("D27d", True), ("D35d", True),
     ("D45d", True), ("D56d", True), ("D57d", True), ("D61d", True),
-    ("D01d", False), ("D02d", False), ("POZE", False),
+    # POZE was dropped from the tariff enum (it is a regulated line item,
+    # not a sazba) — single-tariff coverage stays via D01d/D02d.
+    ("D01d", False), ("D02d", False),
 ])
 async def test_module_config_post_pricing_derives_and_persists_dual_tariff_enabled(
     tariff_code, expected,
