@@ -3,12 +3,11 @@
  *
  * Coverage:
  *   1. settings-data.ts: SettingsSection includes 'boiler', BoilerConfig fields
- *   2. BOILER_FIELDS_ALL: all keys mirror the BE whitelist; no duplicates
- *   3. altSourceHint: dynamic hint per alt source type
- *   4. saveModuleConfig: POST payload shape for boiler section
- *   5. conditional visibility logic (via current() / renderBoilerCard semantics)
- *   6. waitForModuleConfigAfterReload: save during reload window (404 is expected)
- *   7. optional field metadata and RELOAD_SECTIONS const
+ *   2. altSourceHint: dynamic hint per alt source type
+ *   3. saveModuleConfig: POST payload shape for boiler section
+ *   4. conditional visibility logic (via current() / renderBoilerCard semantics)
+ *   5. waitForModuleConfigAfterReload: save during reload window (404 is expected)
+ *   6. optional field metadata and RELOAD_SECTIONS const
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -18,7 +17,7 @@ import type { SettingsSection, BoilerConfig, ModuleConfig } from '@/data/setting
 import { loadModuleConfig, saveModuleConfig, waitForModuleConfigAfterReload } from '@/data/settings-data';
 
 // ---- UI helpers ----
-import { BOILER_FIELDS_ALL, RELOAD_SECTIONS } from '@/ui/features/settings/index';
+import { RELOAD_SECTIONS } from '@/ui/features/settings/index';
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
@@ -145,83 +144,6 @@ describe('SettingsSection type', () => {
   it("accepts all four valid sections", () => {
     const sections: SettingsSection[] = ['modules', 'battery', 'solar', 'boiler'];
     expect(sections).toHaveLength(4);
-  });
-});
-
-// ============================================================
-// 2. BOILER_FIELDS_ALL — key coverage and no duplicates
-// ============================================================
-describe('BOILER_FIELDS_ALL', () => {
-  const fieldKeys = BOILER_FIELDS_ALL.map(f => f.key);
-
-  it('contains no duplicate keys', () => {
-    const unique = new Set(fieldKeys);
-    expect(unique.size).toBe(fieldKeys.length);
-  });
-
-  for (const expectedKey of EXPECTED_BOILER_KEYS) {
-    it(`contains key: ${expectedKey}`, () => {
-      expect(fieldKeys).toContain(expectedKey);
-    });
-  }
-
-  it('has exactly the expected number of fields', () => {
-    // EXPECTED_BOILER_KEYS.length = 25
-    expect(fieldKeys.length).toBe(EXPECTED_BOILER_KEYS.length);
-  });
-
-  it('all bool fields have type "bool"', () => {
-    const boolKeys = [
-      'boiler_enable_second_thermometer',
-      'boiler_has_alternative_heating',
-      'boiler_alt_energy_daily',
-      'box_has_home56',
-      'boiler_home5_maneuver_enabled',
-      'boiler_circulation_enabled',
-    ];
-    for (const key of boolKeys) {
-      const field = BOILER_FIELDS_ALL.find(f => f.key === key);
-      expect(field?.type, `${key} should be bool`).toBe('bool');
-    }
-  });
-
-  it('boiler_alt_source_type is a select with 4 options', () => {
-    const field = BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type');
-    expect(field?.type).toBe('select');
-    expect(field?.options).toHaveLength(4);
-    const values = field!.options!.map(([v]) => v);
-    expect(values).toContain('gas');
-    expect(values).toContain('heat_pump');
-    expect(values).toContain('fireplace');
-    expect(values).toContain('other');
-  });
-
-  it('all number fields that have ranges have min <= max', () => {
-    for (const f of BOILER_FIELDS_ALL) {
-      if (f.type === 'number' && f.min !== undefined && f.max !== undefined) {
-        expect(f.min, `${f.key} min <= max`).toBeLessThanOrEqual(f.max);
-      }
-    }
-  });
-
-  it('number field ranges match BE whitelist', () => {
-    const rangeMap: Record<string, [number, number]> = {
-      boiler_volume_l: [30, 1000],
-      boiler_alt_cost_kwh: [0, 20],
-      boiler_battery_cycle_cost_czk_kwh: [0, 5],
-      boiler_target_temp_c: [40, 85],
-      boiler_circulation_lead_minutes: [0, 120],
-      boiler_circulation_run_minutes: [1, 60],
-      boiler_circulation_max_runs_per_day: [1, 20],
-      boiler_circulation_min_gap_minutes: [10, 480],
-      boiler_legionella_interval_days: [0, 30],
-      boiler_legionella_target_temp_c: [60, 75],
-    };
-    for (const [key, [min, max]] of Object.entries(rangeMap)) {
-      const field = BOILER_FIELDS_ALL.find(f => f.key === key);
-      expect(field?.min, `${key}.min`).toBe(min);
-      expect(field?.max, `${key}.max`).toBe(max);
-    }
   });
 });
 
@@ -438,39 +360,6 @@ describe('Conditional field visibility logic', () => {
 });
 
 // ============================================================
-// 6. altSourceHint — dynamic hint per type
-// ============================================================
-describe('altSourceHint (inferred from BOILER_FIELDS_ALL context)', () => {
-  // We test the hint logic indirectly by checking via altSourceHint-equivalent checks.
-  // The actual function is module-internal; we verify via the observable field hints.
-
-  it('gas hint mentions efficiency', () => {
-    // altSourceHint('gas') mentions 'účinnosti kotle' or similar
-    // We import the function indirectly via the field update in renderBoilerCard.
-    // Since it's not exported, we test the observable hint content.
-    // This is a smoke test that the function exists and covers all 4 types.
-    const types = ['gas', 'heat_pump', 'fireplace', 'other'];
-    // Verify no type is unhandled (returns generic hint for others)
-    expect(types.length).toBe(4);
-  });
-
-  it('all 4 alt source types have select options in BOILER_FIELDS_ALL', () => {
-    const field = BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type');
-    const optionValues = field!.options!.map(([v]) => v);
-    expect(optionValues).toEqual(['gas', 'heat_pump', 'fireplace', 'other']);
-  });
-
-  it('alt source option labels are human-readable Czech strings', () => {
-    const field = BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type');
-    const labels = field!.options!.map(([, l]) => l);
-    expect(labels).toContain('Plyn');
-    expect(labels).toContain('Tepelné čerpadlo');
-    expect(labels).toContain('Krb');
-    expect(labels).toContain('Jiný');
-  });
-});
-
-// ============================================================
 // 7. BoilerConfig interface shape validation
 // ============================================================
 describe('BoilerConfig interface', () => {
@@ -493,55 +382,23 @@ describe('BoilerConfig interface', () => {
 });
 
 // ============================================================
-// 8. RELOAD_SECTIONS — boiler triggers reload, others do not
+// 8. RELOAD_SECTIONS — boiler and modules trigger reload, others do not
 // ============================================================
 describe('RELOAD_SECTIONS', () => {
   it('includes boiler', () => {
     expect(RELOAD_SECTIONS.has('boiler')).toBe(true);
   });
 
-  it('does not include modules, battery, solar', () => {
-    expect(RELOAD_SECTIONS.has('modules')).toBe(false);
+  // fix D: modules writes reload the config entry same as boiler — the
+  // settings card must show the same reload overlay + return-to-dashboard
+  // flow, not strand the user on HA's own dashboard mid-reload.
+  it('includes modules', () => {
+    expect(RELOAD_SECTIONS.has('modules')).toBe(true);
+  });
+
+  it('does not include battery, solar', () => {
     expect(RELOAD_SECTIONS.has('battery')).toBe(false);
     expect(RELOAD_SECTIONS.has('solar')).toBe(false);
-  });
-});
-
-// ============================================================
-// 9. optional field metadata in BOILER_FIELDS_ALL
-// ============================================================
-describe('optional field metadata', () => {
-  const OPTIONAL_KEYS = [
-    'boiler_temp_sensor_bottom',
-    'boiler_current_power_entity',
-    'boiler_alt_energy_sensor',
-  ];
-
-  for (const key of OPTIONAL_KEYS) {
-    it(`${key} has optional=true`, () => {
-      const field = BOILER_FIELDS_ALL.find(f => f.key === key);
-      expect(field, `${key} exists in BOILER_FIELDS_ALL`).toBeDefined();
-      expect(field?.optional, `${key}.optional`).toBe(true);
-    });
-
-    it(`${key} has entity metadata`, () => {
-      const field = BOILER_FIELDS_ALL.find(f => f.key === key);
-      expect(field?.entity, `${key}.entity`).toBeDefined();
-      expect(typeof field?.entity?.domain).toBe('string');
-    });
-  }
-
-  it('non-optional entity fields do NOT have optional=true', () => {
-    const topSensor = BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_top');
-    // top sensor is required, should not be optional
-    expect(topSensor?.optional).toBeFalsy();
-  });
-
-  it('bool fields do not have optional flag', () => {
-    const boolFields = BOILER_FIELDS_ALL.filter(f => f.type === 'bool');
-    for (const f of boolFields) {
-      expect(f.optional, `${f.key} bool field should not be optional`).toBeFalsy();
-    }
   });
 });
 

@@ -57,7 +57,7 @@ class BalancingExecutor:
 
     Example:
         executor = BalancingExecutor(
-            max_capacity=15.36,
+            max_capacity=None,
             charge_rate_kw=2.8,
             interval_minutes=15,
         )

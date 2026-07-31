@@ -25,9 +25,10 @@ import {
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, CATEGORY_LABELS,
   BoilerV2Status, BoilerV2PlanSlot, BoilerV2Explanation,
-  BoilerV2Identity, DemandMapData,
+  BoilerV2Identity, DemandMapData, OVERRIDE_TTL_DEFAULT_MINUTES,
 } from './types';
 import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
+import { haClient } from '@/data/ha-client';
 import { t, sourceLabel, reasonLabel, type Lang } from '@/i18n/boiler';
 import { formatTempC, formatKwh, formatCzk, formatPercent, formatTimeRange, formatDataAge } from '@/ui/features/boiler/format';
 
@@ -1826,11 +1827,42 @@ export class OigBoilerSourceExplanation extends LitElement {
   }
 }
 
+// CONTRACT (parent brief, BE side): ttl_minutes int 15-720, reason str<=200.
+// NOTE: the pre-existing `OVERRIDE_TTL_MAX_MINUTES` constant (types.ts) still
+// says 1440 — out of this unit's file scope, left as-is (see report). The
+// `<input max>` below is fixed to 720 to match the CONTRACT bound enforced
+// in `validate()`.
+const OVERRIDE_CONTRACT_TTL_MIN = 15;
+const OVERRIDE_CONTRACT_TTL_MAX = 720;
+const OVERRIDE_CONTRACT_REASON_MAX_LEN = 200;
+
 @customElement('oig-boiler-override-panel')
 export class OigBoilerOverridePanel extends LitElement {
   @property({ attribute: false }) identity: BoilerV2Identity = { entryId: null, boxId: null, available: false };
   @property({ attribute: false }) currentOverride: { active: boolean; ttlMinutes: number; reason: string; capabilityAvailable: boolean } | null = null;
   @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  @state() private effectiveOverride: { active: boolean; ttlMinutes: number; reason: string; capabilityAvailable: boolean } | null = null;
+  @state() private ttlMinutes: number = OVERRIDE_TTL_DEFAULT_MINUTES;
+  @state() private reasonText = '';
+  @state() private validationError: string | null = null;
+  @state() private requestError: string | null = null;
+  @state() private submitting = false;
+  /** True only once a mutate call itself 404s — a truly-absent capability, never set for a transient failure. */
+  @state() private endpointMissing = false;
+  @state() private overrideUntil: string | null = null;
+
+  willUpdate(changed: Map<string, unknown>) {
+    // A fresh prop from the parent poll wins over any local optimistic update.
+    if (changed.has('currentOverride')) {
+      this.effectiveOverride = null;
+      // BoilerV2ManualOverride carries no `until` field, so the poll can't refresh
+      // this — only drop it once the poll confirms the override is no longer active.
+      if (!this.currentOverride?.active) {
+        this.overrideUntil = null;
+      }
+    }
+  }
 
   static styles = css`
     :host { display: block; }
@@ -1841,32 +1873,110 @@ export class OigBoilerOverridePanel extends LitElement {
     input, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--divider-color, #ccc); border-radius: 6px; background: var(--secondary-background-color, #fafafa); color: var(--primary-text-color); }
     button { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--divider-color, #ccc); background: var(--primary-color, #1976d2); color: #fff; font-weight: 600; cursor: pointer; }
     button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    button.cancel { background: var(--secondary-background-color, #fafafa); color: var(--primary-text-color); }
     .notice { padding: 6px 10px; border-radius: 6px; background: rgba(244,67,54,0.12); color: #b71c1c; font-size: 0.85rem; }
     .active-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(255,152,0,0.2); color: #b75d00; font-weight: 600; font-size: 0.85rem; width: max-content; }
+    .active-meta { font-size: 0.85rem; color: var(--secondary-text-color, #666); }
   `;
+
+  private onTtlInput(e: Event): void {
+    this.ttlMinutes = Number((e.target as HTMLInputElement).value);
+  }
+
+  private onReasonInput(e: Event): void {
+    this.reasonText = (e.target as HTMLTextAreaElement).value;
+  }
+
+  private validate(): string | null {
+    const lang = this.lang;
+    if (!Number.isFinite(this.ttlMinutes) || this.ttlMinutes < OVERRIDE_CONTRACT_TTL_MIN || this.ttlMinutes > OVERRIDE_CONTRACT_TTL_MAX) {
+      return t('boiler.override.validation_ttl', lang);
+    }
+    if (this.reasonText.length > OVERRIDE_CONTRACT_REASON_MAX_LEN) {
+      return t('boiler.override.validation_reason', lang);
+    }
+    return null;
+  }
+
+  private endpointPath(): string {
+    return `/boiler/${this.identity.entryId}/${this.identity.boxId}/override`;
+  }
+
+  private async onSubmit(): Promise<void> {
+    const validationError = this.validate();
+    if (validationError) {
+      this.validationError = validationError;
+      return;
+    }
+    this.validationError = null;
+    this.requestError = null;
+    this.submitting = true;
+    const result = await haClient.fetchOIGAPITyped<{ override: { active: boolean; until: string; reason: string } }>(
+      this.endpointPath(),
+      { method: 'POST', body: JSON.stringify({ ttl_minutes: this.ttlMinutes, reason: this.reasonText }) },
+    );
+    this.submitting = false;
+    if (result.ok) {
+      const ov = result.data.override;
+      this.overrideUntil = ov.until ?? null;
+      this.effectiveOverride = { active: ov.active, ttlMinutes: this.ttlMinutes, reason: ov.reason ?? this.reasonText, capabilityAvailable: true };
+      return;
+    }
+    if (result.status === 404) {
+      this.endpointMissing = true;
+      return;
+    }
+    this.requestError = t('boiler.override.request_error', this.lang);
+  }
+
+  private async onCancel(): Promise<void> {
+    this.requestError = null;
+    this.submitting = true;
+    const result = await haClient.fetchOIGAPITyped<{ override: { active: boolean } }>(
+      this.endpointPath(),
+      { method: 'DELETE' },
+    );
+    this.submitting = false;
+    if (result.ok) {
+      this.overrideUntil = null;
+      this.effectiveOverride = { active: result.data.override.active, ttlMinutes: this.ttlMinutes, reason: '', capabilityAvailable: true };
+      return;
+    }
+    if (result.status === 404) {
+      this.endpointMissing = true;
+      return;
+    }
+    this.requestError = t('boiler.override.request_error', this.lang);
+  }
 
   render() {
     const lang = this.lang;
+    // Local optimistic result (post/delete just returned) wins; otherwise the parent's prop is authoritative.
+    const ov = this.effectiveOverride ?? this.currentOverride;
     const identityOk = this.identity.available;
-    const capabilityOk = this.currentOverride?.capabilityAvailable ?? false;
-    const canSubmit = identityOk && capabilityOk;
-    const active = this.currentOverride?.active === true;
+    const capabilityOk = (ov?.capabilityAvailable ?? false) && !this.endpointMissing;
+    const canSubmit = identityOk && capabilityOk && !this.submitting;
+    const active = ov?.active === true;
     return html`
       <div data-testid="boiler-override-panel" class="wrap">
         <div class="heading">${t('boiler.override.heading', lang)}</div>
         <div class="subtitle">${t('boiler.override.subtitle', lang)}</div>
         ${active ? html`<span class="active-badge">${t('boiler.override.active', lang)}</span>` : ''}
+        ${active && this.overrideUntil ? html`<div class="active-meta" data-testid="override-active-meta">${t('boiler.override.until', lang)} ${this.overrideUntil} — ${ov?.reason ?? ''}</div>` : ''}
         <div class="notice" ?hidden=${identityOk}>${t('boiler.override.identity_unavailable', lang)}</div>
         <div class="notice capability-notice" ?hidden=${!identityOk || capabilityOk}>${t('boiler.override.capability_unavailable', lang)}</div>
+        <div class="notice" data-testid="override-validation-error" ?hidden=${!this.validationError}>${this.validationError ?? ''}</div>
+        <div class="notice" data-testid="override-request-error" ?hidden=${!this.requestError}>${this.requestError ?? ''}</div>
         <label>
           ${t('boiler.override.ttl_label', lang)}
-          <input data-testid="override-ttl-input" type="number" min="15" max="1440" step="15" value="120" ?disabled=${!canSubmit} />
+          <input data-testid="override-ttl-input" type="number" min="15" max="720" step="15" value="120" ?disabled=${!canSubmit} @input=${this.onTtlInput} />
         </label>
         <label>
           ${t('boiler.override.reason_label', lang)}
-          <textarea data-testid="override-reason-input" required ?disabled=${!canSubmit}></textarea>
+          <textarea data-testid="override-reason-input" required ?disabled=${!canSubmit} @input=${this.onReasonInput}></textarea>
         </label>
-        <button data-testid="override-submit-btn" ?disabled=${!canSubmit}>${t('boiler.override.submit', lang)}</button>
+        <button data-testid="override-submit-btn" ?disabled=${!canSubmit} @click=${this.onSubmit}>${t('boiler.override.submit', lang)}</button>
+        ${active ? html`<button class="cancel" data-testid="override-cancel-btn" ?disabled=${!canSubmit} @click=${this.onCancel}>${t('boiler.override.cancel', lang)}</button>` : ''}
       </div>
     `;
   }

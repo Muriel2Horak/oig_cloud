@@ -1,21 +1,32 @@
 import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { OigGridChargingDialog } from '@/ui/features/flow/grid-charging-dialog';
+import type { OigPricingChart } from '@/ui/features/pricing/chart';
 import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
 import { createEntityStore, EntityStore } from '@/data/entity-store';
 import { stateWatcher } from '@/data/state-watcher';
-import { haClient } from '@/data/ha-client';
-import { extractFlowData } from '@/data/flow-data';
+import { haClient, plannerState } from '@/data/ha-client';
+import { extractFlowData, applyPlannerSettings } from '@/data/flow-data';
 import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
-import { resolveLang } from '@/i18n/boiler';
+import { resolveLang, t } from '@/i18n/boiler';
 import { loadModuleConfig } from '@/data/settings-data';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadWeatherData, type WeatherData, EMPTY_WEATHER_DATA } from '@/data/weather-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
-import { loadTilesConfig, saveTilesConfig, resolveTiles, type TilesConfig, type TileConfig, type ResolvedTile } from '@/data/tiles-data';
+import {
+  filterDashboardTiles,
+  ensureTileModule,
+  loadTilesConfig,
+  saveTilesConfig,
+  resolveTiles,
+  type ModuleTileFlags,
+  type TilesConfig,
+  type TileConfig,
+  type ResolvedTile,
+} from '@/data/tiles-data';
 import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
 import { PricingData } from '@/ui/features/pricing/types';
 import {
@@ -26,6 +37,9 @@ import {
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
+import { dismissOnboardingBanner, loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
+import { fetchSimulatorPresets, type Domain, type PresetListItem } from '@/ui/components/simulator-fetcher';
+import type { BootstrapPayload } from '@/ui/components/oig-simulator';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -43,6 +57,9 @@ import '@/ui/features/timeline';
 import '@/ui/features/tiles';
 import '@/ui/features/tiles/icon-picker';
 import '@/ui/features/tiles/tile-dialog';
+import '@/ui/features/onboarding/banner';
+import '@/ui/features/onboarding';  // registers oig-onboarding-wizard + oig-onboarding-step-ai
+import '@/ui/components/oig-simulator';
 
 const u = unsafeCSS;
 
@@ -61,6 +78,7 @@ const DEFAULT_TABS: Tab[] = [
 @customElement('oig-app')
 export class OigApp extends LitElement {
   @property({ type: Object }) hass: any = null;
+  @property({ attribute: false }) onboarding: any = null;
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private activeTab = 'flow';
@@ -85,17 +103,36 @@ export class OigApp extends LitElement {
   // Default false = Home 5/6 toggles hidden until user enables in Nastavení.
   @state() private boxHasHome56 = false;
 
+  // Unit A-FE: module enable flags — loaded from module_config `modules` section.
+  // Default true so tabs stay visible until the flags are known (avoids a
+  // flash-hide before the first module_config response lands).
+  @state() private enablePricing = true;
+  @state() private enableBoiler = true;
+  @state() private enableStatistics = true;
+  @state() private enablePrediction = true;
+
   private get boilerLang() {
     return resolveLang(this.hass);
   }
 
-  private _altShort(type: string | null | undefined): string {
-    switch (type) {
-      case 'heat_pump': return 'TČ';
-      case 'fireplace': return 'Krb';
-      case 'other': return 'Alt';
-      default: return 'Plyn';
-    }
+  /** Unit A-FE: tabs filtered by module enable flags (Toky/Nastavení are core, always shown). */
+  private get visibleTabs(): Tab[] {
+    return DEFAULT_TABS.filter((tab) => {
+      if (tab.id === 'pricing') return this.enablePricing;
+      if (tab.id === 'boiler') return this.enableBoiler;
+      return true;
+    });
+  }
+
+  private get visibleDashboardTiles(): ResolvedTile[] {
+    const flags: ModuleTileFlags = {
+      enablePricing: this.enablePricing,
+      enableBoiler: this.enableBoiler,
+      enableStatistics: this.enableStatistics,
+      enablePrediction: this.enablePrediction,
+    };
+    const tiles = [...(this.tilesLeft ?? []), ...(this.tilesRight ?? [])];
+    return filterDashboardTiles(tiles, flags) ?? [];
   }
 
   // Analytics
@@ -121,6 +158,37 @@ export class OigApp extends LitElement {
   @state() private editingTileSide: 'left' | 'right' = 'left';
   @state() private editingTileConfig: TileConfig | null = null;
 
+  // Onboarding wizard (Plan 3.5 item 4) — opened by `launch-onboarding`
+  // CustomEvents from the banner (app.ts:1325) or Settings launcher
+  // (features/settings/index.ts:498). Soft (#6): the dashboard keeps
+  // rendering behind the modal — no lock, no gate.
+  @state() private onboardingWizardOpen = false;
+
+  // Simulator overlay (fe/fix): 'oig-simulator-open' is dispatched by the
+  // wizard's battery/boiler steps (features/onboarding/index.ts:2130,3133)
+  // with bubbles+composed. Mounted/listened at the app shell — via
+  // `@oig-simulator-open` on <oig-theme-provider>, the common ancestor of
+  // both the wizard and the settings tab — rather than inside the wizard, so
+  // the same wiring picks up a future Settings launcher (`oig-settings` is
+  // already a sibling in this tree) without adding a second listener there.
+  // <oig-simulator> itself has no chrome of its own (no backdrop, no close
+  // button, no open()/close() API — just props), so the host owns all of
+  // that here, the same way it already owns the onboarding wizard's overlay.
+  @state() private simulatorOpen = false;
+  @state() private simulatorDomain: Domain = 'battery';
+  @state() private simulatorDraft: Record<string, unknown> = {};
+  @state() private simulatorBootstrapPayload: BootstrapPayload | null = null;
+  // fe/fix: presets are fetched on open and passed down so the overlay's chips
+  // populate and the initial simulate carries a preset id. The BE POST 400s
+  // with "'prices' required when no preset given" when presetId is blank, and
+  // <oig-simulator>.firstUpdated fires the initial simulate immediately on
+  // mount — so the component is NOT mounted until these resolve. Loading/error
+  // live here (in the host) to keep that fetch out of the component and to gate
+  // the mount on a known preset id.
+  @state() private simulatorPresets: PresetListItem[] = [];
+  @state() private simulatorActivePresetId: string | undefined = undefined;
+  @state() private simulatorPresetsLoading = false;
+  @state() private simulatorPresetsError: string | null = null;
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
@@ -223,45 +291,27 @@ export class OigApp extends LitElement {
       animation: fadeIn 0.25s ease;
     }
 
+    /* ── Redesigned boiler tab (2026-07, rev3 mock): hero, chart, plan-realita, energy+map ── */
     .tab-content.boiler-layout.active {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 10px;
     }
 
-    /* ── Redesigned boiler tab (2026-06): model+map, slim strip, SoC, plan ── */
+    oig-boiler-hero-flow, oig-boiler-timeline-chart, oig-boiler-plan-realita-tile { display: block; }
+
     .boiler-model-row {
       display: grid;
-      /* Model and draw map share the row equally (half and half). */
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 14px;
+      gap: 10px;
       align-items: start;
     }
-    .boiler-model-row > oig-boiler-model,
+
+    .boiler-model-row > oig-boiler-energy-today,
     .boiler-model-row > oig-boiler-draw-map { min-width: 0; }
-    oig-boiler-soc-chart, oig-boiler-plan { display: block; margin-bottom: 14px; }
-    .boiler-slim {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-    .boiler-slim .slim-tile {
-      background: ${unsafeCSS(CSS_VARS.cardBg)};
-      border-radius: 12px;
-      box-shadow: ${unsafeCSS(CSS_VARS.cardShadow)};
-      padding: 11px 13px;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    .boiler-slim .k { font-size: 11px; color: ${unsafeCSS(CSS_VARS.textSecondary)}; }
-    .boiler-slim .v { font-size: 16px; font-weight: 650; color: ${unsafeCSS(CSS_VARS.textPrimary)}; }
-    .boiler-slim .slim-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 600; background: rgba(255,179,0,0.16); color: #c98a00; }
-    .boiler-slim .slim-chip.on { background: rgba(94,234,212,0.16); color: #2e9c89; }
-    .boiler-slim .slim-chip.off { background: rgba(255,255,255,0.07); color: ${unsafeCSS(CSS_VARS.textSecondary)}; }
+
     @media (max-width: 900px) {
       .boiler-model-row { grid-template-columns: 1fr; }
-      .boiler-slim { grid-template-columns: repeat(2, 1fr); }
     }
 
     .boiler-stage {
@@ -391,11 +441,27 @@ export class OigApp extends LitElement {
     .flow-center {
       grid-area: canvas;
       min-width: 0;
+      /* Overlap fix (1600px): the canvas inside hosts absolutely-positioned
+         .ss-pop (z:6), .ss-pill (z:4), .particles-layer (z:3) and SVG
+         connection overlays. Without an explicit stacking context here, those
+         children paint across the column boundary onto the "Systém OIG" panel.
+         isolation:isolate creates a local stacking context; position:relative
+         ensures the popovers offsetParent is the column itself. No overflow:
+         hidden — node widths at narrow desktop (1024-1199) can legitimately
+         overshoot the center column by 25-45px and clipping them would be a
+         regression. */
+      position: relative;
+      isolation: isolate;
     }
 
     .flow-control {
       grid-area: control;
       min-width: 0;
+      /* Stack above .flow-center so any content bleeding out of the canvas
+         (popovers, particles) lands underneath the interactive control panel
+         instead of overlapping it. */
+      position: relative;
+      z-index: 2;
     }
 
     /* ---- Unified "Ovládání" card: Systém OIG + Moje dlaždice ---- */
@@ -540,8 +606,10 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1200: užší dlaždice + systém kolem pentagonu */
-    @media (max-width: 1200px) {
+    /* Tablet 768–1023: užší dlaždice + systém kolem pentagonu. Desktop branch
+       (≥1024) uses the base 212/1fr/300 columns. Breakpoint aligned with V2
+       theme.ts (768 / 1024 / 1280). */
+    @media (max-width: 1023px) {
       .flow-layout {
         grid-template-columns: 168px 1fr 248px;
         gap: 8px;
@@ -584,12 +652,54 @@ export class OigApp extends LitElement {
         overflow-y: auto;
       }
     }
+
+    /* ---- Simulator overlay (fe/fix) ----
+       z-index above the onboarding overlay (1000): the trigger buttons live
+       inside wizard steps, so this must stack on top of it. */
+    .simulator-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1100;
+      animation: fadeIn 0.12s ease-out;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    .simulator-modal {
+      position: relative;
+      width: min(1120px, 100%);
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      border-radius: 18px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    .simulator-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      background: rgba(15, 20, 34, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-radius: 8px;
+      width: 30px;
+      height: 30px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
   `;
 
   connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener('pageshow', this.onPageShow);
     document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    window.addEventListener('keydown', this.onSimulatorKeydown);
     this.initApp();
     this.startTimeUpdate();
   }
@@ -598,12 +708,18 @@ export class OigApp extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener('pageshow', this.onPageShow);
     document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    window.removeEventListener('keydown', this.onSimulatorKeydown);
     this.cleanup();
   }
 
   protected updated(changed: PropertyValues): void {
     if (changed.has('hass') && !changed.has('loading')) {
       void this.rebindHassContext();
+    }
+    if (changed.has('enablePricing') || changed.has('enableBoiler')) {
+      if (!this.visibleTabs.some((tab) => tab.id === this.activeTab)) {
+        this.activeTab = this.visibleTabs[0]?.id ?? 'flow';
+      }
     }
     if (changed.has('activeTab')) {
       if (this.activeTab === 'pricing' && (!this.pricingData || this.pricingDirty)) {
@@ -662,7 +778,8 @@ export class OigApp extends LitElement {
       this.loadBoilerDataAsync();
       this.loadAnalyticsAsync();
       this.loadTilesAsync();
-      // R7: load box_has_home56 from module_config (best-effort, no throw)
+      void this.loadOnboarding();
+      // R7 + Unit A-FE: load box_has_home56 + pricing/boiler/statistics enable flags (best-effort, no throw)
       this.loadBoxHasHome56();
 
       // Weather forecast (current + hourly/daily) — refreshed periodically
@@ -773,6 +890,27 @@ export class OigApp extends LitElement {
     } catch (err) {
       oigLog.error('Failed to extract flow data', err as Error);
     }
+
+    // Planner settings are loaded async — the chip at node.ts:2567 reads
+    // `d.plannerAutoMode`, which `extractFlowData` hard-codes to `null`.
+    // Pull the cached payload (1-minute TTL inside `PlannerStateManager`) and
+    // re-apply on every refresh so a toggle while the tab is open reflects
+    // without waiting for a full reconnect.
+    void this.refreshPlannerSettings();
+  }
+
+  /** Async helper: fetch planner settings and apply onto current flowData. */
+  private async refreshPlannerSettings(): Promise<void> {
+    try {
+      const settings = await plannerState.fetchSettings(haClient, INVERTER_SN);
+      const next = applyPlannerSettings(this.flowData, settings);
+      if (next !== this.flowData) {
+        this.flowData = next;
+        this.requestUpdate();
+      }
+    } catch (err) {
+      oigLog.warn('Failed to apply planner settings to flow data', { err });
+    }
   }
 
   /** Update sensor-driven data: ČHMÚ + tiles */
@@ -872,13 +1010,31 @@ export class OigApp extends LitElement {
     }
   }
 
-  /** R7: load box_has_home56 from module_config boiler section (best-effort). */
+  private async loadOnboarding(): Promise<void> {
+    try {
+      this.onboarding = await loadOnboardingState(INVERTER_SN);
+    } catch {
+      this.onboarding = null;
+    }
+  }
+
+  /**
+   * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
+   * boiler/statistics/battery_prediction module enable flags (modules section)
+   * from module_config in one fetch (best-effort).
+   */
   private async loadBoxHasHome56(): Promise<void> {
     try {
       const cfg = await loadModuleConfig();
       this.boxHasHome56 = cfg?.boiler?.box_has_home56 === true;
+      if (cfg?.modules) {
+        this.enablePricing = cfg.modules.enable_pricing !== false;
+        this.enableBoiler = cfg.modules.enable_boiler !== false;
+        this.enableStatistics = cfg.modules.enable_statistics !== false;
+        this.enablePrediction = cfg.modules.enable_battery_prediction !== false;
+      }
     } catch {
-      // silently ignore — default false means Home 5/6 hidden, safe
+      // silently ignore — defaults (Home 5/6 hidden, tabs visible) are safe
     }
   }
 
@@ -953,9 +1109,100 @@ export class OigApp extends LitElement {
     this.activeTab = e.detail.tabId;
   }
 
+  private onLaunchOnboarding(e: Event): void {
+    // Plan 3.5 item 4: the previous stub merely re-dispatched the event upward
+    // (no production consumer). Open the wizard shell; the dashboard keeps
+    // rendering behind it (#6 — soft, no lock).
+    e.stopPropagation();
+    this.onboardingWizardOpen = true;
+  }
+
+  private onWizardClose(): void {
+    this.onboardingWizardOpen = false;
+    // Refresh banner visibility — the user may have completed/skipped steps.
+    void this.loadOnboarding();
+  }
+
+  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): Promise<void> {
+    e.stopPropagation();
+    const { domain, box, draft } = e.detail ?? {};
+    this.simulatorDomain = domain ?? 'battery';
+    // simulator-fetcher.ts resolves the box id from draft.box_id/boxId/
+    // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
+    // `box` in so the simulator resolves it from the detail it was given.
+    this.simulatorDraft = box ? { ...draft, box_id: box } : { ...draft };
+    // capacity_kwh, hw_min_soc_percent: no boiler-side source loaded into
+    // app.ts state — left unset rather than fabricated from volumeL.
+    this.simulatorBootstrapPayload = this.simulatorDomain === 'boiler'
+      ? {
+          top_temp_c: this.boilerV2Data?.status?.temperatureTop ?? undefined,
+          bottom_temp_c: this.boilerV2Data?.status?.temperatureBottom ?? undefined,
+          cold_inlet_c: this.boilerConfig?.coldInletTempC,
+        }
+      : null;
+    // Open the overlay (shows the loading state) before resolving presets so
+    // <oig-simulator> mounts only once a preset id is known — its firstUpdated
+    // fires the initial simulate immediately, and a blank preset 400s upstream.
+    this.simulatorOpen = true;
+    await this.loadSimulatorPresets(this.simulatorDomain, this.simulatorDraft);
+  }
+
+  private async loadSimulatorPresets(domain: Domain, draft: Record<string, unknown>): Promise<void> {
+    this.simulatorPresetsLoading = true;
+    this.simulatorPresetsError = null;
+    try {
+      const presets = await fetchSimulatorPresets(domain, draft);
+      this.simulatorPresets = presets;
+      // Default-select the first preset so the initial simulate (fired by the
+      // component's firstUpdated on mount) carries a preset id, not a blank.
+      this.simulatorActivePresetId = presets[0]?.id;
+    } catch (err) {
+      this.simulatorPresets = [];
+      this.simulatorActivePresetId = undefined;
+      this.simulatorPresetsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.simulatorPresetsLoading = false;
+    }
+  }
+
+  private onSimulatorPresetsRetry = (): void => {
+    void this.loadSimulatorPresets(this.simulatorDomain, this.simulatorDraft);
+  };
+
+  private onSimulatorClose(): void {
+    this.simulatorOpen = false;
+  }
+
+  private onSimulatorKeydown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.simulatorOpen) this.onSimulatorClose();
+  };
+
+  private onDismissOnboardingBanner(e: Event): void {
+    // Grandfathered-only (banner.ts gates the event on .grandfathered): persist
+    // the dismissal so it survives a reload (D11), then re-sync local state.
+    e.stopPropagation();
+    void this.persistBannerDismissal();
+  }
+
+  private async persistBannerDismissal(): Promise<void> {
+    try {
+      await dismissOnboardingBanner(INVERTER_SN);
+    } catch {
+      // best-effort — the banner already hid itself locally (banner.ts)
+    }
+    void this.loadOnboarding();
+  }
+
   private onGridChargingOpen(): void {
     const dialog = this.shadowRoot?.querySelector('oig-grid-charging-dialog') as OigGridChargingDialog | null;
     dialog?.show();
+  }
+
+  private onZoomToBlock(e: CustomEvent<{ startTime: string; endTime: string }>): void {
+    const { startTime, endTime } = e.detail ?? {};
+    if (!startTime || !endTime) return;
+    const chart = this.shadowRoot?.querySelector('oig-pricing-chart') as OigPricingChart | null;
+    chart?.zoomToTimeRange(startTime, endTime);
   }
 
   private onEditClick(): void {
@@ -1076,17 +1323,18 @@ export class OigApp extends LitElement {
     };
     if (!this.tilesConfig) return;
 
+    const normalizedTile = ensureTileModule(tileConfig);
     const updated = { ...this.tilesConfig };
     const arr = side === 'left' ? [...updated.tiles_left] : [...updated.tiles_right];
 
     if (index >= 0 && index < arr.length) {
-      arr[index] = tileConfig;
+      arr[index] = normalizedTile;
     } else {
       const nullIdx = arr.findIndex((t) => t === null);
       if (nullIdx >= 0) {
-        arr[nullIdx] = tileConfig;
+        arr[nullIdx] = normalizedTile;
       } else {
-        arr.push(tileConfig);
+        arr.push(normalizedTile);
       }
     }
 
@@ -1156,98 +1404,73 @@ export class OigApp extends LitElement {
         </div>`
       : nothing;
 
-    // ── derive model + slim-strip props from live state ──────────────────
-    const activity = v2.activity;
+    // ── derive shared props from live state ──────────────────
     const cfg = this.boilerConfig;
     const volume = cfg?.volumeL ?? 200;
-    const fillFrac = activity?.fillLevelPct ?? null;
+    const fillFrac = v2.activity?.fillLevelPct ?? null;
     const readyLiters = fillFrac != null ? fillFrac * volume : null;
-    const st = activity?.state ?? 'unknown';
-    const heatMode: 'ele' | 'alt' | 'idle' =
-      st === 'charging_alt' ? 'alt' : (st.startsWith('charging_') ? 'ele' : 'idle');
-    const src = activity?.source;
-    const electricSource: 'fve' | 'grid' | 'battery' =
-      (src === 'fve' || src === 'overflow') ? 'fve' : (src === 'discharge' ? 'battery' : 'grid');
-    const e = v2.energyToday;
-    const elementKwh = e ? (e.fveKwh + e.gridKwh + e.batteryKwh) : null;
-    const altKwh = e ? e.altKwh : null;
     const nowMs = Date.now();
     const circRuns = v2.circulationRuns ?? [];
-    const circEnabled = circRuns.length > 0;
-    const circActive = circRuns.some(r => new Date(r.start).getTime() <= nowMs && nowMs < new Date(r.end).getTime());
-    const drivesPlan = v2.demandMap?.drivesPlan ?? true;
-    const trend = activity?.temperatureTrendCPerMin ?? null;
     const lang = this.boilerLang;
-    const comfort = v2.status?.comfortSatisfied ?? null;
-    const deadline = (v2.planSummary?.deadlineTime ?? cfg?.deadlineTime ?? '').slice(0, 5);
-    const cost = v2.energyToday?.costCzk;
-    const modeChip = heatMode === 'alt'
-      ? `🔥 ${this._altShort(v2.altSourceType)}`
-      : heatMode === 'ele' ? '🔌 ELE' : '⏸ —';
-    const trendArrow = trend != null && Math.abs(trend) >= 0.05 ? (trend > 0 ? '↑' : '↓') : '';
 
     return html`
       ${staleChip}
-      <div class="boiler-model-row">
-        <oig-boiler-model
-          .topTempC=${v2.status?.temperatureTop ?? null}
-          .bottomTempC=${v2.status?.temperatureBottom ?? null}
-          .readyLiters=${readyLiters}
-          .readyFraction=${fillFrac}
-          .volumeL=${volume}
-          .coldInletTempC=${cfg?.coldInletTempC ?? 16}
-          .heatMode=${heatMode}
-          .electricSource=${electricSource}
-          .altSourceType=${v2.altSourceType ?? 'gas'}
-          .elementKwhToday=${elementKwh}
-          .altKwhToday=${altKwh}
-          .circulationEnabled=${circEnabled}
-          .circulationActive=${circActive}
-          .trendCPerMin=${trend}
-          .lang=${lang}
-        ></oig-boiler-model>
-        <oig-boiler-draw-map .data=${v2.drawMap ?? null} .lang=${lang}></oig-boiler-draw-map>
-      </div>
-
-      <div class="boiler-slim">
-        <div class="slim-tile"><span class="k">⚡ Režim</span><span class="v"><span class="slim-chip">${modeChip}</span></span></div>
-        <div class="slim-tile"><span class="k">💧 Připraveno</span><span class="v">${readyLiters != null ? Math.round(readyLiters) : '—'} L ${trendArrow}</span></div>
-        <div class="slim-tile"><span class="k">💰 Cena dnes</span><span class="v">${cost != null ? `${cost.toFixed(2)} Kč` : '—'}</span></div>
-        <div class="slim-tile"><span class="k">🔁 Cirkulace</span><span class="v"><span class="slim-chip ${circActive ? 'on' : 'off'}">${circEnabled ? (circActive ? 'běží' : 'stojí') : '—'}</span></span></div>
-        <div class="slim-tile"><span class="k">🎯 Komfort do</span><span class="v">${deadline || '—'} ${comfort === true ? '✓' : comfort === false ? '⚠' : ''}</span></div>
-      </div>
-
-      <oig-boiler-soc-chart
-        .planSlots=${v2.planSlots}
-        .capacityLiters=${volume}
-        .nowLiters=${readyLiters}
-        .drivesPlan=${drivesPlan}
-        .lang=${lang}
-      ></oig-boiler-soc-chart>
-
-      <oig-boiler-plan
+      <oig-boiler-hero-flow
+        .status=${v2.status ?? null}
+        .activity=${v2.activity ?? null}
         .planSlots=${v2.planSlots}
         .planSummary=${v2.planSummary ?? null}
-        .legionella=${v2.legionella ?? null}
+        .energyToday=${v2.energyToday ?? null}
+        .demandMap=${v2.demandMap ?? null}
+        .drawMap=${v2.drawMap ?? null}
         .circulationRuns=${circRuns}
-        .status=${v2.status ?? null}
+        .legionella=${v2.legionella ?? null}
+        .config=${cfg ?? null}
+        .homeBatterySocPct=${this.flowData.batterySoC ?? null}
         .altSourceType=${v2.altSourceType ?? null}
         .lang=${lang}
-      ></oig-boiler-plan>
+      ></oig-boiler-hero-flow>
+
+      <oig-boiler-timeline-chart
+        .data=${v2}
+        .config=${cfg ?? null}
+        .lang=${lang}
+        .nowMs=${nowMs}
+        .capacityLiters=${volume}
+        .nowLiters=${readyLiters}
+      ></oig-boiler-timeline-chart>
+
+      <oig-boiler-plan-realita-tile .lang=${lang}></oig-boiler-plan-realita-tile>
+
+      <div class="boiler-model-row">
+        <oig-boiler-energy-today
+          .energy=${v2.energyToday ?? null}
+          .planSummary=${v2.planSummary ?? null}
+          .altType=${v2.altSourceType ?? null}
+          .lang=${lang}
+        ></oig-boiler-energy-today>
+        <oig-boiler-draw-map .data=${v2.drawMap ?? null} .lang=${lang} .compact=${true}></oig-boiler-draw-map>
+      </div>
 
       <details class="boiler-controls-section" data-testid="boiler-controls-section">
-        <summary>⚙️ Ovládání a nastavení</summary>
+        <summary>Ovládání a nastavení</summary>
         <div class="boiler-controls-body">
           <oig-boiler-override-panel
             .lang=${this.boilerLang}
             .identity=${v2.identity ?? { entryId: null, boxId: null, available: false }}
             .currentOverride=${v2.manualOverride ?? null}
           ></oig-boiler-override-panel>
+          <button
+            type="button"
+            data-testid="boiler-simulator-launch"
+            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: {} } }))}
+          >${t('boiler.simulator.launch', lang)}</button>
           <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
             <span class="boiler-setup-guide__icon">🧙</span>
             <div class="boiler-setup-guide__text">
               <strong>Průvodce nastavením bojleru</strong>
               <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
+              <button type="button" data-testid="boiler-setup-guide-btn" @click=${this.onLaunchOnboarding}>Otevřít průvodce</button>
             </div>
           </div>
         </div>
@@ -1275,9 +1498,16 @@ export class OigApp extends LitElement {
     }
 
     const chmuAlertCount = this.chmuData.effectiveSeverity > 0 ? this.chmuData.warningsCount : 0;
+    // D11: a grandfathered entry gets the banner too (review-config invitation,
+    // never a wall) — shown until its own dismissal is persisted. A
+    // non-grandfathered, incomplete-setup entry keeps its prior behavior.
+    const showOnboardingBanner = this.onboarding && (this.onboarding.grandfathered
+      ? !this.onboarding.banner_dismissed
+      : Object.values(this.onboarding.steps).some((step) => step !== 'done'));
+    const dashboardTiles = this.visibleDashboardTiles;
 
     return html`
-      <oig-theme-provider>
+      <oig-theme-provider @oig-simulator-open=${this.onSimulatorOpen}>
         <oig-header
           title="Energetické Toky"
           .time=${this.time}
@@ -1293,12 +1523,21 @@ export class OigApp extends LitElement {
         </oig-header>
 
         <oig-tabs
-          .tabs=${DEFAULT_TABS}
+          .tabs=${this.visibleTabs}
           .activeTab=${this.activeTab}
           @tab-change=${this.onTabChange}
         ></oig-tabs>
 
         <main>
+          ${showOnboardingBanner ? html`
+            <oig-onboarding-banner
+              role="status"
+              .grandfathered=${!!this.onboarding.grandfathered}
+              .lang=${this.boilerLang}
+              @launch-onboarding=${this.onLaunchOnboarding}
+              @dismiss-onboarding-banner=${this.onDismissOnboardingBanner}
+            ></oig-onboarding-banner>
+          ` : nothing}
           <oig-grid .editable=${this.editMode}>
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
@@ -1312,9 +1551,9 @@ export class OigApp extends LitElement {
                         title="Přidat dlaždici" @click=${this.onAddTile}>+</button>
                     </div>
                     <div class="control-stack__block">
-                      ${this.tilesLeft.length + this.tilesRight.length > 0 ? html`
+                      ${dashboardTiles.length > 0 ? html`
                         <oig-tiles-container
-                          .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                          .tiles=${dashboardTiles}
                           .editMode=${this.editMode}
                           @edit-tile=${this.onEditTile}
                           @delete-tile=${this.onDeleteTile}
@@ -1358,7 +1597,7 @@ export class OigApp extends LitElement {
                     <span>Načítání cen...</span>
                   </div>
                 ` : nothing}
-                <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData}></oig-pricing-stats>
+                <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData} @zoom-to-block=${this.onZoomToBlock}></oig-pricing-stats>
                 <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
 
                 <oig-timeline-tile
@@ -1395,7 +1634,12 @@ export class OigApp extends LitElement {
 
              <!-- ===== SETTINGS TAB ===== -->
              <div class="tab-content ${this.activeTab === 'settings' ? 'active' : ''}">
-               ${this.activeTab === 'settings' ? html`<oig-settings .hassStates=${this.hass?.states ?? null}></oig-settings>` : nothing}
+               ${this.activeTab === 'settings' ? html`
+                 <oig-settings
+                   .hassStates=${this.hass?.states ?? null}
+                   @launch-onboarding=${this.onLaunchOnboarding}
+                 ></oig-settings>
+               ` : nothing}
              </div>
           </oig-grid>
         </main>
@@ -1420,6 +1664,52 @@ export class OigApp extends LitElement {
         <oig-grid-charging-dialog
           .data=${this.flowData.gridChargingPlan}
         ></oig-grid-charging-dialog>
+
+        <!-- Plan 3.5 item 4: wizard mounted as a real production consumer of
+             the launch-onboarding event. Drawn as an overlay; the dashboard
+             stays interactive behind it (#6 — soft guide). -->
+        <oig-onboarding-wizard
+          ?open=${this.onboardingWizardOpen}
+          .inverterSn=${INVERTER_SN}
+          .hass=${this.hass}
+          @close=${this.onWizardClose}
+        ></oig-onboarding-wizard>
+
+        <!-- fe/fix: 'oig-simulator-open' seam — see the simulatorOpen field
+             comment for why this lives at the shell instead of inside the
+             wizard. oig-simulator has no backdrop/close of its own, so this
+             overlay supplies both, same pattern as above. -->
+        ${this.simulatorOpen ? html`
+          <div class="simulator-overlay" data-testid="simulator-overlay" @click=${this.onSimulatorClose}>
+            <div class="simulator-modal" @click=${(e: Event) => e.stopPropagation()}>
+              <button
+                class="simulator-modal-close"
+                type="button"
+                aria-label="Zavřít"
+                data-testid="simulator-close"
+                @click=${this.onSimulatorClose}
+              >×</button>
+              ${this.simulatorPresetsLoading
+                ? html`<div class="simulator-presets-loading" data-testid="simulator-presets-loading">Načítání scénářů…</div>`
+                : this.simulatorPresetsError
+                  ? html`<div class="simulator-presets-error" data-testid="simulator-presets-error">
+                      <p>Scénáře se nepodařilo načíst.</p>
+                      <button
+                        type="button"
+                        data-testid="simulator-presets-retry"
+                        @click=${this.onSimulatorPresetsRetry}
+                      >Zkusit znovu</button>
+                    </div>`
+                  : html`<oig-simulator
+                      .domain=${this.simulatorDomain}
+                      .draft=${this.simulatorDraft}
+                      .presets=${this.simulatorPresets}
+                      .activePresetId=${this.simulatorActivePresetId}
+                      .bootstrapPayload=${this.simulatorBootstrapPayload}
+                    ></oig-simulator>`}
+            </div>
+          </div>
+        ` : nothing}
       </oig-theme-provider>
     `;
   }

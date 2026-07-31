@@ -38,7 +38,49 @@ def test_get_expected_sensor_types(monkeypatch):
 
     expected = sensor_module._get_expected_sensor_types(hass, entry)
 
-    assert expected == {"base", "stats", "battery", "pricing"}
+    # battery_prediction enabled => battery_health tracked alongside it
+    assert expected == {
+        "base",
+        "stats",
+        "battery",
+        "battery_health",
+        "pricing",
+        "data_source",
+    }
+
+
+def test_get_expected_sensor_types_includes_battery_support(monkeypatch):
+    fake_types = {
+        "battery": {"sensor_type_category": "battery_prediction"},
+        "battery_balancing": {"sensor_type_category": "battery_balancing"},
+        "adaptive_load_profiles": {"sensor_type_category": "adaptive_profiles"},
+    }
+    monkeypatch.setattr(sensor_module, "SENSOR_TYPES", fake_types)
+
+    entry = SimpleNamespace(
+        entry_id="entry",
+        options={"enable_battery_prediction": True},
+    )
+    hass = SimpleNamespace(data={DOMAIN: {"entry": {"statistics_enabled": False}}})
+
+    expected = sensor_module._get_expected_sensor_types(hass, entry)
+
+    assert {
+        "battery",
+        "battery_balancing",
+        "adaptive_load_profiles",
+        "battery_health",
+    } <= expected
+
+    entry.options["enable_battery_prediction"] = False
+    expected_disabled = sensor_module._get_expected_sensor_types(hass, entry)
+
+    assert not {
+        "battery",
+        "battery_balancing",
+        "adaptive_load_profiles",
+        "battery_health",
+    } & expected_disabled
 
 
 @pytest.mark.asyncio
@@ -70,3 +112,35 @@ async def test_cleanup_renamed_sensors(monkeypatch):
     assert removed == 2
     assert "sensor.oig_123_battery_prediction_test" in registry.removed
     assert "sensor.oig_123_old_stuff" in registry.removed
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_data_source_sensor(monkeypatch):
+    monkeypatch.setattr(
+        sensor_module,
+        "SENSOR_TYPES",
+        {"live_sensor": {"sensor_type_category": "data"}},
+    )
+
+    entry = SimpleNamespace(entry_id="entry", options={})
+    hass = SimpleNamespace(data={DOMAIN: {"entry": {"statistics_enabled": False}}})
+    expected = sensor_module._get_expected_sensor_types(hass, entry)
+    registry = DummyEntityRegistry()
+
+    entries = [
+        SimpleNamespace(entity_id="sensor.oig_123_data_source"),
+        SimpleNamespace(entity_id="sensor.oig_123_live_sensor"),
+    ]
+
+    def _entries_for_config_entry(_entity_reg, _entry_id):
+        return entries
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_entries_for_config_entry",
+        _entries_for_config_entry,
+    )
+
+    removed = await sensor_module._cleanup_renamed_sensors(registry, entry, expected)
+
+    assert removed == 0
+    assert "sensor.oig_123_data_source" not in registry.removed

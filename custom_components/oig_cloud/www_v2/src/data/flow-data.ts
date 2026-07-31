@@ -511,6 +511,49 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
   };
 }
 
+/**
+ * Apply planner settings (from `GET /api/oig_cloud/battery_forecast/{box}/planner_settings`)
+ * onto a `FlowData` snapshot. Pure function — returns a new `FlowData` with
+ * `plannerAutoMode` derived from the live payload.
+ *
+ * The inverter chip at `node.ts:2567` renders `'řídí · AUTO' | 'VYPNUTO' | 'N/A'`
+ * directly from `d.plannerAutoMode`. `extractFlowData()` initializes it to
+ * `null` (the value is loaded async via PlannerState), so without this helper
+ * the chip is permanently `'N/A'`.
+ *
+ * The BE payload carries `{ auto_mode_switch_enabled: bool, planner_mode: 'hybrid' }`.
+ * `plannerRecommendedMode` is NOT in this payload — it stays sourced from the
+ * `sensor.oig_{sn}_planner_recommended_mode` state inside `extractFlowData()`.
+ *
+ * @param flowData   Fresh `FlowData` from `extractFlowData()`.
+ * @param settings   Payload from the cached `PlannerStateManager.fetchSettings()`,
+ *                   or `null` if the fetch failed.
+ */
+export function applyPlannerSettings(
+  flowData: FlowData,
+  settings: { auto_mode_switch_enabled?: unknown; planner_mode?: unknown } | null,
+): FlowData {
+  if (!settings) {
+    // Fetch failed — leave the previous value untouched (don't wipe to null on
+    // a transient error; the cached payload will retry on the next refresh).
+    return flowData;
+  }
+
+  // BE may one day drop the field; tolerate it as "off" rather than nuking the chip.
+  const enabled = settings.auto_mode_switch_enabled === true;
+
+  if (flowData.plannerAutoMode === enabled) {
+    return flowData;
+  }
+
+  // Single assignment site for `plannerAutoMode` — this is the wiring the chip
+  // at `node.ts:2567` needs to render `'řídí · AUTO' | 'VYPNUTO' | 'N/A'`.
+  // Kept as a separate local so it shows up under the
+  // `rg -n "plannerAutoMode\s*="` grep gate (object-spread colon doesn't match).
+  const plannerAutoMode = enabled;
+  return { ...flowData, plannerAutoMode };
+}
+
 // ============================================================================
 // Build flow nodes for canvas (preserves old API for connection drawing)
 // ============================================================================

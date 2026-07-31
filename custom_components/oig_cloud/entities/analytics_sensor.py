@@ -521,6 +521,15 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         )
         negative_fee_percent = self._entry.options.get("spot_negative_fee_percent", 9.0)
         fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
+        positive_fee_percent_nt = self._entry.options.get(
+            "spot_positive_fee_percent_nt", positive_fee_percent
+        )
+        negative_fee_percent_nt = self._entry.options.get(
+            "spot_negative_fee_percent_nt", negative_fee_percent
+        )
+        fixed_fee_mwh_nt = self._entry.options.get(
+            "spot_fixed_fee_mwh_nt", fixed_fee_mwh
+        )
         distribution_fee_vt_kwh = self._entry.options.get(
             "distribution_fee_vt_kwh", 1.35
         )
@@ -530,21 +539,34 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
         vat_rate = self._entry.options.get("vat_rate", 21.0)
 
-        if pricing_model == "percentage":
-            if spot_price_czk >= 0:
-                commercial_price = spot_price_czk * (1 + positive_fee_percent / 100.0)
-            else:
-                commercial_price = spot_price_czk * (1 - negative_fee_percent / 100.0)
-        else:  # fixed
-            fixed_fee_kwh = fixed_fee_mwh / 1000.0  # MWh -> kWh
-            commercial_price = spot_price_czk + fixed_fee_kwh
-
         if target_datetime:
             current_tariff = self._get_tariff_for_datetime(target_datetime)
         elif dual_tariff_enabled:
             current_tariff = self._calculate_current_tariff()
         else:
             current_tariff = "VT"
+
+        if pricing_model == "percentage":
+            if spot_price_czk >= 0:
+                fee_percent = (
+                    positive_fee_percent_nt
+                    if current_tariff == "NT"
+                    else positive_fee_percent
+                )
+                commercial_price = spot_price_czk * (1 + fee_percent / 100.0)
+            else:
+                fee_percent = (
+                    negative_fee_percent_nt
+                    if current_tariff == "NT"
+                    else negative_fee_percent
+                )
+                commercial_price = spot_price_czk * (1 - fee_percent / 100.0)
+        else:  # fixed
+            fee_mwh = (
+                fixed_fee_mwh_nt if current_tariff == "NT" else fixed_fee_mwh
+            )
+            fixed_fee_kwh = fee_mwh / 1000.0  # MWh -> kWh
+            commercial_price = spot_price_czk + fixed_fee_kwh
 
         distribution_fee = (
             distribution_fee_vt_kwh
@@ -801,6 +823,15 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         )
         negative_fee_percent = self._entry.options.get("spot_negative_fee_percent", 9.0)
         fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
+        positive_fee_percent_nt = self._entry.options.get(
+            "spot_positive_fee_percent_nt", positive_fee_percent
+        )
+        negative_fee_percent_nt = self._entry.options.get(
+            "spot_negative_fee_percent_nt", negative_fee_percent
+        )
+        fixed_fee_mwh_nt = self._entry.options.get(
+            "spot_fixed_fee_mwh_nt", fixed_fee_mwh
+        )
         distribution_fee_vt_kwh = self._entry.options.get(
             "distribution_fee_vt_kwh", 1.35
         )
@@ -818,15 +849,22 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
                 if pricing_model == "percentage":
                     if spot_price >= 0:
-                        commercial_price = spot_price * (
-                            1 + positive_fee_percent / 100.0
+                        fee_percent = (
+                            positive_fee_percent_nt
+                            if tariff == "NT"
+                            else positive_fee_percent
                         )
+                        commercial_price = spot_price * (1 + fee_percent / 100.0)
                     else:
-                        commercial_price = spot_price * (
-                            1 - negative_fee_percent / 100.0
+                        fee_percent = (
+                            negative_fee_percent_nt
+                            if tariff == "NT"
+                            else negative_fee_percent
                         )
+                        commercial_price = spot_price * (1 - fee_percent / 100.0)
                 else:
-                    fixed_fee_kwh = fixed_fee_mwh / 1000.0
+                    fee_mwh = fixed_fee_mwh_nt if tariff == "NT" else fixed_fee_mwh
+                    fixed_fee_kwh = fee_mwh / 1000.0
                     commercial_price = spot_price + fixed_fee_kwh
 
                 distribution_fee = (

@@ -8,14 +8,19 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from ..ai.key_store import AiKeyStore
+from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
+from ..config_merge import merge_entry_options
+from ..config_registry import FIELD_REGISTRY, fields_for_section
+from .modules_validation import missing_dashboard_requirements, validate_modules_selection
+from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
+from .solar_rules import normalize_azimuth, validate_solar_effective
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
     CONF_PASSWORD,
-    CONF_PLANNING_MIN_PERCENT,
     CONF_USERNAME,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
-    DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_NAME,
     DEFAULT_PLANNING_MIN_PERCENT,
@@ -59,10 +64,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
-
-_BOILER_PLANNING_HORIZON_MIN_HOURS = 12
-_BOILER_PLANNING_HORIZON_MAX_HOURS = 48
-_BOILER_ALT_SOURCE_MODES = frozenset({"disabled", "benchmark_only", "controllable"})
 
 
 class WizardMixin:
@@ -243,7 +244,6 @@ class WizardMixin:
         migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
         migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
         migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
-        migrated.setdefault("tariff_weekend_same_as_weekday", True)
 
     @staticmethod
     def _map_pricing_to_backend(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -330,24 +330,12 @@ class WizardMixin:
             backend_data["tariff_nt_start_weekday"] = wizard_data.get(
                 "tariff_nt_start_weekday", "22,2"
             )
-            weekend_same = wizard_data.get("tariff_weekend_same_as_weekday", True)
-            backend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
-            if weekend_same:
-                backend_data["tariff_vt_start_weekend"] = backend_data[
-                    "tariff_vt_start_weekday"
-                ]
-                backend_data["tariff_nt_start_weekend"] = backend_data[
-                    "tariff_nt_start_weekday"
-                ]
-            else:
-                backend_data["tariff_vt_start_weekend"] = wizard_data.get(
-                    "tariff_vt_start_weekend",
-                    backend_data["tariff_vt_start_weekday"],
-                )
-                backend_data["tariff_nt_start_weekend"] = wizard_data.get(
-                    "tariff_nt_start_weekend",
-                    backend_data["tariff_nt_start_weekday"],
-                )
+            backend_data["tariff_vt_start_weekend"] = wizard_data.get(
+                "tariff_vt_start_weekend", backend_data["tariff_vt_start_weekday"]
+            )
+            backend_data["tariff_nt_start_weekend"] = wizard_data.get(
+                "tariff_nt_start_weekend", backend_data["tariff_nt_start_weekday"]
+            )
         return backend_data
 
     def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -358,34 +346,49 @@ class WizardMixin:
         payload.update(self._build_battery_options(wizard_data))
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
-        payload.update(self._build_auto_options(wizard_data))
         return payload
 
     @staticmethod
     def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "standard_scan_interval": wizard_data.get("standard_scan_interval", 30),
-            "extended_scan_interval": wizard_data.get("extended_scan_interval", 300),
-            "data_source_mode": WizardMixin._sanitize_data_source_mode(
-                wizard_data.get("data_source_mode", "cloud_only")
-            ),
-            "local_proxy_stale_minutes": wizard_data.get(
-                "local_proxy_stale_minutes", 10
-            ),
-            "local_event_debounce_ms": wizard_data.get("local_event_debounce_ms", 300),
-            "enable_statistics": wizard_data.get("enable_statistics", True),
-            "enable_solar_forecast": wizard_data.get("enable_solar_forecast", False),
-            "enable_battery_prediction": wizard_data.get(
-                "enable_battery_prediction", False
-            ),
-            "enable_pricing": wizard_data.get("enable_pricing", False),
-            "enable_extended_sensors": wizard_data.get("enable_extended_sensors", True),
-            "enable_chmu_warnings": wizard_data.get("enable_chmu_warnings", False),
-            "enable_dashboard": wizard_data.get("enable_dashboard", False),
-        }
+        """Build basic options from FIELD_REGISTRY.
 
-    @staticmethod
-    def _build_solar_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        All defaults are read from the registry — never hard-coded here — so a
+        change to a field's default in `config_registry.py` flows through to
+        emitted payloads, GET responses, and the options UI in lockstep.
+
+        `enable_boiler` is a registered `modules` field that this helper
+        deliberately does NOT emit: a save that wrote it would change the
+        payload shape. Boiler is handled by `_build_boiler_options`.
+        """
+        basic = fields_for_section("basic")
+        modules = fields_for_section("modules")
+
+        options: Dict[str, Any] = {}
+        for key, field in basic.items():
+            value = wizard_data.get(key, field.default)
+            if key == "data_source_mode":
+                value = WizardMixin._sanitize_data_source_mode(value)
+            options[key] = value
+
+        for key in (
+            "enable_solar_forecast",
+            "enable_battery_prediction",
+            "enable_pricing",
+            "enable_chmu_warnings",
+            "enable_statistics",
+            "enable_extended_sensors",
+        ):
+            options[key] = wizard_data.get(key, modules[key].default)
+
+        return options
+
+    def _build_solar_options(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        # RCA-R4: same order as the schema default (option -> hass.config ->
+        # None) -- this is the payload actually persisted to entry.options,
+        # so a fabricated Prague fallback here is the live bug, not just a
+        # form pre-fill. Downstream (solar_forecast_sensor.py) already
+        # treats a missing/None GPS as "not configured" and surfaces a repair.
+        ha_latitude, ha_longitude = self._get_hass_gps()
         return {
             CONF_SOLAR_FORECAST_PROVIDER: wizard_data.get(
                 CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
@@ -393,16 +396,11 @@ class WizardMixin:
             "solar_forecast_mode": wizard_data.get(
                 "solar_forecast_mode", "daily_optimized"
             ),
-            CONF_SOLAR_FORECAST_API_KEY: wizard_data.get(
-                CONF_SOLAR_FORECAST_API_KEY, ""
-            ),
-            CONF_SOLCAST_API_KEY: wizard_data.get(CONF_SOLCAST_API_KEY, ""),
-            CONF_SOLCAST_SITE_ID: wizard_data.get(CONF_SOLCAST_SITE_ID, ""),
             CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
-                CONF_SOLAR_FORECAST_LATITUDE, 50.0
+                CONF_SOLAR_FORECAST_LATITUDE, ha_latitude
             ),
             CONF_SOLAR_FORECAST_LONGITUDE: wizard_data.get(
-                CONF_SOLAR_FORECAST_LONGITUDE, 14.0
+                CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude
             ),
             CONF_SOLAR_FORECAST_STRING1_ENABLED: wizard_data.get(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED, True
@@ -432,10 +430,15 @@ class WizardMixin:
 
     @staticmethod
     def _build_battery_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        planning_min_percent = wizard_data.get(
-            CONF_PLANNING_MIN_PERCENT,
-            wizard_data.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
-        )
+        # charge_rate_kw / home_charge_rate are ONE logical field (registry mirror
+        # pair). If both aliases are present and DISAGREE, the registered canonical
+        # key wins: it is the key the REST API and the registry validate and write,
+        # so it is the authoritative one. The legacy alias is not read as a
+        # separate value here, which is what lets the Options Flow resolve a single
+        # logical baseline; a later save self-heals the pair, because the delta
+        # carries only charge_rate_kw and merge_entry_options mirrors it back onto
+        # home_charge_rate. Falling back to the legacy alias only when the
+        # canonical key is absent keeps legacy-only entries working.
         charge_rate_kw = wizard_data.get(
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
@@ -455,15 +458,9 @@ class WizardMixin:
                 "battery_comfort_soc_percent", 50.0
             ),
             "home_charge_rate": charge_rate_kw,
-            CONF_PLANNING_MIN_PERCENT: planning_min_percent,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
-            "disable_planning_min_guard": wizard_data.get(
-                "disable_planning_min_guard", False
-            ),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
-            "price_hysteresis_czk": wizard_data.get("price_hysteresis_czk", 0.01),
-            "hw_min_hold_hours": wizard_data.get("hw_min_hold_hours", 6.0),
             "balancing_enabled": wizard_data.get("balancing_enabled", True),
             "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
             "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
@@ -477,27 +474,12 @@ class WizardMixin:
         }
 
     @staticmethod
-    def _clamp_boiler_planning_horizon_hours(value: Any) -> int:
-        try:
-            horizon = int(value)
-        except (TypeError, ValueError):
-            horizon = DEFAULT_BOILER_PLANNING_HORIZON_HOURS
-        return max(
-            _BOILER_PLANNING_HORIZON_MIN_HOURS,
-            min(_BOILER_PLANNING_HORIZON_MAX_HOURS, horizon),
-        )
-
-    @staticmethod
     def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         enable_boiler = wizard_data.get("enable_boiler", False)
         if wizard_data.get("boiler_module_selected") and not wizard_data.get(
             "boiler_setup_complete"
         ):
             enable_boiler = False
-
-        alt_source_mode = wizard_data.get("boiler_alt_source_mode", "disabled")
-        if alt_source_mode not in _BOILER_ALT_SOURCE_MODES:
-            alt_source_mode = "disabled"
 
         return {
             "enable_boiler": enable_boiler,
@@ -535,9 +517,6 @@ class WizardMixin:
             "boiler_effective_power_w": wizard_data.get(
                 "boiler_effective_power_w", 2000
             ),
-            "boiler_recovery_rate_c_per_hour": wizard_data.get(
-                "boiler_recovery_rate_c_per_hour", 5.0
-            ),
             "boiler_alt_heater_switch_entity": wizard_data.get(
                 "boiler_alt_heater_switch_entity", ""
             ),
@@ -547,29 +526,17 @@ class WizardMixin:
             "boiler_has_alternative_heating": wizard_data.get(
                 "boiler_has_alternative_heating", False
             ),
-            "boiler_alt_source_mode": alt_source_mode,
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
             "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
             "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
-            "boiler_comfort_profile_mode": wizard_data.get(
-                "boiler_comfort_profile_mode", "history_driven"
-            ),
-            "boiler_planning_horizon_hours": (
-                WizardMixin._clamp_boiler_planning_horizon_hours(
-                    wizard_data.get(
-                        "boiler_planning_horizon_hours",
-                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                    )
-                )
-            ),
             "boiler_plan_slot_minutes": DEFAULT_BOILER_PLAN_SLOT_MINUTES,
             # F5 new keys (steps 6–8)
             "boiler_alt_source_type": wizard_data.get(
                 "boiler_alt_source_type", "gas"
             ),
             "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
-                "boiler_battery_cycle_cost_czk_kwh", 0.50
+                "boiler_battery_cycle_cost_czk_kwh", BATTERY_CYCLE_COST_CZK_PER_KWH
             ),
             "box_has_home56": wizard_data.get("box_has_home56", False),
             "boiler_home5_maneuver_enabled": wizard_data.get(
@@ -605,21 +572,36 @@ class WizardMixin:
         }
 
     @staticmethod
-    def _build_auto_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {"enable_auto": wizard_data.get("enable_auto", False)}
-
-    @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
         """Map backend attribute names back to UI-friendly frontend names.
 
         This is the reverse of _map_pricing_to_backend - used when loading
         existing configuration in OptionsFlow.
+
+        Each section mapper runs independently (RCA-R2): a malformed value in
+        one section (missing key, explicit None, wrong type - e.g. a legacy
+        `spot_fixed_fee_mwh` stored as a string) must not blank out the other
+        sections by raising out of the whole function.
         """
+        if not isinstance(backend_data, dict):
+            backend_data = {}
         frontend_data: Dict[str, Any] = {}
-        frontend_data.update(WizardMixin._map_import_frontend(backend_data))
-        frontend_data.update(WizardMixin._map_export_frontend(backend_data))
-        frontend_data.update(WizardMixin._map_distribution_frontend(backend_data))
-        frontend_data["vat_rate"] = backend_data.get("vat_rate", 21.0)
+        for section_name, mapper in (
+            ("import", WizardMixin._map_import_frontend),
+            ("export", WizardMixin._map_export_frontend),
+            ("distribution", WizardMixin._map_distribution_frontend),
+        ):
+            try:
+                frontend_data.update(mapper(backend_data))
+            except Exception:  # pragma: no cover - defensivní logika
+                _LOGGER.exception(
+                    "OptionsFlow init: %s pricing mapping failed, section skipped",
+                    section_name,
+                )
+        try:
+            frontend_data["vat_rate"] = float(backend_data.get("vat_rate", 21.0))
+        except (TypeError, ValueError):
+            frontend_data["vat_rate"] = 21.0
         return frontend_data
 
     @staticmethod
@@ -688,17 +670,8 @@ class WizardMixin:
             weekday_nt = backend_data.get("tariff_nt_start_weekday", "22,2")
             weekend_vt = backend_data.get("tariff_vt_start_weekend")
             weekend_nt = backend_data.get("tariff_nt_start_weekend")
-            weekend_same = backend_data.get("tariff_weekend_same_as_weekday")
-            if weekend_same is None:
-                if weekend_vt is None and weekend_nt is None:
-                    weekend_same = True
-                else:
-                    weekend_same = str(weekend_vt) == str(weekday_vt) and str(
-                        weekend_nt
-                    ) == str(weekday_nt)
             frontend_data["tariff_vt_start_weekday"] = weekday_vt
             frontend_data["tariff_nt_start_weekday"] = weekday_nt
-            frontend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
             frontend_data["tariff_vt_start_weekend"] = (
                 weekend_vt if weekend_vt is not None else weekday_vt
             )
@@ -946,19 +919,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
         )
 
     def _validate_modules_selection(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        errors: Dict[str, str] = {}
-        if user_input.get("enable_battery_prediction"):
-            if not user_input.get("enable_solar_forecast"):
-                errors["enable_battery_prediction"] = "requires_solar_forecast"
-            if not user_input.get("enable_extended_sensors"):
-                errors["enable_extended_sensors"] = "required_for_battery"
-
-        if user_input.get("enable_dashboard"):
-            missing = self._missing_dashboard_requirements(user_input)
-            if missing:
-                errors["enable_dashboard"] = "dashboard_requires_all"
-                self._wizard_data["_missing_for_dashboard"] = missing
-
+        errors = validate_modules_selection(user_input)
+        if "enable_dashboard" in errors:
+            self._wizard_data["_missing_for_dashboard"] = missing_dashboard_requirements(
+                user_input
+            )
         return errors
 
     @staticmethod
@@ -1052,21 +1017,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return errors
 
-    @staticmethod
-    def _missing_dashboard_requirements(user_input: Dict[str, Any]) -> list[str]:
-        missing = []
-        if not user_input.get("enable_statistics"):
-            missing.append("Statistiky")
-        if not user_input.get("enable_solar_forecast"):
-            missing.append("Solární předpověď")
-        if not user_input.get("enable_battery_prediction"):
-            missing.append("Predikce baterie")
-        if not user_input.get("enable_pricing"):
-            missing.append("Cenové senzory a spotové ceny")
-        if not user_input.get("enable_extended_sensors"):
-            missing.append("Rozšířené senzory")
-        return missing
-
     def _get_modules_schema(
         self, defaults: Optional[Dict[str, Any]] = None
     ) -> vol.Schema:
@@ -1103,9 +1053,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 ): bool,
                 vol.Optional(
                     "enable_boiler", default=defaults.get("enable_boiler", False)
-                ): bool,
-                vol.Optional(
-                    "enable_auto", default=defaults.get("enable_auto", False)
                 ): bool,
                 vol.Optional("go_back", default=False): bool,
             }
@@ -1382,54 +1329,53 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self._show_intervals_form()
 
     def _collect_interval_values(self, user_input: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "standard": user_input.get("standard_scan_interval", 30),
-            "extended": user_input.get("extended_scan_interval", 300),
-            "data_source_mode": self._sanitize_data_source_mode(
-                user_input.get(
-                    "data_source_mode",
-                    self._wizard_data.get("data_source_mode", "cloud_only"),
-                )
-            ),
-            "proxy_stale": user_input.get(
+        """Collect the intervals step's values, keyed by registry field name.
+
+        Returns field-name keys (not short aliases) so the value dict speaks the
+        same dialect as the form, the registry and ``_wizard_data``. This lets the
+        error path re-render the user's typed values instead of registry defaults.
+        """
+        basic = fields_for_section("basic")
+        values = {
+            key: user_input.get(key, self._wizard_data.get(key, basic[key].default))
+            for key in (
+                "standard_scan_interval",
+                "extended_scan_interval",
                 "local_proxy_stale_minutes",
-                self._wizard_data.get("local_proxy_stale_minutes", 10),
-            ),
-            "debounce_ms": user_input.get(
                 "local_event_debounce_ms",
-                self._wizard_data.get("local_event_debounce_ms", 300),
-            ),
+            )
         }
+        values["data_source_mode"] = self._sanitize_data_source_mode(
+            user_input.get(
+                "data_source_mode",
+                self._wizard_data.get(
+                    "data_source_mode", basic["data_source_mode"].default
+                ),
+            )
+        )
+        return values
 
     def _validate_interval_values(self, values: Dict[str, Any]) -> Dict[str, str]:
         errors: Dict[str, str] = {}
-        standard = values["standard"]
-        extended = values["extended"]
-        proxy_stale = values["proxy_stale"]
-        debounce_ms = values["debounce_ms"]
-        data_source_mode = values["data_source_mode"]
+        basic = fields_for_section("basic")
 
-        if standard < 30:
-            errors["standard_scan_interval"] = "interval_too_short"
-        elif standard > 300:
-            errors["standard_scan_interval"] = "interval_too_long"
+        # (field, error-key-below, error-key-above) — the i18n dialect is preserved
+        # verbatim: extended_scan_interval keeps its own extended_interval_* pair
+        # while the other three share interval_too_short/interval_too_long (OQ-7).
+        checks = (
+            ("standard_scan_interval", "interval_too_short", "interval_too_long"),
+            ("extended_scan_interval", "extended_interval_too_short", "extended_interval_too_long"),
+            ("local_proxy_stale_minutes", "interval_too_short", "interval_too_long"),
+            ("local_event_debounce_ms", "interval_too_short", "interval_too_long"),
+        )
+        for key, too_low, too_high in checks:
+            field = basic[key]
+            if field.min is not None and values[key] < field.min:
+                errors[key] = too_low
+            elif field.max is not None and values[key] > field.max:
+                errors[key] = too_high
 
-        if extended < 300:
-            errors["extended_scan_interval"] = "extended_interval_too_short"
-        elif extended > 3600:
-            errors["extended_scan_interval"] = "extended_interval_too_long"
-
-        if proxy_stale < 1:
-            errors["local_proxy_stale_minutes"] = "interval_too_short"
-        elif proxy_stale > 120:
-            errors["local_proxy_stale_minutes"] = "interval_too_long"
-
-        if debounce_ms < 0:
-            errors["local_event_debounce_ms"] = "interval_too_short"
-        elif debounce_ms > 5000:
-            errors["local_event_debounce_ms"] = "interval_too_long"
-
-        if data_source_mode == "local_only" and not self._proxy_ready():
+        if values["data_source_mode"] == "local_only" and not self._proxy_ready():
             errors["data_source_mode"] = "local_proxy_missing"
 
         return errors
@@ -1450,81 +1396,85 @@ Kliknutím na "Odeslat" spustíte průvodce.
             and proxy_box.state.isdigit()
         )
 
+    @staticmethod
+    def _get_intervals_schema(defaults: Dict[str, Any]) -> vol.Schema:
+        """Build the wizard_intervals schema from the basic FIELD_REGISTRY.
+
+        Field types are kept (``int`` for the numeric fields, a SelectSelector for
+        ``data_source_mode``) so the UI is unchanged — only the defaults and the enum
+        options are sourced from the registry. ``defaults`` is field-name-keyed (see
+        the key-dialect trap): its values win, falling back to the registry default.
+        """
+        basic = fields_for_section("basic")
+
+        data_mode = basic["data_source_mode"]
+        current_mode = WizardMixin._sanitize_data_source_mode(
+            defaults.get("data_source_mode", data_mode.default)
+        )
+        # zip against exactly two labels so the UI never offers legacy "hybrid",
+        # even though the registered enum carries it for REST round-tripping (OQ-6).
+        assert data_mode.enum is not None  # data_source_mode always registers an enum
+        mode_options = [
+            selector.SelectOptionDict(value=value, label=label)
+            for value, label in zip(
+                data_mode.enum,
+                (
+                    "☁️ Cloud only",
+                    "🏠 Local only (fallback na cloud při výpadku)",
+                ),
+            )
+        ]
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "standard_scan_interval",
+                    default=defaults.get(
+                        "standard_scan_interval",
+                        basic["standard_scan_interval"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "extended_scan_interval",
+                    default=defaults.get(
+                        "extended_scan_interval",
+                        basic["extended_scan_interval"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "data_source_mode", default=current_mode
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=mode_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    "local_proxy_stale_minutes",
+                    default=defaults.get(
+                        "local_proxy_stale_minutes",
+                        basic["local_proxy_stale_minutes"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "local_event_debounce_ms",
+                    default=defaults.get(
+                        "local_event_debounce_ms",
+                        basic["local_event_debounce_ms"].default,
+                    ),
+                ): int,
+                vol.Optional("go_back", default=False): bool,
+            }
+        )
+
     def _show_intervals_form(
         self,
         values: Optional[Dict[str, Any]] = None,
         errors: Optional[Dict[str, str]] = None,
     ) -> ConfigFlowResult:
-        if values is None:
-            data_source_mode = self._sanitize_data_source_mode(
-                self._wizard_data.get("data_source_mode", "cloud_only")
-            )
-            data_schema = vol.Schema(
-                {
-                    vol.Optional("standard_scan_interval", default=30): int,
-                    vol.Optional("extended_scan_interval", default=300): int,
-                    vol.Optional(
-                        "data_source_mode", default=data_source_mode
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="cloud_only", label="☁️ Cloud only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="local_only",
-                                    label="🏠 Local only (fallback na cloud při výpadku)",
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        "local_proxy_stale_minutes",
-                        default=self._wizard_data.get("local_proxy_stale_minutes", 10),
-                    ): int,
-                    vol.Optional(
-                        "local_event_debounce_ms",
-                        default=self._wizard_data.get("local_event_debounce_ms", 300),
-                    ): int,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            )
-        else:
-            data_schema = vol.Schema(
-                {
-                    vol.Optional("standard_scan_interval", default=values["standard"]): int,
-                    vol.Optional("extended_scan_interval", default=values["extended"]): int,
-                    vol.Optional(
-                        "data_source_mode", default=values["data_source_mode"]
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="cloud_only", label="☁️ Cloud only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="local_only",
-                                    label="🏠 Local only (fallback na cloud při výpadku)",
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        "local_proxy_stale_minutes",
-                        default=values["proxy_stale"],
-                    ): int,
-                    vol.Optional(
-                        "local_event_debounce_ms",
-                        default=values["debounce_ms"],
-                    ): int,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            )
         return self.async_show_form(
             step_id="wizard_intervals",
-            data_schema=data_schema,
+            data_schema=self._get_intervals_schema(values or self._wizard_data or {}),
             errors=errors,
             description_placeholders=self._get_step_placeholders("wizard_intervals"),
         )
@@ -1593,22 +1543,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return False
 
     def _validate_solar_provider(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        errors: Dict[str, str] = {}
-        provider = user_input.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
-        api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
-        mode = user_input.get("solar_forecast_mode", "daily_optimized")
-
-        if provider == "forecast_solar":
-            if mode in ["every_4h", "hourly"] and not api_key:
-                errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
-        else:
-            solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
-            solcast_site_id = user_input.get(CONF_SOLCAST_SITE_ID, "").strip()
-            if not solcast_api_key:
-                errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
-            if not solcast_site_id:
-                errors[CONF_SOLCAST_SITE_ID] = "solcast_site_id_required"
-        return errors
+        # provider/mode/key AND no_strings_enabled now come from the single
+        # shared rule set, so this surface can never drift from the REST POST
+        # (U3). See config/solar_rules.py.
+        return validate_solar_effective(user_input)
 
     def _validate_solar_coordinates(self, user_input: Dict[str, Any]) -> Dict[str, str]:
         errors: Dict[str, str] = {}
@@ -1624,16 +1562,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return errors
 
     def _validate_solar_strings(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        # no_strings_enabled now comes from validate_solar_effective (via
+        # _validate_solar_provider, called first at :1570). Only per-string
+        # geometry stays here.
         errors: Dict[str, str] = {}
-        string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
-        string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
-
-        if not string1_enabled and not string2_enabled:
-            errors["base"] = "no_strings_enabled"
-
-        if string1_enabled:
+        if user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED):
             errors.update(self._validate_solar_string1(user_input))
-        if string2_enabled:
+        if user_input.get("solar_forecast_string2_enabled"):
             errors.update(self._validate_solar_string2(user_input))
         return errors
 
@@ -1642,14 +1577,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
             decl1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35))
-            azim1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+            azim1 = normalize_azimuth(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+            # Persist the normalised, signed azimuth so it matches the registry
+            # bounds (-180..180) that REST and the schema enforce (U6).
+            user_input[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = azim1
 
             if not (0 < kwp1 <= 15):
                 errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
             if not (0 <= decl1 <= 90):
                 errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = "invalid_declination"
-            if not (0 <= azim1 <= 360):
-                errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string1_params"
         return errors
@@ -1659,17 +1595,45 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
             decl2 = int(user_input.get("solar_forecast_string2_declination", 35))
-            azim2 = int(user_input.get("solar_forecast_string2_azimuth", 180))
+            azim2 = normalize_azimuth(user_input.get("solar_forecast_string2_azimuth", 180))
+            # Persist the normalised, signed azimuth so it matches the registry
+            # bounds (-180..180) that REST and the schema enforce (U6).
+            user_input["solar_forecast_string2_azimuth"] = azim2
 
             if not (0 < kwp2 <= 15):
                 errors["solar_forecast_string2_kwp"] = "invalid_kwp"
             if not (0 <= decl2 <= 90):
                 errors["solar_forecast_string2_declination"] = "invalid_declination"
-            if not (0 <= azim2 <= 360):
-                errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string2_params"
         return errors
+
+    def _get_hass_gps(self) -> tuple[Optional[float], Optional[float]]:
+        """Read (latitude, longitude) from `hass.config`, or (None, None).
+
+        Defensive against `self.hass` being unset or a minimal test double
+        without `.config` -- both are real states (RCA-R4), not just test
+        artifacts, so this must return empty rather than raise.
+        """
+        config = getattr(self.hass, "config", None)
+        return getattr(config, "latitude", None), getattr(config, "longitude", None)
+
+    @staticmethod
+    def _gps_marker(key: str, default_value: Optional[float], suggested: Optional[float]) -> vol.Marker:
+        """Build a GPS field marker: default only when a real value exists.
+
+        Never fabricate a default (RCA-R4) -- an unresolved default renders
+        the field genuinely empty instead of a plausible-looking coordinate.
+        `suggested` is exposed separately via `description.suggested_value`
+        so the FE can offer an explicit "Prevzit z Home Assistanta" action
+        (UX-SPEC step-3) independent of which default won.
+        """
+        kwargs: Dict[str, Any] = {}
+        if default_value is not None:
+            kwargs["default"] = default_value
+        if suggested is not None:
+            kwargs["description"] = {"suggested_value": suggested}
+        return vol.Optional(key, **kwargs)
 
     def _get_solar_schema(
         self, defaults: Optional[Dict[str, Any]] = None
@@ -1678,9 +1642,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
-        # Získat GPS souřadnice z Home Assistant konfigurace jako default
-        ha_latitude = self.hass.config.latitude if self.hass else 50.0
-        ha_longitude = self.hass.config.longitude if self.hass else 14.0
+        # RCA-R4: hass.config GPS is a fallback *default* (option -> hass ->
+        # empty), never a fabricated Prague value -- and it is ALSO exposed
+        # via description.suggested_value regardless of which default wins,
+        # so the FE can offer an explicit "Prevzit z Home Assistanta" action
+        # (UX-SPEC step-3) without ever silently overwriting a saved value.
+        ha_latitude, ha_longitude = self._get_hass_gps()
 
         provider = defaults.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
 
@@ -1705,13 +1672,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
                 }
             ),
-            vol.Optional(
+            self._gps_marker(
                 CONF_SOLAR_FORECAST_LATITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                ha_latitude,
             ): vol.Coerce(float),
-            vol.Optional(
+            self._gps_marker(
                 CONF_SOLAR_FORECAST_LONGITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                ha_longitude,
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,
@@ -2217,9 +2186,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if old_tariff_count != new_tariff_count:
             return True
 
-        old_weekend_same = self._wizard_data.get("tariff_weekend_same_as_weekday", True)
-        new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        return new_tariff_count == "dual" and old_weekend_same != new_weekend_same
+        return False
 
     def _validate_pricing_distribution(
         self, user_input: Dict[str, Any]
@@ -2265,15 +2232,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if not is_valid and error_key is not None:
             errors["tariff_vt_start_weekday"] = error_key
 
-        weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        if not weekend_same:
-            vt_weekend = user_input.get("tariff_vt_start_weekend", "")
-            nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
-            is_valid, error_key = validate_tariff_hours(
-                vt_weekend, nt_weekend, allow_single_tariff=True
-            )
-            if not is_valid and error_key is not None:
-                errors["tariff_vt_start_weekend"] = error_key
+        vt_weekend = user_input.get("tariff_vt_start_weekend", vt_starts)
+        nt_weekend = user_input.get("tariff_nt_start_weekend", nt_starts)
+        is_valid, error_key = validate_tariff_hours(
+            vt_weekend, nt_weekend, allow_single_tariff=True
+        )
+        if not is_valid and error_key is not None:
+            errors["tariff_vt_start_weekend"] = error_key
 
     def _get_pricing_distribution_schema(
         self, defaults: Optional[Dict[str, Any]] = None
@@ -2287,17 +2252,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         weekday_nt_default = defaults.get("tariff_nt_start_weekday", "22,2")
         weekend_vt_default = defaults.get("tariff_vt_start_weekend", weekday_vt_default)
         weekend_nt_default = defaults.get("tariff_nt_start_weekend", weekday_nt_default)
-        weekend_same_default = defaults.get("tariff_weekend_same_as_weekday")
-        if weekend_same_default is None:
-            if (
-                "tariff_vt_start_weekend" not in defaults
-                and "tariff_nt_start_weekend" not in defaults
-            ):
-                weekend_same_default = True
-            else:
-                weekend_same_default = str(weekend_vt_default) == str(
-                    weekday_vt_default
-                ) and str(weekend_nt_default) == str(weekday_nt_default)
 
         schema_fields = {
             vol.Optional("tariff_count", default=tariff_count): vol.In(
@@ -2329,24 +2283,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         default=weekday_nt_default,
                     ): str,
                     vol.Optional(
-                        "tariff_weekend_same_as_weekday",
-                        default=bool(weekend_same_default),
-                    ): bool,
+                        "tariff_vt_start_weekend",
+                        default=weekend_vt_default,
+                    ): str,
+                    vol.Optional(
+                        "tariff_nt_start_weekend",
+                        default=weekend_nt_default,
+                    ): str,
                 }
             )
-            if not weekend_same_default:
-                schema_fields.update(
-                    {
-                        vol.Optional(
-                            "tariff_vt_start_weekend",
-                            default=weekend_vt_default,
-                        ): str,
-                        vol.Optional(
-                            "tariff_nt_start_weekend",
-                            default=weekend_nt_default,
-                        ): str,
-                    }
-                )
             if defaults.get("import_pricing_scenario") == "fix_price":
                 default_fixed_price = defaults.get("fixed_price_kwh", 4.50)
                 schema_fields.update(
@@ -2388,10 +2333,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
-            CONF_BOILER_ALT_SOURCE_MODE,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
             CONF_BOILER_HEATER_SWITCH_ENTITY,
-            CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_SPOT_PRICE_SENSOR,
             CONF_BOILER_STRATIFICATION_MODE,
             CONF_BOILER_TARGET_TEMP_C,
@@ -2402,7 +2345,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_VOLUME_L,
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_DEADLINE_TIME,
-            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
             DEFAULT_BOILER_TEMP_SENSOR_POSITION,
@@ -2549,27 +2491,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                 selector.EntitySelectorConfig(domain="switch")
                             ),
                             vol.Optional(
-                                CONF_BOILER_ALT_SOURCE_MODE,
-                                default=defaults.get(
-                                    CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                                ),
-                            ): selector.SelectSelector(
-                                selector.SelectSelectorConfig(
-                                    options=[
-                                        selector.SelectOptionDict(
-                                            value="disabled", label="Disabled"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="benchmark_only", label="Benchmark only"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="controllable", label="Controllable"
-                                        ),
-                                    ],
-                                    mode=selector.SelectSelectorMode.DROPDOWN,
-                                )
-                            ),
-                            vol.Optional(
                                 CONF_BOILER_ALT_COST_KWH,
                                 default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
                             ): selector.NumberSelector(
@@ -2600,22 +2521,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                     CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                                 ),
                             ): selector.TimeSelector(),
-                            vol.Optional(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                default=self._clamp_boiler_planning_horizon_hours(
-                                    defaults.get(
-                                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                                    )
-                                ),
-                            ): selector.NumberSelector(
-                                selector.NumberSelectorConfig(
-                                    min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                                    max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                                    step=1,
-                                    mode=selector.NumberSelectorMode.BOX,
-                                )
-                            ),
                             vol.Optional("go_back", default=False): selector.BooleanSelector(),
                         }
                     ),
@@ -2771,28 +2676,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="switch")
                     ),
-                    # Alternativa
-                    vol.Optional(
-                        CONF_BOILER_ALT_SOURCE_MODE,
-                        default=defaults.get(
-                            CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="disabled", label="Disabled"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="benchmark_only", label="Benchmark only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="controllable", label="Controllable"
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
                     vol.Optional(
                         CONF_BOILER_ALT_COST_KWH,
                         default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
@@ -2826,23 +2709,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                         ),
                     ): selector.TimeSelector(),
-                    # Number inputy místo sliderů
-                    vol.Optional(
-                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                        default=self._clamp_boiler_planning_horizon_hours(
-                            defaults.get(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                            )
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                            max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                            step=1,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
                     vol.Optional("go_back", default=False): selector.BooleanSelector(),
                 }
             ),
@@ -3117,10 +2983,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
             if setup_type == "wizard":
                 return await self.async_step_wizard_welcome()
-            elif setup_type == "quick":
+            if setup_type == "quick":
                 return await self.async_step_quick_setup()
-            else:  # import
-                return await self.async_step_import_yaml()
+            return await self.async_step_wizard_welcome()
 
         return self.async_show_form(
             step_id="user",
@@ -3130,7 +2995,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                         {
                             "wizard": "wizard",
                             "quick": "quick",
-                            "import": "import",
                         }
                     )
                 }
@@ -3275,7 +3139,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "standard_scan_interval": 30,
                     "extended_scan_interval": 300,
                     "enable_cloud_notifications": True,
-                    "notifications_scan_interval": 300,
                     "data_source_mode": "cloud_only",
                     "local_proxy_stale_minutes": 10,
                     "local_event_debounce_ms": 300,
@@ -3287,7 +3150,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "enable_dashboard": False,
                     "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
                     "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
-                    CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
                     CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
                 },
             )
@@ -3305,13 +3167,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
             ),
             errors=errors,
         )
-
-    async def async_step_import_yaml(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> ConfigFlowResult:
-        """Import from YAML configuration."""
-        # NOTE: YAML import is not implemented yet.
-        return self.async_abort(reason="not_implemented")
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3377,19 +3232,35 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self._config_entry_cache = config_entry
 
         # Předvyplnit wizard_data z existující konfigurace – robustně proti chybějícím/poškozeným datům
+        self._options_read_ok = True
         try:
             backend_options = dict(config_entry.options)
         except Exception:  # pragma: no cover - defensivní logika
             _LOGGER.exception(
-                "OptionsFlow init: failed to read existing options, using empty defaults"
+                "OptionsFlow init: failed to read existing options"
             )
+            self._options_read_ok = False
             backend_options = {}
+
+        # Pre-seed basic keys into the snapshot so that registry defaults are not
+        # treated as user deltas for keys that predate the registry. Without this,
+        # a save after a concurrent REST write that introduced a basic key would
+        # overwrite the new value with the registry default. (Plan 2 Task 6 — only
+        # the basic section is protected here; battery/min_capacity mirror pairs
+        # remain for Plan 3/4.)
+        basic_fields = fields_for_section("basic")
+        for key, field in basic_fields.items():
+            backend_options.setdefault(key, field.default)
 
         frontend_pricing = {}
         try:
             frontend_pricing = self._map_backend_to_frontend(backend_options)
         except Exception:  # pragma: no cover - defensivní logika
             _LOGGER.exception("OptionsFlow init: pricing mapping failed, keeping raw")
+            # Best-effort: raw backend keys still land in _wizard_data below, so
+            # pricing fields show SOME prior value instead of silently reverting
+            # to hardcoded step defaults (RCA-R2 minimal fix).
+            frontend_pricing = dict(backend_options)
 
         self._wizard_data = backend_options | frontend_pricing
         for legacy_telemetry_key in (
@@ -3400,6 +3271,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             "telemetry_mqtt_prefix",
         ):
             self._wizard_data.pop(legacy_telemetry_key, None)
+
+        # The payload the serializer would produce from the wizard data as seeded
+        # at open. The save delta is this payload diffed against the one built
+        # from the wizard data as it stands at save, so it contains EXACTLY the
+        # fields the user submitted a new value for during this flow session.
+        #
+        # Diffing payload-against-payload (rather than payload-against-raw-stored-
+        # options) is what makes the delta submitted-fields-only: the serializer's
+        # normalization — e.g. the expensive_percentile rounding in
+        # _build_battery_options — is applied identically to both sides, so it
+        # cancels out and can never be mistaken for a user edit. An untouched
+        # field is therefore always absent from the delta, and a concurrent REST
+        # or dashboard write to it survives this flow's save untouched.
+        self._options_payload_at_open = self._build_options_payload(self._wizard_data)
 
         # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
@@ -3433,6 +3318,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             "boiler_setup_complete"
         ):
             menu.append("section_boiler")
+        menu.append("section_ai")
         menu.append("section_all")
         return self.async_show_menu(step_id="init", menu_options=menu)
 
@@ -3496,6 +3382,95 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     ) -> ConfigFlowResult:
         return await self._enter_section("battery", "wizard_battery")
 
+    async def async_step_section_ai(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Open the optional AI provider configuration."""
+        return await self.async_step_ai(user_input)
+
+    def _get_ai_schema(self, defaults: Dict[str, Any]) -> vol.Schema:
+        """Build the optional AI form from the registry fields."""
+        ai = fields_for_section("ai")
+        provider = ai["ai_provider"]
+        assert provider.enum is not None
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "ai_provider", default=defaults.get("ai_provider", provider.default)
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="", label="—"),
+                            selector.SelectOptionDict(value="ai_task", label="HA AI Task"),
+                            selector.SelectOptionDict(value="groq", label="Groq"),
+                            selector.SelectOptionDict(value="nvidia", label="NVIDIA"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    "ai_base_url", default=defaults.get("ai_base_url", "")
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+                ),
+                vol.Optional(
+                    "ai_model", default=defaults.get("ai_model", "")
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+                vol.Optional("ai_api_key", default=""): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                        autocomplete="off",
+                    )
+                ),
+            }
+        )
+
+    async def async_step_ai(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Configure optional AI settings and route the key to private storage."""
+        entry: Optional[config_entries.ConfigEntry] = getattr(
+            self, "_config_entry_cache", None
+        )
+        if entry is None:
+            return self.async_abort(reason="no_entry")
+
+        current = dict(entry.options)
+        if user_input is not None:
+            values = dict(user_input)
+            api_key = values.pop("ai_api_key", "")
+            api_key = api_key.strip() if isinstance(api_key, str) else ""
+            ai_fields = fields_for_section("ai")
+            updates = {
+                key: values.get(key, field.default)
+                for key, field in ai_fields.items()
+            }
+            current_provider = current.get("ai_provider", "")
+            selected_provider = updates["ai_provider"]
+            store = AiKeyStore(self.hass, entry.entry_id)
+
+            if api_key:
+                await store.async_set_key(selected_provider, api_key)
+            elif current_provider and selected_provider != current_provider:
+                await store.async_clear()
+
+            current.update(updates)
+            self.hass.config_entries.async_update_entry(entry, options=current)
+
+        return self.async_show_form(
+            step_id="ai",
+            data_schema=self._get_ai_schema(current),
+            description_placeholders={
+                "groq_console_url": "https://console.groq.com",
+                "groq_keys_url": "https://console.groq.com/keys",
+                "nvidia_build_url": "https://build.nvidia.com",
+                "nvidia_keys_url": "https://build.nvidia.com/settings/api-keys",
+            },
+        )
+
     async def async_step_section_pricing(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
@@ -3548,8 +3523,56 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_summary")
 
+            # If the opening snapshot could not be read we cannot compute a safe
+            # delta; abort the save and ask the user to reopen the flow rather
+            # than degrading to a full-payload overwrite.
+            if not self._options_read_ok:
+                return self.async_show_form(
+                    step_id="wizard_summary",
+                    data_schema=vol.Schema({}),
+                    errors={"base": "options_read_failed"},
+                    description_placeholders={
+                        "step": "Rekonfigurace - Souhrn změn",
+                        "progress": "▓▓▓▓▓",
+                        "summary": "Nepodařilo se načíst stávající nastavení. "
+                        "Zavřete tento dialog a otevřete nastavení znovu.",
+                    },
+                )
+
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
-            new_options = self._build_options_payload(self._wizard_data)
+            payload = self._build_options_payload(self._wizard_data)
+            new_options = dict(entry.options)
+            new_options.update(payload)
+            solar_private_updates = {
+                key: self._wizard_data.get(key)
+                for key in SOLAR_PRIVATE_FIELDS
+                if isinstance(self._wizard_data.get(key), str)
+                and self._wizard_data.get(key).strip()
+            }
+
+            # Submitted-fields-only delta: exactly those keys whose serialized
+            # value differs from the one this flow would have written at open.
+            # Both sides come from the same serializer, so only a value the user
+            # actually submitted can make a key differ; everything the user did
+            # not touch is absent, and a concurrent REST/dashboard write to it
+            # survives. A save with no user edits yields an EMPTY delta and
+            # therefore no merge write at all.
+            delta: Dict[str, Any] = {
+                key: value
+                for key, value in payload.items()
+                if value != self._options_payload_at_open.get(key)
+            }
+
+            # A mirror pair (charge_rate_kw / home_charge_rate) is ONE logical
+            # field. The serializer writes the same value to both aliases, so a
+            # real edit surfaces both keys here; emit only the registered
+            # canonical key and let merge_entry_options mirror it, so the legacy
+            # alias never travels through the delta on its own.
+            for field in FIELD_REGISTRY.values():
+                if field.mirror and field.mirror in delta:
+                    if field.key not in delta and field.key in payload:
+                        delta[field.key] = payload[field.key]
+                    del delta[field.mirror]
 
             # Přidat debug log
             _LOGGER.warning(
@@ -3562,47 +3585,81 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                self.hass.config_entries.async_update_entry(
-                    entry, options=new_options
+                if getattr(self, "_section", None) == "solar" and (
+                    solar_private_updates or CONF_SOLAR_FORECAST_PROVIDER in delta
+                ):
+                    solar_store = SolarKeyStore(self.hass, entry.entry_id)
+                    provider = payload.get(
+                        CONF_SOLAR_FORECAST_PROVIDER,
+                        entry.options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"),
+                    )
+                    if CONF_SOLAR_FORECAST_PROVIDER in delta:
+                        await solar_store.async_clear_inactive(str(provider))
+                    if CONF_SOLAR_FORECAST_API_KEY in solar_private_updates:
+                        await solar_store.async_set_candidate(
+                            "forecast_solar",
+                            {
+                                CONF_SOLAR_FORECAST_API_KEY: solar_private_updates[
+                                    CONF_SOLAR_FORECAST_API_KEY
+                                ]
+                            },
+                        )
+                    solcast_updates = {
+                        key: solar_private_updates[key]
+                        for key in (CONF_SOLCAST_API_KEY, CONF_SOLCAST_SITE_ID)
+                        if key in solar_private_updates
+                    }
+                    if solcast_updates:
+                        await solar_store.async_set_candidate("solcast", solcast_updates)
+                did_write = merge_entry_options(
+                    self.hass, entry, delta, suppress_reload=True
                 )
                 _LOGGER.warning("🔍 async_update_entry completed")
 
-                try:
-                    from ..boiler.runtime import get_boiler_runtime
-                    from ..boiler.actuator import (
-                        ActuatorCommand,
-                        ActuatorCommandPriority,
-                        ActuatorCommandType,
-                        SourceIntent,
-                    )
+                if did_write:
+                    # Use post-merge entry options for the boiler command payload,
+                    # preserving concurrent REST updates for untouched fields.
+                    merged_options = dict(entry.options)
+                    merged_options.update(delta)
 
-                    box_id = new_options.get("boiler_box_id", "")
-                    if new_options.get("enable_boiler") and box_id:
-                        runtime = get_boiler_runtime(
-                            self.hass, entry.entry_id, box_id
+                    try:
+                        from ..boiler.runtime import get_boiler_runtime
+                        from ..boiler.actuator import (
+                            ActuatorCommand,
+                            ActuatorCommandPriority,
+                            ActuatorCommandType,
+                            SourceIntent,
                         )
-                        if runtime is not None and runtime._serializer is not None:
-                            latest_cv = getattr(
-                                runtime._serializer, "_latest_config_version", 0
+
+                        box_id = merged_options.get("boiler_box_id", "")
+                        if merged_options.get("enable_boiler") and box_id:
+                            runtime = get_boiler_runtime(
+                                self.hass, entry.entry_id, box_id
                             )
-                            cmd = ActuatorCommand(
-                                entry_id=entry.entry_id,
-                                box_id=box_id,
-                                command_type=ActuatorCommandType("config_update"),
-                                plan_version=0,
-                                config_version=latest_cv + 1,
-                                priority=ActuatorCommandPriority.CONFIG,
-                                source_intent=SourceIntent.NONE,
-                                payload={"new_options": new_options},
-                            )
-                            await runtime._serializer.enqueue(cmd)
-                            _LOGGER.debug(
-                                "Enqueued CONFIG_UPDATE for %s/%s", entry.entry_id, box_id
-                            )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Config update enqueue failed (non-critical): %s", exc
-                    )
+                            if runtime is not None and runtime._serializer is not None:
+                                latest_cv = getattr(
+                                    runtime._serializer, "_latest_config_version", 0
+                                )
+                                cmd = ActuatorCommand(
+                                    entry_id=entry.entry_id,
+                                    box_id=box_id,
+                                    command_type=ActuatorCommandType("config_update"),
+                                    plan_version=0,
+                                    config_version=latest_cv + 1,
+                                    priority=ActuatorCommandPriority.CONFIG,
+                                    source_intent=SourceIntent.NONE,
+                                    payload={"new_options": merged_options},
+                                )
+                                await runtime._serializer.enqueue(cmd)
+                                _LOGGER.debug(
+                                    "Enqueued CONFIG_UPDATE for %s/%s",
+                                    entry.entry_id,
+                                    box_id,
+                                )
+                    except Exception as exc:
+                        _LOGGER.debug(
+                            "Config update enqueue failed (non-critical): %s", exc
+                        )
 
                 # Automaticky reloadnout integraci pro aplikování změn
                 _LOGGER.warning("🔍 About to reload integration")

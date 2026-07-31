@@ -29,6 +29,7 @@ export const CSS_VARS = {
  * They override the HA variables that CSS_VARS reference.
  */
 export const DARK_THEME: Record<string, string> = {
+  'color-scheme': 'dark',
   '--primary-background-color': '#111936',
   '--secondary-background-color': '#1a2044',
   '--primary-text-color': '#e1e1e1',
@@ -44,6 +45,7 @@ export const DARK_THEME: Record<string, string> = {
 };
 
 export const LIGHT_THEME: Record<string, string> = {
+  'color-scheme': 'light',
   '--primary-background-color': '#ffffff',
   '--secondary-background-color': '#f5f5f5',
   '--primary-text-color': '#212121',

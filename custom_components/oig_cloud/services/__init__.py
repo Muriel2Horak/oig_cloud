@@ -615,6 +615,10 @@ tracer = trace.get_tracer(__name__)
 
 # Storage key pro dashboard tiles
 STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
+# Backup key: holds the last known-good (non-empty) config, written before
+# every overwrite of STORAGE_KEY_DASHBOARD_TILES — recovers user tiles if a
+# save ever wipes current (see Fix A: tiles wipe on module toggle).
+STORAGE_KEY_DASHBOARD_TILES_BACKUP = "oig_dashboard_tiles_backup"
 
 
 def _iter_entry_data(hass: HomeAssistant) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -1158,6 +1162,15 @@ def _register_boiler_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.error("Failed to register boiler services: %s", exc, exc_info=True)
 
 
+def _is_empty_dashboard_tiles(config: Optional[dict[str, Any]]) -> bool:
+    """True when a tiles config has no tiles at all (fresh defaults or a wipe)."""
+    if not isinstance(config, dict):
+        return True
+    left = config.get("tiles_left") or []
+    right = config.get("tiles_right") or []
+    return not any(left) and not any(right)
+
+
 async def _save_dashboard_tiles_config(
     hass: HomeAssistant, config_str: Optional[str]
 ) -> None:
@@ -1176,6 +1189,18 @@ async def _save_dashboard_tiles_config(
         store: Store[dict[str, Any]] = Store(
             hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES
         )
+        backup_store: Store[dict[str, Any]] = Store(
+            hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES_BACKUP
+        )
+
+        # Snapshot the value being overwritten into the backup key BEFORE
+        # saving the new one — so a save that wipes current (e.g. an empty
+        # config from regressed client state) still leaves a recoverable
+        # last-known-good config behind.
+        previous = await store.async_load()
+        if not _is_empty_dashboard_tiles(previous):
+            await backup_store.async_save(previous)
+
         await store.async_save(config)
 
         _LOGGER.info(
@@ -1200,9 +1225,27 @@ async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
             hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES
         )
         config = await store.async_load()
-        if config:
+        if not _is_empty_dashboard_tiles(config):
             _LOGGER.info("Dashboard tiles config loaded from storage")
             return {"config": config}
+
+        # Current is empty/missing — try the backup before reporting nothing,
+        # which would otherwise let the frontend persist DEFAULT_TILES_CONFIG
+        # back over a still-recoverable backup.
+        backup_store: Store[dict[str, Any]] = Store(
+            hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES_BACKUP
+        )
+        backup = await backup_store.async_load()
+        if not _is_empty_dashboard_tiles(backup):
+            recovered_count = len([t for t in (backup.get("tiles_left") or []) if t]) + len(
+                [t for t in (backup.get("tiles_right") or []) if t]
+            )
+            _LOGGER.warning(
+                "Dashboard tiles config was empty, recovered %s tiles from backup",
+                recovered_count,
+            )
+            return {"config": backup}
+
         _LOGGER.info("No dashboard tiles config found in storage")
         return {"config": None}
 

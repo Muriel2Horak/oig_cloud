@@ -1,0 +1,25 @@
+# Gitleaks configuration — extends the default rules and allowlists the
+# fake/example API keys that live in tests, fixtures and design docs. These are
+# not real secrets (e.g. fs_secret_123456789, sc_secret_123456789,
+# gsk_ThisIsARealLookingSecretKey...). Real credentials live in gitignored
+# config (.ha_config, .env) and are never committed.
+
+title = "oig_cloud gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake API keys in tests, fixtures and documentation"
+paths = [
+  '''(^|/)tests/''',
+  '''__tests__/''',
+  '''(^|/)docs/''',
+  '''(^|/)spec-critique/''',
+  '''\.md$''',
+]
+regexes = [
+  '''fs_secret_\d+''',
+  '''sc_secret_\d+''',
+  '''gsk_ThisIsARealLooking\w+''',
+]

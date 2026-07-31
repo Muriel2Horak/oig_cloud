@@ -36,18 +36,36 @@ def _calculate_commercial_price(
     positive_fee_percent = config.get("spot_positive_fee_percent", 15.0)
     negative_fee_percent = config.get("spot_negative_fee_percent", 9.0)
     fixed_fee_mwh = config.get("spot_fixed_fee_mwh", 0.0)
+    positive_fee_percent_nt = config.get(
+        "spot_positive_fee_percent_nt", positive_fee_percent
+    )
+    negative_fee_percent_nt = config.get(
+        "spot_negative_fee_percent_nt", negative_fee_percent
+    )
+    fixed_fee_mwh_nt = config.get("spot_fixed_fee_mwh_nt", fixed_fee_mwh)
 
     if pricing_model == "percentage":
+        current_tariff = get_tariff_for_datetime(target_datetime, config)
         if raw_spot_price >= 0:
-            return raw_spot_price * (1 + positive_fee_percent / 100.0)
-        return raw_spot_price * (1 - negative_fee_percent / 100.0)
+            fee_percent = (
+                positive_fee_percent_nt
+                if current_tariff == "NT"
+                else positive_fee_percent
+            )
+            return raw_spot_price * (1 + fee_percent / 100.0)
+        fee_percent = (
+            negative_fee_percent_nt if current_tariff == "NT" else negative_fee_percent
+        )
+        return raw_spot_price * (1 - fee_percent / 100.0)
     if pricing_model == "fixed_prices":
         fixed_price_vt = config.get("fixed_commercial_price_vt", 4.50)
         fixed_price_nt = config.get("fixed_commercial_price_nt", fixed_price_vt)
         current_tariff = get_tariff_for_datetime(target_datetime, config)
         return fixed_price_vt if current_tariff == "VT" else fixed_price_nt
 
-    fixed_fee_kwh = fixed_fee_mwh / 1000.0
+    current_tariff = get_tariff_for_datetime(target_datetime, config)
+    fee_mwh = fixed_fee_mwh_nt if current_tariff == "NT" else fixed_fee_mwh
+    fixed_fee_kwh = fee_mwh / 1000.0
     return raw_spot_price + fixed_fee_kwh
 
 
@@ -169,15 +187,24 @@ def _derive_export_prices(
 ) -> Dict[str, Any]:
     export_model = config.get("export_pricing_model", "percentage")
     export_fee = config.get("export_fee_percent", 15.0)
+    export_fee_nt = config.get("export_fee_percent_nt", export_fee)
     export_fixed_price = config.get("export_fixed_price", 2.50)
 
     export_prices: Dict[str, Any] = {}
     for timestamp_str, spot_price in spot_prices_dict.items():
         if export_model == "percentage":
-            export_price = spot_price * (1 - export_fee / 100)
+            try:
+                target_datetime = datetime.fromisoformat(timestamp_str)
+                current_tariff = get_tariff_for_datetime(target_datetime, config)
+            except ValueError:
+                current_tariff = "VT"
+            fee = export_fee_nt if current_tariff == "NT" else export_fee
+            export_price = spot_price * (1 - fee / 100)
         elif export_model == "fixed_prices":
             export_price = export_fixed_price
         else:
+            # NOTE: pre-existing bug, out of scope for this NT-wiring fix -
+            # reads export_fee_percent instead of export_fixed_fee_czk here.
             export_price = max(0, spot_price - export_fee)
         export_prices[timestamp_str] = export_price
     return export_prices

@@ -8,7 +8,7 @@ import {
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
   BoilerV2Data, BoilerV2PlanSlot, DemandMapData, DrawMapData,
-  CirculationRun, LegionellaStatus, PlanSummary, EnergyToday,
+  CirculationRun, LegionellaStatus, PlanSummary, EnergyToday, BatteryForecastEntry,
   OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
   OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
   SOURCE_LABELS,
@@ -842,6 +842,33 @@ function parseForecastWindows(planData: BoilerPlanAPI | null, batteryTimeline: a
   return { fve, grid };
 }
 
+/**
+ * M2b: type the raw battery-forecast timeline into BatteryForecastEntry[] for the
+ * chart FVE overlay. `solar_kwh`/`solar_charge_kwh` and `grid_charge_kwh` are confirmed
+ * real fields on this same `/battery_forecast/{sn}/timeline` payload — `pricing-data.ts`
+ * (buildBatteryArrays) and `ui/features/pricing/types.ts` (TimelinePoint) already consume
+ * them from the identical endpoint. No confirmed 0-100 battery-SoC-percent field exists on
+ * this payload: `battery_soc` appears in TimelinePoint but pricing-data.ts uses it
+ * interchangeably with `battery_capacity_kwh` as a kWh magnitude fallback
+ * (`entry.battery_capacity_kwh ?? entry.battery_soc ?? entry.battery_start`), not as a
+ * percentage — so batterySocPct is left null rather than guessed. The overflow-marker
+ * derivation in boiler-timeline-chart.ts therefore uses the plan_slots pv_kwh onset fallback.
+ */
+export function buildBatteryForecast(entries: any[] | null): BatteryForecastEntry[] {
+  if (!Array.isArray(entries)) return [];
+  const result: BatteryForecastEntry[] = [];
+  for (const entry of entries) {
+    const ts = entry?.timestamp ?? entry?.time;
+    if (!ts) continue;
+    const timestampMs = new Date(ts).getTime();
+    if (!isFinite(timestampMs)) continue;
+    const solarKwh = parseFloat(entry?.solar_kwh ?? entry?.solar_charge_kwh ?? 0) || 0;
+    const gridChargeKwh = parseFloat(entry?.grid_charge_kwh ?? 0) || 0;
+    result.push({ timestampMs, solarKwh, gridChargeKwh, batterySocPct: null });
+  }
+  return result;
+}
+
 // ============================================================================
 // SERVICE CALLS
 // ============================================================================
@@ -1181,7 +1208,7 @@ export async function loadBoilerData(_hass?: any): Promise<BoilerData> {
     currentCategory,
     availableCategories,
     forecastWindows: parseForecastWindows(planData, batteryTimeline),
-    v2Data: mapCanonicalToV2(canonical, configProfileUnavailable),
+    v2Data: { ...mapCanonicalToV2(canonical, configProfileUnavailable), batteryForecast: buildBatteryForecast(batteryTimeline) },
   };
 }
 

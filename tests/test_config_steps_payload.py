@@ -50,5 +50,8 @@ def test_build_options_payload_maps_pricing_and_defaults():
     assert payload["dual_tariff_enabled"] is True
     assert payload["tariff_vt_start_weekday"] == "6"
     assert payload["tariff_nt_start_weekday"] == "22,2"
-    assert payload["tariff_weekend_same_as_weekday"] is True
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it
+    # must not appear in options payload. Live weekend-tariff keys carry the
+    # answer instead.
+    assert "tariff_weekend_same_as_weekday" not in payload
     assert payload["vat_rate"] == 20.0

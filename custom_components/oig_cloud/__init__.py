@@ -6,13 +6,14 @@ import asyncio
 import hashlib
 import logging
 import re
+import voluptuous as vol
 from typing import Any, Dict
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
@@ -39,6 +40,18 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
+from .config_migration import (
+    register_transform,
+    restore_last_backup,
+    run_migration,
+    strip_dead_keys,
+)
+from .config_deprecation import (
+    ALIAS_COMPAT_CURRENT_VERSION,
+    LegacyOptionsMigrationRequired,
+    deprecation_status,
+)
+from .config.promote_defaults import promote_blank_enum_defaults
 from .shared.logging import resolve_no_telemetry
 
 
@@ -61,16 +74,80 @@ except Exception as err:
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
+if hasattr(Platform, "AI_TASK"):  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
+    PLATFORMS.append(Platform.AI_TASK)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
+_MIGRATION_RESTORE_SCHEMA = vol.Schema({vol.Required("entry_id"): cv.string})
+_MIGRATION_RESTORE_SERVICE = "restore_migration_backup"
+_MIGRATION_FAILURES_KEY = "migration_failures"
 
 
 def _read_manifest_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
+
+
+def _migration_failure_issue_id(entry_id: str) -> str:
+    return f"config_migration_failed_{entry_id}"
+
+
+def _record_migration_failure_status(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    err: Any,
+) -> None:
+    entry_id = str(getattr(entry, "entry_id", "") or getattr(err, "entry_id", ""))
+    issue_id = _migration_failure_issue_id(entry_id)
+    status: dict[str, Any] = {
+        "code": getattr(err, "code", "migration_error"),
+        "entry_id": entry_id,
+        "issue_id": issue_id,
+    }
+    cause = getattr(err, "__cause__", None)
+    if cause is not None:
+        status["cause_type"] = type(cause).__name__
+    hass.data.setdefault(DOMAIN, {}).setdefault(_MIGRATION_FAILURES_KEY, {})[
+        entry_id
+    ] = status
+    try:
+        from homeassistant.helpers import issue_registry as ir
+        from homeassistant.helpers.issue_registry import IssueSeverity
+
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=IssueSeverity.WARNING,
+            translation_key="config_migration_failed",
+            translation_placeholders={"entry_id": entry_id, "code": status["code"]},
+        )
+    except Exception as exc:
+        _LOGGER.debug(
+            "HA repair issue registry unavailable for config migration: %s",
+            exc,
+        )
+
+
+def _clear_migration_failure_status(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    entry_id = str(getattr(entry, "entry_id", ""))
+    issue_id = _migration_failure_issue_id(entry_id)
+    failures = hass.data.get(DOMAIN, {}).get(_MIGRATION_FAILURES_KEY)
+    if isinstance(failures, dict):
+        failures.pop(entry_id, None)
+    try:
+        from homeassistant.helpers import issue_registry as ir
+
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+    except Exception as exc:
+        _LOGGER.debug(
+            "HA repair issue registry unavailable while clearing config migration: %s",
+            exc,
+        )
 
 
 async def _setup_telemetry(hass: HomeAssistant, email_hash: str) -> None:
@@ -130,6 +207,31 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
         return None
 
 
+def _legacy_planner_migration_transform(
+    options: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Return planner migration updates plus keys removed from legacy migration."""
+    migrated = dict(options)
+    _migrate_legacy_planner_options(migrated)
+    removed: list[str] = _purge_obsolete_planner_options(migrated)
+    if "max_price_conf" in options and "max_price_conf" not in migrated:
+        removed.append("max_price_conf")
+
+    for key, default in _get_planner_defaults().items():
+        if migrated.get(key) is None:
+            migrated[key] = default
+
+    updates = {
+        key: value
+        for key, value in migrated.items()
+        if options.get(key) != value
+    }
+    return updates, removed
+
+
+register_transform(_legacy_planner_migration_transform)
+
+
 def _get_planner_defaults() -> dict[str, Any]:
     """Return default planner options."""
     return {
@@ -137,18 +239,28 @@ def _get_planner_defaults() -> dict[str, Any]:
         "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
         CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
         "target_capacity_percent": 80.0,
-        "disable_planning_min_guard": False,
         "max_ups_price_czk": 10.0,
-        "price_hysteresis_czk": 0.01,
-        "hw_min_hold_hours": 6.0,
         "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
         CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
         "cheap_window_percentile": 30,
     }
 
 
-def _migrate_legacy_planner_options(options: dict[str, Any]) -> None:
+def _migrate_legacy_planner_options(
+    options: dict[str, Any],
+    current_version: int = ALIAS_COMPAT_CURRENT_VERSION,
+) -> None:
     """Migrate legacy planner options to new format."""
+    status = deprecation_status(options=options, current_version=current_version)
+    if not status.accepted:
+        raise LegacyOptionsMigrationRequired(status)
+    for warning in status.warnings:
+        _LOGGER.warning(
+            "deprecated planner option %s remains accepted until migration version %s",
+            warning["key"],
+            warning["compat_until_version"],
+        )
+
     if options.get(CONF_PLANNING_MIN_PERCENT) is None:
         legacy_min = options.get("min_capacity_percent")
         options[CONF_PLANNING_MIN_PERCENT] = (
@@ -197,22 +309,77 @@ def _apply_planner_defaults(entry: ConfigEntry, options: dict[str, Any], default
     return updated, missing_keys
 
 
-def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _register_migration_restore_service(hass: HomeAssistant) -> None:
+    """Register migration restore service once."""
+    services = getattr(hass, "services", None)
+    if services is None:
+        return
+    if services.has_service(DOMAIN, _MIGRATION_RESTORE_SERVICE):
+        return
+
+    async def _handle_restore_migration_backup(call: ServiceCall) -> None:
+        if not call.context.user_id:
+            raise HomeAssistantError("Admin restore requires authenticated user")
+
+        user = await hass.auth.async_get_user(call.context.user_id)
+        if not user or not user.is_admin:
+            raise HomeAssistantError("Admin restore requires admin account")
+
+        entry = hass.config_entries.async_get_entry(call.data["entry_id"])
+        if entry is None:
+            raise HomeAssistantError("Config entry not found")
+
+        if not await restore_last_backup(hass, entry):
+            raise HomeAssistantError("No migration backup available to restore")
+
+    services.async_register(
+        DOMAIN,
+        _MIGRATION_RESTORE_SERVICE,
+        _handle_restore_migration_backup,
+        schema=_MIGRATION_RESTORE_SCHEMA,
+    )
+
+
+def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry):
     """Ensure planner-related options exist on legacy config entries."""
-    defaults = _get_planner_defaults()
-    options = dict(entry.options)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        options = dict(entry.options)
+        updates, removed = _legacy_planner_migration_transform(options)
+        if updates or removed:
+            migrated = dict(entry.options)
+            migrated.update(updates)
+            for key in removed:
+                migrated.pop(key, None)
+            hass.config_entries.async_update_entry(entry, options=migrated)
+        return None
 
-    _migrate_legacy_planner_options(options)
-    removed = _purge_obsolete_planner_options(options)
-    updated, missing_keys = _apply_planner_defaults(entry, options, defaults)
+    async def _run_planner_migration() -> bool:
+        # Task 7: migration helpers surface failures as classified
+        # `MigrationError` subclasses instead of silent fallbacks. Log the
+        # classified info so entry setup keeps a recoverable state.
+        from .config_migration import MigrationError  # local import: avoid cycle
 
-    if updated or removed:
-        _LOGGER.info(
-            "🔧 Injecting missing planner options for entry %s: %s",
-            entry.entry_id,
-            ", ".join(missing_keys) if missing_keys else "none",
-        )
-        hass.config_entries.async_update_entry(entry, options=options)
+        try:
+            migrated = await run_migration(hass, entry)
+            stripped = await strip_dead_keys(hass, entry)
+            _clear_migration_failure_status(hass, entry)
+            return bool(migrated or stripped)
+        except MigrationError as err:
+            _LOGGER.error(
+                "config migration failed for %s: code=%s entry_id=%s cause=%s",
+                entry.entry_id,
+                err.code,
+                err.entry_id,
+                type(err.__cause__).__name__ if err.__cause__ else "none",
+            )
+            _record_migration_failure_status(hass, entry, err)
+            raise ConfigEntryNotReady(
+                f"OIG Cloud config migration failed: {err.code}"
+            ) from err
+
+    return _run_planner_migration()
 
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
@@ -1542,9 +1709,10 @@ async def async_setup_entry(
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
     # Inject defaults for new planner/autonomy options so legacy setups keep working
-    _ensure_planner_option_defaults(hass, entry)
+    await _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
     _migrate_enable_spot_prices_option(hass, entry)
+    promote_blank_enum_defaults(hass, entry)
 
     # POZN: Automatická migrace entity/device registry při startu je riziková (může mazat/rozbíjet entity).
     # Pokud je potřeba cleanup/migrace, dělejme ji explicitně (script / servis), ne automaticky v setupu.
@@ -1757,9 +1925,12 @@ async def _register_entry_services(
         async_setup_services,
     )
 
-    # Setup základních služeb (pouze jednou pro celou integraci)
-    if len([k for k in hass.data[DOMAIN].keys() if k != "shield"]) == 1:
-        await async_setup_services(hass)
+    # Setup základních služeb — async_setup_services je idempotentní
+    # (_register_service_if_missing), takže se volá vždy; dřívější guard
+    # `len(hass.data[DOMAIN]) == 1` přestal platit, jakmile si jiné části
+    # integrace odloží data dřív, a základní služby se pak neregistrovaly.
+    await async_setup_services(hass)
+    _register_migration_restore_service(hass)
 
     # Setup entry-specific služeb s shield ochranou
     await async_setup_entry_services_with_shield(hass, entry, service_shield)
@@ -1867,7 +2038,14 @@ async def async_unload_entry(
         if service_shield and hasattr(service_shield, "cleanup"):
             try:
                 await service_shield.cleanup()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
+                # B-fix: ServiceShield.cleanup() re-raises CancelledError when it
+                # cancels its own check_task — that is NOT the current task being
+                # cancelled, just our own cleanup finishing. Left uncaught it used
+                # to blow past this except Exception, abort the whole unload, and
+                # (per HA's ConfigEntries.async_reload) permanently skip the
+                # matching async_setup_entry — the module toggle would never
+                # recreate its entities without a full HA restart.
                 _LOGGER.debug("ServiceShield cleanup failed: %s", err)
 
         data_source_controller = hass.data[DOMAIN][entry.entry_id].get(
@@ -1885,7 +2063,7 @@ async def async_unload_entry(
         if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):
             try:
                 await boiler_coordinator.async_shutdown()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
 
         # H4: the MAIN coordinator owns self-re-arming timers (hourly OTE
@@ -1895,34 +2073,82 @@ async def async_unload_entry(
         if main_coordinator and hasattr(main_coordinator, "async_shutdown"):
             try:
                 await main_coordinator.async_shutdown()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
+                # B-fix: same self-cancellation re-raise as ServiceShield above —
+                # async_shutdown() cancels its own _spot_retry_task /
+                # _battery_forecast_task and re-raises CancelledError from
+                # awaiting them. Must not abort the unload sequence.
                 _LOGGER.debug("Coordinator shutdown failed: %s", err)
 
         from .shared.emitter import async_shutdown_entry_telemetry
 
         try:
             await async_shutdown_entry_telemetry(hass, entry)
-        except Exception as err:
+        except (Exception, asyncio.CancelledError) as err:
             _LOGGER.debug("Telemetry shutdown failed: %s", err)
 
         from .services import async_unload_services
 
         try:
             await async_unload_services(hass)
-        except Exception as err:
+        except (Exception, asyncio.CancelledError) as err:
             _LOGGER.debug("Service unload failed: %s", err)
 
         session_manager = hass.data[DOMAIN][entry.entry_id].get("session_manager")
         if session_manager:
             _LOGGER.debug("Closing session manager")
-            await session_manager.close()
+            try:
+                await session_manager.close()
+            except (Exception, asyncio.CancelledError) as err:
+                _LOGGER.debug("Session manager close failed: %s", err)
 
-    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch);
-    # unloading only sensor leaked switch entities on every reload.
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
+    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch).
+    # B-fix: unload each platform independently — async_unload_platforms()
+    # gathers all platforms at once, so one platform raising (or returning
+    # False) used to abort the whole call. HA's ConfigEntries.async_reload()
+    # treats any unload failure as terminal and never calls async_setup_entry
+    # again, so a single bad platform unload permanently blocked entities from
+    # being recreated on a module re-enable (only a full HA restart, which
+    # calls async_setup_entry directly, could heal it).
+    platform_unload_ok = True
+    for platform in PLATFORMS:
+        try:
+            ok = await hass.config_entries.async_forward_entry_unload(entry, platform)
+            if not ok:
+                platform_unload_ok = False
+                _LOGGER.warning("Unloading platform %s reported failure", platform)
+        except (Exception, asyncio.CancelledError) as err:
+            platform_unload_ok = False
+            _LOGGER.error(
+                "Unloading platform %s raised %s — continuing so setup can still run",
+                platform,
+                err,
+                exc_info=True,
+            )
+
+    if platform_unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
+    # Always report success: a partial platform-unload failure must not stop
+    # the caller (HA's async_reload / our own async_reload_entry) from running
+    # async_setup_entry again — that is the only thing that recreates entities.
+    return True
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
+) -> None:
+    """Remove private per-entry stores when the config entry is deleted."""
+    from .ai.key_store import AiKeyStore
+    from .config.solar_key_store import SolarKeyStore
+
+    await AiKeyStore(hass, entry.entry_id).async_clear()
+    try:
+        await SolarKeyStore(hass, entry.entry_id).async_clear()
+    except AttributeError:
+        if hasattr(hass, "data") and hasattr(
+            getattr(hass, "config", None), "config_dir"
+        ):
+            raise
 
 
 async def async_remove_config_entry_device(
@@ -2015,7 +2241,13 @@ async def async_update_options(
 
     # Pokud byla označena potřeba reload, proveď ho
     if new_options.get("_needs_reload"):
+        reload_reason = new_options.pop("_reload_reason", None) or "unknown"
         new_options.pop("_needs_reload", None)
+        _LOGGER.debug(
+            "Reload scheduled for entry %s, reason: %s",
+            config_entry.entry_id,
+            reload_reason,
+        )
         hass.config_entries.async_update_entry(config_entry, options=new_options)
         hass.async_create_task(hass.config_entries.async_reload(config_entry.entry_id))
     else:

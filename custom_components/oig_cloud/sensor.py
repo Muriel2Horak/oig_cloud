@@ -10,6 +10,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .entities.ai_status_sensor import OigCloudAiStatusSensor
 from .entities.base_sensor import resolve_box_id
 from .entities.data_source_sensor import OigCloudDataSourceSensor
 
@@ -53,7 +54,7 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
 
     Používá se pro cleanup - senzory které nejsou v tomto setu jsou osiřelé.
     """
-    expected = set()
+    expected = {"data_source"}
 
     # Získáme statistics_enabled z hass.data
     statistics_enabled = hass.data[DOMAIN][entry.entry_id].get(
@@ -67,6 +68,12 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         "pricing": "enable_pricing",
         "chmu_warnings": "enable_chmu_warnings",
     }
+    battery_prediction_enabled = entry.options.get(
+        "enable_battery_prediction", False
+    )
+
+    if battery_prediction_enabled:
+        expected.add("battery_health")
 
     for sensor_type, config in SENSOR_TYPES.items():
         category = config.get("sensor_type_category")
@@ -84,10 +91,12 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         # Battery-related sensors (volitelné, společně s battery_prediction)
         if category in {
             "battery_prediction",
+            "battery_balancing",
             "grid_charging_plan",
             "battery_efficiency",
             "planner_status",
-        } and entry.options.get("enable_battery_prediction", False):
+            "adaptive_profiles",
+        } and battery_prediction_enabled:
             expected.add(sensor_type)
             continue
 
@@ -108,15 +117,22 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
 
 
 async def _cleanup_renamed_sensors(
-    entity_reg, entry: ConfigEntry, expected_sensor_types: set[str]
+    entity_reg,
+    entry: ConfigEntry,
+    expected_sensor_types: set[str],
+    boiler_enabled: bool = True,
 ) -> int:
     """
-    Smaže senzory které už nejsou v konfiguraci (přejmenované/odstraněné).
+    Smaže senzory které už nejsou v konfiguraci (přejmenované/odstraněné/vypnuté modulem).
 
     Args:
         entity_reg: Entity registry z HA
         entry: Config entry
         expected_sensor_types: Set očekávaných sensor_types
+        boiler_enabled: Aktuální stav `enable_boiler` flagu. Bojlerové senzory z modulu
+            `boiler/sensors.py` nejsou vedené v SENSOR_TYPES, takže je expected_sensor_types
+            nepokrývá — gatujeme je zvlášť tímto flagem. Legacy `boiler_*` klíče, které v
+            SENSOR_TYPES JSOU (kategorie data/computed, vždy aktivní), touto větví neprojdou.
 
     Returns:
         Počet odstraněných senzorů
@@ -137,12 +153,15 @@ async def _cleanup_renamed_sensors(
         entity_id = entity_entry.entity_id
         if not _is_oig_sensor_entity(entity_id):
             continue
-        if _is_boiler_entity(entity_id):
-            _LOGGER.debug(f"Skipping boiler sensor cleanup: {entity_entry.entity_id}")
-            continue
 
         sensor_type = _extract_sensor_type(entity_id)
         if not sensor_type:
+            continue
+
+        if _is_boiler_entity(entity_id, sensor_type):
+            if sensor_type in SENSOR_TYPES or boiler_enabled:
+                continue
+            removed += _remove_entity_entry(entity_reg, entity_entry, sensor_type)
             continue
 
         if _should_remove_sensor(
@@ -157,11 +176,21 @@ def _is_oig_sensor_entity(entity_id: str) -> bool:
     return entity_id.startswith("sensor.oig_") and len(entity_id.split("_")) >= 3
 
 
-def _is_boiler_entity(entity_id: str) -> bool:
+def _is_boiler_entity(entity_id: str, sensor_type: str) -> bool:
+    """Boiler identity by catalog, not substring.
+
+    ``sensor_type`` is authoritative: every real boiler sensor_type is
+    prefixed ``boiler_`` -- the legacy `SENSOR_TYPES_BOILER` catalog keys
+    (sensors/SENSOR_TYPES_BOILER.py) and the module sensors from
+    `boiler/sensors.py get_boiler_sensors()` (unique_id_suffix always
+    rendered as ``boiler_<suffix>`` by BoilerSensorBase). A loose substring
+    match on entity_id (former `"_boiler_" in entity_id`) also caught
+    non-boiler entities that merely mention boiler, e.g. the statistics
+    sensor `hourly_real_boiler_kwh`.
+    """
     return (
-        "_bojler_" in entity_id
-        or "_boiler_" in entity_id
-        or entity_id.startswith("sensor.oig_bojler")
+        entity_id.startswith("sensor.oig_bojler")
+        or sensor_type.startswith("boiler_")
     )
 
 
@@ -487,6 +516,19 @@ def _register_data_source_sensor(
         _LOGGER.info("Registered data source state sensor")
     except Exception as e:
         _LOGGER.error(f"Error creating data source sensor: {e}", exc_info=True)
+    return sensors
+
+
+def _register_ai_status_sensor(
+    hass: HomeAssistant, coordinator: Any, entry: ConfigEntry
+) -> List[Any]:
+    sensors: List[Any] = []
+    try:
+        box_id = resolve_box_id(coordinator)
+        sensors.append(OigCloudAiStatusSensor(hass, entry, box_id))
+        _LOGGER.info("Registered AI status sensor")
+    except Exception as e:
+        _LOGGER.error(f"Error creating AI status sensor: {e}", exc_info=True)
     return sensors
 
 
@@ -1553,12 +1595,23 @@ async def async_setup_entry(  # noqa: C901
     _log_coordinator_data_status(coordinator)
 
     # === CLEANUP PŘED REGISTRACÍ ===
-    # POZN: Cleanup je vypnutý kvůli pomalému setupu (>10s)
-    # Cleanup běží pouze při první instalaci nebo pokud je explicitně vyžádán
-    # expected_sensor_types = _get_expected_sensor_types(hass, entry)
-    # await _cleanup_all_orphaned_entities(
-    #     hass, entry, coordinator, expected_sensor_types
-    # )
+    # POZN: Plný _cleanup_all_orphaned_entities (renamed + removed-device + empty-device
+    # sweep, 3 samostatné průchody registrem) byl vypnutý kvůli pomalému setupu (>10s).
+    # Místo něj běží jen cílený per-entry sweep nad senzory TOHOTO config entry — nutný k
+    # tomu, aby reload po vypnutí modulu (enable_pricing/statistics/boiler/...) skutečně
+    # smazal osiřelé senzory z entity registry, ne jen přeskočil jejich znovuvytvoření.
+    try:
+        expected_sensor_types = _get_expected_sensor_types(hass, entry)
+        boiler_enabled = entry.options.get("enable_boiler", False)
+
+        from homeassistant.helpers import entity_registry as er
+
+        entity_reg = er.async_get(hass)
+        await _cleanup_renamed_sensors(
+            entity_reg, entry, expected_sensor_types, boiler_enabled=boiler_enabled
+        )
+    except Exception as e:
+        _LOGGER.error(f"Module-disable entity cleanup failed: {e}", exc_info=True)
 
     inverter_sn = _resolve_box_id_and_store(hass, entry, coordinator)
     if inverter_sn is None:
@@ -1577,6 +1630,7 @@ async def async_setup_entry(  # noqa: C901
     # SECTION 0: DATA SOURCE STATE SENSOR (always on)
     # ================================================================
     core_sensors.extend(_register_data_source_sensor(hass, coordinator, entry))
+    core_sensors.extend(_register_ai_status_sensor(hass, coordinator, entry))
 
     await asyncio.sleep(0)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from types import SimpleNamespace
 
 import pytest
 
@@ -25,6 +25,29 @@ class DummySensor:
         self._plans_store = DummyStore()
         self._timeline_data = []
         self._daily_plan_state = None
+
+
+def test_missing_battery_kwh_warns_once_per_sensor(caplog):
+    sensor = DummySensor()
+
+    with caplog.at_level(logging.WARNING, logger=module.__name__):
+        first = module._build_interval_from_history(sensor, "00:00", {})
+        second = module._build_interval_from_history(sensor, "00:15", {})
+
+    assert first["battery_kwh"] is None
+    assert second["battery_kwh"] is None
+    warnings = [
+        record for record in caplog.records if "Missing battery_kwh" in record.message
+    ]
+    assert len(warnings) == 1
+
+    other_sensor = DummySensor()
+    with caplog.at_level(logging.WARNING, logger=module.__name__):
+        module._build_interval_from_history(other_sensor, "00:00", {})
+    warnings = [
+        record for record in caplog.records if "Missing battery_kwh" in record.message
+    ]
+    assert len(warnings) == 2
 
 
 def test_is_baseline_plan_invalid():

@@ -221,10 +221,13 @@ async def test_wizard_solar_string_param_errors():
     errors = result["errors"]
     assert errors["solar_forecast_string1_kwp"] == "invalid_kwp"
     assert errors["solar_forecast_string1_declination"] == "invalid_declination"
-    assert errors["solar_forecast_string1_azimuth"] == "invalid_azimuth"
     assert errors["solar_forecast_string2_kwp"] == "invalid_kwp"
     assert errors["solar_forecast_string2_declination"] == "invalid_declination"
-    assert errors["solar_forecast_string2_azimuth"] == "invalid_azimuth"
+    # Plan 3 T2 / U6: a numeric azimuth is now NORMALISED to the signed
+    # -180..180 convention (999 -> -81, -10 -> -10), never per-field rejected.
+    # Only non-numeric junk raises (as base=invalid_string*_params).
+    assert "solar_forecast_string1_azimuth" not in errors
+    assert "solar_forecast_string2_azimuth" not in errors
 
 
 @pytest.mark.asyncio
@@ -432,7 +435,13 @@ def test_map_backend_to_frontend_weekend_same_inferred():
         "tariff_weekend_same_as_weekday": None,
     }
     frontend = WizardMixin._map_backend_to_frontend(backend_data)
-    assert frontend["tariff_weekend_same_as_weekday"] is True
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it is
+    # no longer projected by _map_backend_to_frontend — the inferred default
+    # lives in tariff_vt_start_weekend / tariff_nt_start_weekend (which now
+    # fall back to the weekday value when None).
+    assert "tariff_weekend_same_as_weekday" not in frontend
+    assert frontend["tariff_vt_start_weekend"] == "6"
+    assert frontend["tariff_nt_start_weekend"] == "22,2"
 
 
 def test_map_backend_to_frontend_weekend_same_computed_false():
@@ -446,7 +455,12 @@ def test_map_backend_to_frontend_weekend_same_computed_false():
         "tariff_weekend_same_as_weekday": None,
     }
     frontend = WizardMixin._map_backend_to_frontend(backend_data)
-    assert frontend["tariff_weekend_same_as_weekday"] is False
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it is
+    # no longer projected by _map_backend_to_frontend — the live weekend-tariff
+    # keys carry the answer now.
+    assert "tariff_weekend_same_as_weekday" not in frontend
+    assert frontend["tariff_vt_start_weekend"] == "8"
+    assert frontend["tariff_nt_start_weekend"] == "20"
 
 
 def test_get_defaults_non_reconfiguration():

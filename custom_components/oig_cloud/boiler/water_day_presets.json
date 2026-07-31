@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "description": "Synthetic water-day presets for the boiler dry-run simulator (S2). All draw values are plausible but fabricated for testing — not derived from any real household.",
+    "unit": "water_draw_profile_lh values are litres drawn during that hour (index 0 = 1st hour of the simulated horizon)"
+  },
+  "workday": {
+    "name": "Pracovní den",
+    "label": "Pracovní den — ranní a večerní sprcha",
+    "description": "Typical workday: morning shower rush, light evening draw.",
+    "water_draw_profile_lh": [0, 0, 0, 0, 0, 0, 60, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 30, 5, 0, 0, 0, 0]
+  },
+  "weekend": {
+    "name": "Víkend",
+    "label": "Víkend — vysoká spotřeba",
+    "description": "Weekend: multiple showers, bath and laundry clustered in two windows.",
+    "water_draw_profile_lh": [0, 0, 0, 0, 0, 0, 40, 20, 30, 10, 0, 0, 0, 0, 15, 50, 10, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "vacation": {
+    "name": "Dovolená",
+    "label": "Dovolená — minimální spotřeba",
+    "description": "Nobody home: only maintenance-level draw.",
+    "water_draw_profile_lh": [0, 0, 0, 0, 0, 0, 5, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "guest": {
+    "name": "Návštěva",
+    "label": "Návštěva — zvýšená spotřeba",
+    "description": "Guests over: extra morning shower plus evening kitchen/shower use.",
+    "water_draw_profile_lh": [0, 0, 0, 0, 0, 0, 50, 30, 20, 10, 0, 0, 0, 0, 0, 0, 20, 40, 20, 10, 0, 0, 0, 0]
+  },
+  "legionella_cycle": {
+    "name": "Legionella",
+    "label": "Anti-legionella cyklus",
+    "description": "No human draw — isolates the anti-legionella kill-temperature heating obligation. Combine with \"legionella_due\": true to exercise that path.",
+    "water_draw_profile_lh": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  }
+}

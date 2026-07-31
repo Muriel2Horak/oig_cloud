@@ -89,18 +89,70 @@ export interface BoilerConfig {
   boiler_legionella_target_temp_c: number | null;
 }
 
+/** F1 Plan 3.6 Task 7 — mirrors config_registry.py's `pricing` section. */
+export interface PricingConfig {
+  confirmed_distribution_distributor: string;
+  confirmed_distribution_tariff: string;
+  confirmed_distribution_price_incl_vat: number;
+  confirmed_distribution_price_excl_vat: number;
+  confirmed_distribution_unit: string;
+  // Relocated from PricingSupplierConfig (supplier-step redesign, owner
+  // correction round 2 — distribution does not belong in the supplier
+  // contract's step; key names unchanged, config_registry.py).
+  distribution_fee_vt_kwh: number;
+  distribution_fee_nt_kwh: number;
+  vat_rate: number;
+}
+
+/** F1 U4 R3 (RCA-R3 restoration) — mirrors config_registry.py's
+ * `pricing_supplier` section: legacy commercial/supplier pricing keys. */
+export interface PricingSupplierConfig {
+  spot_pricing_model: string;
+  spot_positive_fee_percent: number;
+  spot_positive_fee_percent_nt: number;
+  spot_negative_fee_percent: number;
+  spot_negative_fee_percent_nt: number;
+  spot_fixed_fee_mwh: number;
+  spot_fixed_fee_mwh_nt: number;
+  fixed_commercial_price_vt: number;
+  fixed_commercial_price_nt: number;
+  export_pricing_model: string;
+  export_fee_percent: number;
+  export_fee_percent_nt: number;
+  export_fixed_fee_czk: number;
+  export_fixed_fee_czk_nt: number;
+  export_fixed_price: number;
+  tariff_vt_start_weekday: string;
+  tariff_nt_start_weekday: string;
+  tariff_weekend_same_as_weekday: boolean;
+  tariff_vt_start_weekend: string;
+  tariff_nt_start_weekend: string;
+  dual_tariff_enabled: boolean;
+}
+
 export interface ModuleConfig {
+  basic?: Record<string, unknown>;
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
   boiler: BoilerConfig;
+  pricing?: PricingConfig;
+  pricing_supplier?: PricingSupplierConfig;
 }
 
-export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler';
+export type SettingsSection =
+  | 'basic'
+  | 'modules'
+  | 'battery'
+  | 'solar'
+  | 'boiler'
+  | 'pricing'
+  | 'pricing_supplier';
 
-export async function loadModuleConfig(): Promise<ModuleConfig | null> {
+export async function loadModuleConfig(signal?: AbortSignal): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
     `/${INVERTER_SN}/module_config`,
+    { signal },
   );
   if (!data || (data as any).error) {
     oigLog.warn('[Settings] module_config load failed', data as any);
@@ -128,9 +180,15 @@ export async function waitForModuleConfigAfterReload(
   for (const delay of delaysMs) {
     await new Promise<void>((res) => setTimeout(res, delay));
     // Deliberately call fetchOIGAPI directly to silence the normal warn path.
-    const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
-      `/${INVERTER_SN}/module_config`,
-    );
+    let data: ModuleConfig | { error?: string } | null;
+    try {
+      data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
+        `/${INVERTER_SN}/module_config`,
+      );
+    } catch {
+      onTimeout();
+      return;
+    }
     if (data && !(data as any).error) {
       onSuccess(data as ModuleConfig);
       return;

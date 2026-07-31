@@ -144,12 +144,9 @@ async def test_quick_setup_success(monkeypatch):
     assert result["options"]["data_source_mode"] == "cloud_only"
 
 
-@pytest.mark.asyncio
-async def test_import_yaml_not_implemented():
+def test_import_yaml_flow_removed():
     flow = DummyConfigFlow()
-    result = await flow.async_step_import_yaml({})
-    assert result["type"] == "abort"
-    assert result["reason"] == "not_implemented"
+    assert not hasattr(flow, "async_step_import_yaml")
 
 
 @pytest.mark.asyncio
@@ -279,7 +276,7 @@ async def test_wizard_summary_full_option_mapping():
     assert options["target_capacity_percent"] == 75.0
     assert options["home_charge_rate"] == 3.1
     assert options[CONF_AUTO_MODE_SWITCH] is True
-    assert options["disable_planning_min_guard"] is True
+    assert "disable_planning_min_guard" not in options
     assert options["max_ups_price_czk"] == 9.5
     assert options["balancing_interval_days"] == 5
     assert options["cheap_window_percentile"] == 25
@@ -293,7 +290,8 @@ async def test_wizard_summary_full_option_mapping():
     assert options["boiler_plan_slot_minutes"] == 15
     assert options["boiler_temp_sensor_position"] == "upper_quarter"
     assert options["boiler_alt_energy_sensor"] == "sensor.boiler_alt_energy"
-    assert options["enable_auto"] is True
+    assert "boiler_planning_horizon_hours" not in options
+    assert "enable_auto" not in options
 
 
 @pytest.mark.asyncio
@@ -319,9 +317,9 @@ async def test_wizard_summary_defaults_for_optional_sections():
     assert options["target_capacity_percent"] == 80.0
     assert options["home_charge_rate"] == 2.8
     assert options["max_ups_price_czk"] == 10.0
-    assert options["disable_planning_min_guard"] is False
+    assert "disable_planning_min_guard" not in options
     assert options["enable_boiler"] is False
-    assert options["enable_auto"] is False
+    assert "enable_auto" not in options
 
 
 @pytest.mark.asyncio
@@ -340,10 +338,14 @@ async def test_wizard_summary_defaults_for_solar_and_battery():
     options = result["options"]
     assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "daily_optimized"
-    assert options["solar_forecast_api_key"] == ""
-    assert options["solcast_api_key"] == ""
-    assert options["solar_forecast_latitude"] == 50.0
-    assert options["solar_forecast_longitude"] == 14.0
+    assert "solar_forecast_api_key" not in options
+    assert "solcast_api_key" not in options
+    assert "solcast_site_id" not in options
+    # RCA-R4: no fabricated Prague fallback -- hass here has no `.config`
+    # (DummyConfigFlow's bare SimpleNamespace), and no option was supplied,
+    # so the field must come back empty, never a plausible-looking default.
+    assert options["solar_forecast_latitude"] is None
+    assert options["solar_forecast_longitude"] is None
     assert options["solar_forecast_string1_enabled"] is True
     assert options["solar_forecast_string1_kwp"] == 5.0
     assert options["solar_forecast_string2_enabled"] is False
@@ -432,7 +434,7 @@ async def test_wizard_summary_defaults_for_boiler_fields():
     assert options["boiler_temp_sensor_position"] == "top"
     assert options["boiler_alt_energy_sensor"] == ""
     assert options["boiler_deadline_time"] == "20:00"
-    assert options["boiler_planning_horizon_hours"] == 36
+    assert "boiler_planning_horizon_hours" not in options
     assert options["boiler_plan_slot_minutes"] == 15
 
 

@@ -23,7 +23,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - Create: `custom_components/oig_cloud/config_registry.py`
 - Test: `tests/test_config_registry.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_config_registry.py
@@ -94,12 +94,12 @@ def test_api_dict_never_leaks_secret_defaults():
         assert "label" in spec and "section" in spec and "type" in spec
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd /repos/oig-cloud && .venv/bin/python -m pytest -q tests/test_config_registry.py`
 Expected: FAIL with `ModuleNotFoundError: ... config_registry`
 
-- [ ] **Step 3: Implement `config_registry.py` (core only — fields land in Tasks 2–3)**
+- [x] **Step 3: Implement `config_registry.py` (core only — fields land in Tasks 2–3)**
 
 ```python
 # custom_components/oig_cloud/config_registry.py
@@ -213,7 +213,7 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
     return out
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv/bin/python -m pytest -q tests/test_config_registry.py`
 Expected: `test_registry_keys_match_field_keys` and `test_fields_for_section_filters` FAIL
@@ -232,7 +232,7 @@ def test_fields_for_section_filters(): ...
 
 Run again — Expected: PASS (2 skipped).
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 Run: `.venv/bin/flake8 --max-line-length=120 custom_components/oig_cloud/config_registry.py tests/test_config_registry.py && .venv/bin/mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud/config_registry.py`
 
@@ -250,7 +250,7 @@ git commit -m "feat(registry): Field dataclass, coercion and registry core (F1 P
 - Reference (read-only, source of truth being ported): `custom_components/oig_cloud/api/ha_rest_api.py` — `_MODULE_CONFIG_FIELDS` dict around line 1070–1093 and `_MODULE_CONFIG_MIRRORS` (`{"charge_rate_kw": "home_charge_rate"}`)
 - Test: `tests/test_config_registry.py` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_modules_and_battery_sections_ported():
@@ -270,9 +270,9 @@ def test_modules_and_battery_sections_ported():
     assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 ```
 
-- [ ] **Step 2: Run test — verify FAIL** (`assert set(modules) == ...` with empty set)
+- [x] **Step 2: Run test — verify FAIL** (`assert set(modules) == ...` with empty set)
 
-- [ ] **Step 3: Append field definitions**
+- [x] **Step 3: Append field definitions**
 
 ```python
 # --- section: modules -------------------------------------------------------
@@ -307,9 +307,9 @@ _register(
 
 Note: positional args order is `key, section, type` (matches the dataclass); everything else keyword.
 
-- [ ] **Step 4: Run the whole registry test file — PASS.** Also remove the `skipif` markers added in Task 1 (registry is non-empty now) and re-run: PASS.
+- [x] **Step 4: Run the whole registry test file — PASS.** Also remove the `skipif` markers added in Task 1 (registry is non-empty now) and re-run: PASS.
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(registry): port modules + battery sections from _MODULE_CONFIG_FIELDS"
@@ -324,7 +324,7 @@ git add -u && git commit -m "feat(registry): port modules + battery sections fro
 - Reference: `_MODULE_CONFIG_FIELDS` sections `solar` (line ~1094) and `boiler` in `api/ha_rest_api.py`; `_SECRET_FIELDS` set (grep for it — contains `solar_forecast_api_key`, `solcast_api_key`)
 - Test: `tests/test_config_registry.py` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_solar_and_boiler_sections_ported():
@@ -340,9 +340,9 @@ def test_solar_and_boiler_sections_ported():
     assert boiler["boiler_volume_l"].reload_on_change is True
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (KeyError `solar_forecast_provider`)
+- [x] **Step 2: Run — verify FAIL** (KeyError `solar_forecast_provider`)
 
-- [ ] **Step 3: Append definitions.** Port EVERY key from `_MODULE_CONFIG_FIELDS["solar"]` and `_MODULE_CONFIG_FIELDS["boiler"]` 1:1 (same types/ranges/enums — open the file and transcribe; do not invent). Mark `solar_forecast_api_key`, `solcast_api_key` with `secret=True`. Mark ALL boiler fields `reload_on_change=True` (the existing POST handler reloads the entry for the whole boiler section — preserve that behavior per-field).
+- [x] **Step 3: Append definitions.** Port EVERY key from `_MODULE_CONFIG_FIELDS["solar"]` and `_MODULE_CONFIG_FIELDS["boiler"]` 1:1 (same types/ranges/enums — open the file and transcribe; do not invent). Mark `solar_forecast_api_key`, `solcast_api_key` with `secret=True`. Mark ALL boiler fields `reload_on_change=True` (the existing POST handler reloads the entry for the whole boiler section — preserve that behavior per-field).
 
 ```python
 # --- section: solar ---------------------------------------------------------
@@ -373,7 +373,7 @@ _register(
 # boiler_max_temp_c, boiler_alt_power_kw, circulation and legionella fields, …)
 ```
 
-- [ ] **Step 4: Run test file — PASS.** Add a parity guard test so nothing was missed:
+- [x] **Step 4: Run test file — PASS.** Add a parity guard test so nothing was missed:
 
 ```python
 def test_registry_covers_legacy_whitelist():
@@ -385,7 +385,7 @@ def test_registry_covers_legacy_whitelist():
 
 Run: PASS (fix any missing keys it reports).
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(registry): port solar + boiler sections (parity-guarded against legacy whitelist)"
@@ -399,7 +399,7 @@ git add -u && git commit -m "feat(registry): port solar + boiler sections (parit
 - Create: `custom_components/oig_cloud/config_merge.py`
 - Test: `tests/test_config_merge.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_config_merge.py
@@ -460,9 +460,9 @@ def test_merge_no_updates_is_noop():
     hass.config_entries.async_update_entry.assert_not_called()
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (`ModuleNotFoundError: config_merge`)
+- [x] **Step 2: Run — verify FAIL** (`ModuleNotFoundError: config_merge`)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # custom_components/oig_cloud/config_merge.py
@@ -504,11 +504,11 @@ def merge_entry_options(hass: Any, entry: Any, updates: Dict[str, Any]) -> bool:
     return True
 ```
 
-- [ ] **Step 4: Run tests — PASS**
+- [x] **Step 4: Run tests — PASS**
 
 Run: `.venv/bin/python -m pytest -q tests/test_config_merge.py tests/test_config_registry.py`
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add custom_components/oig_cloud/config_merge.py tests/test_config_merge.py
@@ -523,7 +523,7 @@ git commit -m "feat(config): shared merge_entry_options helper — never full-re
 - Modify: `custom_components/oig_cloud/api/ha_rest_api.py` — the `module_config` view (`get` ~line 1199, `post` ~line 1222; `_MODULE_CONFIG_FIELDS`, `_coerce_module_value`, `_SECRET_FIELDS`, `_MODULE_CONFIG_MIRRORS`)
 - Test: existing `tests/test_ha_rest_api_views.py` (module_config tests must keep passing) + append new regression test
 
-- [ ] **Step 1: Add failing regression test** (in `tests/test_ha_rest_api_views.py`, mirror the style of the existing module_config POST test there — reuse its fixtures/mocks):
+- [x] **Step 1: Add failing regression test** (in `tests/test_ha_rest_api_views.py`, mirror the style of the existing module_config POST test there — reuse its fixtures/mocks):
 
 ```python
 async def test_module_config_post_uses_shared_merge(hass_client_fixture_as_in_file):
@@ -534,9 +534,9 @@ async def test_module_config_post_uses_shared_merge(hass_client_fixture_as_in_fi
 
 Write it concretely against the file's existing test helpers (open the file first; copy the arrange/act pattern of `test_module_config_post_*`).
 
-- [ ] **Step 2: Run — verify it fails** (POST path doesn't use the helper yet; mirror works but write path differs — assert via monkeypatching `config_merge.merge_entry_options` and checking it was called).
+- [x] **Step 2: Run — verify it fails** (POST path doesn't use the helper yet; mirror works but write path differs — assert via monkeypatching `config_merge.merge_entry_options` and checking it was called).
 
-- [ ] **Step 3: Rewire the view.**
+- [x] **Step 3: Rewire the view.**
   - `get()`: replace iteration over `_MODULE_CONFIG_FIELDS` with `config_registry.fields_for_section(section)`; keep the `*_set` masking for `secret` fields (`sec[f"{key}_set"] = bool(opts.get(key))`).
   - `post()`: validate via `coerce_value(FIELD_REGISTRY[key], value)` (unknown key → same "unknown field" error), keep empty-secret-keeps-current rule, then REPLACE the manual `new_options = dict(entry.options); new_options.update(...)` + mirror + `_needs_reload` block with:
 
@@ -550,12 +550,12 @@ from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section
 
   - Keep `_MODULE_CONFIG_FIELDS`/`_MODULE_CONFIG_MIRRORS`/`_coerce_module_value` in place for now but mark with `# LEGACY — superseded by config_registry; removed in Plan 4` (the parity test from Task 3 still imports it).
 
-- [ ] **Step 4: Run REST tests**
+- [x] **Step 4: Run REST tests** *(actual: regression test lives in `tests/test_boiler_f5_config_settings.py` — the plan's `test_ha_rest_api_views.py` has no module_config tests; acceptance ran all four files: 93 passed)*
 
 Run: `.venv/bin/python -m pytest -q tests/test_ha_rest_api_views.py tests/test_ha_rest_api_more.py tests/test_ha_rest_api_helpers.py`
 Expected: PASS (98+ tests, incl. the new regression).
 
-- [ ] **Step 5: Lint + mypy on the file, commit**
+- [x] **Step 5: Lint + mypy on the file, commit**
 
 ```bash
 git add -u && git commit -m "refactor(rest): module_config GET/POST driven by field registry + shared merge"
@@ -569,11 +569,11 @@ git add -u && git commit -m "refactor(rest): module_config GET/POST driven by fi
 - Modify: `custom_components/oig_cloud/api/ha_rest_api.py` (new view class + registration — find where existing views are registered, grep `async_register_view|app.router.add`)
 - Test: `tests/test_ha_rest_api_views.py` (append)
 
-- [ ] **Step 1: Failing test** — GET returns `{fields: {...}, sections: [...]}`, contains `charge_rate_kw` with `min/max/label/section`, secret fields have `secret: true` and NO `default`, requires auth like the sibling views.
+- [x] **Step 1: Failing test** — GET returns `{fields: {...}, sections: [...]}`, contains `charge_rate_kw` with `min/max/label/section`, secret fields have `secret: true` and NO `default`, requires auth like the sibling views.
 
-- [ ] **Step 2: Run — 404/AttributeError expected.**
+- [x] **Step 2: Run — 404/AttributeError expected.**
 
-- [ ] **Step 3: Implement view** (mirror the shape of the `module_config` view class in the same file):
+- [x] **Step 3: Implement view** (mirror the shape of the `module_config` view class in the same file):
 
 ```python
 class OIGCloudConfigRegistryView(HomeAssistantView):
@@ -593,9 +593,9 @@ class OIGCloudConfigRegistryView(HomeAssistantView):
 
 Register it alongside the other views (same place `module_config` view is registered).
 
-- [ ] **Step 4: Run tests — PASS.**
+- [x] **Step 4: Run tests — PASS.**
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(rest): /config_registry endpoint — FE renders forms from BE registry (P5)"
@@ -609,7 +609,7 @@ git add -u && git commit -m "feat(rest): /config_registry endpoint — FE render
 - Modify: `custom_components/oig_cloud/config/steps.py` — options-flow `wizard_summary` write at lines ~3552–3568 (`new_options = self._build_options_payload(...)` → `async_update_entry(entry, options=new_options)`); ALSO the second write site at line ~3332 (initial-flow variant stays as-is — it CREATES options; only the OPTIONS-flow update switches to merge)
 - Test: `tests/` — find the existing options-flow summary test (grep `wizard_summary` in tests/) and append a regression
 
-- [ ] **Step 1: Failing regression test** (place next to existing options-flow tests; reuse their MockConfigEntry harness):
+- [x] **Step 1: Failing regression test** (place next to existing options-flow tests; reuse their MockConfigEntry harness):
 
 ```python
 async def test_options_flow_save_preserves_dashboard_only_keys(hass):
@@ -623,9 +623,9 @@ async def test_options_flow_save_preserves_dashboard_only_keys(hass):
     # wizard value is updated.
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (orphans erased by full replace).
+- [x] **Step 2: Run — verify FAIL** (orphans erased by full replace).
 
-- [ ] **Step 3: Switch the write to merge.** In the options-flow branch of `wizard_summary`:
+- [x] **Step 3: Switch the write to merge.** In the options-flow branch of `wizard_summary`:
 
 ```python
 from ..config_merge import merge_entry_options
@@ -637,11 +637,11 @@ from ..config_merge import merge_entry_options
 (Replace the direct `async_update_entry(entry, options=new_options)` call. Keep the
 surrounding boiler CONFIG_UPDATE enqueue + reload logic untouched.)
 
-- [ ] **Step 4: Run the options-flow test module + the new regression — PASS.**
+- [x] **Step 4: Run the options-flow test module + the new regression — PASS.**
 
 Run: `.venv/bin/python -m pytest -q tests/ -k "options or wizard or steps"`
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "fix(options-flow): merge instead of full-replace — dashboard-set values survive HA saves (K2f)"
@@ -651,7 +651,7 @@ git add -u && git commit -m "fix(options-flow): merge instead of full-replace �
 
 ### Task 8: Full gate + integration sanity
 
-- [ ] **Step 1: Run the full backend gate**
+- [x] **Step 1: Run the full backend gate**
 
 Run:
 ```bash
@@ -661,7 +661,7 @@ Run:
 ```
 Expected: all green (full suite ~4200 tests).
 
-- [ ] **Step 2: Commit any straggler fixes; final commit**
+- [x] **Step 2: Commit any straggler fixes; final commit**
 
 ```bash
 git add -u && git commit -m "test(registry): full gate green for Plan 1 (registry + merge)"

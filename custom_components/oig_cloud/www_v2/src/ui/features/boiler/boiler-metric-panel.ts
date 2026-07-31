@@ -232,7 +232,7 @@ export class OigBoilerMetricPanel extends LitElement {
 
     // Row 5: 🔥 z plynu / alt — only when alt configured or kwh > 0
     const altKwh: number | null = energy?.altKwh ?? null;
-    const showAlt = altKwh != null && altKwh > 0;
+    const showAlt = (data?.altSourceType != null) || (altKwh != null && altKwh > 0);
     // Row 5b: ⚡ nerozlišený zdroj (např. el. energie z doby před restartem)
     const unattributedKwh: number | null = energy?.unattributedKwh ?? null;
     const showUnattributed = unattributedKwh != null && unattributedKwh > 0.05;
@@ -305,8 +305,8 @@ export class OigBoilerMetricPanel extends LitElement {
           </div>
         ` : nothing}
 
-        ${showAlt || altKwh != null ? html`
-          <div class="kv">
+        ${showAlt ? html`
+          <div class="kv" data-testid="boiler-alt-row">
             <span>${altLabel}</span>
             <b style="color:#ffab91">${altKwh != null ? `${altKwh.toFixed(1).replace('.', ',')} kWh` : '—'}</b>
           </div>

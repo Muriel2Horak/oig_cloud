@@ -45,6 +45,8 @@ BoilerActivityDTO = _classifier_mod.BoilerActivityDTO
 BoilerReading = _classifier_mod.BoilerReading
 BoilerSourceHeaterSnapshot = _classifier_mod.BoilerSourceHeaterSnapshot
 
+COMMAND_ON_W = _const_mod.COMMAND_ON_W
+
 
 class MockEnergySource(str, Enum):
     FVE = "fve"
@@ -664,3 +666,7 @@ class TestPowerKwPassthrough:
         dto = classifier.classify(None, curr, snapshot)
 
         assert dto.state == "standby"
+
+
+def test_command_on_w_constant_value():
+    assert COMMAND_ON_W == 100.0

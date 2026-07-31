@@ -173,6 +173,9 @@ export class OigFlowNode extends LitElement {
     :host {
       display: block;
       width: 100%;
+      /* Size container: the pentagon must react to the actual flow-center
+         column width (viewport media queries can't see the control panel). */
+      container-type: inline-size;
     }
 
     .flow-grid {
@@ -193,6 +196,34 @@ export class OigFlowNode extends LitElement {
     .node-inverter { grid-column: 2; grid-row: 2; align-self: center; justify-self: center; }
     .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
     .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
+
+    /* Narrow flow column (Systém OIG panel occupies the right column): the
+       pentagon needs ~860px; below that zoom it down as a whole so no node
+       ever paints under the control panel. Mobile (<=768px viewport) media
+       rules come later in this sheet and still win there. */
+    @container (max-width: 859px) {
+      .flow-grid { zoom: 0.84; }
+    }
+    @container (max-width: 723px) {
+      .flow-grid { zoom: 0.72; }
+    }
+    @container (max-width: 619px) {
+      .flow-grid { zoom: 0.62; }
+    }
+    /* Tablet 768-1023 keeps 3 columns (168/1fr/248): the flow column can be
+       as narrow as ~330px, so the scale continues below the desktop steps. */
+    @container (max-width: 532px) {
+      .flow-grid { zoom: 0.55; }
+    }
+    @container (max-width: 472px) {
+      .flow-grid { zoom: 0.48; }
+    }
+    @container (max-width: 412px) {
+      .flow-grid { zoom: 0.42; }
+    }
+    @container (max-width: 361px) {
+      .flow-grid { zoom: 0.36; }
+    }
 
     .node {
       position: relative;

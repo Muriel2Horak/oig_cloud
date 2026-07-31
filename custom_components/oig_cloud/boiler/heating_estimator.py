@@ -30,10 +30,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .const import COMMAND_ON_W
+
 # Specific heat of water in Wh per litre per kelvin.
 WATER_WH_PER_L_K = 1.163
 
-COMMAND_ON_W = 100.0          # cbb_w above this → the box is commanding heat
 MIN_ELEMENT_W = 1500.0        # smallest plausible real element draw (W)
 TEMP_RISE_C_PER_MIN = 0.05    # temperature rising ≥ this → heat input present
 BASELINE_RISE_ALPHA = 0.02    # noise-floor: rise slowly toward the live value

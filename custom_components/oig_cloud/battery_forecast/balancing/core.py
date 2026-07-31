@@ -628,9 +628,11 @@ class BalancingManager:
     # (which would fight the economic planner). Was 99.0.
     _HOLDING_SOC_THRESHOLD = 97.0
 
-    @staticmethod
-    def _is_holding_soc(soc: Any) -> bool:
-        return bool(soc and soc >= BalancingManager._HOLDING_SOC_THRESHOLD)
+    def _is_holding_soc(self, soc: Any) -> bool:
+        threshold = self._config_entry.options.get(
+            "holding_soc_threshold_percent", self._HOLDING_SOC_THRESHOLD
+        )
+        return bool(soc and soc >= threshold)
 
     @staticmethod
     def _extend_holding_window(state: Dict[str, Any], stat_time: datetime) -> None:

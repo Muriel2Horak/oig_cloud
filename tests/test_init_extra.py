@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import os
 import sys
 import types
 from pathlib import Path
@@ -287,6 +288,10 @@ class DummyConfigEntries:
         self.unloaded.append((entry, platforms))
         return True
 
+    async def async_forward_entry_unload(self, entry, platform):
+        self.unloaded.append((entry, platform))
+        return True
+
     async def async_reload(self, entry_id):
         self.reloaded.append(entry_id)
 
@@ -325,6 +330,88 @@ async def test_async_setup(monkeypatch):
     assert result is True
     assert called["static"] == 1
     assert DOMAIN in hass.data
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_migration_error_surfaces_visible_status(monkeypatch):
+    migration_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.config_migration")
+    from homeassistant.helpers import issue_registry as ir
+
+    issue_calls = []
+
+    def _create_issue(_hass, domain, issue_id, **kwargs):
+        issue_calls.append((domain, issue_id, kwargs))
+
+    async def _fail_migration(_hass, _entry):
+        raise migration_module.MigrationTransformError(
+            "synthetic migration failure",
+            entry_id="entry1",
+        )
+
+    def _should_not_continue(_entry):
+        raise AssertionError("setup continued after migration failure")
+
+    async def _noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(init_module, "run_migration", _fail_migration)
+    monkeypatch.setattr(
+        init_module,
+        "_ensure_data_source_option_defaults",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_migrate_enable_spot_prices_option",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(init_module, "promote_blank_enum_defaults", lambda *_a, **_k: None)
+    monkeypatch.setattr(init_module, "_init_entry_storage", lambda *_a, **_k: None)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "_maybe_persist_box_id_from_proxy_or_local",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_migrate_legacy_credentials_from_options",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(ir, "async_create_issue", _create_issue)
+    monkeypatch.setattr(init_module, "_run_boiler_migration", _noop_async)
+    monkeypatch.setattr(init_module, "_start_service_shield", _noop_async)
+    monkeypatch.setattr(init_module, "_load_entry_auth_config", _should_not_continue)
+
+    hass = DummyHass()
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        title="OIG 123",
+        data={},
+        options={"min_capacity_percent": 25.0},
+    )
+
+    with pytest.raises(init_module.ConfigEntryNotReady, match="transform_failed"):
+        await init_module.async_setup_entry(hass, entry)
+
+    visible = hass.data[DOMAIN]["migration_failures"][entry.entry_id]
+    assert visible["code"] == "transform_failed"
+    assert visible["entry_id"] == entry.entry_id
+    assert issue_calls == [
+        (
+            DOMAIN,
+            "config_migration_failed_entry1",
+            {
+                "is_fixable": True,
+                "severity": ir.IssueSeverity.WARNING,
+                "translation_key": "config_migration_failed",
+                "translation_placeholders": {
+                    "entry_id": entry.entry_id,
+                    "code": "transform_failed",
+                },
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -488,6 +575,46 @@ async def test_async_remove_config_entry_device_exception(monkeypatch):
     )
 
     assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_async_remove_entry_deletes_ai_key_store_file(monkeypatch, tmp_path):
+    entry = SimpleNamespace(entry_id="entry1")
+    hass = DummyHass()
+    hass.data[DOMAIN][entry.entry_id] = {}
+    hass.config = SimpleNamespace(
+        path=lambda *parts: str(tmp_path.joinpath(*parts))
+    )
+    key_store_module = importlib.import_module(
+        f"{TEST_PACKAGE}.oig_cloud.ai.key_store"
+    )
+
+    class FileStore:
+        def __init__(self, hass_arg, _version, key, **_kwargs):
+            self.path = hass_arg.config.path(".storage", key)
+            self.saved = None
+
+        async def async_load(self):
+            return self.saved
+
+        async def async_save(self, data):
+            self.saved = data
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+            Path(self.path).write_text("stored", encoding="utf-8")
+
+        async def async_remove(self):
+            os.unlink(self.path)
+
+    monkeypatch.setattr(key_store_module, "Store", FileStore)
+
+    store = key_store_module.AiKeyStore(hass, entry.entry_id)
+    await store.async_set_key("groq", "gsk_ThisIsARealLookingSecretKey0123456789")
+    store_path = Path(store._store.path)
+    assert store_path.exists()
+
+    await init_module.async_remove_entry(hass, entry)
+
+    assert not store_path.exists()
 
 
 @pytest.mark.asyncio

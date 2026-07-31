@@ -9,6 +9,8 @@ import pytest
 from custom_components.oig_cloud.api import ha_rest_api as api_module
 from custom_components.oig_cloud.const import CONF_AUTO_MODE_SWITCH, DOMAIN
 
+_ADMIN_USER = SimpleNamespace(is_admin=True)
+
 
 class DummyRequest:
     def __init__(self, hass, query=None):
@@ -406,11 +408,11 @@ async def test_dashboard_modules_view():
 
     assert response.status == 200
     assert payload["enable_boiler"] is True
-    assert payload["enable_auto"] is False
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio
-async def test_dashboard_modules_view_enable_auto():
+async def test_dashboard_modules_view_strips_legacy_enable_auto():
     entry = DummyEntry(
         entry_id="entry1", options={"enable_boiler": False, "enable_auto": True}
     )
@@ -423,7 +425,7 @@ async def test_dashboard_modules_view_enable_auto():
 
     assert response.status == 200
     assert payload["enable_boiler"] is False
-    assert payload["enable_auto"] is True
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio
@@ -433,6 +435,116 @@ async def test_dashboard_modules_view_missing():
 
     response = await view.get(DummyRequest(hass), "missing")
     assert response.status == 404
+
+
+def _module_config_request(hass, payload):
+    class _Req:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
+
+        async def json(self):
+            return payload
+
+    return _Req()
+
+
+def _make_hass_for_module_config(box_id: str, options: dict):
+    entry = DummyEntry(entry_id=f"eid_{box_id}", options=dict(options))
+    coordinator = SimpleNamespace(data={box_id: {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+    return hass, entry
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "section,key,raw",
+    [
+        ("battery", "charge_rate_kw", float("nan")),
+        ("battery", "charge_rate_kw", float("inf")),
+        ("battery", "charge_rate_kw", float("-inf")),
+        ("battery", "balancing_interval_days", float("nan")),
+        ("battery", "balancing_interval_days", float("inf")),
+        ("battery", "balancing_interval_days", float("-inf")),
+    ],
+)
+async def test_module_config_post_rejects_non_finite_numbers(section, key, raw):
+    """POST must return 400 for NaN/Infinity, never 500 or persist."""
+    hass, entry = _make_hass_for_module_config("nanbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": section, "values": {key: raw}}
+    )
+
+    response = await view.post(request, "nanbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert key in payload.get("fields", {})
+    assert entry.options.get("charge_rate_kw") == 2.8  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_rejects_oversized_finite_integer():
+    """POST must return 400 for a huge finite int, never 500, and not persist."""
+    hass, entry = _make_hass_for_module_config(
+        "bigbox", {"balancing_interval_days": 7}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"balancing_interval_days": 10**400}}
+    )
+
+    response = await view.post(request, "bigbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert "balancing_interval_days" in payload.get("fields", {})
+    assert entry.options.get("balancing_interval_days") == 7  # unchanged
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw,expected_message",
+    [
+        (10**400, "above maximum"),
+        (-(10**400), "below minimum"),
+    ],
+)
+async def test_module_config_post_rejects_oversized_integer_for_float_field(
+    raw, expected_message
+):
+    """A huge int on a FLOAT field overflows float(); it must be a 400, not a 500."""
+    hass, entry = _make_hass_for_module_config("floatbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"charge_rate_kw": raw}}
+    )
+
+    response = await view.post(request, "floatbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert expected_message in payload["fields"]["charge_rate_kw"]
+    assert entry.options.get("charge_rate_kw") == 2.8  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_accepts_finite_update():
+    hass, entry = _make_hass_for_module_config("okbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"charge_rate_kw": 3.5}}
+    )
+
+    response = await view.post(request, "okbox")
+
+    assert response.status == 200
+    assert entry.options["charge_rate_kw"] == 3.5
 
 
 def test_setup_api_endpoints_registers_views():
@@ -482,7 +594,7 @@ async def test_analytics_view_missing_entity():
 
 
 @pytest.mark.asyncio
-async def test_consumption_profiles_view_ok():
+async def test_consumption_profiles_view_ok_shadowed_coverage():
     hass = DummyHass()
 
     class DummyProfilesEntity:
@@ -507,7 +619,7 @@ async def test_consumption_profiles_view_ok():
 
 
 @pytest.mark.asyncio
-async def test_consumption_profiles_view_missing_component():
+async def test_consumption_profiles_view_missing_component_shadowed_coverage():
     hass = DummyHass()
     view = api_module.OIGCloudConsumptionProfilesView()
     response = await view.get(DummyRequest(hass), "123")
@@ -515,7 +627,7 @@ async def test_consumption_profiles_view_missing_component():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_ok():
+async def test_balancing_decisions_view_ok_shadowed_coverage():
     hass = DummyHass()
 
     class DummyBalancingEntity:
@@ -543,7 +655,7 @@ async def test_balancing_decisions_view_ok():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_missing_entity():
+async def test_balancing_decisions_view_missing_entity_shadowed_coverage():
     hass = DummyHass()
     hass.data["entity_components"] = {"sensor": DummyComponent([])}
     view = api_module.OIGCloudBalancingDecisionsView()
@@ -553,7 +665,7 @@ async def test_balancing_decisions_view_missing_entity():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_missing_component():
+async def test_balancing_decisions_view_missing_component_shadowed_coverage():
     hass = DummyHass()
     hass.data["entity_components"] = {}
     view = api_module.OIGCloudBalancingDecisionsView()
@@ -563,7 +675,7 @@ async def test_balancing_decisions_view_missing_component():
 
 
 @pytest.mark.asyncio
-async def test_planner_settings_view_get_and_post():
+async def test_planner_settings_view_get_and_post_shadowed_coverage():
     entry = SimpleNamespace(
         entry_id="entry1",
         options={CONF_AUTO_MODE_SWITCH: False},
@@ -834,7 +946,7 @@ async def test_detail_tabs_view_missing_build_method(monkeypatch):
     assert "build_detail_tabs method not found" in payload["error"]
 
 
-def test_setup_api_endpoints_registers_views():
+def test_setup_api_endpoints_registers_views_shadowed_coverage():
     registered = []
 
     class DummyHttp:
@@ -847,3 +959,710 @@ def test_setup_api_endpoints_registers_views():
 
     assert "OIGCloudBatteryTimelineView" in registered
     assert "OIGCloudDetailTabsView" in registered
+    assert "OIGCloudPricelistsView" in registered
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_requires_admin():
+    hass = DummyHass(config_entries=DummyConfigEntries([
+        DummyEntry(entry_id="e1")
+    ]))
+    hass.data[DOMAIN] = {"e1": {"coordinator": SimpleNamespace(data={"box1": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    existing_box = await view.get(_NonAdminReq(), "box1")
+    missing_box = await view.get(_NonAdminReq(), "missing")
+    existing_text = existing_box.text
+
+    assert existing_box.status == 403
+    assert missing_box.status == 403
+    assert existing_text == missing_box.text
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_returns_dataset_for_admin():
+    hass = DummyHass(config_entries=DummyConfigEntries([DummyEntry(entry_id="e2")]))
+    hass.data[DOMAIN] = {"e2": {"coordinator": SimpleNamespace(data={"box2": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    response = await view.get(DummyRequest(hass), "box2")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["distributors"]
+    assert payload["tariffs"]
+    assert payload["selected_distributor"] in payload["distributors"]
+    assert payload["selected_tariff"] in payload["tariffs"]
+    assert "stale_warning" in payload
+    assert "valid_from" in payload
+    # Owner D57d bug: the FE suggestion needs system_services/electricity_tax
+    # on top of dist_leg — the endpoint must pass the shipped dataset's
+    # top-level regulated_components section through untouched.
+    assert payload["regulated_components"]["system_services"]["price_excl_vat"] == 164.24
+    assert payload["regulated_components"]["electricity_tax"]["price_excl_vat"] == 28.30
+
+
+def _synthetic_pricelist(year, valid_from):
+    rates = {"price_incl_vat": 1.0, "price_excl_vat": 1.0, "unit": "Kc"}
+    return {
+        "year": year,
+        "distributors": {"d1": {"t1": dict(rates)}},
+        "valid_from_snapshots": [
+            {"valid_from": valid_from, "distributors": {"d1": {"t1": dict(rates)}}},
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_stale_warning_uses_snapshot_valid_from_year(monkeypatch):
+    current_year = datetime.now(timezone.utc).year
+    hass = DummyHass(config_entries=DummyConfigEntries([DummyEntry(entry_id="e3")]))
+    hass.data[DOMAIN] = {"e3": {"coordinator": SimpleNamespace(data={"box3": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    # Top-level "year" says current (not stale) but the SELECTED snapshot's
+    # valid_from is last year — R7.6/R8.6 require the check to key off the
+    # snapshot's valid_from, not the top-level field.
+    monkeypatch.setattr(
+        api_module,
+        "_load_released_pricelists",
+        lambda: _synthetic_pricelist(current_year, f"{current_year - 1}-01-01"),
+    )
+    response = await view.get(DummyRequest(hass), "box3")
+    payload = json.loads(response.text)
+    assert payload["year"] == current_year - 1
+    assert payload["stale_warning"] is True
+
+    # Inverse: top-level year says stale but the snapshot's valid_from is
+    # current — must NOT warn.
+    monkeypatch.setattr(
+        api_module,
+        "_load_released_pricelists",
+        lambda: _synthetic_pricelist(current_year - 1, f"{current_year}-01-01"),
+    )
+    response = await view.get(DummyRequest(hass), "box3")
+    payload = json.loads(response.text)
+    assert payload["year"] == current_year
+    assert payload["stale_warning"] is False
+
+
+@pytest.mark.asyncio
+async def test_config_registry_view_ok():
+    entry = DummyEntry(entry_id="entry1")
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+
+    view = api_module.OIGCloudConfigRegistryView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "fields" in payload
+    assert "sections" in payload
+
+    charge_rate = payload["fields"]["charge_rate_kw"]
+    assert charge_rate["section"] == "battery"
+    assert charge_rate["min"] == 0.5
+    assert charge_rate["max"] == 10.0
+    assert charge_rate["label"] == "field.charge_rate_kw.label"
+
+    solar_key = payload["fields"]["solar_forecast_api_key"]
+    assert solar_key["secret"] is True
+    assert "default" not in solar_key
+
+    assert "battery" in payload["sections"]
+
+
+@pytest.mark.asyncio
+async def test_config_registry_view_missing_box():
+    hass = DummyHass(config_entries=DummyConfigEntries([]))
+    view = api_module.OIGCloudConfigRegistryView()
+    response = await view.get(DummyRequest(hass), "missing")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_config_registry_view_requires_admin_for_existing_and_missing_box():
+    entry = DummyEntry(entry_id="entry1")
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+    view = api_module.OIGCloudConfigRegistryView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    existing_box = await view.get(_NonAdminReq(), "123")
+    missing_box = await view.get(_NonAdminReq(), "missing")
+
+    assert existing_box.status == 403
+    assert missing_box.status == 403
+    assert existing_box.text == missing_box.text
+    assert "fields" not in existing_box.text
+    assert "sections" not in existing_box.text
+
+
+def test_config_registry_view_requires_auth():
+    assert api_module.OIGCloudConfigRegistryView.requires_auth is True
+
+
+def test_pricelists_view_requires_auth():
+    assert api_module.OIGCloudPricelistsView.requires_auth is True
+
+
+# --- Plan 2 Task 2: basic section is exposed by module_config GET/POST -----
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_basic_section():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "basic" in payload
+    basic = payload["basic"]
+    assert basic["standard_scan_interval"] == 30
+    assert basic["extended_scan_interval"] == 300
+    assert basic["data_source_mode"] == "cloud_only"
+    assert basic["local_proxy_stale_minutes"] == 10
+    assert basic["local_event_debounce_ms"] == 300
+    assert basic["enable_dashboard"] is False
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_section_accepts_update():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {
+            "section": "basic",
+            "values": {"standard_scan_interval": 60, "enable_dashboard": True},
+        },
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["updated"] is True
+    assert "standard_scan_interval" in payload["keys"]
+    assert entry.options["standard_scan_interval"] == 60
+    assert entry.options["enable_dashboard"] is True
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_rejects_unknown_field():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {"section": "basic", "values": {"phantom_key": 1}},
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 400
+    assert payload["error"] == "validation"
+    assert payload["fields"]["phantom_key"] == "unknown field"
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_rejects_out_of_bounds():
+    """Registry bounds must be enforced on the REST path too, and nothing persisted."""
+    hass, entry = _make_hass_for_module_config(
+        "basicbox", {"standard_scan_interval": 30}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {
+            "section": "basic",
+            "values": {"standard_scan_interval": 5},  # below registry min 30
+        },
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 400
+    assert "standard_scan_interval" in payload["fields"]
+    assert entry.options["standard_scan_interval"] == 30  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_basic_defaults_when_unset():
+    """An entry with no basic keys must GET the registry defaults, not omit the keys."""
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert payload["basic"]["data_source_mode"] == "cloud_only"
+
+
+@pytest.mark.asyncio
+async def test_module_config_hybrid_data_source_mode_round_trips():
+    """OQ-6: a legacy stored 'hybrid' must GET back as 'hybrid' and POST back WITHOUT a 400."""
+    hass, entry = _make_hass_for_module_config(
+        "basicbox", {"data_source_mode": "hybrid"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    get_resp = await view.get(_module_config_request(hass, {}), "basicbox")
+    get_payload = json.loads(get_resp.text)
+    assert get_payload["basic"]["data_source_mode"] == "hybrid"
+    post_resp = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "basic",
+                "values": {"data_source_mode": get_payload["basic"]["data_source_mode"]},
+            },
+        ),
+        "basicbox",
+    )
+    assert post_resp.status == 200
+    assert entry.options["data_source_mode"] == "hybrid"
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_unset_extended_sensors_and_statistics_default_true():
+    """OQ-5: a legacy entry that never stored enable_extended_sensors or
+    enable_statistics must GET both as True (registry default), matching the flow."""
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "basicbox")
+    payload = json.loads(response.text)
+
+    assert payload["modules"]["enable_extended_sensors"] is True
+    assert payload["modules"]["enable_statistics"] is True
+
+
+def _solar_entry(**options):
+    base = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_api_key": "fs-key",
+        "solar_forecast_string1_enabled": True,
+    }
+    base.update(options)
+    return DummyEntry("e1", options=base)
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_rejects_incomplete_provider_switch(monkeypatch):
+    """U3: switching to Solcast with blank credentials must NOT save."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_provider": "solcast"}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 400
+    body = json.loads(resp.text)
+    assert body["error"] == "validation"
+    assert "solcast_api_key" in body["fields"]
+    assert entry.options["solar_forecast_provider"] == "forecast_solar"  # not written
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_rejects_disabling_every_string(monkeypatch):
+    """M1: no_strings_enabled must bind REST too — it used to be flow-only
+    (steps.py:1643), so this POST silently saved a panel-less solar config."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {"section": "solar", "values": {
+        "solar_forecast_string1_enabled": False,
+        "solar_forecast_string2_enabled": False}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 400
+    assert json.loads(resp.text)["fields"]["base"] == "no_strings_enabled"
+    assert entry.options["solar_forecast_string1_enabled"] is True  # not written
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_normalises_a_legacy_unsigned_azimuth(monkeypatch):
+    """M2: the registry pins azimuth to -180..180 (config_registry.py:166) but the
+    flow's normalisation (steps.py:1662) never ran on the REST path — a stored
+    legacy 270 used to 400 on the next save."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_string1_azimuth": 270}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 200
+    assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+async def test_rest_and_flow_reject_the_same_panel_less_config(monkeypatch):
+    """The claim this task exists to make true: ONE rule set, two surfaces.
+    Same input, same verdict — asserted, not asserted-about."""
+    from custom_components.oig_cloud.config.solar_rules import validate_solar_effective
+
+    panel_less = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "daily_optimized",
+        "solar_forecast_api_key": "fs-key",
+        "solar_forecast_string1_enabled": False,
+        "solar_forecast_string2_enabled": False,
+    }
+    # flow surface (the shared validator IS the flow's rule after Step 4)
+    assert validate_solar_effective(panel_less) == {"base": "no_strings_enabled"}
+
+    # REST surface, same input
+    entry = DummyEntry("e1", options=dict(panel_less))
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_string1_enabled": False}})
+
+    resp = await view.post(req, "box1")
+    assert resp.status == 400
+    assert json.loads(resp.text)["fields"]["base"] == "no_strings_enabled"
+
+
+# --- R11.1: GET module_config must fail closed for non-admin (SEC-2, CRITICAL) ---
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_requires_admin_and_hides_solar_location():
+    """Today ANY authenticated household account can read the box config,
+    including home GPS coordinates and the Solcast site id. Mirrors the
+    POST admin gate at :1235-1237."""
+    hass, entry = _make_hass_for_module_config("secretbox", {
+        "solar_forecast_latitude": 50.087,
+        "solar_forecast_longitude": 14.421,
+        "solcast_site_id": "site_leak_12345",
+    })
+    view = api_module.OIGCloudModuleConfigView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    response = await view.get(_NonAdminReq(), "secretbox")
+    body_text = response.text
+
+    assert response.status == 403
+    assert "solar_forecast_latitude" not in body_text
+    assert "solar_forecast_longitude" not in body_text
+    assert "site_leak_12345" not in body_text
+
+
+# --- F1 Plan 3.6 Task 7: pricing section wired into module_config GET/POST -
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_pricing_section():
+    """The GET section tuple omitted "pricing" — the exact gap Task 7 closes."""
+    hass, entry = _make_hass_for_module_config("pricebox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "pricebox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "pricing" in payload
+    pricing = payload["pricing"]
+    for key in (
+        "confirmed_distribution_distributor",
+        "confirmed_distribution_tariff",
+        "confirmed_distribution_price_incl_vat",
+        "confirmed_distribution_price_excl_vat",
+        "confirmed_distribution_unit",
+    ):
+        assert key in pricing
+    assert isinstance(pricing["confirmed_distribution_distributor"], str)
+    assert pricing["confirmed_distribution_distributor"] != ""
+    assert isinstance(pricing["confirmed_distribution_tariff"], str)
+    assert pricing["confirmed_distribution_tariff"] != ""
+    assert isinstance(pricing["confirmed_distribution_price_incl_vat"], float)
+    assert isinstance(pricing["confirmed_distribution_price_excl_vat"], float)
+    assert isinstance(pricing["confirmed_distribution_unit"], str)
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_round_trips_via_merge_entry_options():
+    """POST {section:"pricing", values} must persist via the same shared
+    merge_entry_options path every other section uses — no special-casing."""
+    hass, entry = _make_hass_for_module_config("pricebox", {})
+    view = api_module.OIGCloudModuleConfigView()
+
+    baseline = json.loads(
+        (await view.get(_module_config_request(hass, {}), "pricebox")).text
+    )["pricing"]
+    distributor = baseline["confirmed_distribution_distributor"]
+    tariff = baseline["confirmed_distribution_tariff"]
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing",
+                "values": {
+                    "confirmed_distribution_distributor": distributor,
+                    "confirmed_distribution_tariff": tariff,
+                    "confirmed_distribution_price_incl_vat": 11.5,
+                    "confirmed_distribution_price_excl_vat": 9.0,
+                    "confirmed_distribution_unit": "Kc/kWh",
+                },
+            },
+        ),
+        "pricebox",
+    )
+    post_payload = json.loads(post_response.text)
+
+    assert post_response.status == 200
+    assert post_payload["updated"] is True
+    assert entry.options["confirmed_distribution_price_incl_vat"] == 11.5
+    assert entry.options["confirmed_distribution_price_excl_vat"] == 9.0
+    assert entry.options["confirmed_distribution_unit"] == "Kc/kWh"
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "pricebox")).text
+    )["pricing"]
+    assert after["confirmed_distribution_price_incl_vat"] == 11.5
+    assert after["confirmed_distribution_price_excl_vat"] == 9.0
+    assert after["confirmed_distribution_unit"] == "Kc/kWh"
+
+
+# --- F1 U4 R3: pricing_supplier wired into module_config GET/POST ----------
+# (RCA-R3 restoration — same "no special-casing" pattern as Task 7's
+# `pricing` section wiring above; the GET section tuple omitted
+# "pricing_supplier" until this unit added it.)
+
+
+_LEGACY_PRICING_OPTIONS = {
+    # A realistic pre-existing entry.options as the legacy config/steps.py
+    # wizard would have written it — every key WITHOUT the new _nt suffixes,
+    # since no install has ever had those.
+    "spot_pricing_model": "percentage",
+    "spot_positive_fee_percent": 20.0,
+    "spot_negative_fee_percent": 11.0,
+    "spot_fixed_fee_mwh": 480.0,
+    "fixed_commercial_price_vt": 5.10,
+    "fixed_commercial_price_nt": 3.90,
+    "export_pricing_model": "fixed",
+    "export_fee_percent": 12.0,
+    "export_fixed_fee_czk": 0.18,
+    "export_fixed_price": 2.75,
+    "dual_tariff_enabled": True,
+    "distribution_fee_vt_kwh": 1.55,
+    "distribution_fee_nt_kwh": 0.95,
+    "tariff_vt_start_weekday": "7",
+    "tariff_nt_start_weekday": "23,3",
+    "tariff_vt_start_weekend": "8",
+    "tariff_nt_start_weekend": "1",
+    "tariff_weekend_same_as_weekday": False,
+    "vat_rate": 21.0,
+}
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_pricing_supplier_section():
+    hass, entry = _make_hass_for_module_config("supplierbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "supplierbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "pricing_supplier" in payload
+    supplier = payload["pricing_supplier"]
+    for key in (
+        "spot_pricing_model", "spot_positive_fee_percent",
+        "spot_positive_fee_percent_nt", "export_pricing_model",
+        "tariff_vt_start_weekday", "dual_tariff_enabled",
+    ):
+        assert key in supplier
+    # Relocated to `pricing` (UX-SPEC §3/§4, owner correction round 2 —
+    # supplier-step redesign): distribution does not belong in the supplier
+    # contract, so these no longer appear under pricing_supplier.
+    assert "distribution_fee_vt_kwh" not in supplier
+    assert "vat_rate" not in supplier
+    pricing = payload["pricing"]
+    assert "distribution_fee_vt_kwh" in pricing
+    assert "vat_rate" in pricing
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_reflects_preexisting_legacy_options_unmigrated():
+    """RCA-R3's core requirement: existing entry.options values reappear
+    through the registry with NO migration — the legacy keys are read as-is."""
+    hass, entry = _make_hass_for_module_config("legacybox", _LEGACY_PRICING_OPTIONS)
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "legacybox")
+    payload = json.loads(response.text)
+    supplier = payload["pricing_supplier"]
+    pricing = payload["pricing"]
+    # Relocated to `pricing` (UX-SPEC §3/§4 owner correction round 2) —
+    # unchanged key names, just a different registry section/response bucket.
+    _RELOCATED = ("distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate")
+
+    for key, value in _LEGACY_PRICING_OPTIONS.items():
+        bucket = pricing if key in _RELOCATED else supplier
+        assert bucket[key] == value, key
+    # The new NT-only keys never lived in this legacy entry — they fall back
+    # to their registry defaults, not an error or a missing key.
+    assert supplier["spot_positive_fee_percent_nt"] == 13.0
+    assert supplier["export_fee_percent_nt"] == 13.0
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_round_trips_preserving_other_legacy_keys():
+    """POST {section:"pricing_supplier", values} must merge — not replace —
+    so unrelated legacy keys already in entry.options survive untouched."""
+    hass, entry = _make_hass_for_module_config("supplierbox", _LEGACY_PRICING_OPTIONS)
+    view = api_module.OIGCloudModuleConfigView()
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing_supplier",
+                "values": {"spot_positive_fee_percent": 17.5},
+            },
+        ),
+        "supplierbox",
+    )
+    post_payload = json.loads(post_response.text)
+
+    assert post_response.status == 200
+    assert post_payload["updated"] is True
+    assert entry.options["spot_positive_fee_percent"] == 17.5
+    # every other legacy key untouched
+    for key, value in _LEGACY_PRICING_OPTIONS.items():
+        if key == "spot_positive_fee_percent":
+            continue
+        assert entry.options[key] == value, key
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "supplierbox")).text
+    )["pricing_supplier"]
+    assert after["spot_positive_fee_percent"] == 17.5
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_rejects_unknown_field():
+    hass, entry = _make_hass_for_module_config("supplierbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing_supplier", "values": {"not_a_real_key": 1}},
+        ),
+        "supplierbox",
+    )
+    payload = json.loads(response.text)
+    assert response.status == 400
+    assert payload["fields"]["not_a_real_key"] == "unknown field"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tariff_code,expected", [
+    ("D25d", True), ("D26d", True), ("D27d", True), ("D35d", True),
+    ("D45d", True), ("D56d", True), ("D57d", True), ("D61d", True),
+    # POZE was dropped from the tariff enum (it is a regulated line item,
+    # not a sazba) — single-tariff coverage stays via D01d/D02d.
+    ("D01d", False), ("D02d", False),
+])
+async def test_module_config_post_pricing_derives_and_persists_dual_tariff_enabled(
+    tariff_code, expected,
+):
+    """RCA-R3 + UX-SPEC §4 (owner correction round 2): dual_tariff_enabled is
+    never posted by the client — it is derived from confirmed_distribution_tariff
+    and persisted under the legacy key for backward compat."""
+    hass, entry = _make_hass_for_module_config("dualbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing",
+                "values": {"confirmed_distribution_tariff": tariff_code},
+            },
+        ),
+        "dualbox",
+    )
+    assert post_response.status == 200
+    assert entry.options["dual_tariff_enabled"] is expected
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "dualbox")).text
+    )
+    assert after["pricing_supplier"]["dual_tariff_enabled"] is expected
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_save_does_not_reset_dual_tariff_enabled():
+    """Saving pricing_supplier fields must not touch the derived value —
+    only a confirmed_distribution_tariff change (section "pricing") does."""
+    hass, entry = _make_hass_for_module_config(
+        "dualbox", {"dual_tariff_enabled": True, "confirmed_distribution_tariff": "D25d"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+
+    await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing_supplier", "values": {"spot_positive_fee_percent": 17.5}},
+        ),
+        "dualbox",
+    )
+    assert entry.options["dual_tariff_enabled"] is True
+    assert entry.options["spot_positive_fee_percent"] == 17.5
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_vat_rate_does_not_reset_dual_tariff_enabled():
+    """`vat_rate` moved to the `pricing` section (UX-SPEC §3/§4 owner
+    correction round 2) — saving it must not touch the derived
+    dual_tariff_enabled value either, same as the pricing_supplier case
+    above."""
+    hass, entry = _make_hass_for_module_config(
+        "dualbox2", {"dual_tariff_enabled": True, "confirmed_distribution_tariff": "D25d"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+
+    await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing", "values": {"vat_rate": 15.0}},
+        ),
+        "dualbox2",
+    )
+    assert entry.options["dual_tariff_enabled"] is True
+    assert entry.options["vat_rate"] == 15.0

@@ -1,12 +1,3 @@
-// ============================================================================
-// ⚡ Z čeho se bojler nabil — dnes  (F4 / Task C)
-// ============================================================================
-//
-// Component: oig-boiler-energy-today
-// Shows today's energy breakdown: source tiles, stacked proportion bar,
-// benchmark line (cost_if_all_grid → savings).
-// ============================================================================
-
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
@@ -15,6 +6,14 @@ import { t, type Lang } from '@/i18n/boiler';
 
 const u = unsafeCSS;
 
+// Mock rev3 palette
+const MOCK = {
+  water: '#4dd0e1', grid: '#3b82f6', fve: '#f0b429',
+  battery: '#a78bfa', alt: '#ff8a50', idle: '#39415f',
+  card: '#1b2340', card2: '#1f2848', line: '#2a3355',
+  muted: '#8b93ad', dim: '#5c6480', text: '#e8ecf7',
+} as const;
+
 // ============================================================================
 // Pure helpers — exported for unit tests
 // ============================================================================
@@ -22,7 +21,7 @@ const u = unsafeCSS;
 /**
  * Returns the Czech/English label for the alternative source.
  * F5: maps alt_source_type values from config to human-readable labels (R12).
- * Labels are intentionally short for UI chips and plan-strip legends.
+ * Labels include an emoji for legacy callers.
  */
 export function altTypeLabel(altType: string | null | undefined, lang: Lang): string {
   const map: Record<string, Record<Lang, string>> = {
@@ -32,8 +31,18 @@ export function altTypeLabel(altType: string | null | undefined, lang: Lang): st
     other:      { cs: '🔥 Alternativní zdroj', en: '🔥 Alternative source' },
   };
   if (altType && map[altType]) return map[altType][lang];
-  // Generic fallback per R12
   return lang === 'en' ? '🔥 Alternative source' : '🔥 Alternativní zdroj';
+}
+
+export function altTypeLabelPlain(altType: string | null | undefined, lang: Lang): string {
+  const map: Record<string, Record<Lang, string>> = {
+    gas:        { cs: 'Plyn',              en: 'Gas' },
+    heat_pump:  { cs: 'Tepelné čerpadlo',  en: 'Heat pump' },
+    fireplace:  { cs: 'Krb',               en: 'Fireplace' },
+    other:      { cs: 'Alternativní zdroj', en: 'Alternative source' },
+  };
+  if (altType && map[altType]) return map[altType][lang];
+  return lang === 'en' ? 'Alternative source' : 'Alternativní zdroj';
 }
 
 export interface EnergySourceTile {
@@ -41,18 +50,9 @@ export interface EnergySourceTile {
   label: string;
   kwh: number;
   color: string;
-  /** Optional cost string — only present when derivable */
   costLabel: string | null;
 }
 
-/**
- * Build the list of source tiles to display.
- * Rules:
- * - FVE + Síť always shown (even at 0) for context.
- * - Alt shown only when altKwh > 0 (no capability flag available at FE yet).
- * - Battery shown only when batteryKwh > 0.05.
- * Order: FVE, Grid, Battery, Alt (matches mockup left-to-right order).
- */
 export function buildSourceTiles(
   energy: EnergyToday,
   lang: Lang,
@@ -60,42 +60,38 @@ export function buildSourceTiles(
 ): EnergySourceTile[] {
   const tiles: EnergySourceTile[] = [];
 
-  // FVE — always shown
   tiles.push({
     key: 'fve',
-    label: t('boiler.energy_today.source_fve', lang),
+    label: t('boiler.energy_today.source_fve_plain', lang),
     kwh: energy.fveKwh,
-    color: '#ffa726',
+    color: MOCK.fve,
     costLabel: energy.fveKwh > 0 ? '≈ 0 Kč' : null,
   });
 
-  // Grid — always shown
   tiles.push({
     key: 'grid',
-    label: t('boiler.energy_today.source_grid', lang),
+    label: t('boiler.energy_today.source_grid_plain', lang),
     kwh: energy.gridKwh,
-    color: '#2196f3',
-    costLabel: null, // cost per kWh unknown at FE level
+    color: MOCK.grid,
+    costLabel: null,
   });
 
-  // Battery — only when > 0.05
   if (energy.batteryKwh > 0.05) {
     tiles.push({
       key: 'battery',
-      label: t('boiler.energy_today.source_battery', lang),
+      label: t('boiler.energy_today.source_battery_plain', lang),
       kwh: energy.batteryKwh,
-      color: '#7e57c2',
+      color: MOCK.battery,
       costLabel: null,
     });
   }
 
-  // Alt — only when > 0
   if (energy.altKwh > 0) {
     tiles.push({
       key: 'alt',
-      label: altTypeLabel(altType, lang),
+      label: altTypeLabelPlain(altType, lang),
       kwh: energy.altKwh,
-      color: '#e64a19',
+      color: MOCK.alt,
       costLabel: null,
     });
   }
@@ -103,10 +99,35 @@ export function buildSourceTiles(
   return tiles;
 }
 
-/**
- * Compute savings string: "→ plán šetří X Kč" when both cost fields present.
- * Returns null when data is insufficient.
- */
+export interface PropBarSegment {
+  pct: number;
+  color: string;
+  key: string;
+}
+
+export function buildPropBarSegments(
+  energy: EnergyToday,
+  tiles: EnergySourceTile[],
+): PropBarSegment[] {
+  const total = energy.totalKwh;
+  if (!(total >= 0.1)) return [];
+  const segments: PropBarSegment[] = tiles
+    .filter(tile => tile.kwh > 0)
+    .map(tile => ({
+      pct: (tile.kwh / total) * 100,
+      color: tile.color,
+      key: tile.key,
+    }));
+  if (energy.unattributedKwh > 0.05) {
+    segments.push({
+      pct: (energy.unattributedKwh / total) * 100,
+      color: MOCK.muted,
+      key: 'unattributed',
+    });
+  }
+  return segments;
+}
+
 export function computeSavingsLabel(
   planSummary: PlanSummary | null,
   lang: Lang,
@@ -114,18 +135,13 @@ export function computeSavingsLabel(
   if (!planSummary) return null;
   const { estimatedCostCzk, costIfAllGrid } = planSummary;
   if (estimatedCostCzk == null || costIfAllGrid == null) return null;
-  // costIfAllGrid <= 0 means slots are unpriced (e.g. input_stale_price right
-  // after a restart) — a "0.0 Kč" benchmark is noise, not information.
   if (costIfAllGrid <= 0) return null;
   const savings = costIfAllGrid - estimatedCostCzk;
   if (savings < 0) return null;
   const prefix = t('boiler.energy_today.benchmark_savings', lang);
-  return `${prefix} ${savings.toFixed(1)} Kč`;
+  return `${prefix} ${savings.toFixed(1).replace('.', ',')} Kč`;
 }
 
-/**
- * Format kWh value with Czech locale comma: "2,1 kWh"
- */
 export function formatKwhLocale(v: number): string {
   return `${v.toFixed(1).replace('.', ',')} kWh`;
 }
@@ -139,19 +155,18 @@ export class OigBoilerEnergyToday extends LitElement {
   @property({ type: Object }) energy: EnergyToday | null = null;
   @property({ type: Object }) planSummary: PlanSummary | null = null;
   @property({ type: String }) lang: Lang = 'cs';
-  /** F5: alt type string (e.g. 'gas'). Undefined = generic label. */
   @property({ type: String }) altType: string | null = null;
 
   static styles = css`
     :host {
       display: block;
+      font-family: ${u(CSS_VARS.fontFamily)};
     }
 
     .card {
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
-      padding: 14px 16px;
-      box-shadow: 0 6px 18px rgba(0,0,0,.35);
+      padding: 12px 14px;
     }
 
     .card-header {
@@ -160,114 +175,111 @@ export class OigBoilerEnergyToday extends LitElement {
       align-items: center;
       margin: 0 0 10px;
       font-size: 13px;
+      font-weight: 600;
+      color: ${u(CSS_VARS.textPrimary)};
     }
 
     .card-header-meta {
-      font-size: 10.5px;
-      opacity: 0.55;
+      font-size: 10px;
+      color: ${u(MOCK.muted)};
       font-weight: 400;
     }
 
-    /* Source tiles grid */
-    .tiles {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-      gap: 10px;
-      margin-bottom: 8px;
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
     }
 
-    .tile {
-      background: rgba(255,255,255,.05);
-      border-radius: 9px;
-      padding: 8px 10px;
-      text-align: center;
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: ${u(MOCK.card2)};
+      border-radius: 8px;
+      padding: 5px 9px;
+      min-width: 0;
     }
 
-    .tile-label {
-      font-size: 10px;
-      opacity: 0.65;
-      display: block;
-      margin-bottom: 4px;
+    .chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .chip-body {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .chip-label {
+      font-size: 9px;
+      color: ${u(MOCK.muted)};
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
-    .tile-kwh {
-      display: block;
-      font-size: 16px;
-      font-weight: 800;
+    .chip-value {
+      font-size: 12px;
+      font-weight: 700;
+      color: ${u(MOCK.text)};
     }
 
-    .tile-czk {
-      font-size: 10.5px;
-      font-weight: 600;
-      margin-top: 2px;
-      display: block;
+    .chip-cost {
+      font-size: 9px;
+      color: #4ade80;
+      margin-left: 4px;
     }
 
-    /* Proportion bar */
     .prop-bar {
       display: flex;
-      height: 9px;
-      border-radius: 5px;
+      height: 6px;
+      border-radius: 3px;
       overflow: hidden;
-      margin-bottom: 6px;
+      margin-top: 10px;
     }
 
-    /* Benchmark legend */
     .benchmark {
       display: flex;
-      gap: 12px;
+      gap: 10px;
       font-size: 10px;
-      opacity: 0.85;
+      color: ${u(MOCK.muted)};
       flex-wrap: wrap;
+      margin-top: 8px;
     }
 
-    .benchmark-text {
-      opacity: 0.6;
-    }
+    .benchmark strong { color: #4ade80; }
 
-    /* Empty state */
     .empty {
       font-size: 12px;
-      opacity: 0.55;
+      color: ${u(MOCK.muted)};
       text-align: center;
-      padding: 12px 0 4px;
+      padding: 10px 0 2px;
     }
   `;
 
   render() {
     const lang = this.lang;
-    const heading = t('boiler.energy_today.heading', lang);
+    const heading = t('boiler.energy_today.heading_plain', lang);
     const meta = t('boiler.energy_today.meta', lang);
 
     const energy = this.energy;
     const planSummary = this.planSummary;
 
-    // Compute tiles
     const tiles = energy ? buildSourceTiles(energy, lang, this.altType) : [];
     const total = energy?.totalKwh ?? 0;
     const isEmpty = total < 0.1;
+    const barSegments = energy && !isEmpty ? buildPropBarSegments(energy, tiles) : [];
 
-    // Proportion bar segments
-    const barSegments = isEmpty ? [] : tiles
-      .filter(tile => tile.kwh > 0)
-      .map(tile => ({
-        pct: (tile.kwh / total) * 100,
-        color: tile.color,
-        key: tile.key,
-      }));
-
-    // Benchmark
     const benchmarkCostGridRaw = planSummary?.costIfAllGrid ?? null;
-    // Hide the benchmark entirely when slots are unpriced (0/negative).
     const benchmarkCostGrid =
       benchmarkCostGridRaw != null && benchmarkCostGridRaw > 0 ? benchmarkCostGridRaw : null;
     const savingsLabel = computeSavingsLabel(planSummary, lang);
 
     return html`
-      <div class="card">
+      <div class="card" data-testid="boiler-energy-today">
         <h2 class="card-header">
           ${heading}
           <span class="card-header-meta">${meta}</span>
@@ -276,33 +288,36 @@ export class OigBoilerEnergyToday extends LitElement {
         ${isEmpty ? html`
           <div class="empty">${t('boiler.energy_today.empty', lang)}</div>
         ` : html`
-          <div class="tiles" data-testid="energy-tiles">
+          <div class="chips" data-testid="energy-tiles">
             ${tiles.map(tile => html`
-              <div class="tile" data-source="${tile.key}" data-testid="energy-tile-${tile.key}">
-                <span class="tile-label">${tile.label}</span>
-                <b class="tile-kwh">${formatKwhLocale(tile.kwh)}</b>
-                ${tile.costLabel ? html`<span class="tile-czk" style="color:#9fe6a8">${tile.costLabel}</span>` : nothing}
+              <div class="chip" data-source="${tile.key}" data-testid="energy-tile-${tile.key}">
+                <span class="chip-dot" style="background:${tile.color}"></span>
+                <span class="chip-body">
+                  <span class="chip-label">${tile.label}</span>
+                  <span class="chip-value">${formatKwhLocale(tile.kwh)}</span>
+                </span>
+                ${tile.costLabel ? html`<span class="chip-cost">${tile.costLabel}</span>` : nothing}
               </div>
             `)}
           </div>
-        `}
 
-        ${barSegments.length > 0 ? html`
-          <div class="prop-bar" data-testid="prop-bar">
-            ${barSegments.map(seg => html`
-              <span
-                style="width:${seg.pct.toFixed(1)}%;background:${seg.color}"
-                data-source="${seg.key}"
-              ></span>
-            `)}
-          </div>
-        ` : nothing}
+          ${barSegments.length > 0 ? html`
+            <div class="prop-bar" data-testid="prop-bar">
+              ${barSegments.map(seg => html`
+                <span
+                  style="width:${seg.pct.toFixed(1)}%;background:${seg.color}"
+                  data-source="${seg.key}"
+                ></span>
+              `)}
+            </div>
+          ` : nothing}
+        `}
 
         ${benchmarkCostGrid != null || savingsLabel ? html`
           <div class="benchmark" data-testid="benchmark">
             ${benchmarkCostGrid != null ? html`
-              <span class="benchmark-text">
-                ${t('boiler.energy_today.benchmark_prefix', lang)} ${benchmarkCostGrid.toFixed(1)} Kč
+              <span>
+                ${t('boiler.energy_today.benchmark_prefix', lang)} ${benchmarkCostGrid.toFixed(1).replace('.', ',')} Kč
                 ${savingsLabel ? html`<strong> ${savingsLabel}</strong>` : nothing}
               </span>
             ` : nothing}

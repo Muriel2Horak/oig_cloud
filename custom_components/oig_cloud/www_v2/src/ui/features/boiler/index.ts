@@ -47,5 +47,15 @@ export { OigBoilerV2Shell } from './boiler-shell';
 export { OigBoilerMetricPanel } from './boiler-metric-panel';
 export { OigBoilerSparkline } from './boiler-sparkline';
 export { OigBoilerTimelineChart, resolveTimelineNowMs, minutesSinceMidnightInTimeZone } from './boiler-timeline-chart';
+export { OigBoilerHeroFlow } from './boiler-hero-flow';
+
+export {
+  OigBoilerPlanRealitaTile,
+  adherenceColor,
+  blockSourceColor,
+  blockDurationHours,
+  metricBetterClass,
+  BOILER_BLOCK_SOURCE_COLORS,
+} from './boiler-plan-realita-tile';
 
 export * from './types';

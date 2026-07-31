@@ -130,13 +130,11 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heat source switch - optional",
-          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_circulation_pump_switch_entity": "Circulation pump switch - optional",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
           "boiler_heater_power_kw_entity": "Heating element power sensor (kW)",
           "boiler_heater_switch_entity": "Heating element switch",
-          "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
           "boiler_target_temp_c": "Target water temperature (°C)",
@@ -148,13 +146,11 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Cost per kWh from alternative source (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
-          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_circulation_pump_switch_entity": "Entity ID of switch for circulation pump. Leave empty if you do not control circulation via a switch.",
           "boiler_cold_inlet_temp_c": "Temperature of incoming cold water from mains (typically 10-15°C)",
           "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch for turning on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = average temperature | two_zone = stratified model (more accurate, needs 2 sensors)",
           "boiler_target_temp_c": "Desired water temperature (typically 55-65°C)",
@@ -222,7 +218,6 @@
       },
       "wizard_modules": {
         "data": {
-          "enable_auto": "🚗 Car - vehicle charging planning",
           "enable_battery_prediction": "🔋 Intelligent battery prediction and optimization",
           "enable_boiler": "🔥 Boiler - water heating optimization",
           "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
@@ -238,7 +233,6 @@
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
-          "enable_auto": "Electric vehicle charging optimization (coming soon)",
           "enable_battery_prediction": "Experimental - smart charging based on prices",
           "enable_boiler": "Intelligent boiler heating planning based on spot prices",
           "enable_chmu_warnings": "Weather warnings for your location (CAP XML)",
@@ -268,7 +262,6 @@
           "tariff_nt_start_weekend": "LT start weekend (hour1,hour2)",
           "tariff_vt_start_weekday": "HT start weekday (hour)",
           "tariff_vt_start_weekend": "HT start weekend (hour)",
-          "tariff_weekend_same_as_weekday": "Weekend same as weekdays",
           "vat_rate": "VAT (%)"
         },
         "data_description": {
@@ -282,7 +275,6 @@
           "tariff_nt_start_weekend": "LT start on weekend. Format: hour1,hour2 (e.g., '0' = LT all day)",
           "tariff_vt_start_weekday": "HT start on weekday. Format: hour (e.g., '6' = 06:00)",
           "tariff_vt_start_weekend": "HT start on weekend. Format: hour (leave empty for LT all day)",
-          "tariff_weekend_same_as_weekday": "Use the same HT/LT times on weekends",
           "vat_rate": "VAT rate in percent. Standard 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Step 3: Distribution and VAT**\n\nSet distribution fees and VAT.\n\n💡 **Information:**\n• Distribution is **independent** of purchase/sale type (FIXED/SPOT)\n• If you have 2 tariffs (HT/LT), check 'Two tariffs'\n• HT hours are automatically set according to common times\n\n⚙️ After selecting number of tariffs, click 'Submit' to show parameters.",
@@ -601,12 +593,10 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heater switch - optional",
-          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_cold_inlet_temp_c": "Cold water temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
           "boiler_heater_power_kw_entity": "Heater power sensor (kW)",
           "boiler_heater_switch_entity": "Heater switch",
-          "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
           "boiler_target_temp_c": "Target water temperature (°C)",
@@ -618,12 +608,10 @@
         "data_description": {
           "boiler_alt_cost_kwh": "How much 1 kWh from alternative source costs (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
-          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature from mains (typically 10-15°C)",
           "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch to turn on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = temperature average | two_zone = stratified model (more accurate, needs 2 sensors)",
           "boiler_target_temp_c": "What temperature to heat water to (typically 55-65°C)",
@@ -739,7 +727,6 @@
       },
       "wizard_modules": {
         "data": {
-          "enable_auto": "🚗 Car - vehicle charging planning",
           "enable_battery_prediction": "🔋 Intelligent battery prediction and optimization",
           "enable_boiler": "🔥 Boiler - water heating optimization",
           "enable_chmu_warnings": "🌦️ CHMU Weather Warnings (meteorological alerts)",
@@ -755,7 +742,6 @@
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
-          "enable_auto": "Electric vehicle charging optimization (coming soon)",
           "enable_battery_prediction": "Experimental - smart charging based on prices",
           "enable_boiler": "Intelligent boiler heating planning based on spot prices",
           "enable_chmu_warnings": "Meteorological warnings for your location (CAP XML)",
@@ -785,7 +771,6 @@
           "tariff_nt_start_weekend": "LT start weekend (hour1,hour2)",
           "tariff_vt_start_weekday": "HT start weekday (hour)",
           "tariff_vt_start_weekend": "HT start weekend (hour)",
-          "tariff_weekend_same_as_weekday": "Weekend same as weekdays",
           "vat_rate": "VAT (%)"
         },
         "data_description": {
@@ -799,7 +784,6 @@
           "tariff_nt_start_weekend": "LT start on weekend. Format: hour1,hour2 (e.g., '0' = LT all day)",
           "tariff_vt_start_weekday": "HT start on weekday. Format: hour (e.g., '6' = 06:00)",
           "tariff_vt_start_weekend": "HT start on weekend. Format: hour (leave empty for LT all day)",
-          "tariff_weekend_same_as_weekday": "Use the same HT/LT times on weekends",
           "vat_rate": "VAT rate in percent. Standard 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Step 3: Distribution and VAT**\n\nSet distribution fees and VAT.\n\n💡 **Information:**\n• Distribution is **independent** of purchase/sale type (FIXED/SPOT)\n• If you have 2 tariffs (HT/LT), check 'Two tariffs'\n• HT hours are automatically set according to common times\n\n⚙️ After selecting number of tariffs, click 'Submit' to show parameters.",
@@ -897,6 +881,22 @@
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
       },
+      "ai": {
+        "title": "🤖 Optional AI helper",
+        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
+        "data": {
+          "ai_provider": "AI provider",
+          "ai_base_url": "API base URL",
+          "ai_model": "Model",
+          "ai_api_key": "API key"
+        },
+        "data_description": {
+          "ai_provider": "Optional; no provider is preselected or preferred.",
+          "ai_base_url": "Optional custom OpenAI-compatible URL.",
+          "ai_model": "Optional model identifier.",
+          "ai_api_key": "Leave blank to keep a previously stored key."
+        }
+      },
       "init": {
         "title": "OIG Cloud Settings",
         "description": "Pick the section you want to change. Saving a section applies immediately.",
@@ -907,6 +907,7 @@
           "section_battery": "🔋 Battery & planner",
           "section_pricing": "💰 Energy pricing",
           "section_boiler": "🔥 Boiler",
+          "section_ai": "🤖 AI helper (optional)",
           "section_all": "🧙 Full wizard"
         }
       }
@@ -1116,6 +1117,12 @@
         }
       },
       "name": "Set Grid Delivery Mode"
+    }
+  },
+  "issues": {
+    "config_migration_failed": {
+      "title": "OIG Cloud configuration migration failed",
+      "description": "Configuration migration for entry {entry_id} failed ({code}). The integration will retry when it is set up again."
     }
   }
 }

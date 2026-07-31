@@ -23,6 +23,7 @@ import pytest
 
 _ADMIN_USER = SimpleNamespace(is_admin=True)
 
+from custom_components.oig_cloud.config_registry import FIELD_REGISTRY, coerce_value
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_ENERGY_DAILY,
     CONF_BOILER_CURRENT_POWER_ENTITY,
@@ -572,7 +573,7 @@ async def test_module_config_boiler_section_get():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return default
+            return _ADMIN_USER if key == "hass_user" else default
 
     request = _DummyRequest()
     response = await view.get(request, "testbox")
@@ -711,38 +712,34 @@ async def test_module_config_boiler_section_post_invalid_bool():
 @pytest.mark.asyncio
 async def test_module_config_boiler_target_temp_boundary():
     """boiler_target_temp_c must accept 40–85 °C (boundary values)."""
-    from custom_components.oig_cloud.api.ha_rest_api import OIGCloudModuleConfigView, _coerce_module_value, _MODULE_CONFIG_FIELDS
-
-    spec = _MODULE_CONFIG_FIELDS["boiler"]["boiler_target_temp_c"]
+    field = FIELD_REGISTRY["boiler_target_temp_c"]
 
     # Valid boundaries
-    assert _coerce_module_value(spec, 40.0) == 40.0
-    assert _coerce_module_value(spec, 85.0) == 85.0
-    assert _coerce_module_value(spec, 60.0) == 60.0
+    assert coerce_value(field, 40.0) == 40.0
+    assert coerce_value(field, 85.0) == 85.0
+    assert coerce_value(field, 60.0) == 60.0
 
     # Out-of-range
     with pytest.raises(ValueError):
-        _coerce_module_value(spec, 39.9)
+        coerce_value(field, 39.9)
 
     with pytest.raises(ValueError):
-        _coerce_module_value(spec, 85.1)
+        coerce_value(field, 85.1)
 
 
 def test_module_config_boiler_volume_boundary():
     """boiler_volume_l must accept 30–1000 L."""
-    from custom_components.oig_cloud.api.ha_rest_api import _coerce_module_value, _MODULE_CONFIG_FIELDS
+    field = FIELD_REGISTRY["boiler_volume_l"]
 
-    spec = _MODULE_CONFIG_FIELDS["boiler"]["boiler_volume_l"]
-
-    assert _coerce_module_value(spec, 30.0) == 30.0
-    assert _coerce_module_value(spec, 200.0) == 200.0
-    assert _coerce_module_value(spec, 1000.0) == 1000.0
+    assert coerce_value(field, 30.0) == 30.0
+    assert coerce_value(field, 200.0) == 200.0
+    assert coerce_value(field, 1000.0) == 1000.0
 
     with pytest.raises(ValueError):
-        _coerce_module_value(spec, 29.9)
+        coerce_value(field, 29.9)
 
     with pytest.raises(ValueError):
-        _coerce_module_value(spec, 1000.1)
+        coerce_value(field, 1000.1)
 
 
 # ---------------------------------------------------------------------------

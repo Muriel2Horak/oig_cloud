@@ -41,7 +41,7 @@ async def test_async_step_user_routes():
     assert result["step_id"] == "quick_setup"
 
     result = await flow.async_step_user({"setup_type": "import"})
-    assert result["type"] == "abort"
+    assert result["step_id"] == "wizard_welcome"
 
 
 @pytest.mark.asyncio

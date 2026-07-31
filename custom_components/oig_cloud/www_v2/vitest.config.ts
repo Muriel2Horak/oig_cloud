@@ -5,7 +5,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/__tests__/**/*.test.ts', 'tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    include: [
+      'src/__tests__/**/*.test.ts',
+      'src/ui/components/**/*.test.ts',
+      'tests/unit/**/*.test.ts',
+      'tests/integration/**/*.test.ts',
+    ],
     setupFiles: ['./src/__tests__/setup.ts'],
     coverage: {
       reportsDirectory: './coverage',

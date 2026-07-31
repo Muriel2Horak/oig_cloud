@@ -17,6 +17,26 @@ MODE_HOME_I = "HOME I"
 _LOGGER = logging.getLogger(__name__)
 
 
+def _warn_missing_battery_kwh(
+    sensor: Any, source: str, field_name: str, interval_time_str: str
+) -> None:
+    """Warn once per missing battery-capacity source for one coordinator."""
+    warned_sources = getattr(sensor, "_warned_missing_battery_kwh_sources", None)
+    if not isinstance(warned_sources, set):
+        warned_sources = set()
+        setattr(sensor, "_warned_missing_battery_kwh_sources", warned_sources)
+    if source in warned_sources:
+        return
+    warned_sources.add(source)
+    _LOGGER.warning(
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        + "Missing %s in %s interval %s; battery_kwh left unavailable",
+        field_name,
+        source,
+        interval_time_str,
+    )
+
+
 def is_baseline_plan_invalid(plan: Optional[Dict[str, Any]]) -> bool:
     """Validate baseline plan."""
     if not plan:
@@ -171,7 +191,9 @@ async def _build_baseline_intervals(
         if hybrid_interval:
             if first_hybrid_time is None:
                 first_hybrid_time = interval_time_str
-            interval = _build_interval_from_hybrid(interval_time_str, hybrid_interval)
+            interval = _build_interval_from_hybrid(
+                sensor, interval_time_str, hybrid_interval
+            )
         else:
             interval, was_filled = await _build_interval_from_history_or_default(
                 sensor, hybrid_timeline, interval_start, interval_time_str
@@ -207,14 +229,23 @@ def _find_hybrid_interval(
 
 
 def _build_interval_from_hybrid(
-    interval_time_str: str, hybrid_interval: Dict[str, Any]
+    sensor: Any, interval_time_str: str, hybrid_interval: Dict[str, Any]
 ) -> Dict[str, Any]:
+    battery_capacity_kwh = hybrid_interval.get("battery_capacity_kwh")
+    if battery_capacity_kwh is None:
+        _warn_missing_battery_kwh(
+            sensor, "HYBRID", "battery_capacity_kwh", interval_time_str
+        )
+        battery_kwh: float | None = None
+    else:
+        battery_kwh = round(battery_capacity_kwh, 2)
+
     return {
         "time": interval_time_str,
         "solar_kwh": round(hybrid_interval.get("solar_kwh", 0), 4),
         "consumption_kwh": round(hybrid_interval.get("load_kwh", 0), 4),
         "battery_soc": round(hybrid_interval.get("battery_soc", 50.0), 2),
-        "battery_kwh": round(hybrid_interval.get("battery_capacity_kwh", 7.68), 2),
+        "battery_kwh": battery_kwh,
         "grid_import_kwh": round(hybrid_interval.get("grid_import", 0), 4),
         "grid_export_kwh": round(hybrid_interval.get("grid_export", 0), 4),
         "mode": hybrid_interval.get("mode", 0),
@@ -236,21 +267,30 @@ async def _build_interval_from_history_or_default(
     )
     if historical_data:
         return (
-            _build_interval_from_history(interval_time_str, historical_data),
+            _build_interval_from_history(sensor, interval_time_str, historical_data),
             True,
         )
     return _build_default_interval(interval_time_str, hybrid_timeline), True
 
 
 def _build_interval_from_history(
-    interval_time_str: str, historical_data: Dict[str, Any]
+    sensor: Any, interval_time_str: str, historical_data: Dict[str, Any]
 ) -> Dict[str, Any]:
+    battery_kwh_raw = historical_data.get("battery_kwh")
+    if battery_kwh_raw is None:
+        _warn_missing_battery_kwh(
+            sensor, "historical", "battery_kwh", interval_time_str
+        )
+        battery_kwh: float | None = None
+    else:
+        battery_kwh = round(battery_kwh_raw, 2)
+
     return {
         "time": interval_time_str,
         "solar_kwh": round(historical_data.get("solar_kwh", 0), 4),
         "consumption_kwh": round(historical_data.get("consumption_kwh", 0.065), 4),
         "battery_soc": round(historical_data.get("battery_soc", 50.0), 2),
-        "battery_kwh": round(historical_data.get("battery_kwh", 7.68), 2),
+        "battery_kwh": battery_kwh,
         "grid_import_kwh": round(historical_data.get("grid_import_kwh", 0), 4),
         "grid_export_kwh": round(historical_data.get("grid_export_kwh", 0), 4),
         "mode": historical_data.get("mode", 0),
@@ -261,7 +301,9 @@ def _build_interval_from_history(
 
 
 def _build_default_interval(
-    interval_time_str: str, hybrid_timeline: List[Dict[str, Any]]
+    interval_time_str: str,
+    hybrid_timeline: List[Dict[str, Any]],
+    max_capacity_kwh: float | None = None,
 ) -> Dict[str, Any]:
     first_soc = 50.0
     first_mode = 0
@@ -272,12 +314,21 @@ def _build_default_interval(
         first_mode = first_hi.get("mode", 0)
         first_mode_name = first_hi.get("mode_name", MODE_HOME_I)
 
+    # Plan 4 Task 4 / P7: no implicit author capacity. When the caller does not pass
+    # a real value (sensor-first read), ``battery_kwh`` is left ``None`` so the
+    # downstream consumer can render an ``unavailable`` state with a visible
+    # warning (R5.5) instead of silently using the author's hardcoded value.
+    if max_capacity_kwh is None:
+        battery_kwh: float | None = None
+    else:
+        battery_kwh = round((first_soc / 100.0) * max_capacity_kwh, 2)
+
     return {
         "time": interval_time_str,
         "solar_kwh": 0.0,
         "consumption_kwh": 0.065,
         "battery_soc": round(first_soc, 2),
-        "battery_kwh": round((first_soc / 100.0) * 15.36, 2),
+        "battery_kwh": battery_kwh,
         "grid_import_kwh": 0.065,
         "grid_export_kwh": 0.0,
         "mode": first_mode,

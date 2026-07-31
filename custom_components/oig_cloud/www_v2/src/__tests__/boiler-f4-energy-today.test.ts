@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   altTypeLabel,
+  buildPropBarSegments,
   buildSourceTiles,
   computeSavingsLabel,
   formatKwhLocale,
@@ -207,42 +208,42 @@ describe('buildSourceTiles', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs', 'gas');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.label).toBe('🔥 Plyn');
+    expect(alt?.label).toBe('Plyn');
   });
 
   it('uses generic alt label when altType not provided', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.label).toBe('🔥 Alternativní zdroj');
+    expect(alt?.label).toBe('Alternativní zdroj');
   });
 
   it('FVE tile has correct color', () => {
     const energy = makeEnergy();
     const tiles = buildSourceTiles(energy, 'cs');
     const fve = tiles.find(t => t.key === 'fve');
-    expect(fve?.color).toBe('#ffa726');
+    expect(fve?.color).toBe('#f0b429');
   });
 
   it('Grid tile has correct color', () => {
     const energy = makeEnergy();
     const tiles = buildSourceTiles(energy, 'cs');
     const grid = tiles.find(t => t.key === 'grid');
-    expect(grid?.color).toBe('#2196f3');
+    expect(grid?.color).toBe('#3b82f6');
   });
 
   it('Battery tile has correct color', () => {
     const energy = makeEnergy({ batteryKwh: 0.5 });
     const tiles = buildSourceTiles(energy, 'cs');
     const bat = tiles.find(t => t.key === 'battery');
-    expect(bat?.color).toBe('#7e57c2');
+    expect(bat?.color).toBe('#a78bfa');
   });
 
   it('Alt tile has correct color', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.color).toBe('#e64a19');
+    expect(alt?.color).toBe('#ff8a50');
   });
 });
 
@@ -273,14 +274,14 @@ describe('computeSavingsLabel', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const label = computeSavingsLabel(ps, 'cs');
     expect(label).not.toBeNull();
-    expect(label).toContain('5.7 Kč');
+    expect(label).toContain('5,7 Kč');
   });
 
   it('returns savings label in en for positive savings', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const label = computeSavingsLabel(ps, 'en');
     expect(label).not.toBeNull();
-    expect(label).toContain('5.7 Kč');
+    expect(label).toContain('5,7 Kč');
   });
 
   it('includes plan savings prefix', () => {
@@ -293,9 +294,9 @@ describe('computeSavingsLabel', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 20.0, costIfAllGrid: 20.0 });
     const label = computeSavingsLabel(ps, 'cs');
     // 0 savings => not returned (savings < 0 check is strict <)
-    // 0.0 is not < 0 so label is returned with "0.0 Kč"
+    // 0.0 is not < 0 so label is returned with "0,0 Kč"
     expect(label).not.toBeNull();
-    expect(label).toContain('0.0 Kč');
+    expect(label).toContain('0,0 Kč');
   });
 });
 
@@ -321,6 +322,44 @@ describe('formatKwhLocale', () => {
 
 // ── OigBoilerEnergyToday component ───────────────────────────────────────────
 
+// ── buildPropBarSegments ──────────────────────────────────────────────────────
+// M2/U1: grey unattributed remainder so the bar always sums to ~100%
+
+describe('buildPropBarSegments', () => {
+  it('maps tiles with kwh > 0 to percentage segments', () => {
+    const energy = makeEnergy({ totalKwh: 5.0, fveKwh: 2.5, gridKwh: 2.5, altKwh: 0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    expect(segs.map(s => s.key)).toEqual(['fve', 'grid']);
+    expect(segs[0].pct).toBeCloseTo(50, 3);
+    expect(segs[1].pct).toBeCloseTo(50, 3);
+  });
+
+  it('appends grey unattributed segment when unattributedKwh > 0.05', () => {
+    const energy = makeEnergy({ totalKwh: 4.0, fveKwh: 2.0, gridKwh: 1.0, altKwh: 0, unattributedKwh: 1.0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    const last = segs[segs.length - 1];
+    expect(last.key).toBe('unattributed');
+    expect(last.color).toBe('#8b93ad');
+    expect(last.pct).toBeCloseTo(25, 3);
+    expect(segs.reduce((s, x) => s + x.pct, 0)).toBeCloseTo(100, 3);
+  });
+
+  it('no unattributed segment at or below the 0.05 threshold', () => {
+    const energy = makeEnergy({ totalKwh: 4.0, fveKwh: 3.0, gridKwh: 1.0, altKwh: 0, unattributedKwh: 0.05 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    expect(segs.some(s => s.key === 'unattributed')).toBe(false);
+  });
+
+  it('returns [] when total below the 0.1 empty threshold', () => {
+    const energy = makeEnergy({ totalKwh: 0.05, fveKwh: 0.05, gridKwh: 0, altKwh: 0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    expect(buildPropBarSegments(energy, tiles)).toEqual([]);
+  });
+});
+
 describe('OigBoilerEnergyToday component', () => {
   let el: OigBoilerEnergyToday;
 
@@ -338,7 +377,7 @@ describe('OigBoilerEnergyToday component', () => {
   it('renders i18n heading via template values', () => {
     el.energy = makeEnergy();
     const joined = joinTemplate(el);
-    expect(joined).toContain('Z čeho se bojler nabil');
+    expect(joined).toContain('Energie dnes');
   });
 
   it('renders empty state when energy is null', () => {
@@ -363,7 +402,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.energy = makeEnergy({ fveKwh: 2.1 });
     const joined = joinTemplate(el);
     // FVE label is Czech string from i18n
-    expect(joined).toContain('FVE přetoky');
+    expect(joined).toContain('FVE přebytek');
   });
 
   it('renders Grid tile (Grid label present)', () => {
@@ -421,14 +460,14 @@ describe('OigBoilerEnergyToday component', () => {
     el.energy = makeEnergy();
     el.planSummary = makePlanSummary({ costIfAllGrid: 28.4 });
     const joined = joinTemplate(el);
-    expect(joined).toContain('28.4');
+    expect(joined).toContain('28,4');
   });
 
   it('benchmark shows savings label', () => {
     el.energy = makeEnergy();
     el.planSummary = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const joined = joinTemplate(el);
-    expect(joined).toContain('5.7');
+    expect(joined).toContain('5,7');
   });
 
   it('no benchmark when planSummary is null', () => {
@@ -461,7 +500,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.lang = 'en';
     el.energy = makeEnergy();
     const joined = joinTemplate(el);
-    expect(joined).toContain('What powered the boiler today');
+    expect(joined).toContain('Energy today');
   });
 
   it('renders empty state in en language', () => {

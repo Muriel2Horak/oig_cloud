@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from ..const import DEFAULT_BOILER_COLD_INLET_TEMP_C
 from .const import (
     ALT_TREND_THRESHOLD_C_PER_MIN,
     BOILER_POWER_ON_THRESHOLD_W,
@@ -49,8 +50,6 @@ _DISCHARGE_TREND_C_PER_MIN = -0.02
 
 # Cold-inlet reference temperature for fill-level physics (°C).
 # This is the temperature of fresh tap water entering the boiler.
-_COLD_INLET_TEMP_C = 10.0
-
 _NORMALIZED_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "alternative"})
 
 
@@ -130,6 +129,12 @@ class BoilerSourceHeaterSnapshot:
     heating at +1.9 °C/min showed as 'standby'.  None = unknown → legacy
     derivation."""
 
+    cold_inlet_c: float = DEFAULT_BOILER_COLD_INLET_TEMP_C
+    """Cold-inlet temperature in °C, sourced from user configuration
+    (``CONF_BOILER_COLD_INLET_TEMP_C``).  Plan 4 Task 4 / P7: the classifier
+    no longer falls back to a module-level literal at the call site; callers can
+    pass the configured value through this snapshot field."""
+
 
 @dataclass
 class BoilerActivityDTO:
@@ -180,6 +185,7 @@ class BoilerActivityClassifier:
         fill_level = compute_ready_fraction(
             top_c=curr.top_temp_c,
             bottom_c=curr.bottom_temp_c,
+            cold_inlet_c=snapshot.cold_inlet_c,
         )
 
         state, resolved_source, source_estimated = _determine_activity_state(
@@ -228,7 +234,7 @@ def compute_ready_fraction(
     top_c: float | None,
     bottom_c: float | None,
     ready_temp_c: float = BOILER_READY_TEMP_C,
-    cold_inlet_c: float = _COLD_INLET_TEMP_C,
+    cold_inlet_c: float = DEFAULT_BOILER_COLD_INLET_TEMP_C,
 ) -> float:
     """Compute the fraction of boiler volume with temperature ≥ ready_temp_c.
 

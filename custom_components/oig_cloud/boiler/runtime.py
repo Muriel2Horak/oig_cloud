@@ -25,6 +25,7 @@ from ..const import (
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_CURRENT_POWER_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
+    CONF_BOILER_EFFECTIVE_POWER_W,
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
     CONF_BOILER_BATTERY_CYCLE_COST,
     CONF_BOILER_HOME5_MANEUVER_ENABLED,
@@ -112,9 +113,23 @@ _FORCED_REPLAN_TRIGGERS = frozenset({"override_expiry", "restart_restore"})
 
 
 def _normalize_deadline_time(value: Any, default: str) -> str:
+    """Tolerantly coerce a live-config deadline_time into canonical HH:MM.
+
+    Accepts what a `selector.TimeSelector()` config-flow field and its
+    historical formats can hold: a `datetime.time`, an "HH:MM" or "HH:MM:SS"
+    string, or a bare int/float hour. `None` and anything else unparseable
+    fall back to `default` with a warning — never raises, since this feeds
+    both the live planner and the dry-run simulator.
+    """
     if isinstance(value, datetime_time):
         return value.strftime("%H:%M")
-    if isinstance(value, str):
+    if isinstance(value, bool):
+        pass  # bool is an int subclass; fall through to the warning below
+    elif isinstance(value, (int, float)):
+        hh = int(value)
+        if 0 <= hh <= 23:
+            return f"{hh:02d}:00"
+    elif isinstance(value, str):
         parts = value.split(":")
         if len(parts) in (2, 3):
             try:
@@ -123,6 +138,12 @@ def _normalize_deadline_time(value: Any, default: str) -> str:
                     return f"{hh:02d}:{mm:02d}"
             except ValueError:
                 pass
+    if value is not None:
+        _LOGGER.warning(
+            "Unparseable boiler deadline_time %r, falling back to default %s",
+            value,
+            default,
+        )
     return default
 
 
@@ -875,11 +896,7 @@ def _build_planner_topology(config: dict[str, Any]) -> BoilerThermalTopology:
             CONF_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
         ),
-        heater_power_kw=_float_config(
-            config,
-            "boiler_heater_power_kw",
-            _DEFAULT_HEATER_POWER_KW,
-        ),
+        heater_power_kw=_resolve_heater_power_kw(config),
         # F3a: standing-loss coefficient is set to 0.0 until per-installation
         # calibration data is available.  The model default of 0.02 is
         # physically unrealistic (produces ~20 kWh/slot on a 100 l tank,
@@ -902,10 +919,60 @@ def _float_config(config: dict[str, Any], key: str, default: float) -> float:
         return default
 
 
+def _resolve_heater_power_kw(config: dict[str, Any]) -> float:
+    """Resolve planner-topology heater power [kW] from config.
+
+    Precedence (highest first):
+
+    1. `boiler_heater_power_kw` — explicit kW override (used by existing
+       tests and the simulate-endpoint override whitelist).
+    2. `boiler_effective_power_w` — what the config flow actually stores,
+       in WATTS. Convert to kW.
+    3. `_DEFAULT_HEATER_POWER_KW` — last-resort fallback when neither is set
+       (fresh-install bootstrap, partial config merges).
+    """
+    override = config.get("boiler_heater_power_kw")
+    if override is not None and override != "":
+        try:
+            val = float(override)
+            if math.isfinite(val):
+                return val
+        except (TypeError, ValueError):
+            pass
+
+    raw_w = config.get(CONF_BOILER_EFFECTIVE_POWER_W)
+    if raw_w is not None and raw_w != "":
+        try:
+            val_w = float(raw_w)
+            if math.isfinite(val_w):
+                return val_w / 1000.0
+        except (TypeError, ValueError):
+            pass
+
+    return _DEFAULT_HEATER_POWER_KW
+
+
 def planner_input_horizon_hours(config: dict[str, Any]) -> int:
-    """Return the effective planner horizon hours from config."""
+    """Return the effective planner horizon hours from config.
+
+    Reads `boiler_planning_horizon_hours` (the real key written by the config
+    flow and by config_registry), clamped to the 12..48 hour window. Falls
+    back to planner_core's DEFAULT_HORIZON_HOURS when unset.
+    """
     from .planner_core import DEFAULT_HORIZON_HOURS
-    return int(_float_config(config, "boiler_horizon_hours", DEFAULT_HORIZON_HOURS))
+    from ..const import CONF_BOILER_PLANNING_HORIZON_HOURS
+
+    raw = _float_config(
+        config, CONF_BOILER_PLANNING_HORIZON_HOURS, float(DEFAULT_HORIZON_HOURS)
+    )
+    # Clamp to the supported planner window. Out-of-range values would either
+    # truncate silently or balloon plan_slots beyond the on-disk DTO capacity.
+    hours = int(raw)
+    if hours < 12:
+        return 12
+    if hours > 48:
+        return 48
+    return hours
 
 
 def _build_demand_targets(
@@ -1497,6 +1564,9 @@ class BoilerRuntime:
                 (getattr(self.coordinator, "config", {}) or {}).get(
                     CONF_BOILER_HAS_ALTERNATIVE_HEATING, False
                 )
+            ),
+            cold_inlet_c=(getattr(self.coordinator, "config", {}) or {}).get(
+                CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C
             ),
         )
         activity = self._activity_classifier.classify(

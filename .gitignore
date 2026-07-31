@@ -201,7 +201,12 @@ backup_ha_simple.sh
 create_backup.sh
 simple_backup.sh
 restore_to_ha.sh
-deploy_to_ha.sh
+# deploy_to_ha.sh is intentionally VERSIONED (was ignored here until 2026-07-18).
+# DEVELOPMENT_RULES mandates it as the only sanctioned deploy path, and it now
+# carries the gzip_static fix + served-bundle verification. An unversioned
+# mandatory tool means a fresh clone silently reintroduces the stale-.gz bug
+# that pinned every browser to a 2026-06-26 build. Secrets stay out: it sources
+# .ha_config, which remains ignored.
 deploy_single_ssh.sh
 deploy_dashboard_switcher.sh
 analyze_*.sh

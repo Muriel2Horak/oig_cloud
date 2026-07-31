@@ -2,17 +2,17 @@ const DASH = '—';
 
 export function formatTempC(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
-  return `${v.toFixed(1)} °C`;
+  return `${v.toFixed(1).replace('.', ',')} °C`;
 }
 
 export function formatKwh(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
-  return `${v.toFixed(2)} kWh`;
+  return `${v.toFixed(2).replace('.', ',')} kWh`;
 }
 
 export function formatCzk(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
-  return `${v.toFixed(2)} Kč`;
+  return `${v.toFixed(2).replace('.', ',')} Kč`;
 }
 
 export function formatPercent(v: number | null | undefined): string {
@@ -39,7 +39,7 @@ export function formatDataAge(secs: number | null | undefined): string {
 export function formatTempTrendCPerMin(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
   const sign = v > 0 ? '+' : '';
-  return `${sign}${v.toFixed(2)} °C/min`;
+  return `${sign}${v.toFixed(2).replace('.', ',')} °C/min`;
 }
 
 export function formatLiters(v: number | null | undefined): string {
@@ -49,7 +49,7 @@ export function formatLiters(v: number | null | undefined): string {
 
 export function formatKw(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
-  return `${v.toFixed(2)} kW`;
+  return `${v.toFixed(2).replace('.', ',')} kW`;
 }
 
 export function formatCompactTime(minutes: number | null | undefined): string {

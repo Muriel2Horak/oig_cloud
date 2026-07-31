@@ -47,16 +47,25 @@ def test_pricing_distribution_schema_weekend_fields():
 
 @pytest.mark.asyncio
 async def test_pricing_distribution_weekend_toggle_rerender():
+    """tariff_weekend_same_as_weekday was a verified dead key (P6 audit).
+
+    The rerender-on-toggle mechanism it used to trigger is gone: weekend VT/NT
+    hours are always part of the dual-tariff schema (they fall back to the
+    weekday values when the user leaves them blank). The test now asserts the
+    new contract — submitting dual-tariff data with only the defaults
+    available does NOT rerender the same step.
+    """
     flow = DummyWizard()
     flow._wizard_data = {
         "tariff_count": "dual",
         "tariff_weekend_same_as_weekday": True,
     }
 
+    # Tariff-count flip (dual -> single) is still a real rerender trigger;
+    # submit that explicit change and assert the rerender happens.
     result = await flow.async_step_wizard_pricing_distribution(
         {
-            "tariff_count": "dual",
-            "tariff_weekend_same_as_weekday": False,
+            "tariff_count": "single",
         }
     )
 
@@ -211,7 +220,12 @@ def test_pricing_distribution_schema_weekend_diff_defaults():
         }
     )
     keys = _schema_keys(schema)
-    assert "tariff_weekend_same_as_weekday" in keys
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it is
+    # not a wizard schema field any more — tariff_vt_start_weekend /
+    # tariff_nt_start_weekend carry the answer instead.
+    assert "tariff_weekend_same_as_weekday" not in keys
+    assert "tariff_vt_start_weekend" in keys
+    assert "tariff_nt_start_weekend" in keys
 
 
 @pytest.mark.asyncio

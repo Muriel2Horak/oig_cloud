@@ -28,6 +28,10 @@ _LOGGER = logging.getLogger(__name__)
 PLANNER_WARNING_MARKER = "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
 PLANNER_ERROR_MARKER = "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
 HOME_UPS_LABEL = "HOME UPS"
+# Producer (interval_grouping._format_group_times) emits "24:00" deliberately
+# as an end-of-day label instead of the ambiguous "00:00" -- consumers must
+# treat it as the next day's midnight, not as an invalid hour.
+MIDNIGHT_SENTINELS = ("24:00", "24:00:00")
 
 
 class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
@@ -105,8 +109,8 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
     ) -> None:
         """Log at most once per cooldown for the given key."""
         now = time.monotonic()
-        last = self._log_rl_last.get(key, 0.0)
-        if now - last < cooldown_s:
+        last = self._log_rl_last.get(key)
+        if last is not None and now - last < cooldown_s:
             return
         self._log_rl_last[key] = now
         log_fn = getattr(_LOGGER, level, _LOGGER.debug)
@@ -359,14 +363,19 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
         try:
             start_hour, start_min = map(int, start_time_str.split(":"))
-            end_hour, end_min = map(int, end_time_str.split(":"))
-
             start_time = now.replace(
                 hour=start_hour, minute=start_min, second=0, microsecond=0
             )
-            end_time = now.replace(
-                hour=end_hour, minute=end_min, second=0, microsecond=0
-            )
+
+            if end_time_str in MIDNIGHT_SENTINELS:
+                end_time = now.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+            else:
+                end_hour, end_min = map(int, end_time_str.split(":"))
+                end_time = now.replace(
+                    hour=end_hour, minute=end_min, second=0, microsecond=0
+                )
 
             if day == "tomorrow":
                 start_time = start_time + timedelta(days=1)
@@ -377,11 +386,14 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
             return start_time, end_time, start_time_str, end_time_str
         except (ValueError, AttributeError):
-            _LOGGER.warning(
+            self._log_rate_limited(
+                f"grid_charging_invalid_time:{start_time_str}:{end_time_str}",
+                "warning",
                 PLANNER_WARNING_MARKER
                 + "[GridChargingPlan] Invalid time format: %s - %s",
                 start_time_str,
                 end_time_str,
+                cooldown_s=float("inf"),
             )
             return None
 
@@ -458,12 +470,22 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
         """Parse time string to datetime."""
         now = dt_util.now()
         try:
-            hour, minute = map(int, time_str.split(":"))
-            dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if time_str in MIDNIGHT_SENTINELS:
+                dt = now.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+            else:
+                hour, minute = map(int, time_str.split(":"))
+                dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if day == "tomorrow":
                 dt = dt + timedelta(days=1)
             return dt
         except (ValueError, AttributeError):
+            _LOGGER.debug(
+                "[GridChargingPlan] _parse_time_to_datetime: unparseable time_str=%r day=%r",
+                time_str,
+                day,
+            )
             return now
 
     def _get_decision_trace(self) -> List[Dict[str, Any]]:
