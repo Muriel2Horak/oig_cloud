@@ -467,7 +467,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.energy = makeEnergy();
     el.planSummary = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const joined = joinTemplate(el);
-    expect(joined).toContain('5.7');
+    expect(joined).toContain('5,7');
   });
 
   it('no benchmark when planSummary is null', () => {
