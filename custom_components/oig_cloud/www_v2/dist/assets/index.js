@@ -6515,10 +6515,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
           <h3>${f("boiler.soc.heading",this.lang)}</h3>
           ${g.length>0?s`
             <div class="timeline-summary">
-              ${f("boiler.model.today",i)}: <strong>${ne.toFixed(1)} kWh</strong> ze sítě
-              · <strong style="color:${vi}">${ge.toFixed(1)} kWh</strong> z FVE/přetoku
-              ${xe>0?s` · <strong>~${xe.toFixed(2)} Kč</strong>`:""}
-              ${Ze>0?s` · spotřeba <strong>~${Ze.toFixed(1)} kWh</strong>`:""}
+              ${f("boiler.model.today",i)}: <strong>${ne.toFixed(1).replace(".",",")} kWh</strong> ze sítě
+              · <strong style="color:${vi}">${ge.toFixed(1).replace(".",",")} kWh</strong> z FVE/přetoku
+              ${xe>0?s` · <strong>~${xe.toFixed(2).replace(".",",")} Kč</strong>`:""}
+              ${Ze>0?s` · spotřeba <strong>~${Ze.toFixed(1).replace(".",",")} kWh</strong>`:""}
             </div>
           `:""}
         </div>
