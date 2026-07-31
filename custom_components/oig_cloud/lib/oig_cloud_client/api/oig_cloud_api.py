@@ -592,10 +592,15 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 raise OigCloudApiError("Box ID not available, fetch stats first")
 
             async with self.get_session() as session:
+                # 2026-07-31 portal contract: ToGrid.Toggle.php expects
+                # p_max_feed_grid on every call (null for off/on; the export
+                # cap in W only for the "limited" mode). Omitting it yields the
+                # HTTP 500 error page. off/on send null to match the browser.
                 data: str = json.dumps(
                     {
                         "id_device": self.box_id,
                         "value": mode,
+                        "p_max_feed_grid": None,
                     }
                 )
 
