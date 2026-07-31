@@ -65,6 +65,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
 
