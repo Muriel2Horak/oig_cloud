@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,6 +14,16 @@ from custom_components.oig_cloud.shield import validation as validation_module
 
 
 INSTALL_ID_HASH = hashlib.sha256(b"core-uuid").hexdigest()
+# Read the shipped version dynamically so a version bump does not break the
+# telemetry-shape tests (integration_version comes from manifest.json).
+_MANIFEST_VERSION = json.loads(
+    (
+        Path(__file__).resolve().parent.parent
+        / "custom_components"
+        / "oig_cloud"
+        / "manifest.json"
+    ).read_text()
+)["version"]
 COMMON_SHIELD_KEYS = {
     "schema_version",
     "source_product",
@@ -122,7 +134,7 @@ def _assert_event_shape(
     assert event["event_name"] == event_name
     assert event["device_id"] == "123"
     assert event["install_id_hash"] == INSTALL_ID_HASH
-    assert event["integration_version"] == "2.3.36"
+    assert event["integration_version"] == _MANIFEST_VERSION
     assert event["run_id"] == "na"
     assert event["correlation_id"] == correlation_id
     assert event["result"] == result
