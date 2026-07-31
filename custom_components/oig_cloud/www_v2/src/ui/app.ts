@@ -1422,6 +1422,7 @@ export class OigApp extends LitElement {
         .planSummary=${v2.planSummary ?? null}
         .energyToday=${v2.energyToday ?? null}
         .demandMap=${v2.demandMap ?? null}
+        .drawMap=${v2.drawMap ?? null}
         .circulationRuns=${circRuns}
         .legionella=${v2.legionella ?? null}
         .config=${cfg ?? null}

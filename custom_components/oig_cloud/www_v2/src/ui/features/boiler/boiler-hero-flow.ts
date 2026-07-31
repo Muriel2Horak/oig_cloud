@@ -28,6 +28,7 @@ import type {
   EnergyToday,
   DemandMapData,
   DemandMapWindow,
+  DrawMapData,
   CirculationRun,
   LegionellaStatus,
   BoilerConfig,
@@ -136,6 +137,38 @@ export function findNextCirculationRun(runs: CirculationRun[], nowMs: number): C
   return null;
 }
 
+/** Today's draw summary from drawMap: total liters + peak window. */
+export interface DrawsToday {
+  totalLiters: number;
+  peakTime: string; // HH:MM
+  peakLiters: number;
+}
+
+export function deriveDrawsToday(drawMap: DrawMapData | null): DrawsToday | null {
+  const weekly = drawMap?.weekly;
+  if (!weekly || weekly.length === 0) return null;
+  const today = weekly[weekly.length - 1]; // last entry = today
+  const slots = today?.slotsLiters;
+  if (!slots || slots.length === 0) return null;
+
+  let maxLiters = 0;
+  let maxIndex = 0;
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i] > maxLiters) {
+      maxLiters = slots[i];
+      maxIndex = i;
+    }
+  }
+
+  const slotDurationMin = drawMap.slotDurationMin ?? 15;
+  const peakMinutes = maxIndex * slotDurationMin;
+  const peakHours = Math.floor(peakMinutes / 60);
+  const peakMins = peakMinutes % 60;
+  const peakTime = `${String(peakHours).padStart(2, '0')}:${String(peakMins).padStart(2, '0')}`;
+
+  return { totalLiters: today.totalLiters, peakTime, peakLiters: maxLiters };
+}
+
 export interface HeatingDone {
   kwh: number;
   doneMs: number;
@@ -205,6 +238,7 @@ export class OigBoilerHeroFlow extends LitElement {
   @property({ attribute: false }) planSummary: PlanSummary | null = null;
   @property({ attribute: false }) energyToday: EnergyToday | null = null;
   @property({ attribute: false }) demandMap: DemandMapData | null = null;
+  @property({ attribute: false }) drawMap: DrawMapData | null = null;
   @property({ attribute: false }) circulationRuns: CirculationRun[] = [];
   @property({ attribute: false }) legionella: LegionellaStatus | null = null;
   @property({ attribute: false }) config: BoilerConfig | null = null;
@@ -263,7 +297,7 @@ export class OigBoilerHeroFlow extends LitElement {
     .flow-body { width: 100%; }
     svg.flow-svg { display: block; width: 100%; height: auto; }
 
-    .connector { fill: none; stroke: ${u(MOCK.line)}; stroke-width: 2.5; stroke-linecap: round; }
+    .connector { fill: none; stroke-width: 2.5; stroke-linecap: round; }
     .connector.active { stroke-width: 3; }
     .connector.planned { stroke-dasharray: 4 4; }
     .connector-anim { animation: hero-dash 1s linear infinite; }
@@ -323,6 +357,7 @@ export class OigBoilerHeroFlow extends LitElement {
     const showAlt = activity?.state === 'charging_alt' || hasAltSlot;
 
     // ── RIGHT consumption nodes ──────────────────────────────────────────────
+    const drawsToday = deriveDrawsToday(this.drawMap);
     const nextDemandWindow = findNextDemandWindow(this.demandMap, nowMs);
     const nextCirc = findNextCirculationRun(circRuns, nowMs);
     const legionellaLabel = legionellaCountdownLabel(this.legionella, lang);
@@ -359,11 +394,32 @@ export class OigBoilerHeroFlow extends LitElement {
       }
     };
 
+    // Connector opacity per mock: idle / planned / active
+    const connOpacity = (active: boolean, planned: boolean) => {
+      if (active) return 0.9;
+      if (planned) return 0.6;
+      return null; // use default from table
+    };
+
+    // Connector config per path (mock lines 105-112)
+    const connConfig = (key: string, active: boolean, planned: boolean) => {
+      const baseOpacity = connOpacity(active, planned);
+      const isAnimated = active && !reduceMotion;
+      const cls = ['connector'];
+      if (active) cls.push('active', isAnimated ? 'connector-anim' : '');
+      else if (planned) cls.push('planned');
+      return {
+        stroke: srcColor(key),
+        opacity: baseOpacity ?? (key === 'grid' ? 0.9 : key === 'tank2draw' ? 0.55 : 0.35),
+        class: cls.join(' '),
+      };
+    };
+
     // Node geometry
     const nodeW = 138;
     const nodeH = 54;
     const leftX = 36;
-    const rightX = 726;
+    const rightX = 700;
     const tankX = 380;
     const tankY = 40;
     const tankW = 140;
@@ -373,8 +429,10 @@ export class OigBoilerHeroFlow extends LitElement {
     const gridY = 86;
     const batteryY = 154;
     const altY = 222;
-    const demandY = 70;
-    const circY = 164;
+    // 3-slot right layout (FIX-H3): Odbery y=30, Dalsi y=127, Cirkulace y=218
+    const drawsY = drawsToday != null ? 30 : -100; // omit when null
+    const demandY = drawsToday != null ? 127 : 70;
+    const circY = drawsToday != null ? 218 : 164;
 
     return html`
       <div class="card" data-testid="boiler-hero-flow">
@@ -426,23 +484,24 @@ export class OigBoilerHeroFlow extends LitElement {
               </linearGradient>
             </defs>
 
-            <!-- connectors, left -->
-            ${svg`<path class=${connectorCls(fveActive, fvePlanned)} d="M${leftX + nodeW} ${fveY + nodeH / 2} C${tankX - 40} ${fveY + nodeH / 2}, ${tankX - 40} ${tankY + 55}, ${tankX} ${tankY + 55}" />`}
-            ${svg`<path class=${connectorCls(gridActive, nextGridSlot != null)} d="M${leftX + nodeW} ${gridY + nodeH / 2} C${tankX - 40} ${gridY + nodeH / 2}, ${tankX - 40} ${tankY + tankH / 2}, ${tankX} ${tankY + tankH / 2}" />`}
-            ${svg`<path class=${connectorCls(batteryActive, batteryPlanned)} d="M${leftX + nodeW} ${batteryY + nodeH / 2} C${tankX - 40} ${batteryY + nodeH / 2}, ${tankX - 40} ${tankY + tankH - 55}, ${tankX} ${tankY + tankH - 55}" />`}
-            ${showAlt ? svg`<path class=${connectorCls(activity?.state === 'charging_alt', hasAltSlot)} d="M${leftX + nodeW} ${altY + nodeH / 2} C${tankX - 40} ${altY + nodeH / 2}, ${tankX - 40} ${tankY + tankH - 25}, ${tankX} ${tankY + tankH - 25}" />` : nothing}
+            <!-- connectors, left (source-colored per FIX-H1) -->
+            ${svg`<path class=${connConfig('fve', fveActive, fvePlanned).class} stroke=${srcColor('fve')} stroke-width="2" opacity=${fveActive ? 0.9 : fvePlanned ? 0.6 : 0.35} d="M${leftX + nodeW} ${fveY + nodeH / 2} C${tankX - 40} ${fveY + nodeH / 2}, ${tankX - 40} ${tankY + 55}, ${tankX} ${tankY + 55}" />`}
+            ${svg`<path class=${connConfig('grid', gridActive, nextGridSlot != null).class} stroke=${srcColor('grid')} stroke-width="2.5" opacity=${gridActive ? 0.9 : nextGridSlot != null ? 0.6 : 0.9} d="M${leftX + nodeW} ${gridY + nodeH / 2} C${tankX - 40} ${gridY + nodeH / 2}, ${tankX - 40} ${tankY + tankH / 2}, ${tankX} ${tankY + tankH / 2}" />`}
+            ${svg`<path class=${connConfig('battery', batteryActive, batteryPlanned).class} stroke=${srcColor('battery')} stroke-width="2" opacity=${batteryActive ? 0.9 : batteryPlanned ? 0.6 : 0.3} d="M${leftX + nodeW} ${batteryY + nodeH / 2} C${tankX - 40} ${batteryY + nodeH / 2}, ${tankX - 40} ${tankY + tankH - 55}, ${tankX} ${tankY + tankH - 55}" />`}
+            ${showAlt ? svg`<path class=${connConfig('alt', activity?.state === 'charging_alt', hasAltSlot).class} stroke=${srcColor('alt')} stroke-width="2" opacity=${activity?.state === 'charging_alt' ? 0.9 : hasAltSlot ? 0.6 : 0.3} d="M${leftX + nodeW} ${altY + nodeH / 2} C${tankX - 40} ${altY + nodeH / 2}, ${tankX - 40} ${tankY + tankH - 25}, ${tankX} ${tankY + tankH - 25}" />` : nothing}
 
-            <!-- connectors, right -->
-            ${svg`<path class=${connectorCls(false, nextDemandWindow != null)} d="M${tankX + tankW} ${tankY + 55} C${tankX + tankW + 40} ${tankY + 55}, ${tankX + tankW + 40} ${demandY + nodeH / 2}, ${rightX} ${demandY + nodeH / 2}" />`}
-            ${showCircNode ? svg`<path class=${connectorCls(circActiveNow, nextCirc != null)} d="M${tankX + tankW} ${tankY + tankH - 55} C${tankX + tankW + 40} ${tankY + tankH - 55}, ${tankX + tankW + 40} ${circY + nodeH / 2}, ${rightX} ${circY + nodeH / 2}" />` : nothing}
+            <!-- connectors, right (tank -> draws) -->
+            ${drawsToday != null ? svg`<path class="connector" stroke=${MOCK.water} stroke-width="2" opacity="0.55" d="M${tankX + tankW} ${tankY + 55} C${tankX + tankW + 40} ${tankY + 55}, ${tankX + tankW + 40} ${drawsY + nodeH / 2}, ${rightX} ${drawsY + nodeH / 2}" />` : nothing}
+            ${svg`<path class=${connectorCls(false, nextDemandWindow != null)} stroke=${MOCK.water} stroke-width="2" opacity="0.35" d="M${tankX + tankW} ${tankY + 90} C${tankX + tankW + 40} ${tankY + 90}, ${tankX + tankW + 40} ${demandY + nodeH / 2}, ${rightX} ${demandY + nodeH / 2}" />`}
+            ${showCircNode ? svg`<path class=${connectorCls(circActiveNow, nextCirc != null)} stroke=${MOCK.idle} stroke-width="2" d="M${tankX + tankW} ${tankY + tankH - 55} C${tankX + tankW + 40} ${tankY + tankH - 55}, ${tankX + tankW + 40} ${circY + nodeH / 2}, ${rightX} ${circY + nodeH / 2}" />` : nothing}
 
-            <!-- LEFT source nodes -->
+            <!-- LEFT source nodes (FIX-H2: richer subtitles) -->
             ${this._sourceNode({
               testid: 'hero-node-fve',
               x: leftX, y: fveY,
               color: srcColor('fve'),
               title: t('boiler.hero.node_fve', lang),
-              sub: this.homeBatterySocPct != null ? `${Math.round(this.homeBatterySocPct)} %` : null,
+              sub: this._fveNodeSub(this.homeBatterySocPct, fveActive),
               active: fveActive,
               planned: fvePlanned,
             })}
@@ -460,7 +519,7 @@ export class OigBoilerHeroFlow extends LitElement {
               x: leftX, y: batteryY,
               color: srcColor('battery'),
               title: t('boiler.hero.node_battery', lang),
-              sub: this.homeBatterySocPct != null ? `${Math.round(this.homeBatterySocPct)} %` : null,
+              sub: this._batteryNodeSub(this.energyToday?.batteryKwh ?? null),
               active: batteryActive,
               planned: batteryPlanned,
             })}
@@ -469,7 +528,7 @@ export class OigBoilerHeroFlow extends LitElement {
               x: leftX, y: altY,
               color: srcColor('alt'),
               title: cleanLabel(altTypeLabel(this.altSourceType, lang)),
-              sub: null,
+              sub: this._altNodeSub(this.energyToday?.altKwh ?? null, this.energyToday?.savingsVsAltCzk ?? null),
               active: activity?.state === 'charging_alt',
               planned: hasAltSlot,
             }) : nothing}
@@ -478,7 +537,12 @@ export class OigBoilerHeroFlow extends LitElement {
             <g data-testid="hero-node-tank">
               <rect class="tank-shell" x="${tankX}" y="${tankY}" width="${tankW}" height="${tankH}" rx="24" />
               <rect class="tank-inner" x="${tankX + 6}" y="${tankY + 6}" width="${tankW - 12}" height="${tankH - 12}" rx="18" />
+              <!-- hot-layer band at top of water (FIX-H4) -->
+              ${svg`<rect x="${tankX + 6}" y="${tankY + 6}" width="${tankW - 12}" height="40" rx="18" fill="#3fa7bd" opacity="0.5" />`}
               ${readyPct != null ? svg`<line class="tank-waterline" x1="${tankX + 6}" y1="${tankY + 6 + (readyPct / 100) * (tankH - 12)}" x2="${tankX + tankW - 6}" y2="${tankY + 6 + (readyPct / 100) * (tankH - 12)}" />` : nothing}
+
+              <!-- heater arc (FIX-H4) -->
+              ${svg`<path d="M${tankX + tankW / 2 - 18} ${tankY + tankH - 10} q0 -34 18 -34 q18 0 18 34" fill="none" stroke="#9aa3c0" stroke-width="6" stroke-linecap="round" data-testid="hero-heater-arc" />`}
 
               ${ready ? svg`<text class="tank-readout" x="${tankX + tankW / 2}" y="${tankY + tankH / 2 + 7}" text-anchor="middle">${Math.round(ready.liters)} L</text>` : nothing}
               ${ready ? svg`<text class="tank-caption" x="${tankX + tankW / 2}" y="${tankY + tankH / 2 + 22}" text-anchor="middle">${t('boiler.tank.ready_caption', lang)}</text>` : nothing}
@@ -486,13 +550,13 @@ export class OigBoilerHeroFlow extends LitElement {
               ${topT != null ? svg`
                 <g class="tank-badge" data-testid="hero-tank-temp-top">
                   <rect x="${tankX + tankW - 4}" y="${tankY + 8}" width="44" height="20" rx="6" />
-                  <text x="${tankX + tankW + 18}" y="${tankY + 22}" text-anchor="middle">${Math.round(topT)}°C</text>
+                  <text x="${tankX + tankW + 18}" y="${tankY + 22}" text-anchor="middle" fill="#ffb46b">${Math.round(topT)}°C</text>
                 </g>
               ` : nothing}
               ${botT != null ? svg`
                 <g class="tank-badge" data-testid="hero-tank-temp-bottom">
                   <rect x="${tankX + tankW - 4}" y="${tankY + tankH - 28}" width="44" height="20" rx="6" />
-                  <text x="${tankX + tankW + 18}" y="${tankY + tankH - 14}" text-anchor="middle">${Math.round(botT)}°C</text>
+                  <text x="${tankX + tankW + 18}" y="${tankY + tankH - 14}" text-anchor="middle" fill="#8b93ad">${Math.round(botT)}°C</text>
                 </g>
               ` : nothing}
 
@@ -505,7 +569,16 @@ export class OigBoilerHeroFlow extends LitElement {
               ` : nothing}
             </g>
 
-            <!-- RIGHT nodes -->
+            <!-- RIGHT nodes (FIX-H3: 3-slot layout when drawMap present) -->
+            ${drawsToday ? this._sourceNode({
+              testid: 'hero-node-draws-today',
+              x: rightX, y: drawsY,
+              color: MOCK.water,
+              title: t('boiler.hero.node_draws', lang),
+              sub: `${Math.round(drawsToday.totalLiters)} L · špička ${drawsToday.peakTime} (${Math.round(drawsToday.peakLiters)} L)`,
+              active: false,
+              planned: false,
+            }) : nothing}
             ${this._sourceNode({
               testid: 'hero-node-demand',
               x: rightX, y: demandY,
@@ -518,7 +591,7 @@ export class OigBoilerHeroFlow extends LitElement {
             ${showCircNode ? this._sourceNode({
               testid: 'hero-node-circulation',
               x: rightX, y: circY,
-              color: MOCK.water,
+              color: MOCK.idle,
               title: t('boiler.hero.node_circulation', lang),
               sub: legionellaLabel ?? (nextCirc ? `${nextCirc.start.substring(11, 16)}–${nextCirc.end.substring(11, 16)}` : null),
               active: circActiveNow,
@@ -543,14 +616,41 @@ export class OigBoilerHeroFlow extends LitElement {
   }
 
   private _gridNodeSub(gridKwhToday: number | null, nextGridSlot: BoilerV2PlanSlot | null): string | null {
-    if (gridKwhToday != null && nextGridSlot != null && nextGridSlot.heatingKwh != null && nextGridSlot.heatingKwh > 0) {
-      return `${formatKwh(gridKwhToday)} · +${formatKwh(nextGridSlot.heatingKwh)}`;
+    // FIX-H2: richer subtitle "rano X kWh · plán HH:MM"
+    if (gridKwhToday != null && nextGridSlot != null) {
+      const slotTime = hhmm(Date.parse(nextGridSlot.start));
+      return `${formatKwh(gridKwhToday)} · plán ${slotTime}`;
     }
-    if (gridKwhToday != null) return formatKwh(gridKwhToday);
-    if (nextGridSlot != null && nextGridSlot.heatingKwh != null && nextGridSlot.heatingKwh > 0) {
-      return `+${formatKwh(nextGridSlot.heatingKwh)}`;
+    if (gridKwhToday != null) return `rano ${formatKwh(gridKwhToday)}`;
+    if (nextGridSlot != null) {
+      const slotTime = hhmm(Date.parse(nextGridSlot.start));
+      return `plán ${slotTime}`;
     }
     return null;
+  }
+
+  private _batteryNodeSub(batteryKwh: number | null): string | null {
+    // FIX-H2: "dnes X,kWh" format
+    if (batteryKwh != null) return `dnes ${formatKwh(batteryKwh)}`;
+    return null;
+  }
+
+  private _altNodeSub(altKwh: number | null, savingsVsAlt: number | null): string | null {
+    // FIX-H2: "dnes X,kWh · dráž než spot" or just "dnes X,kWh"
+    if (altKwh != null && savingsVsAlt != null && savingsVsAlt < 0) {
+      return `dnes ${formatKwh(altKwh)} · dráž než spot`;
+    }
+    if (altKwh != null) return `dnes ${formatKwh(altKwh)}`;
+    return null;
+  }
+
+  private _fveNodeSub(batterySocPct: number | null, fveActive: boolean): string | null {
+    // FIX-H2: "X W · baterie Y % — stav" format
+    const status = fveActive ? 'aktivní' : 'čeká';
+    if (batterySocPct != null) {
+      return `baterie ${Math.round(batterySocPct)} % — ${status}`;
+    }
+    return status;
   }
 
   private _sourceNode(opts: {

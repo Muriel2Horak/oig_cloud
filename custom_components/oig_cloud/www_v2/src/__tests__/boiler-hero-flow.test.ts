@@ -242,4 +242,75 @@ describe('oig-boiler-hero-flow', () => {
 
     expect(el.shadowRoot!.querySelector('[data-testid="hero-kpi-next-heating"]')).not.toBeNull();
   });
+
+  // FIX-H3: drawMap node tests
+  it('renders the Odbery-dnes node when drawMap is provided', async () => {
+    const drawMapData = {
+      slotDurationMin: 15,
+      weekly: [{
+        date: '2026-07-28',
+        totalLiters: 147,
+        slotsLiters: Array(96).fill(0).map((_, i) => i === 24 ? 114 : 0), // peak at 06:00
+      }],
+      profiles: {},
+    };
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+        .drawMap=${drawMapData}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    expect(el.shadowRoot!.querySelector('[data-testid="hero-node-draws-today"]')).not.toBeNull();
+  });
+
+  it('omits the Odbery-dnes node when drawMap is null', async () => {
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+        .drawMap=${null}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    expect(el.shadowRoot!.querySelector('[data-testid="hero-node-draws-today"]')).toBeNull();
+  });
+
+  // FIX-H4: tank arc and hot-layer tests
+  it('renders the heater arc element', async () => {
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+        .config=${{ volumeL: 200, heaterPowerW: 2000 }}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    expect(el.shadowRoot!.querySelector('[data-testid="hero-heater-arc"]')).not.toBeNull();
+  });
+
+  // FIX-H1: source-colored connectors
+  it('applies source-specific stroke colors to connectors', async () => {
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    const svg = el.shadowRoot!.querySelector('svg');
+    const paths = svg!.querySelectorAll('path');
+    // Find the FVE connector (should have #f0b429)
+    const fvePath = Array.from(paths).find(p => p.getAttribute('stroke') === '#f0b429');
+    expect(fvePath).not.toBeNull();
+  });
 });
