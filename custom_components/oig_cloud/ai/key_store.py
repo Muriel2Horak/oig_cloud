@@ -44,7 +44,7 @@ class AiKeyStore:
         data = await self._async_data()
         data.update({"provider": provider, "api_key": api_key, "verified_at": None})
         await self._store.async_save(data)
-        _LOGGER.debug("AI key stored for provider %s (%s)", provider, redact_key(api_key))
+        _LOGGER.debug("AI key stored for provider %s", provider)
 
     async def async_clear(self) -> None:
         """Delete the per-entry private AI key store."""
