@@ -3,6 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { OigBoilerTimelineChart } from '@/ui/features/boiler/boiler-timeline-chart';
+import type { BoilerV2Data } from '@/ui/features/boiler/types';
 
 // 2026-06-15 12:00 UTC
 const FROZEN_NOW_MS = Date.UTC(2026, 5, 15, 12, 0, 0);
@@ -57,7 +58,7 @@ function makeSlot(overrides = {}) {
   }, overrides);
 }
 
-async function mountTimeline(data, config = FROZEN_CONFIG) {
+async function mountTimeline(data: BoilerV2Data, config = FROZEN_CONFIG) {
   const el = document.createElement('oig-boiler-timeline-chart');
   el.data = data;
   el.config = config;
