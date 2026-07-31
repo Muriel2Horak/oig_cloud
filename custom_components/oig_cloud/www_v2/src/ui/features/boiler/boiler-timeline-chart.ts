@@ -936,7 +936,7 @@ export class OigBoilerTimelineChart extends LitElement {
           </div>
 
           <div class="timeline-axis">
-            ${axisTicks.map((tick) => html`<span style="transform:translateX(${tick.x < 30 ? 0 : tick.x > VIEWBOX_W - 30 ? 0 : 0}px)">${tick.label}</span>`)}
+            ${axisTicks.map((tick) => html`<span>${tick.label}</span>`)}
           </div>
 
           <div class="timeline-legend">

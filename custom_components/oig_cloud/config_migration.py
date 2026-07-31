@@ -308,9 +308,9 @@ def _coerce_transform_output(result: object) -> tuple[dict[str, Any], set[str]]:
     if not isinstance(updates, dict):
         raise TypeError("transform output must be dict or (dict, list[str])")
 
+    # set(...) both validates iterability (raising TypeError otherwise) and
+    # deduplicates; an explicit isinstance check afterwards is always true.
     normalized_removed = set(removed_keys)
-    if not isinstance(normalized_removed, set):
-        raise TypeError("removed_keys must be iterable of strings")
     return updates, {str(key) for key in normalized_removed}
 
 

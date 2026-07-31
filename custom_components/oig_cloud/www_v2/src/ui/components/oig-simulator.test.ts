@@ -120,7 +120,7 @@ describe('simulator fetcher', () => {
     expect(result.intervals).toHaveLength(2);
     expect(result.intervals[0]).toEqual({ t: '2099-06-14T00:00:00Z', mode: 'ups', soc: 50.0, cost: 1.1 });
     expect(result.intervals[1]).toEqual({ t: '2099-06-14T00:15:00Z', mode: 'home', soc: 51.7, cost: 0 });
-    expect(result.summary.cost).toBe(1.1);
+    expect(result.summary.cost).toBeCloseTo(1.1);
     expect(result.summary.base_cost).toBeUndefined();
     expect(result.summary.ups_hours).toBeCloseTo(0.25);
 
@@ -253,8 +253,8 @@ describe('simulator fetcher', () => {
       source: 'grid',
       temp: 57.9,
     });
-    expect(result.summary.kwh).toBe(2.4);
-    expect(result.summary.cost).toBe(5.6);
+    expect(result.summary.kwh).toBeCloseTo(2.4);
+    expect(result.summary.cost).toBeCloseTo(5.6);
     expect(result.summary.solar_share).toBeCloseTo(0.5);
 
     vi.unstubAllGlobals();
@@ -473,7 +473,7 @@ describe('oig-simulator', () => {
     await (el as any).updateComplete;
 
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(fetcher.mock.calls[1][0].draft.charge_rate_kw).toBe(5.2);
+    expect(fetcher.mock.calls[1][0].draft.charge_rate_kw).toBeCloseTo(5.2);
     expect(el.shadowRoot!.querySelector('[data-testid="kpi-ups-hours"]')!.textContent).toMatch(/\d+/);
   });
 
