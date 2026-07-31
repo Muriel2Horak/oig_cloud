@@ -1,0 +1,18 @@
+=== týden 2026-07-24 … 2026-07-30 (7 dní, 15min buckety) ===
+
+HEADLINE: Nejsilnější vazbou týdne je spotřeba ↔ odběr ze sítě (r=0,91): velké špičky (14,7 kW ve čt 24.7. v 11h, 14,3 kW v so 26.7. v 11h) šly téměř celé ze sítě. Nejzajímavější je ale opak — největší fázové špičky týdne (3,0 kW 25.7. v 8h, 2,8 kW 27.7. v 7h) nastaly při odběru ze sítě blízkém nule: ranní jednofázovou zátěž těsně pod limitem 3 300 W pokrývala baterie s FVE, a právě proto je korelace špička↔síť jen střední.
+
+ZÁVISLOSTI:
+• Spotřeba ↔ odběr ze sítě (r=0,91, silná): OČEKÁVANÉ. Vše nad ~3–4 kW jde ze sítě — FVE dává max ~4,2 kW a baterie zbytek nepokryje. V obou největších špičkách (24.7. 11h: 14,7 kW spotřeba / 12,2 kW síť; 26.7. 11h: 14,3 / 13,3 kW) kryla síť přes 85 % zátěže.
+• Fázová špička ↔ odběr ze sítě (r=0,4, střední) a fázová nerovnováha ↔ síť (r=0,4, střední): SLABŠÍ, NEŽ BY ČEKALA hypotéza "špička na fázi = velký odběr ze sítě". Tabulka ukazuje proč: největší fázové špičky (3 004 W 25.7. 8h, 2 780 W 27.7. 7h, 2 697 W 26.7. 8h) přišly ráno při odběru ze sítě jen 168–222 W — jednofázový ranní spotřebič (typu bojler/konvice) jel z baterie a FVE. Špička na fázi tedy se sítí souvisí jen tehdy, když je baterie vybitá nebo zátěž třífázová.
+• Fázová nerovnováha ↔ fázová špička: obě metriky vrcholí ve stejných hodinách (24.7. 11h: imbalance 1 833 W — týdenní maximum — při špičce 2 610 W). Nerovnováha je tažená jednofázovými spotřebiči; provozně to znamená, že limit 3 300 W/fáze se plní výrazně dřív, než by odpovídalo třetině celkové spotřeby.
+• Teplota střídače ↔ teplota baterie (r=0,58, střední): OČEKÁVANÉ — obě sledují denní cyklus zátěže a okolí. Střední místo silné proto, že baterie má větší tepelnou setrvačnost a její maxima řídí nabíjecí výkon, ne okamžitá zátěž: týdenní maximum baterie 38,4 °C (26.7. 16h) přišlo hned po rychlonabíjení SoC 24→93 % za 3 h, kdy odběr ze sítě (5,4–5,9 kW) převyšoval spotřebu — baterie se dobíjela i ze sítě a ohřála se o ~7 °C.
+• Spotřeba ↔ teplota střídače (r=0,21) a špička ↔ teplota střídače (r=0,28, slabé): PŘEKVAPIVĚ SLABÉ. Krátké špičky střídač neohřejí — při rekordních 14,7 kW (24.7. 11h) měl jen 38,1 °C, kdežto týdenní maximum 42,9 °C nastalo 30.7. ve 12h při spotřebě pouhých ~2–3,6 kW, zato při celodenní produkci FVE ~3,8–4 kW. Teplotu střídače řídí spíš trvalý (solární) výkon a okolní teplota než špičky zátěže.
+• Napětí a frekvence sítě ↔ odběr (r=0,15 a 0,04, žádná): NEPŘÍTOMNÁ vazba — hypotéza "velký odběr → pokles kvality sítě" se nepotvrdila. Rozpětí napětí fází zůstalo celý týden 0,1–1,4 V a odchylka frekvence ≤0,08 Hz i při odběru 13,3 kW. Síť je v místě tvrdá; kvalita sítě tedy provoz zálohy tento týden nijak neomezovala.
+
+UDÁLOSTI:
+• 24.7. 11h: největší zátěž týdne — spotřeba 14 695 W, síť 12 225 W, k tomu týdenní maximum nerovnováhy fází 1 833 W. FVE dávala 4,1 kW, SoC 65 % — špička byla příliš velká i pro plnou FVE.
+• 25.7. 8h: fázová špička 3 004 W, nejblíž limitu 3 300 W za celý týden (91 %), kryto prakticky jen z baterie a FVE (síť 168 W). Stejný ranní vzorec se opakoval 26.7. (2 697 W) a 27.7. (2 780 W) — těsné, ale bez přetížení.
+• 26.7. 11h–16h: řetězec — dopolední špička (14,3 kW, týdenní maximum sítě 13,3 kW) vybila baterii na 24 %, následovalo rychlodobíjení 13–16h i ze sítě a s ním růst teploty baterie na týdenní maximum 38,4 °C v 16h. Ve stejném okně i největší odchylka frekvence (0,08 Hz v 15h) — zanedbatelná, jen časová shoda.
+• 30.7. 12h: týdenní maximum teploty střídače 42,9 °C při SoC 100 % a nulovém odběru ze sítě — celodenní slunečný provoz, ne porucha.
+• Drobné špičky 2,5–3,0 kW na fázi se opakovaly téměř každé ráno a poledne; žádná nepřekročila limit, jen zmínka.
