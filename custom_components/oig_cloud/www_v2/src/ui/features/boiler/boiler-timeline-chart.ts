@@ -791,10 +791,10 @@ export class OigBoilerTimelineChart extends LitElement {
           <h3>${t('boiler.soc.heading', this.lang)}</h3>
           ${planSlots.length > 0 ? html`
             <div class="timeline-summary">
-              ${t('boiler.model.today', lang)}: <strong>${sumGridKwh.toFixed(1)} kWh</strong> ze sítě
-              · <strong style="color:${FVE_COLOR}">${sumPvAltKwh.toFixed(1)} kWh</strong> z FVE/přetoku
-              ${sumCostCzk > 0 ? html` · <strong>~${sumCostCzk.toFixed(2)} Kč</strong>` : ''}
-              ${sumTotalKwh > 0 ? html` · spotřeba <strong>~${sumTotalKwh.toFixed(1)} kWh</strong>` : ''}
+              ${t('boiler.model.today', lang)}: <strong>${sumGridKwh.toFixed(1).replace('.', ',')} kWh</strong> ze sítě
+              · <strong style="color:${FVE_COLOR}">${sumPvAltKwh.toFixed(1).replace('.', ',')} kWh</strong> z FVE/přetoku
+              ${sumCostCzk > 0 ? html` · <strong>~${sumCostCzk.toFixed(2).replace('.', ',')} Kč</strong>` : ''}
+              ${sumTotalKwh > 0 ? html` · spotřeba <strong>~${sumTotalKwh.toFixed(1).replace('.', ',')} kWh</strong>` : ''}
             </div>
           ` : ''}
         </div>
