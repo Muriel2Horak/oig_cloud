@@ -69,8 +69,11 @@ async def test_key_never_reaches_config_entry_options(store):
 
 
 @pytest.mark.asyncio
-async def test_setting_a_key_logs_only_a_redacted_fingerprint(store, caplog):
+async def test_setting_a_key_never_logs_the_secret(store, caplog):
     with caplog.at_level(logging.DEBUG):
         await store.async_set_key("groq", _SECRET)
+    # No key material (not even a redacted fragment) is logged — only the
+    # provider name — so CodeQL's clear-text-logging dataflow has no sink.
     assert _SECRET not in caplog.text
-    assert "gsk_…6789" in caplog.text
+    assert "gsk_" not in caplog.text
+    assert "groq" in caplog.text
