@@ -139,7 +139,7 @@ export function computeSavingsLabel(
   const savings = costIfAllGrid - estimatedCostCzk;
   if (savings < 0) return null;
   const prefix = t('boiler.energy_today.benchmark_savings', lang);
-  return `${prefix} ${savings.toFixed(1)} Kč`;
+  return `${prefix} ${savings.toFixed(1).replace('.', ',')} Kč`;
 }
 
 export function formatKwhLocale(v: number): string {
@@ -317,7 +317,7 @@ export class OigBoilerEnergyToday extends LitElement {
           <div class="benchmark" data-testid="benchmark">
             ${benchmarkCostGrid != null ? html`
               <span>
-                ${t('boiler.energy_today.benchmark_prefix', lang)} ${benchmarkCostGrid.toFixed(1)} Kč
+                ${t('boiler.energy_today.benchmark_prefix', lang)} ${benchmarkCostGrid.toFixed(1).replace('.', ',')} Kč
                 ${savingsLabel ? html`<strong> ${savingsLabel}</strong>` : nothing}
               </span>
             ` : nothing}

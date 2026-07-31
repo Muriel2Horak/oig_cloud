@@ -10,16 +10,16 @@ import {
 
 describe('boiler formatters', () => {
   it('formats temperature with 1 decimal and unit', () => {
-    expect(formatTempC(45)).toBe('45.0 °C');
-    expect(formatTempC(45.27)).toBe('45.3 °C');
+    expect(formatTempC(45)).toBe('45,0 °C');
+    expect(formatTempC(45.27)).toBe('45,3 °C');
     expect(formatTempC(null)).toBe('—');
   });
   it('formats kWh with 2 decimals', () => {
-    expect(formatKwh(1.5)).toBe('1.50 kWh');
+    expect(formatKwh(1.5)).toBe('1,50 kWh');
     expect(formatKwh(null)).toBe('—');
   });
   it('formats CZK with 2 decimals', () => {
-    expect(formatCzk(2.123)).toBe('2.12 Kč');
+    expect(formatCzk(2.123)).toBe('2,12 Kč');
     expect(formatCzk(null)).toBe('—');
   });
   it('formats percent with 0 decimals', () => {

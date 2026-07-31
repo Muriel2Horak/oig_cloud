@@ -490,7 +490,6 @@ export class OigBoilerPlanRealitaTile extends LitElement {
               </span>
             `
           : nothing}
-        ${s.detail ? html`<span class="s-detail">${s.detail}</span>` : nothing}
       </div>
     `;
   }

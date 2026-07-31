@@ -274,14 +274,14 @@ describe('computeSavingsLabel', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const label = computeSavingsLabel(ps, 'cs');
     expect(label).not.toBeNull();
-    expect(label).toContain('5.7 Kč');
+    expect(label).toContain('5,7 Kč');
   });
 
   it('returns savings label in en for positive savings', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 22.7, costIfAllGrid: 28.4 });
     const label = computeSavingsLabel(ps, 'en');
     expect(label).not.toBeNull();
-    expect(label).toContain('5.7 Kč');
+    expect(label).toContain('5,7 Kč');
   });
 
   it('includes plan savings prefix', () => {
@@ -294,9 +294,9 @@ describe('computeSavingsLabel', () => {
     const ps = makePlanSummary({ estimatedCostCzk: 20.0, costIfAllGrid: 20.0 });
     const label = computeSavingsLabel(ps, 'cs');
     // 0 savings => not returned (savings < 0 check is strict <)
-    // 0.0 is not < 0 so label is returned with "0.0 Kč"
+    // 0.0 is not < 0 so label is returned with "0,0 Kč"
     expect(label).not.toBeNull();
-    expect(label).toContain('0.0 Kč');
+    expect(label).toContain('0,0 Kč');
   });
 });
 
@@ -460,7 +460,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.energy = makeEnergy();
     el.planSummary = makePlanSummary({ costIfAllGrid: 28.4 });
     const joined = joinTemplate(el);
-    expect(joined).toContain('28.4');
+    expect(joined).toContain('28,4');
   });
 
   it('benchmark shows savings label', () => {

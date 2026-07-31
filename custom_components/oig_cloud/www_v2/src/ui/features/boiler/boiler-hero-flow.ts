@@ -497,7 +497,7 @@ export class OigBoilerHeroFlow extends LitElement {
               ` : nothing}
 
               ${heaterPowerW != null ? svg`
-                <text class="heater-label" x="${tankX + tankW / 2}" y="${tankY + tankH + 14}" text-anchor="middle" data-testid="hero-heater-power">${t('boiler.model.element', lang)} · ${(heaterPowerW / 1000).toFixed(1)}&nbsp;kW</text>
+                <text class="heater-label" x="${tankX + tankW / 2}" y="${tankY + tankH + 14}" text-anchor="middle" data-testid="hero-heater-power">${t('boiler.model.element', lang)} · ${(heaterPowerW / 1000).toFixed(1).replace('.', ',')}&nbsp;kW</text>
               ` : nothing}
 
               ${heatingDone ? svg`
@@ -511,7 +511,7 @@ export class OigBoilerHeroFlow extends LitElement {
               x: rightX, y: demandY,
               color: MOCK.water,
               title: t('boiler.hero.node_next_demand', lang),
-              sub: nextDemandWindow ? `${Math.round(nextDemandWindow.p80Kwh * 10) / 10} kWh` : null,
+              sub: nextDemandWindow ? `${(Math.round(nextDemandWindow.p80Kwh * 10) / 10).toFixed(1).replace('.', ',')} kWh` : null,
               active: false,
               planned: nextDemandWindow != null,
             })}
@@ -534,7 +534,7 @@ export class OigBoilerHeroFlow extends LitElement {
     const lang = this.lang;
     const kwh = slot.heatingKwh ?? null;
     if (kwh != null && kwh <= 0) {
-      return `${t('boiler.plan.next_action', lang)} ${t('boiler.hero.next_heating_dash', lang)}`;
+      return t('boiler.hero.next_heating_dash', lang);
     }
     let label = `${hhmm(Date.parse(slot.start))} · ${sourceLabel(slot.recommendedSource, lang)}`;
     if (kwh != null && kwh > 0) label += ` · ${formatKwh(kwh)}`;

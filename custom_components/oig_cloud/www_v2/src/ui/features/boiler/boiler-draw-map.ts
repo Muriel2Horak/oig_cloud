@@ -124,7 +124,7 @@ export class OigBoilerDrawMap extends LitElement {
 
   private _heatmapSvg(): string {
     const dm = this.data!;
-    const days = dm.weekly;
+    const days = this.compact ? dm.weekly.slice(-7) : dm.weekly;
     const max = Math.max(1, ...days.flatMap(d => d.slotsLiters));
     const c = this.compact;
     // Compact shrinks the viewBox itself (not just CSS scale) so that the
