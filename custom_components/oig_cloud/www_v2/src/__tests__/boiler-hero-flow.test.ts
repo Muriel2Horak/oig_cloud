@@ -309,8 +309,126 @@ describe('oig-boiler-hero-flow', () => {
 
     const svg = el.shadowRoot!.querySelector('svg');
     const paths = svg!.querySelectorAll('path');
-    // Find the FVE connector (should have #f0b429)
-    const fvePath = Array.from(paths).find(p => p.getAttribute('stroke') === '#f0b429');
-    expect(fvePath).not.toBeNull();
+    const byStroke = (stroke: string) => Array.from(paths).find(p => p.getAttribute('stroke') === stroke);
+
+    expect(byStroke('#f0b429'), 'fve').not.toBeNull();
+    expect(byStroke('#3b82f6'), 'grid').not.toBeNull();
+    expect(byStroke('#a78bfa'), 'battery').not.toBeNull();
+
+    const altEl = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${{ ...ACTIVITY, state: 'standby', source: null }}
+        .planSlots=${[futureSlot({ recommendedSource: 'alternative' })]}
+        .altSourceType=${'gas'}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(altEl);
+    const altSvg = altEl.shadowRoot!.querySelector('svg');
+    const altPaths = altSvg!.querySelectorAll('path');
+    expect(Array.from(altPaths).find(p => p.getAttribute('stroke') === '#ff8a50'), 'alt').not.toBeNull();
+  });
+
+  it('grades grid connector opacity active > planned > idle', async () => {
+    const activeEl = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(activeEl);
+    const activeGrid = Array.from(activeEl.shadowRoot!.querySelectorAll('path'))
+      .find(p => p.getAttribute('stroke') === '#3b82f6');
+    expect(activeGrid?.getAttribute('opacity')).toBe('0.9');
+
+    const plannedEl = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${{ ...ACTIVITY, state: 'standby', source: null }}
+        .planSlots=${[futureSlot({ recommendedSource: 'grid' })]}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(plannedEl);
+    const plannedGrid = Array.from(plannedEl.shadowRoot!.querySelectorAll('path'))
+      .find(p => p.getAttribute('stroke') === '#3b82f6');
+    expect(plannedGrid?.getAttribute('opacity')).toBe('0.6');
+
+    const idleEl = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${{ ...ACTIVITY, state: 'standby', source: null }}
+        .planSlots=${[]}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(idleEl);
+    const idleGrid = Array.from(idleEl.shadowRoot!.querySelectorAll('path'))
+      .find(p => p.getAttribute('stroke') === '#3b82f6');
+    expect(idleGrid?.getAttribute('opacity')).toBe('0.35');
+  });
+
+  it('sets an explicit opacity on the circulation connector', async () => {
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${{ ...ACTIVITY, state: 'standby', source: null }}
+        .planSlots=${[]}
+        .circulationRuns=${[{ start: new Date(NOW_MS + 30 * 60_000).toISOString(), end: new Date(NOW_MS + 60 * 60_000).toISOString(), label: 'rano' }]}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    const circNode = el.shadowRoot!.querySelector('[data-testid="hero-node-circulation"]');
+    expect(circNode).not.toBeNull();
+    const circPath = Array.from(el.shadowRoot!.querySelectorAll('path'))
+      .find(p => p.getAttribute('stroke') === '#39415f');
+    expect(circPath).not.toBeNull();
+    expect(circPath?.hasAttribute('opacity')).toBe(true);
+    expect(circPath?.getAttribute('opacity')).toBe('0.6');
+  });
+
+  it('renders the Odbery-dnes node with mock width 170', async () => {
+    const drawMapData = {
+      slotDurationMin: 15,
+      weekly: [{
+        date: '2026-07-28',
+        totalLiters: 147,
+        slotsLiters: Array(96).fill(0).map((_, i) => i === 24 ? 114 : 0),
+      }],
+      profiles: {},
+    };
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${ACTIVITY}
+        .planSlots=${[]}
+        .drawMap=${drawMapData}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    const node = el.shadowRoot!.querySelector('[data-testid="hero-node-draws-today"]');
+    expect(node).not.toBeNull();
+    const rect = node!.querySelector('rect');
+    expect(rect?.getAttribute('width')).toBe('170');
+    expect(rect?.getAttribute('height')).toBe('50');
+  });
+
+  it('translates subtitle fragments via t() in EN locale', async () => {
+    const el = await fixture<HeroEl>(html`
+      <oig-boiler-hero-flow
+        .status=${STATUS}
+        .activity=${{ ...ACTIVITY, state: 'standby', source: null }}
+        .planSlots=${[]}
+        .energyToday=${{ totalKwh: 5, fveKwh: 0, gridKwh: 0, altKwh: 0, batteryKwh: 2.5, unattributedKwh: 0, sourceInvalid: false }}
+        .lang=${'en'}
+      ></oig-boiler-hero-flow>
+    `);
+    await flush(el);
+
+    const batteryNode = el.shadowRoot!.querySelector('[data-testid="hero-node-battery"]');
+    expect(batteryNode).not.toBeNull();
+    expect(batteryNode!.textContent).toMatch(/today\s*2,50\s*kWh/i);
+    expect(batteryNode!.textContent).not.toMatch(/dnes/i);
   });
 });
