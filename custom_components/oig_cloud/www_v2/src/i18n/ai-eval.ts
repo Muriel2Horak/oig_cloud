@@ -12,11 +12,13 @@ const STRINGS: Record<AiEvalLang, Record<string, string>> = {
     'ai_eval.lidsky_heading': 'Lidský',
     'ai_eval.last_run': 'Poslední běh',
     'ai_eval.unavailable': 'AI hodnocení není k dispozici',
+    'ai_eval.all_ok': 'Vše v normě — nic k řešení.',
     'ai_eval.ledger_toggle': 'Zobrazit protokol',
     'ai_eval.ledger_hide': 'Skrýt protokol',
   },
   en: {
     'ai_eval.title': 'AI Evaluation',
+    'ai_eval.all_ok': 'All normal — nothing to act on.',
     'ai_eval.fakta_heading': 'Facts',
     'ai_eval.lidsky_heading': 'Plain language',
     'ai_eval.last_run': 'Last run',

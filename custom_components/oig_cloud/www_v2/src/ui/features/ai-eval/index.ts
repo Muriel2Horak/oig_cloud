@@ -75,6 +75,16 @@ export class OigAiEvalTile extends LitElement {
       word-break: break-word;
     }
 
+    .ai-eval-ok {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      font-size: 14px;
+      color: #2e7d32;
+      font-weight: 500;
+    }
+
     .ai-eval-unavailable {
       display: flex;
       align-items: center;
@@ -140,6 +150,10 @@ export class OigAiEvalTile extends LitElement {
           <span class="ai-eval-last-run">${aiEvalT('ai_eval.last_run', this.evalLang)}: ${this.formatTimestamp(d.lastRun)}</span>
         ` : nothing}
       </div>
+
+      ${d.status === 'ok' ? html`
+        <div class="ai-eval-ok">✓ ${aiEvalT('ai_eval.all_ok', this.evalLang)}</div>
+      ` : nothing}
 
       ${d.reportFakta ? html`
         <div class="ai-eval-section">

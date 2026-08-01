@@ -45,13 +45,14 @@ describe('extractAiEvalData', () => {
     expect(data.available).toBe(false);
   });
 
-  it('returns unavailable when both report attributes are empty', () => {
+  it('returns ok/quiet when the sensor ran but had nothing to report', () => {
     const states = mkEntity({ report_fakta: '', report_lidsky: '  ' });
     const data = extractAiEvalData(states, BOX);
-    expect(data.available).toBe(false);
+    expect(data.available).toBe(true);
+    expect(data.status).toBe('ok');
   });
 
-  it('returns unavailable when attributes are missing', () => {
+  it('returns ok/quiet when attributes are empty but the sensor is present', () => {
     const states = {
       [`sensor.oig_${BOX}_ai_eval`]: {
         state: 'ok',
@@ -59,7 +60,8 @@ describe('extractAiEvalData', () => {
       },
     };
     const data = extractAiEvalData(states, BOX);
-    expect(data.available).toBe(false);
+    expect(data.available).toBe(true);
+    expect(data.status).toBe('ok');
   });
 
   it('extracts fakta and lidsky from attributes', () => {
@@ -106,21 +108,23 @@ describe('extractAiEvalData', () => {
       last_run: true,
     });
     const data = extractAiEvalData(states, BOX);
-    expect(data.available).toBe(false);
+    expect(data.available).toBe(true);
+    expect(data.status).toBe('ok');
     expect(data.reportFakta).toBeNull();
     expect(data.reportLidsky).toBeNull();
     expect(data.ledger).toBeNull();
     expect(data.lastRun).toBeNull();
   });
 
-  it('handles entity with no attributes key', () => {
+  it('handles entity with no attributes key (present -> ok)', () => {
     const states = {
       [`sensor.oig_${BOX}_ai_eval`]: {
         state: 'ok',
       },
     };
     const data = extractAiEvalData(states, BOX);
-    expect(data.available).toBe(false);
+    expect(data.available).toBe(true);
+    expect(data.status).toBe('ok');
   });
 });
 
@@ -199,6 +203,7 @@ async function flush(el: TileEl): Promise<void> {
 
 const POPULATED_DATA: AiEvalData = {
   available: true,
+  status: 'attention',
   reportFakta: 'Fakta report content',
   reportLidsky: 'Lidský text here',
   ledger: '10:00 - event A',

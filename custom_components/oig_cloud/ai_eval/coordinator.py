@@ -94,8 +94,8 @@ def _states_to_samples(states: List[Any]) -> List[tuple[float, Any]]:
 def _label_fn(start_ts: float, n: int) -> callable:
     def label(i: int) -> str:
         t = start_ts + i * detector.STEP_S
-        dt = datetime.fromtimestamp(t, tz=timezone.utc)
-        return dt.strftime("%H:%M:%S")
+        dt = dt_util.as_local(datetime.fromtimestamp(t, tz=timezone.utc))
+        return dt.strftime("%H:%M")
     return label
 
 
@@ -282,46 +282,58 @@ class AiEvalCoordinator:
                 prior_low_soc_minutes += detector.STEP_S / 60.0
 
         events = detector.detect_events(grid, n, label, prior_low_soc_minutes)
+        notable_events = [e for e in events if e.get("kind") in NOTABLE_EVENT_KINDS]
+
+        # Update the rolling ledger every tick — cheap, deterministic memory.
+        now_ts = now.timestamp()
+        self._ledger_entries = ledger.add_events(self._ledger_entries, events, now_ts)
+        ledger_str = ledger.format_for_prompt(self._ledger_entries)
+
+        # VALUE GATE: only spend an AI call — and only speak to the owner — when
+        # something notable actually happened this hour. Narrating normal
+        # operation has no value, so a quiet hour writes a green status with an
+        # empty report and no notification.
+        if not notable_events:
+            await self._store.async_save({
+                "report_fakta": "",
+                "report_lidsky": "",
+                "ledger": ledger_str,
+                "last_run": now.isoformat(),
+                "anomaly_count": 0,
+                "status": "ok",
+            })
+            async_dispatcher_send(self.hass, f"oig_cloud_ai_eval_update_{self.entry_id}")
+            return
+
+        # Something notable — build the payload and ask the LLM what it MEANS.
         indices = detector.event_snapshot_indices(events, n, win=5)
         detail_csv = payload.format_detail(grid, indices, label)
-
         plan_block = await _fetch_plan_block(self.hass, self.box_id)
-
-        cur_from = start_time.strftime("%H:%M")
-        cur_to = end_time.strftime("%H:%M")
-
-        ledger_text = ledger.format_for_prompt(self._ledger_entries)
-        user_message = payload.assemble(ledger_text, detail_csv, plan_block, cur_from, cur_to)
+        cur_from = dt_util.as_local(start_time).strftime("%H:%M")
+        cur_to = dt_util.as_local(end_time).strftime("%H:%M")
+        user_message = payload.assemble(ledger_str, detail_csv, plan_block, cur_from, cur_to)
 
         from .ai_client import generate_eval_report
         report_md = await generate_eval_report(
             self.hass, self.config_entry, payload.SYSTEM_PROMPT, user_message
         )
-
         if report_md is None:
             _LOGGER.debug("AI eval: generate_eval_report returned None, skipping")
             return
 
         fakta, lidsky = _split_fakta_lidsky(report_md)
-
-        now_ts = now.timestamp()
-        self._ledger_entries = ledger.add_events(self._ledger_entries, events, now_ts)
-        ledger_str = ledger.format_for_prompt(self._ledger_entries)
-
-        store_obj = {
+        await self._store.async_save({
             "report_fakta": fakta,
             "report_lidsky": lidsky,
             "ledger": ledger_str,
             "last_run": now.isoformat(),
-            "anomaly_count": len(events),
-        }
-        await self._store.async_save(store_obj)
-
+            "anomaly_count": len(notable_events),
+            "status": "attention",
+        })
         async_dispatcher_send(self.hass, f"oig_cloud_ai_eval_update_{self.entry_id}")
 
         from .notify import publish_eval_notification
-        notable = _has_notable(events)
-        await publish_eval_notification(self.hass, self.config_entry, lidsky, notable)
+        await publish_eval_notification(self.hass, self.config_entry, lidsky, True)
 
     async def async_shutdown(self) -> None:
         self._shutting_down = True

@@ -9,7 +9,8 @@ def _label(i):
 def test_system_prompt_is_english_directive_czech_output():
     sp = P.SYSTEM_PROMPT
     assert "WRITE THE ENTIRE OUTPUT IN CZECH" in sp
-    assert "MANDATORY LEDGER CHECK" in sp
+    assert "added value only" in sp
+    assert "NEVER narrate normal operation" in sp
     assert "FAKTA:" in sp and "LIDSKY:" in sp
     # domain terms preserved in Czech
     assert "záloha" in sp and "nezáloha" in sp

@@ -88,7 +88,7 @@ def _make_states(box_id: str, now: datetime) -> Dict[str, List[FakeState]]:
     base = now - timedelta(minutes=60)
     states = {}
     entity_map = {
-        f"sensor.oig_{box_id}_actual_aci_wtotal": [("500", 0), ("600", 20), ("700", 40)],
+        f"sensor.oig_{box_id}_actual_aci_wtotal": [("500", 0), ("500", 20), ("2500", 40)],  # grid_skok = notable
         f"sensor.oig_{box_id}_actual_aco_p": [("300", 0), ("350", 20), ("400", 40)],
         f"sensor.oig_{box_id}_actual_acinb_wtotal": [("200", 0), ("250", 20), ("300", 40)],
         f"sensor.oig_{box_id}_dc_in_fv_total": [("1000", 0), ("1200", 20), ("1400", 40)],
@@ -284,3 +284,53 @@ async def test_notable_anomaly_calls_publish_with_notable_true(monkeypatch):
     await coord._async_run_tick(now)
 
     assert True in publish_calls
+
+
+@pytest.mark.asyncio
+async def test_quiet_hour_writes_ok_status_without_calling_ai(monkeypatch):
+    """No notable event -> green status, NO AI call, NO notification (value gate)."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 8, 1, 14, 0, 0, tzinfo=timezone.utc)
+    base = now - timedelta(minutes=60)
+    # Gentle data — no grid spike, no phase limit, no bypass, no recovery charge.
+    states = {}
+    for key, v in [("actual_aci_wtotal", "500"), ("actual_aco_p", "300"),
+                   ("actual_acinb_wtotal", "200"), ("dc_in_fv_total", "1000"),
+                   ("batt_batt_comp_p", "-400"), ("batt_bat_c", "60"),
+                   ("box_prms_mode", "HOME_III")]:
+        states[f"sensor.oig_{box_id}_{key}"] = [FakeState(v, base), FakeState(v, base + timedelta(seconds=40))]
+
+    fake_store = FakeStore()
+    fake_hass = FakeHass()
+    monkeypatch.setattr(coordinator, "Store", lambda hass, version, key: fake_store)
+
+    async def fake_fetch_history(hass, entity_ids, start_time, end_time):
+        return states
+    monkeypatch.setattr(coordinator, "_fetch_history", fake_fetch_history)
+
+    ai_calls = []
+
+    async def fake_ai(hass, entry, system_prompt, user_message):
+        ai_calls.append(True)
+        return "FAKTA:\n- x\n\nLIDSKY:\n- y"
+    monkeypatch.setattr(sys.modules["custom_components.oig_cloud.ai_eval.ai_client"],
+                        "generate_eval_report", fake_ai)
+
+    publishes = []
+
+    async def fake_publish(hass, entry, report, notable):
+        publishes.append(notable)
+    monkeypatch.setattr(sys.modules["custom_components.oig_cloud.ai_eval.notify"],
+                        "publish_eval_notification", fake_publish)
+
+    coord = coordinator.AiEvalCoordinator(fake_hass, FakeConfigEntry(box_id=box_id))
+    coord._store = fake_store
+    await coord._async_run_tick(now)
+
+    assert ai_calls == []            # value gate: no AI call on a quiet hour
+    assert publishes == []           # no notification
+    assert fake_store.saved.get("status") == "ok"
+    assert fake_store.saved.get("anomaly_count") == 0
+    assert fake_store.saved.get("report_lidsky") == ""
