@@ -40,7 +40,7 @@ from .ai.model_cache import get_ai_model_cache
 # OK models from the 2026-07-09 NIM probe sorted by ascending latency_s
 # (docs/redesign_2026_07/nim-model-test-2026-07-09.json).
 MODEL_CHAINS: dict[str, tuple[str, ...]] = {
-    "groq": ("llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant"),
+    "groq": ("qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
     "nvidia": (
         # 6 named flagships (DECISIONS P1 order)
         "z-ai/glm-5.2",

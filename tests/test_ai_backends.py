@@ -428,3 +428,82 @@ async def test_cached_model_success_refreshes_cache_ttl():
 
     now[0] = 61.0
     assert cache.get("entry1", "groq") == "cached-model"
+
+
+# --- Groq validate_config fix (2026-08-01): json keyword + reasoning scope ---
+
+def test_validate_config_prompt_carries_json_keyword_and_findings_shape():
+    """Groq rejects response_format=json_object unless the messages contain the
+    word 'json' (HTTP 400); the model also needs the findings shape to satisfy
+    the schema. build_anonymous_prompt must supply both, as constant text."""
+    prompt = build_anonymous_prompt("validate_config", {"capacity_kwh": 15.36})
+    assert "json" in prompt.lower()
+    assert "findings" in prompt
+
+
+@pytest.mark.asyncio
+async def test_groq_qwen_model_disables_reasoning():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url=PROVIDERS["groq"]["base_url"],
+        api_key="gsk_x", models=("qwen/qwen3.6-27b",), provider="groq")
+    await backend.async_generate_data("validate_config", {}, {"type": "object"})
+    assert session.calls[0][2]["json"]["reasoning_effort"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_groq_non_reasoning_model_omits_reasoning_effort():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url=PROVIDERS["groq"]["base_url"],
+        api_key="gsk_x", models=("llama-3.3-70b-versatile",), provider="groq")
+    await backend.async_generate_data("validate_config", {}, {"type": "object"})
+    assert "reasoning_effort" not in session.calls[0][2]["json"]
+
+
+@pytest.mark.asyncio
+async def test_non_groq_qwen_override_never_gets_reasoning_effort():
+    """A qwen id selected on NVIDIA must not receive Groq's reasoning_effort —
+    it is a Groq-specific param another backend can reject (review 2026-08-01)."""
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url=PROVIDERS["nvidia"]["base_url"],
+        api_key="nvapi-x", models=("qwen/qwen3-next",), provider="nvidia")
+    await backend.async_generate_data("validate_config", {}, {"type": "object"})
+    assert "reasoning_effort" not in session.calls[0][2]["json"]
+
+
+@pytest.mark.asyncio
+async def test_leading_think_block_is_stripped_before_json_parse():
+    content = '<think>reasoning here</think>{"ok": true}'
+    resp = _Resp(200, {"choices": [{"message": {"content": content}}]})
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {}, {"type": "object"})
+    assert out == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_think_literal_inside_json_value_is_preserved():
+    """No leading <think> block -> content is parsed as-is; a '</think>' that is
+    a legitimate JSON string value must never trigger the strip."""
+    content = '{"note": "use </think> carefully"}'
+    resp = _Resp(200, {"choices": [{"message": {"content": content}}]})
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {}, {"type": "object"})
+    assert out == {"note": "use </think> carefully"}
+
+
+@pytest.mark.asyncio
+async def test_groq_provider_with_overridden_base_url_gets_no_reasoning_effort():
+    """base_url is overridable; a groq-labelled backend pointed at a non-Groq
+    host must not receive Groq's reasoning_effort (review 2026-08-01)."""
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url="https://example.internal/v1",
+        api_key="gsk_x", models=("qwen/qwen3.6-27b",), provider="groq")
+    await backend.async_generate_data("validate_config", {}, {"type": "object"})
+    assert "reasoning_effort" not in session.calls[0][2]["json"]

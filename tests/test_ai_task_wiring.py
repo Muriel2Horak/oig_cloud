@@ -419,8 +419,10 @@ async def test_ai_task_failure_with_consent_and_fallback_backend_delegates(monke
 
 def test_groq_chain_matches_p10_order():
     from custom_components.oig_cloud import ai_task
+    # qwen/qwen3.6-27b is the live Groq id (the old "qwen3-32b" 404s), placed
+    # first with two non-reasoning fallbacks. Verified against Groq 2026-08-01.
     assert ai_task.MODEL_CHAINS["groq"] == (
-        "llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant",
+        "qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
     )
 
 
