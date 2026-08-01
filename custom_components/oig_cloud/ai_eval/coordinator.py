@@ -23,6 +23,7 @@ from . import detector, ledger, payload
 
 _LOGGER = logging.getLogger(__name__)
 
+
 STORE_VERSION = 1
 HISTORY_MINUTES = 65
 NOTABLE_EVENT_KINDS = {"grid_skok", "faze_limit", "bypass", "dobijeni_po_minimu"}
@@ -221,6 +222,17 @@ class AiEvalCoordinator:
                             "ts": 0,
                         })
         self._schedule_next_tick()
+
+        # Initial tick as a background task (a point-in-time timer proved
+        # unreliable at setup time on this box) so the first report appears in
+        # seconds rather than up to an hour later.
+        async def _initial_tick() -> None:
+            import asyncio
+
+            await asyncio.sleep(15)
+            await self._async_on_tick(dt_util.utcnow())
+
+        self.hass.async_create_task(_initial_tick())
 
     def _schedule_next_tick(self) -> None:
         if self._shutting_down:

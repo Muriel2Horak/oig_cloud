@@ -1817,6 +1817,18 @@ async def async_setup_entry(
         # Vždy registrovat sensor + switch platform
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+        # Hourly AI evaluation — OPTIONAL. Started right after the platforms so a
+        # later setup step cannot skip it; self-schedules and no-ops when AI is
+        # not configured; must NEVER break integration setup.
+        try:
+            from .ai_eval.coordinator import async_setup_ai_eval
+
+            ai_eval_coordinator = await async_setup_ai_eval(hass, entry)
+            hass.data[DOMAIN][entry.entry_id]["ai_eval_coordinator"] = ai_eval_coordinator
+            entry.async_on_unload(ai_eval_coordinator.async_shutdown)
+        except Exception:  # noqa: BLE001 — optional feature, isolate all failures
+            _LOGGER.exception("AI eval coordinator setup failed (optional feature)")
+
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
         await _schedule_invalid_device_cleanup(hass, entry)
@@ -1845,17 +1857,6 @@ async def async_setup_entry(
         # Služby se už registrovaly výše v async_setup_entry_services_with_shield
         # await services.async_setup_services(hass)  # ODSTRANĚNO
         # await services.async_setup_entry_services(hass, entry)  # ODSTRANĚNO
-
-        # Hourly AI evaluation — OPTIONAL. The coordinator self-schedules and
-        # no-ops when AI is not configured; it must NEVER break integration setup.
-        try:
-            from .ai_eval.coordinator import async_setup_ai_eval
-
-            ai_eval_coordinator = await async_setup_ai_eval(hass, entry)
-            hass.data[DOMAIN][entry.entry_id]["ai_eval_coordinator"] = ai_eval_coordinator
-            entry.async_on_unload(ai_eval_coordinator.async_shutdown)
-        except Exception:  # noqa: BLE001 — optional feature, isolate all failures
-            _LOGGER.exception("AI eval coordinator setup failed (optional feature)")
 
         _LOGGER.debug("OIG Cloud integration setup complete")
         return True

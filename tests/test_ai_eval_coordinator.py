@@ -13,6 +13,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+# ai_client -> ai_task imports homeassistant.components.ai_task, absent on the
+# dev harness; install the same shim test_ai_task_wiring uses so this module is
+# collectable regardless of test order.
+from tests.test_ai_task_wiring import _install_shim  # noqa: E402
+
+_install_shim()
+
 
 # Import the REAL ai_client + notify modules so they populate sys.modules; the
 # per-test monkeypatch.setattr then stubs their functions and auto-restores.
