@@ -3425,6 +3425,26 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                         autocomplete="off",
                     )
                 ),
+                vol.Optional("ai_fallback_provider", default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="", label="—"),
+                            selector.SelectOptionDict(value="groq", label="Groq"),
+                            selector.SelectOptionDict(value="nvidia", label="NVIDIA"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("ai_fallback_api_key", default=""): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                        autocomplete="off",
+                    )
+                ),
+                vol.Optional(
+                    "ai_consent_cross_provider_fallback",
+                    default=defaults.get("ai_consent_cross_provider_fallback", False),
+                ): bool,
             }
         )
 
@@ -3443,6 +3463,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             values = dict(user_input)
             api_key = values.pop("ai_api_key", "")
             api_key = api_key.strip() if isinstance(api_key, str) else ""
+            fallback_provider = values.pop("ai_fallback_provider", "") or ""
+            fallback_api_key = values.pop("ai_fallback_api_key", "")
+            fallback_api_key = (
+                fallback_api_key.strip() if isinstance(fallback_api_key, str) else ""
+            )
             ai_fields = fields_for_section("ai")
             updates = {
                 key: values.get(key, field.default)
@@ -3456,6 +3481,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 await store.async_set_key(selected_provider, api_key)
             elif current_provider and selected_provider != current_provider:
                 await store.async_clear()
+
+            # Fallback is an OPTIONAL second provider (F1 fallback setter):
+            # only stored when BOTH a provider and a key are supplied, so a
+            # half-filled form never overwrites a previously stored fallback
+            # with a broken pair.
+            if fallback_provider and fallback_api_key:
+                await store.async_set_fallback(fallback_provider, fallback_api_key)
 
             current.update(updates)
             self.hass.config_entries.async_update_entry(entry, options=current)

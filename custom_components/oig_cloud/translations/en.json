@@ -883,18 +883,24 @@
       },
       "ai": {
         "title": "🤖 Optional AI helper",
-        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
+        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.\n\nYou may also add a fallback provider that the integration switches to if the primary one fails. The fallback is a DIFFERENT vendor, so it receives the same anonymised number the primary one does — that is why a separate consent is required.",
         "data": {
           "ai_provider": "AI provider",
           "ai_base_url": "API base URL",
           "ai_model": "Model",
-          "ai_api_key": "API key"
+          "ai_api_key": "API key",
+          "ai_fallback_provider": "Fallback AI provider",
+          "ai_fallback_api_key": "Fallback provider API key",
+          "ai_consent_cross_provider_fallback": "I consent to sending anonymised data to the fallback provider too"
         },
         "data_description": {
           "ai_provider": "Optional; no provider is preselected or preferred.",
           "ai_base_url": "Optional custom OpenAI-compatible URL.",
           "ai_model": "Optional model identifier.",
-          "ai_api_key": "Leave blank to keep a previously stored key."
+          "ai_api_key": "Leave blank to keep a previously stored key.",
+          "ai_fallback_provider": "Optional; only used when the primary provider fails.",
+          "ai_fallback_api_key": "Required together with the fallback provider; leave blank to store nothing.",
+          "ai_consent_cross_provider_fallback": "Without this consent the fallback provider is never used, even if stored."
         }
       },
       "init": {
