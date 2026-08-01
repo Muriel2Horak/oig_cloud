@@ -1846,6 +1846,17 @@ async def async_setup_entry(
         # await services.async_setup_services(hass)  # ODSTRANĚNO
         # await services.async_setup_entry_services(hass, entry)  # ODSTRANĚNO
 
+        # Hourly AI evaluation — OPTIONAL. The coordinator self-schedules and
+        # no-ops when AI is not configured; it must NEVER break integration setup.
+        try:
+            from .ai_eval.coordinator import async_setup_ai_eval
+
+            ai_eval_coordinator = await async_setup_ai_eval(hass, entry)
+            hass.data[DOMAIN][entry.entry_id]["ai_eval_coordinator"] = ai_eval_coordinator
+            entry.async_on_unload(ai_eval_coordinator.async_shutdown)
+        except Exception:  # noqa: BLE001 — optional feature, isolate all failures
+            _LOGGER.exception("AI eval coordinator setup failed (optional feature)")
+
         _LOGGER.debug("OIG Cloud integration setup complete")
         return True
 
