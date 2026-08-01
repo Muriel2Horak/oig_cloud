@@ -326,6 +326,89 @@ class OpenAiCompatBackend:
             last_code = code
         raise AiBackendError(last_code or "provider_unreachable", len(self._models))
 
+    async def async_generate_text(
+        self, system_prompt: str, user_message: str,
+    ) -> str | None:
+        """Text-output variant: no json_object, returns raw markdown.
+
+        Mirrors async_generate_data model-chain walk but WITHOUT
+        response_format=json_object. Groq qwen reasoning_effort=none is
+        preserved. Returns None only when every model in the chain fails.
+        """
+        last_code: str | None = None
+
+        if self._model_cache and self._entry_id and self._provider:
+            cached = self._model_cache.get(self._entry_id, self._provider)
+            if cached:
+                result, code = await self._try_model_text(
+                    cached, system_prompt, user_message,
+                )
+                if code is None:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, cached,
+                    )
+                    return result
+                last_code = code
+
+        for model in self._models:
+            result, code = await self._try_model_text(
+                model, system_prompt, user_message,
+            )
+            if code is None:
+                if self._model_cache and self._entry_id and self._provider:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, model,
+                    )
+                return result
+            last_code = code
+        return None
+
+    async def _try_model_text(
+        self, model: str, system_prompt: str, user_message: str,
+    ) -> tuple[str | None, str | None]:
+        """Try a single model for text output; return (text, None) or (None, error code)."""
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0,
+        }
+        if (
+            self._provider == "groq"
+            and "api.groq.com" in self._base_url
+            and model.startswith("qwen")
+        ):
+            payload["reasoning_effort"] = "none"
+        try:
+            async with self._session.post(
+                f"{self._base_url}/chat/completions", headers=self._headers,
+                json=payload, timeout=DEFAULT_TIMEOUT_S,
+            ) as resp:
+                if resp.status != 200:
+                    return None, _classify_http_status(resp.status)
+                try:
+                    body = await resp.json()
+                except Exception:
+                    return None, "invalid_response"
+            msg_content = body["choices"][0]["message"]["content"]
+            if (
+                msg_content
+                and msg_content.lstrip().startswith("<think>")
+                and "</think>" in msg_content
+            ):
+                msg_content = msg_content.split("</think>", 1)[1]
+            return msg_content, None
+        except (asyncio.TimeoutError, TimeoutError):
+            return None, "timeout"
+        except (KeyError, TypeError):
+            return None, "invalid_response"
+        except (ConnectionError, OSError):
+            return None, "provider_unreachable"
+        except Exception:
+            return None, "provider_unreachable"
+
     async def _try_model(
         self, model: str, content: str, schema: Any
     ) -> tuple[Any | None, str | None]:
