@@ -14,27 +14,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-def _install_ai_shims() -> None:
-    if "custom_components.oig_cloud.ai_eval.ai_client" not in sys.modules:
-        mod = types.ModuleType("custom_components.oig_cloud.ai_eval.ai_client")
-
-        async def generate_eval_report(hass, config_entry, system_prompt, user_message):
-            return None
-
-        mod.generate_eval_report = generate_eval_report
-        sys.modules["custom_components.oig_cloud.ai_eval.ai_client"] = mod
-
-    if "custom_components.oig_cloud.ai_eval.notify" not in sys.modules:
-        mod = types.ModuleType("custom_components.oig_cloud.ai_eval.notify")
-
-        async def publish_eval_notification(hass, config_entry, report, notable):
-            pass
-
-        mod.publish_eval_notification = publish_eval_notification
-        sys.modules["custom_components.oig_cloud.ai_eval.notify"] = mod
-
-
-_install_ai_shims()
+# Import the REAL ai_client + notify modules so they populate sys.modules; the
+# per-test monkeypatch.setattr then stubs their functions and auto-restores.
+# (Do NOT shim fake modules into sys.modules — a leaked fake breaks the real
+# ai_client/notify test files that collect after this one.)
+from custom_components.oig_cloud.ai_eval import ai_client  # noqa: E402,F401
+from custom_components.oig_cloud.ai_eval import notify  # noqa: E402,F401
 
 
 class FakeState:
