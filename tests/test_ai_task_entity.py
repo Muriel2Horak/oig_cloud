@@ -195,3 +195,41 @@ async def test_real_backend_failure_and_success_drive_backoff_and_status_sensor(
     assert sensor.native_value == "verified"
     assert sensor.extra_state_attributes["last_error_code"] is None
     assert backoff.snapshot("entry1", "groq").state == "idle"
+
+
+class _FailingBackend:
+    """A backend whose chain is exhausted — raises like the real one does."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def async_generate_data(self, task, install, structure):
+        from custom_components.oig_cloud.ai.backends import AiBackendError
+        self.calls.append((task, install, structure))
+        raise AiBackendError("provider_unreachable")
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_failure_with_consent_uses_fallback():
+    """Groq primary fails -> NVIDIA fallback is called when consent is set."""
+    primary = _FailingBackend()
+    fallback = _StubBackend({"ok": "from-fallback"})
+    ent = _entity("groq", primary)
+    ent._consent_cross_provider_fallback = True
+    ent._fallback_backend = fallback
+    result = await ent._async_generate_data(_task(), _chat_log())
+    assert result.data == {"ok": "from-fallback"}
+    assert len(primary.calls) == 1 and len(fallback.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_failure_without_consent_does_not_use_fallback():
+    from custom_components.oig_cloud.ai.backends import AiBackendError
+    primary = _FailingBackend()
+    fallback = _StubBackend({"ok": "from-fallback"})
+    ent = _entity("groq", primary)
+    ent._consent_cross_provider_fallback = False
+    ent._fallback_backend = fallback
+    with pytest.raises(AiBackendError):
+        await ent._async_generate_data(_task(), _chat_log())
+    assert fallback.calls == []

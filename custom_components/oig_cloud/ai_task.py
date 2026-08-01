@@ -153,7 +153,20 @@ class OigAiTaskEntity(AITaskEntity):
             # content — it can embed GPS, box_id, e-mail, entity_id, anything.
             # The backend builds outgoing content itself from an allow-listed
             # install mapping; see ai/backends.py:async_generate_data.
-            data = await self._async_call_backend(backend, task)
+            try:
+                data = await self._async_call_backend(backend, task)
+            except AiBackendError:
+                # Primary provider exhausted its model chain — fall back to the
+                # second provider, but only under explicit cross-provider
+                # consent and when a fallback is configured. Otherwise the
+                # primary failure stands. (Same gate as the ai_task path.)
+                fallback = getattr(self, "_fallback_backend", None)
+                if not (
+                    getattr(self, "_consent_cross_provider_fallback", False)
+                    and fallback is not None
+                ):
+                    raise
+                data = await self._async_call_backend(fallback, task)
         return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=data)
 
     async def _async_call_backend(
@@ -229,6 +242,42 @@ class OigAiTaskEntity(AITaskEntity):
         )
 
 
+async def _resolve_cross_provider_fallback(hass, store, entry, primary_provider):
+    """Return (fallback_backend, consent) for the cross-provider fallback.
+
+    The fallback backend is built ONLY when the user has given cross-provider
+    consent AND a valid fallback pair is stored AND it is a DIFFERENT provider
+    than the primary (a same-provider fallback gives no resilience). Otherwise
+    the backend is None. Shared by both the ai_task-delegation path and the
+    direct-provider path, so the fallback works regardless of which provider
+    is primary (F1 fallback: the direct-provider path previously ignored it).
+    """
+    consent = bool(
+        getattr(entry, "options", {}).get(
+            "ai_consent_cross_provider_fallback", False
+        )
+    )
+    fallback_backend = None
+    if consent:
+        fallback_provider = await store.async_get_fallback_provider()
+        fallback_key = await store.async_get_fallback_key()
+        if (
+            fallback_provider in PROVIDERS
+            and fallback_key
+            and fallback_provider != primary_provider
+        ):
+            fallback_backend = OpenAiCompatBackend(
+                session=async_get_clientsession(hass),
+                base_url=PROVIDERS[fallback_provider]["base_url"],
+                api_key=fallback_key,
+                models=MODEL_CHAINS[fallback_provider],
+                entry_id=entry.entry_id,
+                provider=fallback_provider,
+                model_cache=get_ai_model_cache(hass),
+            )
+    return fallback_backend, consent
+
+
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Instantiate the AI Task entity from the stored provider/key (item 2).
 
@@ -265,26 +314,9 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         # The primary OIG backend is deliberately NOT constructed on this branch.
         if not hass.services.has_service("ai_task", "generate_data"):
             return
-        consent = bool(
-            getattr(entry, "options", {}).get(
-                "ai_consent_cross_provider_fallback", False
-            )
+        fallback_backend, consent = await _resolve_cross_provider_fallback(
+            hass, store, entry, "ai_task"
         )
-        fallback_backend = None
-        if consent:
-            fallback_provider = await store.async_get_fallback_provider()
-            fallback_key = await store.async_get_fallback_key()
-            if fallback_provider in PROVIDERS and fallback_key:
-                cache = get_ai_model_cache(hass)
-                fallback_backend = OpenAiCompatBackend(
-                    session=async_get_clientsession(hass),
-                    base_url=PROVIDERS[fallback_provider]["base_url"],
-                    api_key=fallback_key,
-                    models=MODEL_CHAINS[fallback_provider],
-                    entry_id=entry.entry_id,
-                    provider=fallback_provider,
-                    model_cache=cache,
-                )
         async_add_entities(
             [OigAiTaskEntity(
                 provider="ai_task", backend=None, install={},
@@ -315,13 +347,21 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             provider=provider,
             model_cache=cache,
         )
+        # A direct provider can ALSO carry a cross-provider fallback (e.g. Groq
+        # primary + NVIDIA fallback): build it under the same consent gate and
+        # hand it to the entity, exactly as the ai_task path does.
+        fallback_backend, consent = await _resolve_cross_provider_fallback(
+            hass, store, entry, provider
+        )
         # `install` is the allow-listed anonymous snapshot. No readily-available
         # allow-listed source is wired here yet, and {} is SAFE at the OUTGOING
         # boundary — never invent fields, never pass identifying ones.
         async_add_entities(
             [OigAiTaskEntity(
                 provider=provider, backend=backend, install={},
-                entry_id=entry.entry_id)]
+                entry_id=entry.entry_id,
+                consent_cross_provider=consent,
+                fallback_backend=fallback_backend)]
         )
         return
 
