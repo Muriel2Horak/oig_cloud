@@ -61,8 +61,10 @@ Entry titles retain the cloud display name and append ` - local`.
   write.
 - Cross-check each plan device against both the cloud map and the latest LAN
   discovery result.
-- Reject missing keys, offline devices, mismatched IDs/IPs, duplicates, and
-  already configured IDs.
+- Classify an exact already-configured, `loaded`, and entity-verified ID as
+  completed so interrupted batches can resume safely.
+- Reject missing keys, offline devices, mismatched IDs/IPs, and conflicting
+  or unhealthy duplicate entries.
 
 ### Home Assistant flow boundary
 
@@ -92,8 +94,8 @@ automatically when verification fails; stop and preserve evidence for repair.
 - Apply mode is explicitly gated by `--apply`.
 - Stop the batch on the first error and report the device name, completed
   entry IDs, flow step, and redacted error.
-- Treat Home Assistant `abort` for an existing unique ID as a duplicate, not a
-  successful creation.
+- Treat Home Assistant `abort` for an existing unique ID as an unexpected
+  collision because exact completed IDs must be classified during preflight.
 - Never retry a rejected local key or profile with guessed values.
 - Resume by re-reading HA state and planning only the remaining devices.
 
