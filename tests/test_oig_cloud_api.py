@@ -550,19 +550,19 @@ class TestOigCloudApi:
         assert result is True
 
         expected_url = f"https://portal.oigpower.cz/inc/php/scripts/Device.Set.Value.php?_nonce={nonce}"
-        expected_data = json.dumps(
-            {
-                "id_device": "test_box_id",
-                "table": "table",
-                "column": "column",
-                "value": "value",
-            }
-        )
+        # Portal set scripts require form-urlencoded + X-Requested-With (2026-07-31,
+        # JSON bodies -> HTTP 500); the client must mirror the web app.
+        expected_data = {
+            "id_device": "test_box_id",
+            "table": "table",
+            "column": "column",
+            "value": "value",
+        }
 
         session.post.assert_called_once_with(
             expected_url,
             data=expected_data,
-            headers={"Content-Type": "application/json"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
         )
 
     async def test_set_box_params_internal_not_authenticated(self):
@@ -604,17 +604,15 @@ class TestOigCloudApi:
         assert result is True
 
         expected_url = f"https://portal.oigpower.cz/inc/php/scripts/ToGrid.Toggle.php?_nonce={nonce}"
-        expected_data = json.dumps(
-            {
-                "id_device": "test_box_id",
-                "value": 1,
-            }
-        )
+        expected_data = {
+            "id_device": "test_box_id",
+            "value": "1",
+        }
 
         session.post.assert_called_once_with(
             expected_url,
             data=expected_data,
-            headers={"Content-Type": "application/json"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
         )
 
     async def test_set_grid_delivery_no_telemetry(self):
@@ -695,16 +693,14 @@ class TestOigCloudApi:
         assert result is True
 
         expected_url = f"https://portal.oigpower.cz/inc/php/scripts/Battery.Format.Save.php?_nonce={nonce}"
-        expected_data = json.dumps(
-            {
-                "bat_ac": "1",
-            }
-        )
+        expected_data = {
+            "bat_ac": "1",
+        }
 
         session.post.assert_called_once_with(
             expected_url,
             data=expected_data,
-            headers={"Content-Type": "application/json"},
+            headers={"X-Requested-With": "XMLHttpRequest"},
         )
 
     @patch("custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api.time")

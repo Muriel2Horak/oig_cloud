@@ -535,30 +535,39 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
     ) -> bool:
         """Internal method to set box parameters."""
         async with self.get_session() as session:
-            data: str = json.dumps(
-                {
-                    "id_device": self.box_id,
-                    "table": table,
-                    "column": column,
-                    "value": value,
-                }
-            )
+            # Portal set scripts no longer parse JSON bodies (2026-07-31: authenticated
+            # JSON POST -> HTTP 500 "Chyba" page while the web app works). Mirror the
+            # web client exactly: form-urlencoded body + X-Requested-With header
+            # (see portal inc/js/core.js, deviceSet/setSwitch -> tb()).
+            data: Dict[str, str] = {
+                "id_device": str(self.box_id),
+                "table": table,
+                "column": column,
+                "value": str(value),
+            }
             _nonce: int = int(time.time() * 1000)
             target_url: str = f"{self._base_url}{self._set_mode_url}?_nonce={_nonce}"
 
             self._logger.debug(
-                f"Sending mode request to {target_url} with {data.replace(str(self.box_id), 'xxxxxx')}"
+                "Sending mode request to %s with table=%s column=%s",
+                target_url,
+                table,
+                column,
             )
 
             async with session.post(
                 target_url,
                 data=data,
-                headers={"Content-Type": "application/json"},
+                headers={"X-Requested-With": "XMLHttpRequest"},
             ) as response:
                 response_content: str = await response.text()
                 if response.status == 200:
-                    response_json = json.loads(response_content)
-                    message = _extract_response_message(response_json)
+                    try:
+                        message = _extract_response_message(
+                            json.loads(response_content)
+                        )
+                    except ValueError:
+                        message = response_content[:200]
                     self._logger.info(f"Response: {message}")
                     return True
                 else:
@@ -581,12 +590,11 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 raise OigCloudApiError("Box ID not available, fetch stats first")
 
             async with self.get_session() as session:
-                data: str = json.dumps(
-                    {
-                        "id_device": self.box_id,
-                        "value": mode,
-                    }
-                )
+                # Form-urlencoded + X-Requested-With: see set_box_params_internal.
+                data: Dict[str, str] = {
+                    "id_device": str(self.box_id),
+                    "value": str(mode),
+                }
 
                 _nonce: int = int(time.time() * 1000)
                 target_url: str = (
@@ -594,19 +602,25 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 )
 
                 self._logger.info(
-                    f"Sending grid delivery request to {target_url} for {data.replace(str(self.box_id), 'xxxxxx')}"
+                    "Sending grid delivery request to %s (value=%s)", target_url, mode
                 )
 
                 async with session.post(
                     target_url,
                     data=data,
-                    headers={"Content-Type": "application/json"},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
                 ) as response:
                     response_content: str = await response.text()
 
                     if response.status == 200:
-                        response_json = json.loads(response_content)
-                        self._logger.debug(f"API response: {response_json}")
+                        try:
+                            self._logger.debug(
+                                f"API response: {json.loads(response_content)}"
+                            )
+                        except ValueError:
+                            self._logger.debug(
+                                f"API response (raw): {response_content[:200]}"
+                            )
                         return True
                     else:
                         raise OigCloudApiError(
@@ -623,13 +637,12 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
         try:
             self._logger.debug(f"Setting formatting battery to {limit} percent")
             async with self.get_session() as session:
-                data: str = json.dumps(
-                    {
-                        "id_device": self.box_id,
-                        "column": "bat_ac",
-                        "value": limit,
-                    }
-                )
+                # Form-urlencoded + X-Requested-With: see set_box_params_internal.
+                data: Dict[str, str] = {
+                    "id_device": str(self.box_id),
+                    "column": "bat_ac",
+                    "value": str(limit),
+                }
 
                 _nonce: int = int(time.time() * 1000)
                 target_url: str = (
@@ -637,18 +650,24 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 )
 
                 self._logger.debug(
-                    f"Sending formatting battery request to {target_url} with {data.replace(str(self.box_id), 'xxxxxx')}"
+                    "Sending formatting battery request to %s (limit=%s)",
+                    target_url,
+                    limit,
                 )
 
                 async with session.post(
                     target_url,
                     data=data,
-                    headers={"Content-Type": "application/json"},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
                 ) as response:
                     response_content: str = await response.text()
                     if response.status == 200:
-                        response_json = json.loads(response_content)
-                        message = _extract_response_message(response_json)
+                        try:
+                            message = _extract_response_message(
+                                json.loads(response_content)
+                            )
+                        except ValueError:
+                            message = response_content[:200]
                         self._logger.info(f"Response: {message}")
                         return True
                     else:
@@ -666,11 +685,10 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             self._logger.debug(f"Setting battery formatting mode to {mode}")
 
             async with self.get_session() as session:
-                data: str = json.dumps(
-                    {
-                        "bat_ac": mode,
-                    }
-                )
+                # Form-urlencoded + X-Requested-With: see set_box_params_internal.
+                data: Dict[str, str] = {
+                    "bat_ac": str(mode),
+                }
 
                 _nonce: int = int(time.time() * 1000)
                 target_url: str = (
@@ -682,13 +700,19 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 async with session.post(
                     target_url,
                     data=data,
-                    headers={"Content-Type": "application/json"},
+                    headers={"X-Requested-With": "XMLHttpRequest"},
                 ) as response:
                     response_content: str = await response.text()
 
                     if response.status == 200:
-                        response_json = json.loads(response_content)
-                        self._logger.debug(f"API response: {response_json}")
+                        try:
+                            self._logger.debug(
+                                f"API response: {json.loads(response_content)}"
+                            )
+                        except ValueError:
+                            self._logger.debug(
+                                f"API response (raw): {response_content[:200]}"
+                            )
                         return True
                     else:
                         raise OigCloudApiError(
