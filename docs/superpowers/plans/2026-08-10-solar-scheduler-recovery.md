@@ -6,7 +6,7 @@
 
 **Architecture:** Refactor provider fetches to return a classified candidate instead of mutating sensor state. A primary-sensor refresh controller owns wall-clock subscriptions, one lock, occurrence generations, retry handles, and lifecycle cancellation. A versioned cache envelope records provenance; candidate validation and persistence complete before one atomic publish step.
 
-**Tech Stack:** Python 3.12, Home Assistant event helpers, asyncio, HA Store, pytest, freezegun/HA time helpers.
+**Tech Stack:** Python 3.14, Home Assistant event helpers, asyncio, HA Store, pytest, freezegun/HA time helpers.
 
 ---
 
@@ -115,7 +115,9 @@
 - [ ] RED: newer occurrence cancels older retry handles and old generation cannot commit.
 - [ ] RED: simultaneous manual/scheduled/initial callbacks serialize through one `asyncio.Lock`; no provider overlap.
 - [ ] RED: lock wait plus provider call has one 90-second total attempt deadline. Timeout releases the lock, scheduled occurrence classifies retryable, manual call returns false, and later work proceeds.
-- [ ] RED: duplicated callback for one occurrence is idempotent.
+- [ ] RED: duplicated callbacks for one occurrence create exactly one provider dispatch,
+  one owned retry chain, and one commit/broadcast; occurrence ownership is claimed before
+  lock wait or provider I/O.
 - [ ] Implement occurrence ID from entry/mode/scheduled local instant, never lifecycle generation. Persist retry state before arming its timer and calculate delays relative to the original occurrence, not request completion. Clear persisted/timer state on success, terminal failure, final exhaustion, newer occurrence, or provenance mismatch. Unload cancels the in-memory timer/task but retains matching durable retry state for restart.
 - [ ] RED persistence faults: retry-state Store failure arms no timer and terminates with safe `storage_failed`; crash after persistence/before timer registration is restored exactly once; timer-registration failure dispatches nothing and leaves the durable record for restart recovery.
 - [ ] Wrap lock acquisition and provider I/O in one 90-second attempt deadline; never leave an orphaned provider task after timeout.

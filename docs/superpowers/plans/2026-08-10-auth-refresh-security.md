@@ -38,8 +38,8 @@
 
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/ha-client.test.ts`
 
-- [ ] Add a passing table for `/api/oig_cloud`, child paths, and existing query-string endpoints.
-- [ ] Add a rejection table for `https://evil.example`, `//evil.example`, localhost, `127.0.0.1`, `[::1]`, credentials, alternate ports, backslashes, fragments, malformed percent encoding, `/api/other`, `/api/oig_cloud_evil`, raw/encoded dot segments, and double-decoded traversal.
+- [ ] Add a public-wrapper suffix table: `battery/x?a=1` and `/battery/x?a=1` both dispatch exact `/api/oig_cloud/battery/x?a=1`. Reject empty-host/scheme/absolute/protocol-relative/credential/port input, pre-prefixed `/api/oig_cloud`, backslashes, fragments, malformed encoding, raw/encoded/double-decoded traversal, and prefix-confusion strings before joining.
+- [ ] Add a private-seam full-path table: accept only `/api/oig_cloud`, canonical child paths, and existing queries; reject every absolute/foreign/localhost/loopback/credential/alternate-port/backslash/fragment/malformed/traversal value plus `/api/other` and `/api/oig_cloud_evil`.
 - [ ] Assert every rejected value causes zero HA transport and zero dispatch calls.
 - [ ] Pass `Authorization`, `authorization`, and mixed-case variants as object, tuple, and `Headers` input. Assert none survives and HA can inject the fresh lowercase property into the copied plain record.
 - [ ] Return each HTTP `3xx` plus `type: "opaqueredirect"`; assert one dispatch, no follow/retry, untyped `null`, and exact typed `{ ok: false, status: 0, code: "redirect_blocked", error: "Authenticated redirect blocked" }` for every case.
@@ -71,7 +71,7 @@
 - Modify: `custom_components/oig_cloud/www_v2/src/core/logger.ts` only if a classified-event helper is required
 
 - [ ] Extend `Hass` with `auth.expired: boolean` and `fetchWithAuth(path: string, init?: RequestInit): Promise<Response>`; remove request-dispatch dependence on `auth.data.access_token`.
-- [ ] Add private pure helpers for canonical OIG path validation and plain-record header normalization. Reject before `getHass()` transport use.
+- [ ] Add private pure helpers for public endpoint-suffix parsing/joining, canonical full OIG path validation, and plain-record header normalization. Reject before `getHass()` transport use.
 - [ ] Strip caller Authorization case-insensitively, set JSON content type only when absent, and force `redirect: "manual"`.
 - [ ] Classify returned `3xx` and `opaqueredirect` as terminal `redirect_blocked`. Keep a thrown network `TypeError` retryable only for untyped GET/HEAD; never conflate it with an observed redirect response.
 - [ ] Add one private dispatch method receiving wrapper kind and retry policy. Delegate every attempt to `hass.fetchWithAuth`.
@@ -79,6 +79,7 @@
 - [ ] Keep untyped retry limited to GET/HEAD transport errors and `502/503/504`. Keep typed and all mutation methods single-dispatch.
 - [ ] Make logs structured and fixed-text: wrapper kind, method, safe code only. Remove endpoint, URL, raw exception, and stack from auth request paths.
 - [ ] Route `fetchOIGAPI` and `fetchOIGAPITyped` through the seam while preserving parsed HTTP bodies and server error codes.
+- [ ] Delete/privatize the existing public `HaClient.fetchWithAuth` manual-token/global-fetch method; the replacement private seam accepts only validated OIG full paths. Add a callable-surface test and repository scan proving no public method or production helper manually dispatches credentials.
 - [ ] Run focused tests; expect green.
 
 ### Task 5: Remove the production raw-fetch escape hatch
@@ -94,8 +95,8 @@
 - [ ] Delete the unused arbitrary-base-URL/caller-token client. If a live production caller exists, migrate it to `HaClient` and remove base URL/token parameters.
 - [ ] Run a repository-wide tracked-file scan, excluding dependency/coverage directories, for `auth.data.access_token`, caller bearer construction, authenticated `globalThis.fetch`/`window.fetch`/`fetch`, and the deleted API client. Include `www_v2/dist/assets/index.js` and source maps; allow only documented test fixtures.
 - [ ] Rebuild v2 distribution from reviewed source and fail if `git diff` shows a stale/unreproducible tracked bundle. Assert served `index.js` and map contain no legacy manual-token dispatch.
-- [ ] Replace `Date.now()` cache busting with a SHA-256 over a sorted explicit input set: `src/**`, `index.html`, `vite.config.ts`, `package.json`, `package-lock.json`, and TypeScript configs, excluding dist/tests/Playwright/node_modules/coverage. Reject a supplied `OIG_BUILD_ID` that differs from the computed value.
-- [ ] Build twice in isolated directories and byte-compare every `dist` file/map. Assert identical inputs keep the ID/bytes and changing one executable input changes the ID/index reference.
+- [ ] Replace `Date.now()` cache busting with a SHA-256 over a sorted explicit input set: `src/**`, `public/**`, `index.html`, `vite.config.ts`, `package.json`, `package-lock.json`, and TypeScript configs, excluding dist/tests/Playwright/node_modules/coverage. Reject empty/malformed/mismatched `OIG_BUILD_ID`; accept only absence or exact computed value.
+- [ ] Build twice in isolated directories and byte-compare every `dist` file/map. Assert identical inputs keep the ID/bytes; changing one executable or public input changes the ID/index reference. Cover absent, exact, empty, malformed, and mismatched `OIG_BUILD_ID`.
 - [ ] Run `npm run typecheck` and the full unit suite under `TZ=UTC`.
 
 ### Task 6: Add the browser expiry regression harness

@@ -6,7 +6,7 @@
 
 **Architecture:** `config/solar_rules.py` owns strict application values and legacy read metadata. A new pure `forecast/provider_contract.py` owns Forecast.Solar conversion and URL construction. Registry metadata drives both web surfaces; native HA uses the same validators. `/solar_test` parses provider-discriminated bodies and remains side-effect-free.
 
-**Tech Stack:** Python 3.12, Home Assistant ConfigFlow/aiohttp, TypeScript/Lit, pytest, Vitest, Playwright.
+**Tech Stack:** Python 3.14, Home Assistant ConfigFlow/aiohttp, TypeScript/Lit, pytest, Vitest, Playwright.
 
 ---
 
@@ -161,6 +161,8 @@
 - [ ] Add one key-store `async_activate` operation that writes provider, active credentials, optional `verified_at`, additive verification metadata, inactive-secret cleanup, and one incremented credential revision in one Store save.
 - [ ] Keep `SolarKeyStore.STORAGE_VERSION` and the legacy top-level `active` shape readable by the previous artifact; all revision/proof-status fields are additive and ignored by old code.
 - [ ] Implement a compensating options/key-store transaction under the same per-entry lock: build/validate the shared effective DTO, atomically claim optional proof, snapshot both states, activate key store, update ConfigEntry options, then reload. Any Store/options/reload failure restores both snapshots and reloads the prior effective state; prior active credentials remain usable and revision does not advance while a claimed proof stays consumed.
+- [ ] Route runtime and candidate snapshot reads through that per-entry lock. Capture one immutable effective DTO plus revision under lock, release before network I/O, and let lifecycle/provenance guards reject old-snapshot commits after reload.
+- [ ] RED controlled interleavings for successful save, provider switch, Store/options/reload failure, and compensation: every runtime/candidate dispatch observes exactly the full old or full committed DTO/revision; never mixed credentials/options/provider or pre-commit secret deletion.
 - [ ] RED fault injection at every write/reload boundary plus provider switch. Assert exactly one revision increment on success, exact rollback on failure, and inactive credential/Site-ID deletion only on committed provider switch.
 - [ ] Load the new additive key-store object through a previous-artifact parser fixture; assert legacy code still reads `active` credentials and ignores revision/verification metadata.
 

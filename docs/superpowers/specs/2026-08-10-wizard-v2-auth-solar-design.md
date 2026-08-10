@@ -130,14 +130,22 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 ### 1. Refresh-aware frontend authentication
 
 - Extend the local `Hass` interface with Home Assistant's `fetchWithAuth` transport.
-- Accept only origin-relative request paths whose canonical pathname is
-  `/api/oig_cloud` or starts with `/api/oig_cloud/`.
+- Public `fetchOIGAPI`/`fetchOIGAPITyped` accept only an endpoint suffix with optional
+  leading slash and query. Reject schemes, hosts, protocol-relative input, a pre-prefixed
+  `/api/oig_cloud`, fragments, backslashes, malformed encoding, and traversal before
+  joining. `battery/x?a=1` and `/battery/x?a=1` both dispatch exactly
+  `/api/oig_cloud/battery/x?a=1`.
+- The private authenticated seam accepts only an already joined origin-relative path
+  whose canonical pathname is `/api/oig_cloud` or starts with `/api/oig_cloud/`.
 - Reject absolute URLs, protocol-relative URLs, credentials, foreign hosts, localhost
   aliases, alternate ports, backslashes, encoded or decoded traversal, fragments, and
   malformed paths before calling Home Assistant transport.
 - Permit endpoint query strings because existing read endpoints use them, but never
   include a query string in authentication diagnostics.
 - Route typed and untyped OIG REST wrappers through one internal authenticated transport seam.
+- Remove the currently public manual-token `HaClient.fetchWithAuth` method. Replace it
+  with the private canonical OIG seam; no public/callable helper may dispatch an arbitrary
+  path or use global fetch with credentials.
 - Delegate token expiry detection and token refresh to `hass.fetchWithAuth`.
 - Do not invoke `refreshAccessToken` directly and do not assume that Home Assistant
   coalesces concurrent refreshes. Concurrent-call acceptance requires only that no
@@ -177,7 +185,7 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
   caller-supplied bearer construction, or authenticated global-fetch path. Release
   artifact construction fails when tracked served bytes are stale relative to source.
 - Replace Vite's time-derived cache-bust ID with a deterministic SHA-256 over a sorted,
-  explicitly listed frontend input set. Identical reviewed inputs produce identical IDs
+  explicitly listed frontend input set including `public/**`. Identical reviewed inputs produce identical IDs
   and every served dist byte/source map; changing any executable input changes the ID.
   Release CI may supply the computed value but cannot override it with a mismatched value.
 
@@ -261,6 +269,13 @@ Authentication logging contract:
   options, or reload failure restores both snapshots, reloads the prior effective state,
   and keeps the previous active credentials.
   Provider-switch inactive-secret deletion occurs inside the same transaction.
+- Runtime and candidate readers acquire the same per-entry lock only long enough to build
+  one immutable versioned effective-DTO snapshot, then release it before provider I/O.
+  A reader interleaved with activation, provider switch, or compensation sees either the
+  complete old revision or the complete committed revision. It never dispatches new
+  credentials with old options/provider or observes inactive-secret deletion before commit.
+  An old snapshot captured before save may finish its request, but lifecycle/provenance
+  guards prevent it from committing after reload.
 - A provider switch preserves non-secret geometry/options and clears inactive secrets
   according to the credential policy above.
 
@@ -437,6 +452,10 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: canonical OIG paths pass; absolute, protocol-relative, localhost/loopback,
   credentials, alternate-port, traversal, fragment, and malformed paths perform zero
   transport calls.
+- RED: public suffix grammar joins optional-leading-slash endpoints to exact canonical
+  full paths; pre-prefixed/malicious suffixes fail before the private seam. The private
+  full-path table is tested separately.
+- RED: `HaClient` exposes no callable manual-token/global-fetch auth method.
 - RED: GET and HEAD transport/502/503/504 failures retry within the existing bound; POST and
   other mutations dispatch exactly once for transport, 401/403/429/5xx outcomes.
 - RED: redirects fail closed; caller authorization casing variants are stripped.
@@ -472,6 +491,9 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   representation, unsaved mode changes, and provider switch.
 - RED: two concurrent saves claiming one proof yield one success, one `400`, one revision;
   a claimed proof remains consumed after transaction rollback.
+- RED: runtime/candidate reads interleaved at every save/switch/rollback boundary capture
+  only a full old or full committed immutable DTO revision; old in-flight snapshots cannot
+  commit after reload.
 - RED: legacy negative value keeps its runtime meaning across GET/render/unrelated save,
   adopts through touched/checkbox control exactly once, and changes only after explicit save.
 - RED: invalid stored `361`, `720`, fractional, and non-finite-like corrupt values are
@@ -492,7 +514,8 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: exact retry instants are `+15m` and `+45m`; two retry failures produce no third call.
 - RED: `401`, `403`, `422`, invalid config, malformed HTTP-200, and abort produce no retry.
 - RED: a newer occurrence cancels older retries; success cancels pending retry work.
-- RED: manual-vs-scheduled overlap serializes; duplicated occurrence callbacks commit once.
+- RED: manual-vs-scheduled overlap serializes; duplicated callbacks for one occurrence
+  create one provider dispatch/retry chain and one commit/broadcast.
 - RED: unload during an active request and unload with a pending retry produce no later writes.
 - RED: unload cancels initial/scheduled/retry/manual tracked tasks; a hung lock/provider
   hits the 90-second deadline and cannot starve later work.
@@ -568,6 +591,9 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   and gzip siblings; exclude raw `www_v2/src`, frontend tests/Playwright, repository tests,
   node_modules, coverage, caches, local storage, and secrets. "Source excluded" means raw
   frontend development source, never the Python integration runtime.
+- Reproducibility pins runner image, Node/npm/Python versions, locale/timezone/umask, and
+  archive format. `SOURCE_DATE_EPOCH` is the reviewed PR-head commit timestamp. Tar paths,
+  modes, owners and mtimes are canonical and sorted; gzip filename/mtime/header are fixed.
 - CI checks out `github.event.pull_request.head.sha`, never the synthetic merge ref, and
   asserts checkout HEAD, archive name, manifest commit, attested subject, digest, and
   deploy expected commit are identical. `workflow_dispatch` accepts only a recorded
@@ -600,6 +626,10 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   recovers to either the retained directory or verified previous symlink before HA starts.
 - Release integration proves deploy `N`, deploy `N+1`, rollback `N`, and verifies active
   manifest, digest, commit, and Home Assistant health at every step.
+- Every activation, including rollback, re-verifies retained archive attestation/digest,
+  rechecks every staged file against the signed manifest immediately before compare-and-
+  swap, and fails without symlink/manifest/restart mutation if either retained artifact or
+  staged release was substituted or modified.
 - Deploy only the reviewed pull-request artifact to HP first.
 - Verify sanitized Home Assistant logs contain no recurring invalid-auth requests from OIG endpoints after natural token refresh.
 - Verify both providers independently:
