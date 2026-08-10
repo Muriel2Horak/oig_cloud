@@ -7,6 +7,16 @@ pytestmark = pytest.mark.e2e_mock
 
 
 @pytest.mark.e2e
+async def test_mock_setup_does_not_start_external_background_workers(e2e_setup):
+    """Mock E2E setup must not connect MQTT or schedule delayed AI work."""
+    hass, entry = e2e_setup
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+
+    assert entry_data["telemetry"]["mqtt_publisher"] is None
+    assert entry_data["ai_eval_coordinator"]._unsub_timer is None
+
+
+@pytest.mark.e2e
 async def test_services_registered(e2e_setup):
     hass, _entry = e2e_setup
     services = hass.services.async_services()

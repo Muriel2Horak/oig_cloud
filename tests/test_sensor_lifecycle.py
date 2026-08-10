@@ -188,12 +188,9 @@ async def test_async_added_to_hass_restore_state_failures(monkeypatch):
     monkeypatch.setattr(
         sensor_lifecycle.auto_switch_module, "auto_mode_switch_enabled", lambda _s: False
     )
+    monkeypatch.setattr(sensor_lifecycle, "async_track_time_change", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_change", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "homeassistant.helpers.dispatcher.async_dispatcher_connect",
-        lambda *_a, **_k: (lambda: None),
+        sensor_lifecycle, "async_dispatcher_connect", lambda *_a, **_k: (lambda: None)
     )
     async def _sleep(_seconds):
         return None
@@ -315,12 +312,9 @@ async def test_async_added_to_hass_store_failures(monkeypatch):
     monkeypatch.setattr(
         sensor_lifecycle.auto_switch_module, "auto_mode_switch_enabled", lambda _s: False
     )
+    monkeypatch.setattr(sensor_lifecycle, "async_track_time_change", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_change", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "homeassistant.helpers.dispatcher.async_dispatcher_connect",
-        lambda *_a, **_k: (lambda: None),
+        sensor_lifecycle, "async_dispatcher_connect", lambda *_a, **_k: (lambda: None)
     )
 
     async def _sleep(_seconds):
@@ -349,17 +343,13 @@ async def test_async_added_to_hass_initial_refresh_error(monkeypatch):
     monkeypatch.setattr(
         sensor_lifecycle.auto_switch_module, "auto_mode_switch_enabled", lambda _s: False
     )
-    monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_change", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr(sensor_lifecycle, "async_track_time_change", lambda *_a, **_k: None)
 
     def _connect(_hass, _signal, callback):
         sensor_lifecycle.asyncio.get_running_loop().create_task(callback())
         return lambda: None
 
-    monkeypatch.setattr(
-        "homeassistant.helpers.dispatcher.async_dispatcher_connect", _connect
-    )
+    monkeypatch.setattr(sensor_lifecycle, "async_dispatcher_connect", _connect)
 
     orig_sleep = sensor_lifecycle.asyncio.sleep
 

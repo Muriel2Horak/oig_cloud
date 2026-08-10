@@ -83,7 +83,14 @@ async def test_quick_setup_success(monkeypatch):
     async def _ok(_hass, _data):
         return {"title": "ok"}
 
+    async def _fake_spot_prices(_self):
+        return {}
+
     monkeypatch.setattr(steps_module, "validate_input", _ok)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ote_api.OteApi.get_spot_prices",
+        _fake_spot_prices,
+    )
 
     flow = DummyConfigFlow()
     result = await flow.async_step_quick_setup(

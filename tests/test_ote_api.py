@@ -817,6 +817,10 @@ async def test_get_spot_prices_fallback_to_cache_on_error(monkeypatch):
     async def boom(*_args, **_kwargs):
         raise RuntimeError("boom")
 
+    async def fake_rate():
+        return 25.0
+
+    monkeypatch.setattr(api, "get_cnb_exchange_rate", fake_rate)
     monkeypatch.setattr(api, "_get_dam_period_prices", boom)
     result = await api.get_spot_prices()
     assert result == api._last_data
@@ -829,6 +833,10 @@ async def test_get_spot_prices_error_no_cache(monkeypatch):
     async def boom(*_args, **_kwargs):
         raise RuntimeError("boom")
 
+    async def fake_rate():
+        return 25.0
+
+    monkeypatch.setattr(api, "get_cnb_exchange_rate", fake_rate)
     monkeypatch.setattr(api, "_get_dam_period_prices", boom)
     result = await api.get_spot_prices()
     assert result == {}

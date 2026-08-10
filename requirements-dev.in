@@ -1,30 +1,12 @@
 # Runtime constraints, including the canonical Home Assistant target.
 -r requirements.in
 
-# Testing dependencies
-pytest==9.0.0
-pytest-cov==7.0.0
-pytest-asyncio==1.3.0
-coverage==7.10.6
-freezegun==1.5.2
-license-expression==30.4.3
-mock-open==1.4.0
-numpy==2.3.2
-paho-mqtt==2.1.0
-pipdeptree==2.26.1
+# Canonical Home Assistant test harness; its metadata owns exact test versions.
+pytest-homeassistant-custom-component==0.13.355
+
+# Additional testing dependencies not provided by the canonical harness.
 pylint-per-file-ignores==1.4.0
-pytest-aiohttp==1.1.0
-pytest-freezer==0.4.9
-pytest-github-actions-annotate-failures==0.3.0
-pytest-picked==0.5.1
-pytest-socket==0.7.0
 pytest-sugar==1.0.0
-pytest-timeout==2.4.0
-pytest-unordered==0.7.0
-pytest-xdist==3.8.0
-requests-mock==1.12.1
-respx==0.22.0
-syrupy==5.0.0
 openpyxl==3.1.5
 
 # Linting dependencies
@@ -36,6 +18,6 @@ pip-tools==7.5.2
 # Optional: Type checking
 mypy==1.18.2
 
-# Python-version compatibility for CI (3.12)
+# Python-version compatibility for the canonical Python 3.14 CI runtime.
 annotatedyaml==0.4.5; python_version < "3.13"
 annotatedyaml==1.0.2; python_version >= "3.13"

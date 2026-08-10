@@ -12,6 +12,19 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 
+@pytest.fixture(autouse=True)
+def _disable_external_mqtt_worker(monkeypatch):
+    """Setup-entry unit tests keep the shared emitter but not its network worker."""
+
+    async def _noop_start(_entry):
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shared.emitter._start_mqtt_publisher",
+        _noop_start,
+    )
+
+
 class DummyConfigEntries:
     def __init__(self):
         self.updated = []

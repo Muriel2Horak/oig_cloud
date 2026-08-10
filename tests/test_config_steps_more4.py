@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import types
 from types import SimpleNamespace
 
 import pytest
@@ -582,13 +580,13 @@ async def test_quick_setup_ote_api_warning(monkeypatch):
     async def _ok(_hass, _data):
         return {"title": "ok"}
 
-    class DummyOteApi:
-        async def get_spot_prices(self):
-            return []
+    async def _empty_spot_prices(_self):
+        return []
 
-    module = types.ModuleType("custom_components.oig_cloud.config.api.ote_api")
-    module.OteApi = DummyOteApi
-    monkeypatch.setitem(sys.modules, "custom_components.oig_cloud.config.api.ote_api", module)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ote_api.OteApi.get_spot_prices",
+        _empty_spot_prices,
+    )
     monkeypatch.setattr(steps_module, "validate_input", _ok)
 
     flow = DummyConfigFlow()

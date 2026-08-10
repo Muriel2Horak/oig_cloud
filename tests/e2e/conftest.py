@@ -159,8 +159,40 @@ async def _setup_entry(hass, entry_options, monkeypatch, *, data_mode, mock_api,
     hass.config_entries.async_forward_entry_setups = _forward_entry_setups
 
     if data_mode == "mock":
+        from custom_components.oig_cloud.ai_eval import coordinator as ai_eval_module
+        from custom_components.oig_cloud.shared import emitter as emitter_module
+        from custom_components.oig_cloud.shield import core as shield_core_module
+
+        async def _skip_mqtt_publisher(_entry):
+            return None
+
+        async def _skip_ai_eval_setup(_self):
+            return None
+
+        async def _skip_data_source_start(_self):
+            return None
+
         monkeypatch.setattr(init_module, "OigCloudApi", lambda *_a, **_k: mock_api)
         monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+        monkeypatch.setattr(
+            emitter_module, "_start_mqtt_publisher", _skip_mqtt_publisher
+        )
+        monkeypatch.setattr(
+            ai_eval_module.AiEvalCoordinator, "async_setup", _skip_ai_eval_setup
+        )
+        monkeypatch.setattr(
+            data_source_module.DataSourceController,
+            "async_start",
+            _skip_data_source_start,
+        )
+        monkeypatch.setattr(
+            shield_core_module,
+            "async_track_time_interval",
+            lambda *_a, **_k: lambda: None,
+        )
+        monkeypatch.setattr(
+            init_module, "_setup_service_shield_monitoring", lambda *_a, **_k: None
+        )
 
     monkeypatch.setattr(init_module, "_setup_frontend_panel", _setup_frontend)
     monkeypatch.setattr(

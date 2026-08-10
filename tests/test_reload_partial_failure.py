@@ -77,7 +77,7 @@ async def test_async_unload_entry_survives_platform_unload_exception():
     assert result is True
     # both platforms were still attempted — the switch unload wasn't skipped
     # just because sensor blew up first.
-    assert set(config_entries.unload_calls) == {"sensor", "switch"}
+    assert set(config_entries.unload_calls) == set(init_module.PLATFORMS)
 
 
 @pytest.mark.asyncio

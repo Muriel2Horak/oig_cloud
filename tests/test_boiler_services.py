@@ -10,6 +10,16 @@ from custom_components.oig_cloud.services import boiler as module
 from custom_components.oig_cloud.boiler import actuator as actuator_mod
 
 
+@pytest.fixture(autouse=True)
+def _disable_serializer_worker(monkeypatch):
+    """Service-unit tests do not own the runtime serializer lifecycle."""
+
+    async def _noop_start(_self):
+        return None
+
+    monkeypatch.setattr(actuator_mod.BoilerActuatorSerializer, "start", _noop_start)
+
+
 class DummyServices:
     def __init__(self):
         self.calls = []
