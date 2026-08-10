@@ -73,8 +73,20 @@ except Exception as err:
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _ai_task_platform_available() -> bool:
+    """Return whether HA exposes and can import the optional AI task platform."""
+    if not hasattr(Platform, "AI_TASK"):
+        return False
+    try:
+        __import__("homeassistant.components.ai_task")
+    except (AttributeError, ImportError):
+        return False
+    return True
+
+
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
-if hasattr(Platform, "AI_TASK"):  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
+if _ai_task_platform_available():  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
     PLATFORMS.append(Platform.AI_TASK)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)

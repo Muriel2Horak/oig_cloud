@@ -33,7 +33,6 @@ import sys
 import time
 import asyncio
 from datetime import timedelta
-from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional
 
 from aiohttp import web
@@ -343,6 +342,8 @@ async def _delegate_validate_config_ai_task(
     install: Mapping[str, Any],
 ) -> Any:
     """Delegate through the existing Task 9 entity helper."""
+    from homeassistant.components.conversation import ChatLog
+
     from ..ai_task import GenDataTask, OigAiTaskEntity
 
     entity = OigAiTaskEntity(
@@ -358,10 +359,11 @@ async def _delegate_validate_config_ai_task(
     )
     entity.hass = hass
     task = GenDataTask(
+        name="validate_config",
         instructions=build_anonymous_prompt("validate_config", install),
         structure=structure,
     )
-    result = await entity._async_generate_data(task, SimpleNamespace(conversation_id=None))
+    result = await entity._async_generate_data(task, ChatLog(hass, entry.entry_id))
     return getattr(result, "data", result)
 
 
@@ -1601,7 +1603,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 and effective_provider != previous_provider
             ):
                 await solar_store.async_clear_inactive(effective_provider)
-        if section == "solar" and private_updates:
+        if section == "solar" and private_updates and solar_store is not None:
             if "solar_forecast_api_key" in private_updates:
                 await solar_store.async_set_candidate(
                     "forecast_solar",
@@ -2042,6 +2044,8 @@ class OIGCloudSolarTestView(HomeAssistantView):
         parsed, error_response = self._parse_payload(payload)
         if error_response is not None:
             return error_response
+        if parsed is None:
+            return web.json_response({"error": "Invalid payload"}, status=400)
 
         hass: HomeAssistant = request.app["hass"]
         entry = _find_entry_for_box(hass, box_id)
@@ -2138,6 +2142,7 @@ class OIGCloudSolarTestView(HomeAssistantView):
         lon, lon_error = self._required_number(payload, "solar_forecast_longitude")
         if lon_error is not None:
             return None, lon_error
+        assert lat is not None and lon is not None
         return {"latitude": lat, "longitude": lon}, None
 
     def _parse_string(
@@ -2174,6 +2179,7 @@ class OIGCloudSolarTestView(HomeAssistantView):
         azimuth, azimuth_error = self._required_number(payload, field_keys[2])
         if azimuth_error is not None:
             return None, azimuth_error
+        assert kwp is not None and declination is not None and azimuth is not None
         return {
             "kwp": kwp,
             "declination": declination,

@@ -20,18 +20,14 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import VolSchemaType
 
 try:
-    from opentelemetry import trace
+    from opentelemetry.trace import get_tracer
 except ImportError:
     class _NoOpTracer:
         def start_as_current_span(self, *_args: Any, **_kwargs: Any) -> Any:
             return nullcontext()
 
-    class _NoOpTrace:
-        @staticmethod
-        def get_tracer(*_args: Any, **_kwargs: Any) -> _NoOpTracer:
-            return _NoOpTracer()
-
-    trace = _NoOpTrace()
+    def get_tracer(*_args: Any, **_kwargs: Any) -> _NoOpTracer:
+        return _NoOpTracer()
 
 from ..const import DOMAIN
 from ..core.box_mode_composite import build_app_value
@@ -611,7 +607,7 @@ FORMAT_BATTERY = {
     FORMAT_CHARGE_LABEL: 1,
 }
 
-tracer = trace.get_tracer(__name__)
+tracer = get_tracer(__name__)
 
 # Storage key pro dashboard tiles
 STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"
@@ -1198,7 +1194,7 @@ async def _save_dashboard_tiles_config(
         # config from regressed client state) still leaves a recoverable
         # last-known-good config behind.
         previous = await store.async_load()
-        if not _is_empty_dashboard_tiles(previous):
+        if isinstance(previous, dict) and not _is_empty_dashboard_tiles(previous):
             await backup_store.async_save(previous)
 
         await store.async_save(config)
@@ -1236,7 +1232,7 @@ async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
             hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES_BACKUP
         )
         backup = await backup_store.async_load()
-        if not _is_empty_dashboard_tiles(backup):
+        if isinstance(backup, dict) and not _is_empty_dashboard_tiles(backup):
             recovered_count = len([t for t in (backup.get("tiles_left") or []) if t]) + len(
                 [t for t in (backup.get("tiles_right") or []) if t]
             )

@@ -1,6 +1,5 @@
 from typing import Any, Dict
 
-from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory
 
 SENSOR_TYPES_AI_EVAL: Dict[str, Dict[str, Any]] = {

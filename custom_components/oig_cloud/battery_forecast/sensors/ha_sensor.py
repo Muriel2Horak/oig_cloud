@@ -166,6 +166,7 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
         if not hasattr(coordinator, "last_update_success"):
             setattr(coordinator, "last_update_success", True)
         super().__init__(coordinator, sensor_type)
+        self._config_entry: ConfigEntry = config_entry
 
         sensor_setup_module.initialize_sensor(
             self,

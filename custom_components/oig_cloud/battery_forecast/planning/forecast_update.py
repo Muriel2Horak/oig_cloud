@@ -337,7 +337,7 @@ def _resolve_hw_min_kwh(
     _LOGGER.warning(
         "%s hw_min sensor unavailable or implausible (value=%s, max_capacity=%.2f kWh); "
         "using %.0f%% fallback",
-        _planner_log_marker("WARNING", correlation_id, run_id),
+        _planner_log_marker("WARNING", correlation_id or "unknown", run_id or "unknown"),
         sensor_min_kwh,
         max_capacity,
         configured_fraction * 100.0,
@@ -1024,7 +1024,7 @@ def _run_planner(
             now=dt_util.now(),
             spot_prices=spot_prices,
             modes=result.modes,
-            mode_guard_minutes=float(opts.get("mode_guard_minutes", MODE_GUARD_MINUTES)),
+            mode_guard_minutes=int(opts.get("mode_guard_minutes", MODE_GUARD_MINUTES)),
             plan_lock_until=sensor._plan_lock_until,
             plan_lock_modes=sensor._plan_lock_modes,
         )

@@ -829,7 +829,7 @@ export class OigSettings extends LitElement {
   }
 
   private renderAiCard() {
-    const section: 'ai' = 'ai';
+    const section = 'ai' as const;
     const fields = this.fieldsFor(section);
     const visible = fields.filter((f) => this.isFieldVisible(section, f));
     const toast = this.toast?.section === section ? this.toast : null;
