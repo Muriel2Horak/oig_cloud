@@ -93,9 +93,10 @@
 
 ## Normalization-only files
 
-- Count: 86 tracked active files.
+- Count at final Task 2 head `7c4b50c4`: 85 tracked active files.
 - Change kind: trailing whitespace removal and final-newline normalization only.
-- Blob comparison against `HEAD`: 86/86 files equal the deterministic trailing-whitespace plus EOF transformation.
+- Blob comparison from Task 2 base `ea1e422e` to final head: 85/85 files equal the deterministic trailing-whitespace plus EOF transformation.
+- The initial `937edb91` commit had 86 normalization-only files; `.github/workflows/quality.yml` left this set when the review fix made its Pylint gate blocking.
 - Generated dist, archived plans, evidence, notepads, drafts, and report artifacts remained byte-unchanged.
 - `.devcontainer/devcontainer.json` and `.vscode/launch.json` remain excluded only from `check-json` because they are JSONC; `.vscode/settings.json` is checked as valid JSON.
 - Files:
@@ -103,7 +104,6 @@
   - `.current_status.md`
   - `.github/workflows/dependency-check.yml`
   - `.github/workflows/maintainability.yml`
-  - `.github/workflows/quality.yml`
   - `.github/workflows/sonarcloud.yml`
   - `.opencode/todo.md`
   - `.openhands/microagents/repo.md`
