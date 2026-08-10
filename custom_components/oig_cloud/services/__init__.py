@@ -1,9 +1,11 @@
 """Služby pro integraci OIG Cloud."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from contextlib import nullcontext
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional, cast
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -19,19 +21,26 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import VolSchemaType
 
-try:
-    from opentelemetry.trace import get_tracer
-except ImportError:
-    class _NoOpTracer:
-        def start_as_current_span(self, *_args: Any, **_kwargs: Any) -> Any:
-            return nullcontext()
-
-    def get_tracer(*_args: Any, **_kwargs: Any) -> _NoOpTracer:
-        return _NoOpTracer()
-
 from ..const import DOMAIN
 from ..core.box_mode_composite import build_app_value
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Tracer
+
+
+class _NoOpTracer:
+    def start_as_current_span(self, *_args: Any, **_kwargs: Any) -> Any:
+        return nullcontext()
+
+
+def _get_service_tracer() -> Tracer | _NoOpTracer:
+    try:
+        from opentelemetry.trace import get_tracer
+    except ImportError:
+        return _NoOpTracer()
+    return get_tracer(__name__)
+
 
 ATTR_CONFIG_ENTRY_ID = "entry_id"
 
@@ -607,7 +616,7 @@ FORMAT_BATTERY = {
     FORMAT_CHARGE_LABEL: 1,
 }
 
-tracer = get_tracer(__name__)
+tracer = _get_service_tracer()
 
 # Storage key pro dashboard tiles
 STORAGE_KEY_DASHBOARD_TILES = "oig_dashboard_tiles"

@@ -74,6 +74,13 @@ def test_home_assistant_dependency_pins_match_canonical_input():
     assert versions == dict.fromkeys(files, "2026.8.1")
 
 
+def test_ha_http_plugin_compatibility_patch_target_exists():
+    """The split test plugin must find its removed HA HTTP patch target."""
+    import homeassistant.components.http as ha_http
+
+    assert hasattr(ha_http, "start_http_server_and_save_config")
+
+
 def test_ai_backend_module_has_no_ai_task_dependency():
     """The security-critical code must stay testable on any HA.
 

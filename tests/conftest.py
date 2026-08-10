@@ -5,6 +5,14 @@ from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import homeassistant.components.http as ha_http
+
+
+# pytest-homeassistant-custom-component 0.13.316 still patches this pre-2026.8
+# symbol in an autouse fixture. Restore only the patch target; the fixture
+# replaces it before use, so no legacy server behavior is emulated here.
+if not hasattr(ha_http, "start_http_server_and_save_config"):
+    ha_http.start_http_server_and_save_config = None
 
 try:
     import pytest_homeassistant_custom_component  # noqa: F401
