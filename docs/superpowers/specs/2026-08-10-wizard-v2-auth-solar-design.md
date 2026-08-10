@@ -188,6 +188,10 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
   explicitly listed frontend input set including `public/**`. Identical reviewed inputs produce identical IDs
   and every served dist byte/source map; changing any executable input changes the ID.
   Release CI may supply the computed value but cannot override it with a mismatched value.
+- Release builds run explicit Vite production mode in a sanitized environment. Project
+  `.env*` and `.npmrc` files plus ambient `VITE_*`, `NODE_OPTIONS`, and unapproved
+  `NPM_CONFIG_*` variables are rejected before install/build; only the documented fixed
+  toolchain/environment allowlist may influence output.
 
 Authentication data flow:
 
@@ -355,6 +359,10 @@ Cache provenance and usability:
   and never enters persisted identity. On setup, valid matching retry recovery takes
   precedence over cache-driven initial fetch; future/overdue retry is restored exactly
   once. Only after retry state is absent/cleared does cache usability decide initial fetch.
+- Occurrence ownership/deduplication applies only to scheduled callbacks and their retry
+  chain. Setup has one explicit initial-task guard. Each manual service invocation has a
+  unique request identity and runs once after lock serialization; concurrent manual calls
+  do not overlap but are not silently collapsed.
 - Keep backward rollback compatibility: leave the legacy box-only cache untouched and
   write schema 2 under an entry-specific key; old code ignores that key. Key-store
   revision/verification metadata is additive in the existing v1-readable object, so the

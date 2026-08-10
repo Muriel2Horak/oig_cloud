@@ -34,6 +34,8 @@
 - [ ] Commit revision-5 closure for atomic runtime snapshots, wrapper/seam grammar,
   reproducible archive metadata/toolchains, duplicate-dispatch ownership, and retained-
   release tamper checks; obtain scoped approvals for each affected lens.
+- [ ] Commit revision-6 closure for hermetic Vite environment inputs and explicit
+  scheduled-versus-initial/manual ownership; obtain final affected-lens approval.
 
 ### Gate 1: Clear deterministic branch blockers serially
 
@@ -82,5 +84,5 @@
 - Critics are read-only and independent from implementers.
 - Leader inspects diffs/tests before cherry-pick; worker completion is not integration approval.
 - No `|| true`, coverage exclusion, broad lint disable, secret logging, raw token fetch, local deploy build, direct main push, or unreviewed artifact.
-- No implementation lane starts before the three revision-5 scoped critic verdicts are `APPROVE`.
+- No implementation lane starts before revision-6 affected-lens verdicts are `APPROVE`.
 - Shutdown a durable team only after every task is terminal and results/mailboxes are collected.

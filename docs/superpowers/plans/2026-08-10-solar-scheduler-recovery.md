@@ -118,6 +118,9 @@
 - [ ] RED: duplicated callbacks for one occurrence create exactly one provider dispatch,
   one owned retry chain, and one commit/broadcast; occurrence ownership is claimed before
   lock wait or provider I/O.
+- [ ] Limit occurrence deduplication to scheduled callbacks/retries. RED: setup registers
+  exactly one guarded initial task; two manual invocations receive distinct request IDs,
+  serialize without overlap, and each truthfully attempts once.
 - [ ] Implement occurrence ID from entry/mode/scheduled local instant, never lifecycle generation. Persist retry state before arming its timer and calculate delays relative to the original occurrence, not request completion. Clear persisted/timer state on success, terminal failure, final exhaustion, newer occurrence, or provenance mismatch. Unload cancels the in-memory timer/task but retains matching durable retry state for restart.
 - [ ] RED persistence faults: retry-state Store failure arms no timer and terminates with safe `storage_failed`; crash after persistence/before timer registration is restored exactly once; timer-registration failure dispatches nothing and leaves the durable record for restart recovery.
 - [ ] Wrap lock acquisition and provider I/O in one 90-second attempt deadline; never leave an orphaned provider task after timeout.
