@@ -1,6 +1,6 @@
 # Wizard v2 authentication and solar correctness design
 
-Status: approved by operator on 2026-08-10
+Status: operator-approved product direction; revision 2 incorporates critic findings from 2026-08-10
 
 Target branch: `codex/wizard-v2-auth-fix`
 
@@ -58,6 +58,12 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Never modulo-wrap invalid user input.
 - Preserve existing non-negative stored values unchanged. In particular, `138` stays `138`.
 - Do not run a bulk numeric migration.
+- Existing finite integral values above `360` are invalid legacy state, not compass
+  values. Preserve the raw stored value until correction, do not dispatch it to a
+  provider, retain any prior cache as stale, and require an explicit valid `0..360`
+  save. Never clamp or modulo-wrap it.
+- Treat non-integral, boolean, non-finite, or non-numeric stored values with the same
+  invalid-legacy behavior.
 
 ### Provider ownership
 
@@ -69,16 +75,32 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Solcast:
   - Rooftop Site owns location, tilt, and azimuth in Solcast cloud configuration.
   - OIG sends no geometry for Rooftop Site forecast calls.
-  - Keep Rooftop Site ID, API key, and installed peak power visible.
+  - Keep Rooftop Site ID, API key, enabled strings, and per-string installed peak
+    power visible.
   - Hide Forecast.Solar-only geometry in the solar provider form.
-  - Preserve hidden values when switching providers; never erase them.
+  - Preserve hidden Forecast.Solar geometry when switching providers; never erase it.
+  - Keep per-string kWp locally. It supplies the string allocation ratio and the GHI
+    fallback capacity; OIG never transmits it as Rooftop Site geometry.
+  - Preserve the existing security policy for credentials: changing providers deletes
+    inactive active/candidate API credentials and the inactive Solcast Site ID. A
+    switch back requires credentials to be entered again.
 
 ### Existing negative values
 
 - Treat an already stored negative value as legacy Forecast.Solar provider coordinates.
 - Keep its runtime provider meaning until the operator explicitly saves the field.
 - Show its equivalent compass direction plus a legacy-value warning in editable flows.
-- Saving the displayed compass value adopts the new contract through explicit operator action.
+- Expose a read-model record per affected field with `stored_value`, `display_value`,
+  `legacy_provider_value: true`, and `requires_adoption: true`.
+- A render, reload, GET, unrelated save, or unchanged native form submit preserves the
+  raw negative value.
+- Wizard v2 and Settings include the field key in an `adopt_legacy_fields` write
+  control only after that input is touched. The server accepts only known legacy
+  azimuth field keys in this control.
+- Native HA flows show a transient per-field `adopt_legacy_*` checkbox. Submitting the
+  equivalent displayed value without that checkbox preserves the raw value; checking
+  it, or entering a different valid compass value, persists the compass value.
+- The adoption control is transport-only and is never stored in ConfigEntry options.
 - Do not silently persist the converted value during setup, reload, GET, or rendering.
 - Existing non-negative values are compass values by operator decision; do not infer or convert them.
 
@@ -94,22 +116,52 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Cancel pending retry work after success, unload, or a newer scheduled occurrence.
 - Prevent overlapping provider requests.
 - Manual refresh reports success only when a new forecast was accepted.
+- Retry only timeout, connection failure, HTTP `429`, and HTTP `5xx`. Do not retry
+  authentication/authorization (`401`, `403`), invalid configuration or provider
+  validation (`400`, `404`, `422`), malformed successful responses, or cancellation.
+- The retry instants for one occurrence are exactly occurrence `+15m` and `+45m`.
+- Local-time semantics use Home Assistant's configured timezone. The `06:00`, `12:00`,
+  and `16:00` targets exist once on Europe/Prague DST transition days, so each fires
+  once; no UTC substitution or catch-up call is made.
 
 ## Design
 
 ### 1. Refresh-aware frontend authentication
 
 - Extend the local `Hass` interface with Home Assistant's `fetchWithAuth` transport.
-- Keep the existing OIG URL allowlist check before dispatch.
+- Accept only origin-relative request paths whose canonical pathname is
+  `/api/oig_cloud` or starts with `/api/oig_cloud/`.
+- Reject absolute URLs, protocol-relative URLs, credentials, foreign hosts, localhost
+  aliases, alternate ports, backslashes, encoded or decoded traversal, fragments, and
+  malformed paths before calling Home Assistant transport.
+- Permit endpoint query strings because existing read endpoints use them, but never
+  include a query string in authentication diagnostics.
 - Route typed and untyped OIG REST wrappers through one internal authenticated transport seam.
 - Delegate token expiry detection and token refresh to `hass.fetchWithAuth`.
 - Remove direct reads of `auth.data.access_token` from request dispatch.
 - Remove duplicated manual `Authorization` header construction.
+- Normalize caller headers into a copied plain string record before delegation because
+  Home Assistant assigns `headers.authorization` as an object property. Remove every
+  case variant of caller-supplied `Authorization`; callers cannot override credentials.
+- Set `redirect: "error"` on the authenticated request. An authenticated redirect is a
+  terminal transport failure and is never followed or retried.
 - Preserve current public wrapper return shapes, abort behavior, response-body parsing, and status classification.
-- Preserve untyped network retry behavior only for retry-safe network failures.
-- Never retry a `401` with the same credential.
-- Never automatically replay a failed authenticated POST after a `401`.
-- If Home Assistant token refresh fails, dispatch no downstream network request and return the existing stable failure shape.
+- The untyped wrapper retries only `GET` or `HEAD`, and only for
+  connection/transport failures or HTTP `502`, `503`, and `504`, with the existing
+  bounded attempt count and delay. The typed wrapper remains single-dispatch so its
+  caller retains timeout/status control.
+- Never retry `401`, `403`, `429`, abort, redirect failure, or any other HTTP status.
+- Dispatch `POST`, `PUT`, `PATCH`, and `DELETE` exactly once for every outcome unless a
+  future endpoint defines and tests an idempotency key.
+- If Home Assistant context is absent or token refresh rejects, dispatch no downstream
+  request. The untyped wrapper returns `null`. The typed wrapper returns exactly
+  `{ ok: false, status: 0, code: "auth", error: "Home Assistant authentication unavailable" }`.
+- A caller abort remains exactly `{ ok: false, status: 0, code: "aborted", error:
+  "Request aborted" }`; other transport failures remain `code: "provider_unreachable"`
+  with the safe fixed text `Provider request failed`.
+- Remove the unused arbitrary-base-URL/token helper in `www_v2/src/data/api.ts`, or make
+  it private to tests if a verified caller appears. No production raw-fetch escape hatch
+  may remain.
 
 Authentication data flow:
 
@@ -122,19 +174,40 @@ OIG caller
   -> OIG REST endpoint
 ```
 
+Authentication logging contract:
+
+- Emit only a classified event name, wrapper kind, HTTP method, and safe error code.
+- Never log headers, URL/path/query, request/response body, raw exception text or stack,
+  access/refresh tokens, provider API keys, or Site ID.
+- Sentinel-secret tests inspect console arguments, typed/untyped results, and rendered
+  UI error text.
+
 ### 2. Canonical compass azimuth with provider adapters
 
-- Replace the shared modulo normalizer with two explicit pure operations:
+- Replace the shared modulo normalizer with explicit pure operations in one backend
+  provider-boundary module used by runtime and candidate tests:
   - strict compass input validation;
-  - Forecast.Solar outbound conversion.
+  - legacy-negative display conversion without persistence;
+  - Forecast.Solar outbound conversion and URL construction.
 - Registry metadata for both azimuth fields: minimum `0`, maximum `360`, step `1`.
 - REST and native flows validate before persistence and return field errors for rejected values.
 - Settings and Wizard render identical help for String 1 and String 2.
 - Update every duplicated Czech and English translation entry.
 - Runtime Forecast.Solar URL builder and candidate-test URL builder call the same outbound helper.
-- Solcast runtime and candidate-test paths continue to omit geometry.
+- The `/solar_test` parser uses a provider-discriminated DTO:
+  - Forecast.Solar accepts provider, its API key, latitude, longitude, enabled flags,
+    and enabled-string kWp/declination/compass azimuth. It rejects Solcast fields.
+  - Solcast accepts provider, API key, Site ID, enabled flags, and enabled-string kWp.
+    It rejects latitude, longitude, declination, and azimuth.
+- Solcast runtime and candidate-test requests contain only Rooftop Site URL identity,
+  format, and API key. Geometry and kWp never appear in the provider request.
 - Add provider-aware field visibility without deleting hidden data.
 - Include explicit legacy-negative metadata in the editable read model; do not overload the canonical validator.
+- `/solar_test` is side-effect-free. Success or failure never writes candidate/active
+  credentials, provider selection, options, or cache. Explicit section save owns
+  candidate persistence/promotion under the existing credential workflow.
+- A provider switch preserves non-secret geometry/options and clears inactive secrets
+  according to the credential policy above.
 
 Azimuth data flow:
 
@@ -147,20 +220,72 @@ Wizard or Settings compass value
      -> Solcast: omit geometry; Rooftop Site owns it
 ```
 
+Legacy read/write flow:
+
+```text
+stored -90
+  -> GET/native read model: display 90 + raw -90 metadata + warning
+  -> no field adoption: keep stored -90; runtime sends -90
+  -> touched/adopted 90: persist 90; runtime converts and sends -90
+```
+
 ### 3. Wall-clock solar scheduling
 
 - Replace interval-plus-hour-gate scheduling for `daily` and `daily_optimized` with wall-clock local-time subscriptions.
 - Keep interval subscriptions only for modes whose contract is truly interval-based.
+- Add `daily` to the canonical registry enum, frontend labels/fixtures, REST round-trip,
+  Settings, and Wizard v2 so the accepted mode is reachable on every surface.
 - Register one primary-sensor schedule; secondary sensors never call a provider.
 - On setup:
   - restore persisted cache;
   - fetch immediately only when no usable current forecast exists;
   - otherwise wait for the next wall-clock occurrence.
-- Serialize scheduled, retry, and manual refreshes through the existing update lock.
+- Add one primary-sensor `asyncio.Lock`; no suitable update lock exists today.
+- Serialize initial, scheduled, retry, and manual refreshes through that lock.
+- Maintain a monotonically increasing lifecycle generation and a removed flag. Every
+  request captures the generation and may commit only when it still matches and the
+  entity has not been removed.
+- Track initial and retry tasks. On unload, mark removed, increment generation,
+  unsubscribe callbacks, cancel and await tracked tasks, and prevent any later storage,
+  coordinator, state, or broadcast write.
 - Track retry ownership per scheduled occurrence.
 - Advance `response_time`, persisted storage, coordinator data, and HA state only after accepting a successful provider response.
 - Preserve old data and its stale status on failure.
 - Make manual service result reflect whether accepted response state advanced.
+
+Cache provenance and usability:
+
+- Bump the solar forecast store schema and persist `provider`, a normalized non-secret
+  configuration fingerprint, and a non-secret credential revision supplied by
+  `SolarKeyStore`; never persist raw credentials in the forecast cache.
+- Fingerprint provider, enabled strings, kWp, mode, and Forecast.Solar GPS/tilt/azimuth.
+  For Solcast, geometry is excluded; the credential revision detects Site ID/API-key
+  changes without storing either value.
+- A restored cache is usable only when provenance matches, `response_time` is parseable
+  and no more than 24 hours old, there is no `error`, and accepted-response rules cover
+  both current local date and next local date.
+- A provenance mismatch retains old cache only as stale fallback, never publishes it as
+  current, and triggers an immediate fetch. A failed replacement keeps that stale cache.
+- Reusing a box ID under another ConfigEntry cannot accept the previous entry's cache;
+  include ConfigEntry identity in storage ownership or provenance.
+
+Accepted response and atomic commit:
+
+- Reject a provider result unless its payload is a mapping with a parseable
+  `response_time`, no error marker, finite non-negative numeric values, and local today
+  plus tomorrow coverage.
+- Forecast.Solar requires today and tomorrow daily values for every enabled string;
+  disabled strings may be empty. Solcast requires aggregate today and tomorrow values,
+  then derives enabled-string values from the validated local kWp ratios.
+- Empty, malformed, partial-enabled-string, non-finite, or error-bearing HTTP-200 data
+  is a failed attempt and is not retryable.
+- Build and validate a complete candidate snapshot before mutation. Persist the
+  candidate first; only after successful persistence atomically replace last data/time,
+  coordinator data, HA state, and broadcasts. Persistence failure leaves all prior
+  observable state unchanged and reports failure.
+- An equivalent accepted snapshot may refresh `response_time` and provenance once, but
+  produces one commit/broadcast only; duplicated callbacks for the same occurrence are
+  idempotent.
 
 Scheduling data flow:
 
@@ -172,12 +297,25 @@ HA local wall clock 06:00 / 12:00 / 16:00
      -> failure: keep cache, retry at +15m and +45m total
 ```
 
+Scheduled occurrence state machine:
+
+```text
+new occurrence -> cancel older pending retries -> attempt 0 under lock
+  accepted -> atomic commit -> terminal success
+  retryable failure -> attempt 1 at +15m
+    accepted -> atomic commit -> terminal success
+    retryable failure -> attempt 2 at +45m
+      accepted or failed -> terminal; no third retry
+  non-retryable failure/cancel/unload/newer occurrence -> terminal immediately
+```
+
 ## Error handling and diagnostics
 
 - Authentication refresh rejection:
   - no downstream request;
   - no same-token retry;
-  - sanitized log without token contents.
+  - exact typed/untyped failure contract above;
+  - classified sanitized log without raw error or request data.
 - Invalid azimuth:
   - reject at the nearest boundary;
   - return field-specific validation error;
@@ -186,10 +324,14 @@ HA local wall clock 06:00 / 12:00 / 16:00
   - preserve runtime meaning;
   - show actionable warning;
   - convert only after explicit save.
-- Provider `429`, timeout, or temporary server error:
+- Provider `429`, timeout, connection failure, or `5xx`:
   - retain cache;
   - schedule bounded retries;
   - expose failure state without reporting manual success.
+- Provider `401`, `403`, invalid config, `422`, cancellation, or malformed success:
+  - retain cache;
+  - do not schedule a retry;
+  - expose a classified failure without secrets.
 - Unload:
   - unsubscribe wall-clock callbacks;
   - cancel pending retry tasks;
@@ -199,10 +341,19 @@ HA local wall clock 06:00 / 12:00 / 16:00
 
 ### Slice A: authentication
 
-- RED: typed and untyped wrappers delegate to Home Assistant transport.
+- RED: typed and untyped wrappers delegate to Home Assistant transport with a copied
+  plain header record and no caller Authorization.
 - RED: expired credential refreshes once and sends only the fresh credential.
 - RED: current credential performs no refresh.
-- RED: refresh failure causes no downstream dispatch.
+- RED: refresh failure causes no downstream dispatch and returns the exact typed/untyped shapes.
+- RED: canonical OIG paths pass; absolute, protocol-relative, localhost/loopback,
+  credentials, alternate-port, traversal, fragment, and malformed paths perform zero
+  transport calls.
+- RED: GET transport/502/503/504 failures retry within the existing bound; POST and
+  other mutations dispatch exactly once for transport, 401/403/429/5xx outcomes.
+- RED: redirects fail closed; caller authorization casing variants are stripped.
+- RED: concurrent expired requests use Home Assistant refresh and never send stale credentials.
+- RED: sentinel secrets are absent from logs, return values, and UI text.
 - RED: abort and typed HTTP error classification remain unchanged.
 - GREEN: consolidate both wrappers on `hass.fetchWithAuth`.
 
@@ -214,7 +365,15 @@ HA local wall clock 06:00 / 12:00 / 16:00
 - RED: negative, `361`, fractional, boolean, and malformed inputs fail validation without storage changes.
 - RED: both strings expose `0..360` metadata and identical help.
 - RED: Solcast hides Forecast.Solar geometry, retains kWp, and preserves hidden values.
-- RED: legacy negative value keeps its runtime meaning and changes only after explicit save.
+- RED: Solcast candidate test succeeds without geometry, rejects geometry, sends no
+  provider geometry/kWp, and changes no credential or option state.
+- RED: legacy negative value keeps its runtime meaning across GET/render/unrelated save,
+  adopts through touched/checkbox control exactly once, and changes only after explicit save.
+- RED: invalid stored `361`, `720`, fractional, and non-finite-like corrupt values are
+  retained but never dispatched until corrected.
+- RED: switching providers preserves geometry and clears inactive credentials exactly
+  according to the documented policy.
+- RED: `daily` is present in registry, translations, REST, Wizard, and Settings.
 - GREEN: implement canonical validator, provider adapter, UI metadata, visibility, warnings, and translations.
 
 ### Slice C: scheduler and stale recovery
@@ -225,8 +384,16 @@ HA local wall clock 06:00 / 12:00 / 16:00
 - RED: `daily` calls once at local `06:00`.
 - RED: initial success, two-day advance, scheduled success updates value and clears stale.
 - RED: timeout or `429`, then success, preserves cache and performs bounded retries.
-- RED: unload cancels pending retry.
-- RED: manual provider failure returns false.
+- RED: exact retry instants are `+15m` and `+45m`; two retry failures produce no third call.
+- RED: `401`, `403`, `422`, invalid config, malformed HTTP-200, and abort produce no retry.
+- RED: a newer occurrence cancels older retries; success cancels pending retry work.
+- RED: manual-vs-scheduled overlap serializes; duplicated occurrence callbacks commit once.
+- RED: unload during an active request and unload with a pending retry produce no later writes.
+- RED: secondary sensors register no schedule and never call a provider.
+- RED: cache from changed provider/geometry/credentials/ConfigEntry is stale fallback and triggers fetch.
+- RED: recent cache missing tomorrow is not usable; partial/invalid responses and storage
+  failure preserve prior state atomically.
+- RED: manual provider failure or an unaccepted response returns false.
 - GREEN: replace defective scheduling and implement retry lifecycle.
 
 ### Cross-slice verification
@@ -238,6 +405,8 @@ HA local wall clock 06:00 / 12:00 / 16:00
 - Provider-boundary E2E: enter east `90`, persist `90`, reload, Forecast.Solar receives `-90`.
 - Solcast E2E: provider switch hides geometry without deleting it and sends no geometry.
 - Authentication E2E or browser harness: expired token refreshes without invalid-auth request.
+- Stale-recovery E2E: start at a non-aligned minute, advance through the next local
+  occurrence, and observe one accepted update with stale cleared.
 
 ## Quality and landing constraints
 
@@ -245,7 +414,18 @@ HA local wall clock 06:00 / 12:00 / 16:00
 - Keep authentication, azimuth, scheduler, and prerequisite quality cleanup in separate commits.
 - Open a pull request; keep it draft until all required gates pass.
 - Require security, unit, E2E, lint, Flake8, Mypy, Pylint, build, and coverage review before ready state.
-- Require repository coverage above 80 percent under the agreed gate.
+- Interpret the repository's written `MNP` requirement as the frontend `npm` gates;
+  there is no separate MNP tool or command in this repository.
+- Gate Python production-code line coverage at `80.01%` or higher using coverage
+  precision `2` and `pytest --cov=custom_components/oig_cloud --cov-fail-under=80.01`.
+- Gate v2 frontend statements and lines at `80.01%` or higher under
+  `test:unit:coverage`; report branches/functions and require 100% line/branch coverage
+  for newly changed behavior files where the coverage tool can isolate them.
+- Run both coverage gates independently; aggregate percentages cannot mask one side.
+- Make Pylint, Mypy, pre-commit, frontend lint/typecheck/unit/build, Python unit,
+  security, and relevant Playwright E2E true pull-request checks. Remove `|| true` and
+  replace the root no-op `npm test` job with commands in `www_v2`.
+- Build the frontend during pull-request CI, not only after merge.
 - Imported baseline currently has inherited failures:
   - two ESLint errors;
   - one Python unit failure;
@@ -255,11 +435,21 @@ HA local wall clock 06:00 / 12:00 / 16:00
   - ten WIP-introduced Flake8 findings.
 - Do not hide failures by weakening configuration or making checks non-blocking.
 - Address branch-owned regressions first; isolate broader inherited cleanup from the three behavior fixes.
+- Land prerequisite quality-gate repairs as reviewable commits before behavior slices;
+  fix inherited failures instead of suppressing or excluding production code.
 - Do not mark the pull request ready while any required gate remains red.
 
 ## Rollout and observation
 
-- Deploy only the reviewed pull request artifact to HP first.
+- Pull-request CI creates one immutable release archive containing the exact reviewed
+  `custom_components/oig_cloud` tree and built/compressed v2 assets. The archive name,
+  internal manifest, and SHA-256 identify the reviewed Git commit.
+- `deploy_to_ha.sh` gains artifact-only mode and verifies archive digest, manifest commit,
+  safe paths, and extraction before copying. It never runs npm/vite for artifact deploys.
+- HP deployment records the new commit/digest and retains the immediately previous
+  reviewed archive/digest. Rollback redeploys that previous archive through the same
+  verified artifact path; no worktree rebuild is allowed.
+- Deploy only the reviewed pull-request artifact to HP first.
 - Verify sanitized Home Assistant logs contain no recurring invalid-auth requests from OIG endpoints after natural token refresh.
 - Verify both providers independently:
   - Forecast.Solar request uses converted azimuth.
@@ -267,6 +457,20 @@ HA local wall clock 06:00 / 12:00 / 16:00
 - Observe scheduled refreshes at the next local wall-clock occurrence.
 - Verify `response_time`, `forecast_age_hours`, `forecast_covers_tomorrow`, and `forecast_stale` after refresh.
 - Keep cached forecast behavior as rollback protection during provider failure.
+- Observe HP for at least 48 hours, at least two scheduled occurrences, and at least one
+  natural Home Assistant token refresh, whichever takes longer.
+- Pass thresholds:
+  - zero OIG invalid-auth requests after a natural refresh;
+  - zero leaked credential sentinels or unhandled OIG exceptions;
+  - exactly one initial attempt per scheduled occurrence, with no overlap;
+  - accepted refresh by the occurrence or its final `+45m` retry when the provider is
+    available;
+  - advancing `response_time`, age below 24 hours, tomorrow coverage true, and stale false;
+  - Forecast.Solar candidate sees the converted direction and Solcast candidate succeeds
+    without geometry or configuration mutation.
+- Roll back immediately on repeated OIG invalid-auth traffic, a state write after unload,
+  corrupted/lost prior cache, wrong provider azimuth, Solcast geometry leakage, or an
+  unrecovered scheduler miss while the provider is known available.
 
 ## Non-goals
 
