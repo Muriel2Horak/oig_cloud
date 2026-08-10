@@ -134,6 +134,7 @@
 - Modify dependency lockfiles only to remediate verified vulnerabilities
 
 - [ ] Remove swallowed Bandit/Safety/Trivy/Snyk failures. Pin third-party actions to stable release tags or commit SHAs; avoid `master`.
+- [ ] Build and checksum a complete Ubuntu 24.04 / Python 3.14 wheelhouse or hash-locked no-build-isolation toolchain before claiming hermetic pip installation. Task 1 target probing found `bluetooth-data-tools==1.29.21` has no usable glibc 2.39 wheel; its sdist requires `setuptools>=77.0`, `Cython`, and `poetry-core>=2.0.0`. Validate with an actual Ubuntu runner and prove no build dependency is fetched outside the locked set.
 - [ ] Gate CodeQL, Bandit, pip-audit or Safety, both root/v2 `npm audit --audit-level=high`, Trivy HIGH/CRITICAL, and Gitleaks.
 - [ ] Treat missing optional Snyk credentials as non-authoritative; open-source blocking scans must always run. If Snyk is a required repository check, require its token and fail when absent instead of silently skipping.
 - [ ] Add/retain OWASP-relevant regression tests for authorization, SSRF/path confinement, credential redaction, unsafe replay, input validation, and secret persistence.

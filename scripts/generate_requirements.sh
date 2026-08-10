@@ -3,8 +3,26 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UV_BIN="${UV_BIN:-uv}"
+UV_VERSION="0.11.31"
 PYTHON_VERSION="3.14.3"
 RESOLUTION_CUTOFF="2026-08-10T00:00:00Z"
+
+if [[ "$UV_BIN" == */* && "$UV_BIN" != /* ]]; then
+  UV_BIN="$ROOT_DIR/$UV_BIN"
+fi
+
+run_uv() {
+  env -i \
+    HOME="${HOME:-$ROOT_DIR}" \
+    PATH="${PATH:-/usr/bin:/bin}" \
+    "$UV_BIN" "$@"
+}
+
+actual_uv_version="$(run_uv --version | awk '{print $2}')"
+if [[ "$actual_uv_version" != "$UV_VERSION" ]]; then
+  echo "Dependency generation requires uv $UV_VERSION; found ${actual_uv_version:-unknown}." >&2
+  exit 1
+fi
 
 COMMON_ARGS=(
   --python-version "$PYTHON_VERSION"
@@ -27,9 +45,10 @@ compile_lock() {
     platform_args=(--python-platform x86_64-manylinux_2_28)
   fi
 
-  env -u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL "$UV_BIN" pip compile \
+  run_uv --no-config pip compile \
     "${COMMON_ARGS[@]}" \
     "${platform_args[@]}" \
+    --no-sources \
     --output-file "$output_file" \
     "$input_file"
 }

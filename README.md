@@ -313,13 +313,15 @@ Příspěvky jsou vítány! Prosím:
 git clone https://github.com/psimsa/oig_cloud.git
 cd oig_cloud
 
-# Create virtual environment
-python3 -m venv .venv
+# Create the required Python 3.14.3 virtual environment
+python3.14 --version  # must print Python 3.14.3
+python3.14 -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate  # Windows
 
-# Install dependencies
-pip install -r requirements-dev.txt
+# Install and validate the exact hash-locked dependencies
+python -m pip install --require-hashes -r requirements-dev.txt
+python -m pip check
 
 # Run tests
 pytest tests/

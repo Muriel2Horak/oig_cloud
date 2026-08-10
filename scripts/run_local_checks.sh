@@ -6,18 +6,25 @@ cd "$ROOT_DIR"
 
 VENV_DIR="${VENV_DIR:-.ha-env}"
 PYTHON_BIN="${VENV_DIR}/bin/python"
-PIP_BIN="${VENV_DIR}/bin/pip"
+EXPECTED_PYTHON_VERSION="3.14.3"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "Missing venv at ${VENV_DIR}. Create it first (expected ${PYTHON_BIN})."
   exit 1
 fi
 
-echo "==> Installing security tools (pip-audit, safety)"
-"$PIP_BIN" install -q pip-audit safety
+ACTUAL_PYTHON_VERSION="$("$PYTHON_BIN" -c 'import platform; print(platform.python_version())')"
+if [[ "$ACTUAL_PYTHON_VERSION" != "$EXPECTED_PYTHON_VERSION" ]]; then
+  echo "Local checks require Python $EXPECTED_PYTHON_VERSION; found $ACTUAL_PYTHON_VERSION." >&2
+  exit 1
+fi
 
-echo "==> Installing dev dependencies"
-"$PIP_BIN" install -q -r requirements-dev.txt
+echo "==> Installing hash-locked dev dependencies"
+"$PYTHON_BIN" -m pip install -q --require-hashes -r requirements-dev.txt
+"$PYTHON_BIN" -m pip check
+
+echo "==> Installing security tools (pip-audit, safety)"
+"$PYTHON_BIN" -m pip install -q pip-audit safety
 
 echo "==> Running pip-audit (requirements.txt)"
 RUNTIME_PIP_AUDIT_IGNORES=(

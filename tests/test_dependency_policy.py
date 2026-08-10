@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 
@@ -14,6 +16,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 CANONICAL_PYTHON = "3.14.3"
 CANONICAL_PLUGIN = "pytest-homeassistant-custom-component==0.13.355"
 RESOLUTION_CUTOFF = "2026-08-10T00:00:00Z"
+CANONICAL_UV = "0.11.31"
 PLUGIN_OWNED_TEST_REQUIREMENTS = {
     "coverage",
     "freezegun",
@@ -57,7 +60,10 @@ def _dev_lock_consumers() -> list[tuple[Path, str, str]]:
     consumers = []
     for workflow in sorted(WORKFLOWS.glob("*.yml")):
         for job_name, body in _workflow_jobs(workflow).items():
-            if re.search(r"pip\s+install\s+-r\s+requirements-dev\.txt", body):
+            if re.search(
+                r"pip\s+install\s+(?:--require-hashes\s+)?-r\s+requirements-dev\.txt",
+                body,
+            ):
                 consumers.append((workflow, job_name, body))
     return consumers
 
@@ -94,15 +100,57 @@ def test_every_pytest_job_installs_the_canonical_dev_lock() -> None:
     failures = [
         f"{workflow.name}:{job_name}"
         for workflow, job_name, body in jobs
-        if not re.search(r"pip\s+install\s+-r\s+requirements-dev\.txt", body)
+        if not re.search(
+            r"pip\s+install\s+(?:--require-hashes\s+)?-r\s+requirements-dev\.txt",
+            body,
+        )
     ]
     assert not failures, "pytest jobs missing requirements-dev.txt: " + ", ".join(failures)
+
+
+def test_every_dev_lock_consumer_verifies_hashes_and_environment() -> None:
+    """CI must install only locked artifacts and reject dependency conflicts."""
+    failures = []
+    for workflow, job_name, body in _dev_lock_consumers():
+        if not re.search(
+            r"(?:python\s+-m\s+)?pip\s+install\s+--require-hashes\s+-r\s+requirements-dev\.txt",
+            body,
+        ):
+            failures.append(f"{workflow.name}:{job_name} lacks --require-hashes")
+        if not re.search(r"(?:python\s+-m\s+)?pip\s+check\b", body):
+            failures.append(f"{workflow.name}:{job_name} lacks pip check")
+        if re.search(r"pip\s+install\s+--upgrade\s+pip", body):
+            failures.append(f"{workflow.name}:{job_name} upgrades pip outside the lock")
+
+    assert not failures, "\n".join(failures)
+
+
+def test_ci_executes_canonical_lock_regeneration_check() -> None:
+    """A required workflow must execute the same lock check developers run."""
+    jobs = [
+        (workflow, job_name, body)
+        for workflow in sorted(WORKFLOWS.glob("*.yml"))
+        for job_name, body in _workflow_jobs(workflow).items()
+        if "./scripts/generate_requirements.sh --check" in body
+    ]
+    assert jobs, "no workflow executes the canonical lock check"
+
+    for workflow, job_name, body in jobs:
+        assert CANONICAL_PYTHON in body, f"{workflow.name}:{job_name} lacks Python pin"
+        assert re.search(
+            r"(?:python\s+-m\s+)?pip\s+install\s+--require-hashes\s+-r\s+requirements-dev\.txt",
+            body,
+        ), f"{workflow.name}:{job_name} does not hash-install the uv-bearing lock"
+        assert f"uv {CANONICAL_UV}" in body, (
+            f"{workflow.name}:{job_name} does not verify exact uv"
+        )
 
 
 def test_dev_input_uses_supported_home_assistant_harness() -> None:
     """The canonical dev input must select the plugin matching HA 2026.8.1."""
     content = (ROOT / "requirements-dev.in").read_text(encoding="utf-8")
     assert CANONICAL_PLUGIN in content
+    assert f"uv=={CANONICAL_UV}" in content
 
 
 def test_dev_input_leaves_plugin_owned_test_versions_to_the_plugin() -> None:
@@ -186,10 +234,124 @@ def test_canonical_lock_generator_seals_and_refreshes_resolution() -> None:
     assert f'RESOLUTION_CUTOFF="{RESOLUTION_CUTOFF}"' in content
     assert "--prerelease explicit" in content
     assert "--default-index https://pypi.org/simple" in content
-    assert "-u UV_INDEX -u UV_INDEX_URL -u UV_EXTRA_INDEX_URL" in content
+    assert "env -i" in content
+    assert "--no-config" in content
+    assert "--no-sources" in content
     assert re.search(r"(?m)^  --refresh$", content)
     assert re.search(r"(?m)^  --upgrade$", content)
     assert "--refresh-package pytest-homeassistant-custom-component" in content
     assert 'compile_lock "requirements.in" "requirements.txt"' in content
     assert 'compile_lock "requirements-dev.in" "requirements-dev.txt"' in content
     assert "--check" in content
+
+
+def _write_fake_uv(path: Path, *, version: str) -> None:
+    """Write a deterministic uv double that enforces the generator boundary."""
+    path.write_text(
+        f"""#!/usr/bin/env python3
+import os
+from pathlib import Path
+import shutil
+import sys
+
+if "--version" in sys.argv:
+    print("uv {version} (test-double)")
+    raise SystemExit(0)
+
+for hostile in ("UV_CONFIG_FILE", "UV_CONSTRAINT"):
+    if hostile in os.environ:
+        print(f"hostile environment leaked: {{hostile}}", file=sys.stderr)
+        raise SystemExit(41)
+
+if "--no-config" not in sys.argv or "--no-sources" not in sys.argv:
+    print("generator did not disable config and project sources", file=sys.stderr)
+    raise SystemExit(42)
+
+output = Path(sys.argv[sys.argv.index("--output-file") + 1])
+source = Path({str(ROOT)!r}) / output.name
+shutil.copyfile(source, output)
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+@pytest.mark.parametrize("hostile_name", ["UV_CONFIG_FILE", "UV_CONSTRAINT"])
+def test_lock_generator_ignores_hostile_uv_inputs(
+    tmp_path: Path, hostile_name: str
+) -> None:
+    """Ambient uv configuration must not change byte-identical lock checks."""
+    fake_uv = tmp_path / "uv"
+    _write_fake_uv(fake_uv, version=CANONICAL_UV)
+    hostile = tmp_path / "hostile.toml"
+    hostile.write_text("constraint-dependencies = ['blocked==0']\n", encoding="utf-8")
+    env = os.environ.copy()
+    env.update({"UV_BIN": str(fake_uv), hostile_name: str(hostile)})
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "generate_requirements.sh"), "--check"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_lock_generator_rejects_wrong_uv_version(tmp_path: Path) -> None:
+    """Different uv resolver versions must fail before writing lock output."""
+    fake_uv = tmp_path / "uv"
+    _write_fake_uv(fake_uv, version="0.11.30")
+    env = os.environ.copy()
+    env["UV_BIN"] = str(fake_uv)
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "generate_requirements.sh"), "--check"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert f"requires uv {CANONICAL_UV}" in result.stderr
+
+
+def test_local_checks_reject_wrong_python_before_install(tmp_path: Path) -> None:
+    """Local checks must reject interpreter drift before invoking pip."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_python = bin_dir / "python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\necho 3.14.2\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    fake_pip = bin_dir / "pip"
+    fake_pip.write_text("#!/usr/bin/env bash\nexit 23\n", encoding="utf-8")
+    fake_pip.chmod(0o755)
+
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "run_local_checks.sh")],
+        cwd=ROOT,
+        env={**os.environ, "VENV_DIR": str(tmp_path)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "require Python 3.14.3; found 3.14.2" in result.stderr
+
+
+def test_local_checks_hash_install_and_validate_canonical_lock() -> None:
+    """Local setup must use the same dependency-integrity boundary as CI."""
+    content = (ROOT / "scripts" / "run_local_checks.sh").read_text(encoding="utf-8")
+    assert re.search(
+        r'"\$PYTHON_BIN" -m pip install -q --require-hashes -r requirements-dev\.txt',
+        content,
+    )
+    assert re.search(r'"\$PYTHON_BIN" -m pip check', content)

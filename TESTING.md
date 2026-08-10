@@ -26,13 +26,15 @@ docker run --rm \
 ### 2. 📦 Lokální Python Environment
 
 ```bash
-# Vytvořit virtual environment
-python3 -m venv .venv
+# Vytvořit virtual environment s přesným Pythonem 3.14.3
+python3.14 --version  # musí vypsat Python 3.14.3
+python3.14 -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate  # Windows
 
-# Instalovat dependencies
-pip install -r requirements-dev.txt
+# Instalovat a ověřit přesné hashované dependencies
+python -m pip install --require-hashes -r requirements-dev.txt
+python -m pip check
 
 # Spustit testy
 pytest tests/ -v

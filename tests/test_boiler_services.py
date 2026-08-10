@@ -10,7 +10,7 @@ from custom_components.oig_cloud.services import boiler as module
 from custom_components.oig_cloud.boiler import actuator as actuator_mod
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _disable_serializer_worker(monkeypatch):
     """Service-unit tests do not own the runtime serializer lifecycle."""
 
@@ -144,7 +144,7 @@ async def test_schedule_switch_window_paths(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_and_cancel_boiler_plan(monkeypatch):
+async def test_apply_and_cancel_boiler_plan(monkeypatch, _disable_serializer_worker):
     hass = DummyHass(
         states={
             "switch.oig_123_bojler_top": SimpleNamespace(state="off"),
@@ -200,7 +200,9 @@ async def test_apply_and_cancel_boiler_plan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_boiler_plan_skips_and_creates(monkeypatch):
+async def test_create_boiler_plan_skips_and_creates(
+    monkeypatch, _disable_serializer_worker
+):
     now = datetime(2025, 1, 1, 8, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(module.dt_util, "now", lambda: now)
 
@@ -301,7 +303,9 @@ def test_helpers_and_validation():
 
 
 @pytest.mark.asyncio
-async def test_apply_boiler_plan_missing_configs(monkeypatch):
+async def test_apply_boiler_plan_missing_configs(
+    monkeypatch, _disable_serializer_worker
+):
     hass = DummyHass(
         states={
             "switch.oig_123_bojler_top": SimpleNamespace(state="off"),
@@ -333,7 +337,9 @@ async def test_apply_boiler_plan_missing_configs(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_boiler_plan_missing_wrapper_switches(monkeypatch):
+async def test_apply_boiler_plan_missing_wrapper_switches(
+    monkeypatch, _disable_serializer_worker
+):
     hass = DummyHass(states={})
     coordinator = SimpleNamespace(
         _current_plan=SimpleNamespace(slots=[_make_slot(
@@ -365,7 +371,7 @@ async def test_apply_boiler_plan_missing_wrapper_switches(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_boiler_plan_no_profile(monkeypatch):
+async def test_create_boiler_plan_no_profile(monkeypatch, _disable_serializer_worker):
     async def _update_profile():
         coordinator._current_profile = None
 
@@ -422,7 +428,9 @@ async def test_setup_boiler_services_skips_if_registered(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_boiler_plan_logs_error_alt_missing(monkeypatch):
+async def test_apply_boiler_plan_logs_error_alt_missing(
+    monkeypatch, _disable_serializer_worker
+):
     hass = DummyHass(
         states={
             "switch.oig_123_bojler_top": SimpleNamespace(state="off"),
@@ -458,7 +466,9 @@ async def test_apply_boiler_plan_logs_error_alt_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_apply_boiler_plan_logs_error_pump_missing(monkeypatch):
+async def test_apply_boiler_plan_logs_error_pump_missing(
+    monkeypatch, _disable_serializer_worker
+):
     hass = DummyHass(
         states={
             "switch.oig_123_bojler_top": SimpleNamespace(state="off"),
