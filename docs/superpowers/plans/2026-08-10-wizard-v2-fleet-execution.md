@@ -36,6 +36,8 @@
   release tamper checks; obtain scoped approvals for each affected lens.
 - [ ] Commit revision-6 closure for hermetic Vite environment inputs and explicit
   scheduled-versus-initial/manual ownership; obtain final affected-lens approval.
+- [ ] Commit revision-7 npm globalconfig neutralization and obtain the single affected
+  build-lens approval.
 
 ### Gate 1: Clear deterministic branch blockers serially
 
@@ -84,5 +86,5 @@
 - Critics are read-only and independent from implementers.
 - Leader inspects diffs/tests before cherry-pick; worker completion is not integration approval.
 - No `|| true`, coverage exclusion, broad lint disable, secret logging, raw token fetch, local deploy build, direct main push, or unreviewed artifact.
-- No implementation lane starts before revision-6 affected-lens verdicts are `APPROVE`.
+- No implementation lane starts before revision-7 build-lens verdict is `APPROVE`.
 - Shutdown a durable team only after every task is terminal and results/mailboxes are collected.

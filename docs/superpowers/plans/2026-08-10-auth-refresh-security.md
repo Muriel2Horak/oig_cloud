@@ -98,7 +98,8 @@
 - [ ] Replace `Date.now()` cache busting with a SHA-256 over a sorted explicit input set: `src/**`, `public/**`, `index.html`, `vite.config.ts`, `package.json`, `package-lock.json`, and TypeScript configs, excluding dist/tests/Playwright/node_modules/coverage. Reject empty/malformed/mismatched `OIG_BUILD_ID`; accept only absence or exact computed value.
 - [ ] Build twice in isolated directories and byte-compare every `dist` file/map. Assert identical inputs keep the ID/bytes; changing one executable or public input changes the ID/index reference. Cover absent, exact, empty, malformed, and mismatched `OIG_BUILD_ID`.
 - [ ] Invoke Vite with explicit production mode from a clean temporary HOME and sanitized environment. Reject project `.env*`/`.npmrc`, ambient `VITE_*`, `NODE_OPTIONS`, and every `NPM_CONFIG_*` except script-set cache/userconfig values before `npm ci` or build.
-- [ ] RED environment-closure table: injected `.env`, `.env.production`, `.npmrc`, `VITE_SENTINEL`, `NODE_OPTIONS`, or unapproved npm config fails before output; varying unrelated parent environment cannot change ID/dist bytes.
+- [ ] Force `NPM_CONFIG_USERCONFIG=/dev/null` and `NPM_CONFIG_GLOBALCONFIG=/dev/null`, then assert npm reports both effective sources as `/dev/null` before install. Parent overrides fail before being replaced; host `/etc/npmrc` and Homebrew/global npmrc are never consulted.
+- [ ] RED environment-closure table: injected `.env`, `.env.production`, project/user/global `.npmrc`, `VITE_SENTINEL`, `NODE_OPTIONS`, or unapproved npm config fails before output; varying unrelated parent environment cannot change ID/dist bytes.
 - [ ] Run `npm run typecheck` and the full unit suite under `TZ=UTC`.
 
 ### Task 6: Add the browser expiry regression harness
