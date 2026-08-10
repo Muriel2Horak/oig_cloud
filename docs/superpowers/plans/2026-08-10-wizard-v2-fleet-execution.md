@@ -38,6 +38,8 @@
   scheduled-versus-initial/manual ownership; obtain final affected-lens approval.
 - [ ] Commit revision-7 npm globalconfig neutralization and obtain the single affected
   build-lens approval.
+- [ ] Correct npm's same-file prohibition with distinct private empty config paths in
+  revision 8 and verify the exact command before implementation.
 
 ### Gate 1: Clear deterministic branch blockers serially
 
@@ -86,5 +88,5 @@
 - Critics are read-only and independent from implementers.
 - Leader inspects diffs/tests before cherry-pick; worker completion is not integration approval.
 - No `|| true`, coverage exclusion, broad lint disable, secret logging, raw token fetch, local deploy build, direct main push, or unreviewed artifact.
-- No implementation lane starts before revision-7 build-lens verdict is `APPROVE`.
+- No implementation lane starts before revision-8 build-lens verdict is `APPROVE`.
 - Shutdown a durable team only after every task is terminal and results/mailboxes are collected.

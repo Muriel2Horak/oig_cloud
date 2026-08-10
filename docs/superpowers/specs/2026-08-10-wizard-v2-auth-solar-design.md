@@ -191,9 +191,11 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Release builds run explicit Vite production mode in a sanitized environment. Project
   `.env*` and `.npmrc` files plus ambient `VITE_*`, `NODE_OPTIONS`, and unapproved
   `NPM_CONFIG_*` variables are rejected before install/build; only the documented fixed
-  toolchain/environment allowlist may influence output. The wrapper forces both npm
-  userconfig and globalconfig to `/dev/null`, verifies the effective npm config sources,
-  and never reads host `/etc/npmrc` or Homebrew/global npmrc files.
+  toolchain/environment allowlist may influence output. The wrapper creates two distinct
+  empty `0600` user/global npmrc files inside its private temporary directory, points
+  `NPM_CONFIG_USERCONFIG` and `NPM_CONFIG_GLOBALCONFIG` at them, verifies both effective
+  paths, and never reads host `/etc/npmrc` or Homebrew/global npmrc files. The paths must
+  differ because npm rejects loading one file as both config levels.
 
 Authentication data flow:
 
