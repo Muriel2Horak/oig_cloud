@@ -58,8 +58,9 @@
 - [ ] Add RED tests for empty data, partial strings, recent-but-no-tomorrow, NaN/infinity, negative values, malformed dates, and error-bearing payloads.
 - [ ] Add RED atomicity tests: storage failure, generation change, and unload between fetch/save/publish leave prior memory/coordinator/state/broadcast unchanged.
 - [ ] Add RED durable-boundary tests: unload/cancel before HA Store atomic save completes leaves the old envelope; save completion before lifecycle invalidation makes the candidate authoritative, emits no removed-entity state, and replacement setup loads/publishes it exactly once.
+- [ ] Add RED cancellation-race tests where caller cancellation arrives immediately before, during, and immediately after Store completion. The tracked save task is shielded and reconciled; durable outcome is observed exactly once before unload returns.
 - [ ] Add RED idempotency test: duplicate callback for the same occurrence commits/broadcasts once.
-- [ ] Implement pure `validate_forecast_candidate` and an `async_commit_candidate` sequence: generation check, HA Store atomic persistence, generation check, then one memory/coordinator/state/broadcast publish. Treat save completion as the durable commit boundary and reconcile it on replacement setup.
+- [ ] Implement pure `validate_forecast_candidate` and an `async_commit_candidate` sequence: generation check, create/track Store save task, await with `asyncio.shield`, reconcile its result after caller cancellation, generation check, then one memory/coordinator/state/broadcast publish. Treat save completion as the durable commit boundary and reconcile it on replacement setup.
 - [ ] Make manual refresh return `True` only after `async_commit_candidate` succeeds.
 
 ### Task 4: Add cache provenance and safe v1 adoption
@@ -79,7 +80,10 @@
 - [ ] Change new storage ownership to include ConfigEntry ID. If new storage is absent, read the legacy box-only envelope once as stale fallback; missing provenance can never be current and triggers immediate fetch.
 - [ ] Add RED tests for provider, azimuth/GPS/tilt/kWp, credential revision, mode, enabled strings, and reused box ID mismatch.
 - [ ] Add RED tests: matching schema-2 cache under 24h with today/tomorrow skips startup fetch; provenance mismatch or recent cache lacking tomorrow triggers it; failed replacement retains stale fallback.
+- [ ] Add a persisted/runtime forced-stale reason for provenance mismatch. RED: even a recent today/tomorrow fallback exposes `forecast_stale=true` and `stale_reason=provenance_mismatch` until a matching accepted commit clears both.
 - [ ] Add restart RED tests: future retry is restored; overdue retry within the original `+45m` horizon runs once; exhausted/terminal/newer/provenance-mismatched retry state is cleared; no duplicate initial call is introduced.
+- [ ] Make occurrence ID restart-stable from ConfigEntry ID, mode, and scheduled local ISO instant including offset. Lifecycle generation remains a separate in-memory guard. RED: restart changes generation but restores the same occurrence once.
+- [ ] Define setup precedence in tests and code: valid matching retry state restores/runs first and suppresses cache-driven initial fetch; absent/cleared retry state then applies cache usability and may fetch initially.
 - [ ] Implement envelope load/save and provenance comparison. Do not rewrite legacy storage on read; leave the box-only legacy envelope untouched and write schema 2 only under the ConfigEntry-specific key after accepted data.
 - [ ] Prove backward rollback with a previous-artifact cache-reader fixture: it ignores the entry-specific schema-2 key and retains legacy behavior without destructive conversion.
 
@@ -112,7 +116,8 @@
 - [ ] RED: simultaneous manual/scheduled/initial callbacks serialize through one `asyncio.Lock`; no provider overlap.
 - [ ] RED: lock wait plus provider call has one 90-second total attempt deadline. Timeout releases the lock, scheduled occurrence classifies retryable, manual call returns false, and later work proceeds.
 - [ ] RED: duplicated callback for one occurrence is idempotent.
-- [ ] Implement occurrence ID from scheduled local instant plus lifecycle generation. Persist retry state before arming its timer and calculate delays relative to the original occurrence, not request completion. Clear persisted/timer state on success, terminal failure, final exhaustion, newer occurrence, unload, or provenance mismatch.
+- [ ] Implement occurrence ID from entry/mode/scheduled local instant, never lifecycle generation. Persist retry state before arming its timer and calculate delays relative to the original occurrence, not request completion. Clear persisted/timer state on success, terminal failure, final exhaustion, newer occurrence, or provenance mismatch. Unload cancels the in-memory timer/task but retains matching durable retry state for restart.
+- [ ] RED persistence faults: retry-state Store failure arms no timer and terminates with safe `storage_failed`; crash after persistence/before timer registration is restored exactly once; timer-registration failure dispatches nothing and leaves the durable record for restart recovery.
 - [ ] Wrap lock acquisition and provider I/O in one 90-second attempt deadline; never leave an orphaned provider task after timeout.
 - [ ] Use one primary-sensor lock for initial, scheduled, retry, and manual paths.
 
@@ -127,6 +132,7 @@
 
 - [ ] RED: unload with active initial/scheduled/retry/manual tasks cancels and awaits the unified set; all unsubscribers run once.
 - [ ] RED: unload during provider await, storage await, and lock wait produces no subsequent storage/coordinator/state/broadcast write and no pending task warning.
+- [ ] RED: unload waits for shielded durable-write reconciliation; it may cancel refresh callers but never abandons the Store task or publishes from the removed entity.
 - [ ] RED: repeated removal is idempotent.
 - [ ] Register every task-producing callback through one task factory and track initial/scheduled/retry/manual refreshes. Manual refresh registers the current task while active.
 - [ ] On removal, set removed first, increment lifecycle generation, unsubscribe, cancel the unified task set except the current removal task, await it with cancellation collected, then call superclass removal.

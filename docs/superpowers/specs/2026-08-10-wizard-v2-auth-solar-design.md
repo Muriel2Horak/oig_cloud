@@ -113,7 +113,8 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Preserve the cached forecast during transient provider failure.
 - Retry a failed scheduled refresh after 15 minutes and then after another 30 minutes.
 - Allow at most two retries per scheduled occurrence.
-- Cancel pending retry work after success, unload, or a newer scheduled occurrence.
+- Cancel in-memory retry work after success, unload, or a newer scheduled occurrence.
+  Preserve a matching durable retry record across unload/restart; setup restores it.
 - Prevent overlapping provider requests.
 - Manual refresh reports success only when a new forecast was accepted.
 - Retry only timeout, connection failure, HTTP `429`, and HTTP `5xx`. Do not retry
@@ -151,6 +152,9 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
   a returned redirect from a network exception. Treat every HTTP `3xx` response and
   `Response.type === "opaqueredirect"` as terminal `redirect_blocked`; never follow or
   retry it.
+- Redirect results are exact and independent of browser visibility: untyped returns
+  `null`; typed returns `{ ok: false, status: 0, code: "redirect_blocked", error:
+  "Authenticated redirect blocked" }` for both visible `3xx` and `opaqueredirect`.
 - Preserve current public wrapper return shapes, abort behavior, response-body parsing, and status classification.
 - The untyped wrapper retries only `GET` or `HEAD`, and only for
   connection/transport failures or HTTP `502`, `503`, and `504`, with the existing
@@ -172,6 +176,10 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
   of source, tracked bundles, and source maps must find no manual access-token dispatch,
   caller-supplied bearer construction, or authenticated global-fetch path. Release
   artifact construction fails when tracked served bytes are stale relative to source.
+- Replace Vite's time-derived cache-bust ID with a deterministic SHA-256 over a sorted,
+  explicitly listed frontend input set. Identical reviewed inputs produce identical IDs
+  and every served dist byte/source map; changing any executable input changes the ID.
+  Release CI may supply the computed value but cannot override it with a mismatched value.
 
 Authentication data flow:
 
@@ -205,12 +213,22 @@ Authentication logging contract:
 - Update every duplicated Czech and English translation entry.
 - Runtime Forecast.Solar URL builder and candidate-test URL builder call the same outbound helper.
 - The `/solar_test` parser uses a provider-discriminated DTO:
-  - Forecast.Solar accepts provider, latitude, longitude, enabled flags, and
+  - Forecast.Solar accepts provider, forecast mode, latitude, longitude, enabled flags, and
     enabled-string kWp/declination/compass azimuth. Its API key is optional for
     `daily`/`daily_optimized` and required for `hourly`/`every_4h`. It rejects Solcast
     fields.
-  - Solcast accepts provider, API key, Site ID, enabled flags, and enabled-string kWp.
+  - Solcast accepts provider, forecast mode, API key, Site ID, enabled flags, and enabled-string kWp.
     It rejects latitude, longitude, declination, and azimuth.
+- One pure server-side `build_effective_solar_dto` merges ConfigEntry options, active
+  private credentials, and the incoming patch, then validates and deterministically
+  serializes the result. Candidate request building, proof binding, explicit save, and
+  runtime provider construction use this same DTO and serializer.
+- Patch semantics are exact: omitted non-secret fields retain stored values; omitted or
+  empty secret fields retain the selected provider's active value; numeric values receive
+  one canonical representation so equivalent integer/float transport does not change the
+  proof hash; inactive hidden geometry is retained but excluded from Solcast DTOs; provider
+  switch deletes inactive secrets only at committed save. This slice adds no general
+  current-provider secret-clear operation.
 - Canonical numeric validation is shared by save, runtime, and candidate testing:
   latitude finite `-90..90`, longitude finite `-180..180`, kWp finite `0.1..50`,
   declination integral `0..90`, and compass azimuth integral `0..360`. Reject booleans,
@@ -232,6 +250,11 @@ Authentication logging contract:
   matching proof activates credentials as verified; save without a proof activates them
   as unverified so native HA and untested saves remain functional. A supplied expired,
   mismatched, or replayed proof fails without mutation.
+- Proof validation and consumption run under a per-entry lock. The proof store atomically
+  claims and removes a matching token before activation; concurrent saves using one token
+  yield exactly one success, one `400`, and one revision increment. Once claimed, the
+  proof remains consumed even if the later activation/options/reload transaction rolls
+  back; a new candidate test is required.
 - Credential/options save is one compensating transaction. Validate the effective DTO,
   snapshot options and key-store state, atomically write the new active credential record
   with one incremented revision, update ConfigEntry options, and reload. Any key-store,
@@ -301,13 +324,22 @@ Cache provenance and usability:
   both current local date and next local date.
 - A provenance mismatch retains old cache only as stale fallback, never publishes it as
   current, and triggers an immediate fetch. A failed replacement keeps that stale cache.
+- Provenance mismatch sets a forced-stale marker and reason on the fallback. UI stale
+  state is `forced_stale || age_or_coverage_stale`, so a recent mismatched payload is
+  visibly stale until a matching accepted commit clears the marker.
 - Reusing a box ID under another ConfigEntry cannot accept the previous entry's cache;
   include ConfigEntry identity in storage ownership or provenance.
 - Persist scheduled-retry recovery state in the entry-specific envelope: occurrence
   identity/time, completed attempt index, next attempt time, safe failure code, and
   provenance. On setup, restore a future retry or run one overdue retry still inside the
   occurrence's `+45m` horizon. Clear it on success, terminal failure, final exhaustion,
-  newer occurrence, or provenance mismatch. Initial/manual failures never create it.
+  newer occurrence, or provenance mismatch. Unload cancels only the timer/task and keeps
+  a valid durable record. Initial/manual failures never create it.
+- Occurrence identity is restart-stable: ConfigEntry ID, mode, and scheduled local ISO
+  instant including UTC offset. Lifecycle generation is a separate in-memory commit guard
+  and never enters persisted identity. On setup, valid matching retry recovery takes
+  precedence over cache-driven initial fetch; future/overdue retry is restored exactly
+  once. Only after retry state is absent/cleared does cache usability decide initial fetch.
 - Keep backward rollback compatibility: leave the legacy box-only cache untouched and
   write schema 2 under an entry-specific key; old code ignores that key. Key-store
   revision/verification metadata is additive in the existing v1-readable object, so the
@@ -325,11 +357,18 @@ Accepted response and atomic commit:
 - Empty, malformed, partial-enabled-string, non-finite, or error-bearing HTTP-200 data
   is a failed attempt and is not retryable.
 - Build and validate a complete candidate snapshot before mutation. Persist through an
-  atomic HA Store write. Save completion is the durable commit boundary: if lifecycle
-  invalidation happens before completion, the old envelope remains; if save completes
-  first, the new envelope is authoritative. A removed entity emits no state or broadcast,
-  and its replacement setup loads and publishes that durable envelope. Persistence
-  failure leaves all prior observable state unchanged and reports failure.
+  atomic HA Store write in its own tracked task. Await it through `asyncio.shield`; if
+  caller cancellation arrives, await/reconcile the write result before teardown completes.
+  Save completion is the durable commit boundary: a failed/cancelled-before-write save
+  leaves the old envelope; a completed save is authoritative even when caller cancellation
+  was already requested. A removed entity emits no state or broadcast, and its replacement
+  setup loads and publishes that durable envelope exactly once. Persistence failure leaves
+  all prior observable state unchanged and reports failure.
+- Persist retry recovery state before arming a timer. If persistence fails, arm no retry
+  and terminate that occurrence with safe `storage_failed`; the prior forecast remains.
+  A crash after persistence and before timer registration is recovered from the envelope
+  on setup. Timer-registration failure leaves the durable record for restart recovery and
+  dispatches nothing in the failed process.
 - An equivalent accepted snapshot may refresh `response_time` and provenance once, but
   produces one commit/broadcast only; duplicated callbacks for the same occurrence are
   idempotent.
@@ -353,7 +392,8 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
     accepted -> atomic commit -> terminal success
     retryable failure -> attempt 2 at +45m
       accepted or failed -> terminal; no third retry
-  non-retryable failure/cancel/unload/newer occurrence -> terminal immediately
+  non-retryable failure/cancel/newer occurrence -> terminal immediately
+  unload with durable retry -> suspend in-memory work; setup restores occurrence
 ```
 
 ## Error handling and diagnostics
@@ -400,9 +440,13 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: GET and HEAD transport/502/503/504 failures retry within the existing bound; POST and
   other mutations dispatch exactly once for transport, 401/403/429/5xx outcomes.
 - RED: redirects fail closed; caller authorization casing variants are stripped.
+- RED: every visible `3xx` and `opaqueredirect` returns the exact typed status-0 shape,
+  untyped `null`, and no retry/follow.
 - RED: concurrent expired requests use Home Assistant refresh and never send stale credentials.
 - RED: tracked built assets and source maps contain no stale manual-token/global-fetch
   implementation and exactly match a clean reviewed source build.
+- RED: two isolated builds produce identical cache-bust IDs/dist bytes; changing one
+  executable input changes the ID and served index reference.
 - RED: sentinel secrets are absent from logs, return values, and UI text.
 - RED: abort and typed HTTP error classification remain unchanged.
 - GREEN: consolidate both wrappers on `hass.fetchWithAuth`.
@@ -423,6 +467,11 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: a successful candidate test mutates no persistent state; proof-backed, unverified,
   failed, expired, mismatched, replayed, and rollback credential-save paths preserve the
   exact activation transaction contract.
+- RED: candidate/test/proof/save/runtime share mode and canonical effective DTO across
+  partial patches, blank/omitted secrets, hidden fields, field order, equivalent numeric
+  representation, unsaved mode changes, and provider switch.
+- RED: two concurrent saves claiming one proof yield one success, one `400`, one revision;
+  a claimed proof remains consumed after transaction rollback.
 - RED: legacy negative value keeps its runtime meaning across GET/render/unrelated save,
   adopts through touched/checkbox control exactly once, and changes only after explicit save.
 - RED: invalid stored `361`, `720`, fractional, and non-finite-like corrupt values are
@@ -449,8 +498,15 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   hits the 90-second deadline and cannot starve later work.
 - RED: scheduled retry state survives restart and resumes at the correct future/overdue
   attempt without an extra initial call.
+- RED: restart-stable occurrence identity excludes lifecycle generation; retry recovery
+  takes precedence over cache-driven initial fetch.
+- RED: retry-state persistence failure arms no timer; crash after persistence/before timer
+  registration restores exactly one attempt.
+- RED: a recent provenance-mismatched fallback is visibly forced stale until replacement.
 - RED: unload before storage completion leaves the old durable envelope; unload after
   completion lets replacement setup reconcile and publish the new envelope once.
+- RED: cancellation racing Store completion is shielded/reconciled with no ambiguous or
+  duplicate durable commit.
 - RED: secondary sensors register no schedule and never call a provider.
 - RED: cache from changed provider/geometry/credentials/ConfigEntry is stale fallback and triggers fetch.
 - RED: recent cache missing tomorrow is not usable; partial/invalid responses and storage
@@ -504,8 +560,14 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 ## Rollout and observation
 
 - Pull-request CI creates one immutable release archive containing the exact reviewed
-  `custom_components/oig_cloud` tree and built/compressed v2 assets. The archive name,
+  runtime deployment allowlist from `custom_components/oig_cloud` and built/compressed
+  v2 assets. The archive name,
   internal manifest, and SHA-256 identify the reviewed Git commit.
+- Archive scope is an explicit allowlist: include runtime Python modules, manifest,
+  strings/translations and runtime data plus `www_v2/dist` including deterministic maps
+  and gzip siblings; exclude raw `www_v2/src`, frontend tests/Playwright, repository tests,
+  node_modules, coverage, caches, local storage, and secrets. "Source excluded" means raw
+  frontend development source, never the Python integration runtime.
 - CI checks out `github.event.pull_request.head.sha`, never the synthetic merge ref, and
   asserts checkout HEAD, archive name, manifest commit, attested subject, digest, and
   deploy expected commit are identical. `workflow_dispatch` accepts only a recorded
@@ -515,6 +577,10 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   artifact deploys. Archive preflight permits regular files/directories only and rejects
   absolute/traversal paths, duplicate normalized paths, symlinks, hard links, devices,
   FIFOs, unsafe link targets, unexpected files, and digest mismatches.
+- Verify GitHub artifact attestation with a pinned verifier against the exact repository,
+  GitHub Actions OIDC issuer, signer workflow path, PR-head source digest/ref, and archive
+  subject SHA-256. Wrong issuer/repository/workflow/ref/subject or forged bundle fails
+  before staging.
 - Stage each reviewed artifact in
   `/config/custom_components/.oig_cloud_releases/<full-sha>/`. Keep current and previous
   releases. Activation atomically replaces the `oig_cloud` symlink only after full stage
@@ -523,6 +589,15 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   symlink, restart, and verify previous commit/digest/health. The first transition from a
   legacy directory requires verified current and previous artifacts, a retained legacy
   backup, and a proven previous-release health check before current activation.
+- Deploy and rollback acquire one host-local exclusive `flock` before reading active state
+  and hold it across staging/retention, compare-and-swap activation, restart/health,
+  atomic deployment-manifest update, and compensation. A second rollout fails without
+  mutation. Manifests are written/fsynced to a same-directory temporary file and renamed.
+- Legacy-directory transition runs with Home Assistant stopped and an atomic migration
+  journal. Rename the legacy directory to a retained backup, install a temporary symlink
+  to the verified previous release, atomically rename that symlink into place, start and
+  health-check previous, then use normal activation for current. Every interruption phase
+  recovers to either the retained directory or verified previous symlink before HA starts.
 - Release integration proves deploy `N`, deploy `N+1`, rollback `N`, and verifies active
   manifest, digest, commit, and Home Assistant health at every step.
 - Deploy only the reviewed pull-request artifact to HP first.

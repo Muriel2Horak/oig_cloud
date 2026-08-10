@@ -33,6 +33,8 @@
 - [ ] Add cardinal plus operator-value conversion tests: `0 -> -180`, `90 -> -90`, `138 -> -42`, `180 -> 0`, `270 -> 90`, `360 -> 180`.
 - [ ] Add legacy display tests: negative stored provider values map to equivalent compass display without mutation; non-negative `138` stays `138`; invalid stored `361`, `720`, fractional/non-finite-like values classify as invalid legacy and cannot produce a provider value.
 - [ ] Add one URL-construction table proving runtime and candidate callers share the exact formatter. Cover API keys and Site IDs containing slash, question mark, hash, percent, and space; path segments use `quote(value, safe="")`, query parameters use `urlencode`, and safe diagnostics return no secret or credential-bearing URL.
+- [ ] Add a pure `build_effective_solar_dto` and deterministic serializer contract. Inputs are stored options, selected-provider active credentials, and incoming patch; output includes provider and mode plus only provider-relevant canonical fields.
+- [ ] RED merge/serialization tables: omitted non-secret retains; omitted/empty secret retains; inactive hidden geometry is preserved outside but excluded from Solcast DTO; int/float equivalents and field-order permutations serialize identically; provider switch excludes then deletes inactive secrets only on commit. No general current-provider clear is added.
 - [ ] Run `pytest -q tests/test_solar_rules.py tests/test_solar_provider_contract.py`; expect old modulo behavior and missing module failures.
 - [ ] Implement `validate_compass_azimuth`, `legacy_azimuth_read_model`, `forecast_solar_azimuth`, and encoded provider URL builders as pure functions. Remove `normalize_azimuth` after all callers migrate.
 - [ ] Re-run the focused tests; expect green.
@@ -109,7 +111,7 @@
 - Modify: `tests/test_solar_test_view.py`
 
 - [ ] Add RED captured-URL tests for both runtime and candidate paths over the cardinal/operator table; both must call `provider_contract.build_forecast_solar_url`.
-- [ ] Add RED mode/key tests: missing Forecast.Solar key succeeds for `daily`/`daily_optimized`, fails before dispatch for `hourly`/`every_4h`, and the runtime/candidate paths select the same endpoint contract.
+- [ ] Add RED mode/key tests: DTO requires and enum-validates `solar_forecast_mode`; missing Forecast.Solar key succeeds for `daily`/`daily_optimized`, fails before dispatch for `hourly`/`every_4h`, and runtime/candidate paths select the same endpoint contract.
 - [ ] Add RED reserved-character tests for Forecast.Solar keys and Solcast Site ID/API key; runtime and candidate URLs remain structurally identical and secrets never enter logs.
 - [ ] Add RED legacy runtime tests proving stored `-90` still sends `-90` until adoption, while stored `90` converts to `-90`.
 - [ ] Add RED invalid stored-state tests asserting zero provider requests and preserved stale cache.
@@ -127,13 +129,14 @@
 - Modify: `tests/test_solar_draft_rest.py`
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/onboarding-solar-gps.test.ts`
 
-- [ ] Add RED Forecast.Solar DTO tests requiring GPS and enabled-string kWp/tilt/compass azimuth while rejecting Solcast fields. API key is optional for `daily`/`daily_optimized` and required for `hourly`/`every_4h`.
-- [ ] Add RED Solcast DTO tests requiring credentials, Site ID, enabled flags, and enabled-string kWp while rejecting GPS/tilt/azimuth.
+- [ ] Add RED Forecast.Solar DTO tests requiring mode, GPS, and enabled-string kWp/tilt/compass azimuth while rejecting Solcast fields. API key is optional for `daily`/`daily_optimized` and required for `hourly`/`every_4h`; missing/unknown mode fails before dispatch.
+- [ ] Add RED Solcast DTO tests requiring mode, credentials, Site ID, enabled flags, and enabled-string kWp while rejecting GPS/tilt/azimuth; missing/unknown mode fails before dispatch.
 - [ ] Add shared strict DTO tables: latitude finite `-90..90`, longitude finite `-180..180`, kWp finite `0.1..50`, declination integral `0..90`, azimuth integral `0..360`; reject bool, numeric string, NaN/infinity, fraction where integral, and every out-of-range value with HTTP `400` and zero outbound requests.
 - [ ] Capture the Solcast provider URL/request and assert no geometry or kWp leaves OIG.
 - [ ] Snapshot key-store active/candidate credentials, options, provider, and cache before success/failure/cancel; assert all remain byte-for-byte unchanged.
 - [ ] Remove candidate credential set/promote calls from the test endpoint. Keep explicit module-config save as the only persistence path.
 - [ ] Build the frontend test body by provider contract, not by all visible registry fields.
+- [ ] Route parser and candidate helper through the shared effective-DTO builder. Cover an unsaved mode change and partial body against stored options/active secrets; candidate, proof, save, and runtime must resolve the same keyed/unkeyed endpoint.
 - [ ] Run focused backend/frontend candidate tests; expect green.
 
 ### Task 7: Make explicit save the atomic credential activation boundary
@@ -149,13 +152,15 @@
 - Modify: `tests/test_solar_draft_rest.py`
 - Modify: native flow tests
 
-- [ ] Add a server-side proof store under `hass.data`: cryptographically random opaque token, five-minute TTL, single use, bound to ConfigEntry/provider plus SHA-256 of normalized DTO. Return only the opaque token; never return credentials or their hash.
+- [ ] Add a server-side proof store under `hass.data`: cryptographically random opaque token, five-minute TTL, single use, bound to ConfigEntry/provider/mode plus SHA-256 of the shared deterministic effective-DTO serialization. Return only the opaque token; never return credentials or their hash.
 - [ ] RED: successful `/solar_test` returns a proof while active/candidate key-store bytes, options, provider, cache, and revision remain unchanged. Failure/cancel returns no usable proof and also mutates nothing.
 - [ ] RED: explicit save with a valid matching proof activates verified credentials; save without proof activates unverified credentials; native HA save follows the unverified path and runtime immediately reads the new active values.
 - [ ] RED: supplied expired, mismatched, or replayed proof fails `400` with old active credentials/options/revision unchanged.
+- [ ] Add per-entry proof/credential transaction locking and atomic `async_claim` semantics. Claim validates binding/TTL and removes the token before activation; a claimed proof is not restored after Store/options/reload rollback.
+- [ ] RED concurrency: two saves with the same proof produce exactly one verified success, one `400`, and one revision increment. RED rollback: state restores but proof remains consumed and the next save requires a new test proof.
 - [ ] Add one key-store `async_activate` operation that writes provider, active credentials, optional `verified_at`, additive verification metadata, inactive-secret cleanup, and one incremented credential revision in one Store save.
 - [ ] Keep `SolarKeyStore.STORAGE_VERSION` and the legacy top-level `active` shape readable by the previous artifact; all revision/proof-status fields are additive and ignored by old code.
-- [ ] Implement a compensating options/key-store transaction: validate effective DTO, snapshot both states, activate key store, update ConfigEntry options, then reload. Any Store/options/reload failure restores both snapshots and reloads the prior effective state; prior active credentials remain usable and revision does not advance.
+- [ ] Implement a compensating options/key-store transaction under the same per-entry lock: build/validate the shared effective DTO, atomically claim optional proof, snapshot both states, activate key store, update ConfigEntry options, then reload. Any Store/options/reload failure restores both snapshots and reloads the prior effective state; prior active credentials remain usable and revision does not advance while a claimed proof stays consumed.
 - [ ] RED fault injection at every write/reload boundary plus provider switch. Assert exactly one revision increment on success, exact rollback on failure, and inactive credential/Site-ID deletion only on committed provider switch.
 - [ ] Load the new additive key-store object through a previous-artifact parser fixture; assert legacy code still reads `active` credentials and ignores revision/verification metadata.
 
@@ -187,6 +192,7 @@
 - [ ] E2E: retain operator `138`, capture outbound `-42`.
 - [ ] E2E: switch to Solcast, verify geometry hidden, kWp visible, candidate request succeeds without geometry, cancel leaves persisted state unchanged, and switch back retains geometry but requires credentials.
 - [ ] E2E: save without candidate test activates unverified credentials; test then save with its single-use proof activates verified credentials; replay and transaction fault preserve the prior runtime configuration.
+- [ ] E2E: change mode without saving, test the effective draft, then save; proof binding and runtime use the identical endpoint contract. Two concurrent proof-backed saves yield one commit.
 - [ ] Run focused Python E2E, frontend Playwright, full affected unit suites, typecheck, lint, and build.
 - [ ] Run `git diff --check` and review all duplicated translations.
 - [ ] Commit only this slice: `fix: use compass azimuth at solar provider boundary`.

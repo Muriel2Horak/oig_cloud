@@ -4,7 +4,7 @@
 
 **Goal:** Make every required PR check real and blocking, raise Python/frontend coverage above 80%, and deploy only a checksum-verified reviewed artifact to HP with deterministic rollback.
 
-**Architecture:** Repair baseline code instead of suppressing findings. GitHub Actions runs the same repository scripts developers run locally. PR CI builds one deterministic archive with commit metadata and SHA-256. Deployment consumes an extracted verified archive; it never rebuilds source on the HP path.
+**Architecture:** Repair baseline code instead of suppressing findings. GitHub Actions runs the same repository scripts developers run locally. PR CI builds one deterministic runtime-allowlist archive with commit metadata, SHA-256, and provenance attestation. Deployment consumes a verified staged release and atomically switches a host symlink; it never rebuilds source on the HP path.
 
 **Tech Stack:** GitHub Actions, pytest/coverage, Flake8, Mypy, Pylint, pre-commit, Vitest/V8, ESLint, TypeScript, Playwright, CodeQL, Bandit, pip-audit/Safety, npm audit, Trivy, Gitleaks, Bash, tar/SHA-256.
 
@@ -42,12 +42,14 @@
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/onboarding-quicksave.test.ts`
 - Modify: `custom_components/oig_cloud/www_v2/src/ui/features/settings/index.ts`
 - Modify source/test for `tests/test_ai_optional.py::test_integration_imports_without_ai_task`
+- Modify: `requirements.in`, `requirements.txt`, and `requirements-dev.txt`
 
 - [ ] Fix the ten exact Flake8 findings: unused `last_code`, detector/ledger spacing, and unused AI-eval sensor imports. Run the canonical Flake8 command; expect zero.
 - [ ] Fix four branch-added AI-eval Mypy errors with `typing.Callable`, an explicit Store annotation, and a callable optional unsubscribe type.
 - [ ] Fix all remaining Mypy errors with narrowing/annotations at the measured sites; do not add blanket ignores, `Any`, or `# type: ignore` unless a third-party boundary has a line-specific justification and test.
 - [ ] Fix the two ESLint errors using `const` and `as const`; run `npm run lint -- --quiet`; expect zero errors.
 - [ ] Fix optional AI platform discovery so blocked `ai_task` import does not leave `PLATFORMS` inconsistent; add a regression test for missing enum member and missing module.
+- [ ] Align runtime/dev Home Assistant pins to the HP target `2026.8.1` from one canonical input and regenerate both lockfiles; add a CI assertion that the three declared HA versions cannot drift.
 - [ ] Run full Mypy, Flake8, focused optional-AI test, frontend lint/typecheck; expect all green.
 - [ ] Commit this mechanical prerequisite separately: `chore: clear branch quality blockers`.
 
@@ -145,14 +147,17 @@
 - Add: `scripts/build_release_artifact.py`
 - Add: `tests/test_release_artifact.py`
 - Add: `.github/workflows/release-artifact.yml`
+- Modify: `custom_components/oig_cloud/www_v2/vite.config.ts`
 
-- [ ] RED tests: deterministic archive for identical tree/SHA; manifest lists commit and every file SHA-256; paths remain under `custom_components/oig_cloud`; source/tests/node_modules/secrets are absent; built and gzip assets are present and current.
+- [ ] RED tests: deterministic archive for identical tree/SHA; manifest lists commit and every file SHA-256; paths remain under `custom_components/oig_cloud`; raw frontend source/tests/Playwright/node_modules/coverage/secrets are absent; runtime Python modules, manifest, strings/translations/data, full deterministic `www_v2/dist` maps, and gzip assets are present and current.
 - [ ] PR workflow checks out exact `github.event.pull_request.head.sha`, asserts clean checkout and `git rev-parse HEAD` equality, and never derives release identity from the synthetic merge ref.
-- [ ] Build v2 with `npm ci && npm run build`, regenerate deterministic `.gz` siblings, and package the exact component tree from the reviewed checkout.
+- [ ] Build v2 with `npm ci && npm run build`, regenerate deterministic `.gz` siblings, and package only the explicit reviewed runtime allowlist defined above.
 - [ ] Compare a clean reviewed-source build with tracked served `www_v2/dist` bytes and fail on stale `index.js`/source maps or any legacy manual-token dispatch.
+- [ ] Replace Vite `Date.now()` with the auth plan's deterministic source-input SHA-256 cache-bust ID. Build twice in isolated paths and compare every served dist byte/map; mutate one executable input and assert the ID/index reference changes.
 - [ ] Write `release-manifest.json` with schema, Git SHA, build timestamp from `SOURCE_DATE_EPOCH`, Node/Python versions, and per-file digests. Write a sibling archive SHA-256 file.
 - [ ] Derive checkout ref, PR-head SHA, archive `oig-cloud-<full-sha>`, manifest commit, attested subject, digest metadata, and deploy expected commit from one immutable SHA variable; assert exact equality at every handoff.
 - [ ] PR workflow runs after required build/tests, uploads archive/manifest/digest, creates GitHub build-provenance attestation for the digest, and never commits generated bytes.
+- [ ] Pin the GitHub CLI/attestation verifier. Verify issuer `https://token.actions.githubusercontent.com`, exact repository and `release-artifact.yml` signer workflow identity, PR-head source ref/digest, archive subject SHA-256, manifest full SHA, and archive name before staging. Add forged bundle plus wrong issuer/repository/workflow/ref/subject fixtures.
 - [ ] Restrict `workflow_dispatch` to a SHA proven through the GitHub API to be the head of an approved PR with every required check green and a recorded matching artifact/attestation. Block first HP rollout when no verified previous reviewed artifact exists.
 - [ ] Rebuild twice and byte-compare archive/digest.
 
@@ -170,10 +175,11 @@
 - [ ] Require `--artifact`, `--sha256`, and expected `--commit`; remove automatic worktree build from deploy path.
 - [ ] Validate attestation and every member before extraction; verify every extracted file digest and no extras.
 - [ ] Stage to `/config/custom_components/.oig_cloud_releases/<full-sha>/`, verify in place, and retain current plus previous reviewed releases. Copy/extract failure must not alter the active target.
-- [ ] Activate only by atomically replacing the `/config/custom_components/oig_cloud` symlink after staging. Restart and health-check exact active commit/digest. On failure atomically restore the previous symlink, restart, and verify previous health.
-- [ ] First legacy-directory migration requires verified current and previous artifacts. Retain the legacy directory as backup, activate/health-check previous release first, then activate current; refuse migration without a proven rollback target.
-- [ ] Record current and previous reviewed commit/archive digests in the remote deployment manifest only after successful health. Rollback consumes the retained verified release and performs the same atomic activation/health checks.
-- [ ] Test stage copy/extract failure, activation failure, restart failure, and health failure; each leaves or restores the exact prior manifest/symlink/commit/digest and no mixed tree.
+- [ ] Deploy and rollback acquire non-blocking host-local `flock` at `/config/custom_components/.oig_cloud_deploy.lock` before reading active state and hold it through staging/retention, activation, restart/health, manifest update, and compensation. Snapshot symlink target plus manifest generation and compare-and-swap before activation; concurrent runner fails without mutation.
+- [ ] Activate by creating a same-directory temporary symlink and `mv -Tf` replacing `/config/custom_components/oig_cloud` after staging. Restart and health-check exact active commit/digest. On failure use the same atomic swap to previous, restart, and verify previous health.
+- [ ] Write the remote manifest to a same-directory temporary file, flush/fsync it, and atomically rename only after health. Include monotonic generation, current/previous commit/digest/release target, and transaction ID; compensation restores prior symlink and manifest generation.
+- [ ] First legacy-directory migration requires verified current and previous artifacts plus stopped HA. Under the same lock, atomically journal phases, rename legacy directory to a retained backup, install/rename a temporary symlink to previous, start/health-check previous, then activate current normally. On interruption recover the journal to either the original directory or verified previous symlink before starting HA.
+- [ ] Test crash points before/after legacy rename, symlink install, each manifest rename, restart, and health; test two interleaved deploy/rollback processes. Every failure leaves or restores exact prior manifest/symlink/commit/digest, no mixed tree, and a recoverable retained backup.
 
 ### Task 9: Final gate matrix and HP observation
 

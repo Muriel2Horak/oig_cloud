@@ -42,7 +42,7 @@
 - [ ] Add a rejection table for `https://evil.example`, `//evil.example`, localhost, `127.0.0.1`, `[::1]`, credentials, alternate ports, backslashes, fragments, malformed percent encoding, `/api/other`, `/api/oig_cloud_evil`, raw/encoded dot segments, and double-decoded traversal.
 - [ ] Assert every rejected value causes zero HA transport and zero dispatch calls.
 - [ ] Pass `Authorization`, `authorization`, and mixed-case variants as object, tuple, and `Headers` input. Assert none survives and HA can inject the fresh lowercase property into the copied plain record.
-- [ ] Return each HTTP `3xx` plus `type: "opaqueredirect"`; assert one dispatch, no follow, no retry, exact `redirect_blocked` classification, and fixed safe failure text.
+- [ ] Return each HTTP `3xx` plus `type: "opaqueredirect"`; assert one dispatch, no follow/retry, untyped `null`, and exact typed `{ ok: false, status: 0, code: "redirect_blocked", error: "Authenticated redirect blocked" }` for every case.
 - [ ] Run the focused test command; expect failures until the shared seam exists.
 
 ### Task 3: Lock retry, failure-shape, abort, and redaction behavior with RED tests
@@ -86,12 +86,16 @@
 **Files:**
 
 - Delete: `custom_components/oig_cloud/www_v2/src/data/api.ts` if `rg` confirms no imports
+- Modify: `custom_components/oig_cloud/www_v2/vite.config.ts`
+- Add: focused deterministic build-ID tests or release-script tests covering Vite inputs
 - Modify callers/tests only if `rg -n "from ['\"]@?/?.*data/api|new ApiClient|apiClient" custom_components/oig_cloud/www_v2/src` finds a live use
 
 - [ ] Prove call-site status with `rg` before deletion.
 - [ ] Delete the unused arbitrary-base-URL/caller-token client. If a live production caller exists, migrate it to `HaClient` and remove base URL/token parameters.
 - [ ] Run a repository-wide tracked-file scan, excluding dependency/coverage directories, for `auth.data.access_token`, caller bearer construction, authenticated `globalThis.fetch`/`window.fetch`/`fetch`, and the deleted API client. Include `www_v2/dist/assets/index.js` and source maps; allow only documented test fixtures.
 - [ ] Rebuild v2 distribution from reviewed source and fail if `git diff` shows a stale/unreproducible tracked bundle. Assert served `index.js` and map contain no legacy manual-token dispatch.
+- [ ] Replace `Date.now()` cache busting with a SHA-256 over a sorted explicit input set: `src/**`, `index.html`, `vite.config.ts`, `package.json`, `package-lock.json`, and TypeScript configs, excluding dist/tests/Playwright/node_modules/coverage. Reject a supplied `OIG_BUILD_ID` that differs from the computed value.
+- [ ] Build twice in isolated directories and byte-compare every `dist` file/map. Assert identical inputs keep the ID/bytes and changing one executable input changes the ID/index reference.
 - [ ] Run `npm run typecheck` and the full unit suite under `TZ=UTC`.
 
 ### Task 6: Add the browser expiry regression harness

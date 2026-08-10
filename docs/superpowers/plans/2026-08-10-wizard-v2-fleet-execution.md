@@ -27,6 +27,10 @@
   recovery, and atomic attested HP rollback.
 - [ ] Run a fresh three-lens approval pass against revision 3. Resolve every P0/P1 and
   every contract ambiguity; repeat only affected lenses until all three approve.
+- [ ] Commit revision-4 resolutions for effective DTO/proof concurrency, deterministic
+  bundles/redirect shapes, restart-stable retries, shielded Store reconciliation,
+  attestation trust, deploy locking, and crash-safe legacy migration; run final scoped
+  approval until all three lenses approve the plan rather than expecting implementation.
 
 ### Gate 1: Clear deterministic branch blockers serially
 
@@ -34,20 +38,21 @@
 - [ ] Require Flake8 zero, Mypy zero, frontend lint error zero, optional-AI regression green, Pylint policy green, and pre-commit green.
 - [ ] Assign an independent critic. Integrate `chore: clear branch quality blockers` only after approval.
 
-### Gate 2: Run independent implementation lanes
+### Gate 2: Run isolated implementation lanes serially
 
 - [ ] Lane A executor: complete auth plan Tasks 1-7 in an isolated worktree; commit `fix: delegate OIG requests to Home Assistant auth`.
-- [ ] Lane B executor: complete provider plan Tasks 1-9 in an isolated worktree; commit `fix: use compass azimuth at solar provider boundary`.
-- [ ] Lane C executor: complete quality plan Task 3 component-coverage groups that do not touch Lane A/B files; commit `test: raise v2 behavior coverage`.
-- [ ] Give each lane its own critic. Do not let a critic review its own implementation.
-- [ ] Integrate in order A, B, C. Resolve conflicts by preserving both tested contracts; rerun lane-focused tests after every integration.
+- [ ] Review Lane A, then integrate it before dispatching another implementation worker.
+- [ ] Lane B executor: complete provider plan Tasks 1-9 from integrated A; commit `fix: use compass azimuth at solar provider boundary`.
+- [ ] Review Lane B, then integrate it before Lane C.
+- [ ] Lane C executor: complete quality plan Task 3 coverage work against integrated A/B; commit `test: raise v2 behavior coverage`.
+- [ ] Give each lane a fresh critic. Do not let a critic review its own implementation. Resolve conflicts by preserving both tested contracts and rerun focused tests after every integration.
 
-### Gate 3: Run scheduler and release lanes
+### Gate 3: Run scheduler and release lanes serially
 
-- [ ] After provider integration, assign scheduler plan Tasks 1-9 to an executor based on the integrated branch; commit `fix: schedule solar refreshes on local wall clock`.
-- [ ] In parallel, assign quality plan Tasks 5-8 to a release executor because workflows/artifact/deploy tests do not share scheduler production files; commit `ci: enforce reviewed release gates`.
-- [ ] Assign independent scheduler and release critics. Require cancellation/atomicity and archive/traversal/rollback evidence respectively.
-- [ ] Integrate scheduler, then release; rerun focused suites after each.
+- [ ] After provider integration, assign scheduler plan Tasks 1-9 to one executor based on the integrated branch; commit `fix: schedule solar refreshes on local wall clock`.
+- [ ] Complete scheduler review/integration before dispatching the release executor.
+- [ ] Assign quality plan Tasks 5-8 to one release executor; commit `ci: enforce reviewed release gates`.
+- [ ] Assign independent scheduler and release critics after each lane. Require cancellation/atomicity and archive/traversal/rollback evidence respectively; integrate and rerun focused suites before continuing.
 
 ### Gate 4: Close coverage and security gaps
 
@@ -68,9 +73,11 @@
 ## Orchestrator invariants
 
 - One worker owns a file at a time; tasks with shared files are serialized.
+- Only one implementation worker runs at a time. The fleet parallelizes read-only critic
+  probes and rotates fresh implementer/reviewer roles without concurrent source edits.
 - Every worker brief is English, telegraphic markdown, with exact scope, tests, and prohibited actions.
 - Critics are read-only and independent from implementers.
 - Leader inspects diffs/tests before cherry-pick; worker completion is not integration approval.
 - No `|| true`, coverage exclusion, broad lint disable, secret logging, raw token fetch, local deploy build, direct main push, or unreviewed artifact.
-- No implementation lane starts before the three revision-3 critic verdicts are `APPROVE`.
+- No implementation lane starts before the three revision-4 critic verdicts are `APPROVE`.
 - Shutdown a durable team only after every task is terminal and results/mailboxes are collected.
