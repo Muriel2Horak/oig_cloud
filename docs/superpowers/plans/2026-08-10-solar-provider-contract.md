@@ -32,9 +32,9 @@
 - [ ] Replace modulo expectations with a table accepting only numeric, finite, integral `0..360`; explicitly reject booleans, numeric strings, fractions, negatives, `361`, huge integers, NaN, and infinities.
 - [ ] Add cardinal plus operator-value conversion tests: `0 -> -180`, `90 -> -90`, `138 -> -42`, `180 -> 0`, `270 -> 90`, `360 -> 180`.
 - [ ] Add legacy display tests: negative stored provider values map to equivalent compass display without mutation; non-negative `138` stays `138`; invalid stored `361`, `720`, fractional/non-finite-like values classify as invalid legacy and cannot produce a provider value.
-- [ ] Add one URL-construction table proving runtime and candidate callers can share the exact path formatter and that API keys are never returned by a safe diagnostic helper.
+- [ ] Add one URL-construction table proving runtime and candidate callers share the exact formatter. Cover API keys and Site IDs containing slash, question mark, hash, percent, and space; path segments use `quote(value, safe="")`, query parameters use `urlencode`, and safe diagnostics return no secret or credential-bearing URL.
 - [ ] Run `pytest -q tests/test_solar_rules.py tests/test_solar_provider_contract.py`; expect old modulo behavior and missing module failures.
-- [ ] Implement `validate_compass_azimuth`, `legacy_azimuth_read_model`, `forecast_solar_azimuth`, and `build_forecast_solar_url` as pure functions. Remove `normalize_azimuth` after all callers migrate.
+- [ ] Implement `validate_compass_azimuth`, `legacy_azimuth_read_model`, `forecast_solar_azimuth`, and encoded provider URL builders as pure functions. Remove `normalize_azimuth` after all callers migrate.
 - [ ] Re-run the focused tests; expect green.
 
 ### Task 2: Make registry validation and visibility canonical
@@ -109,6 +109,8 @@
 - Modify: `tests/test_solar_test_view.py`
 
 - [ ] Add RED captured-URL tests for both runtime and candidate paths over the cardinal/operator table; both must call `provider_contract.build_forecast_solar_url`.
+- [ ] Add RED mode/key tests: missing Forecast.Solar key succeeds for `daily`/`daily_optimized`, fails before dispatch for `hourly`/`every_4h`, and the runtime/candidate paths select the same endpoint contract.
+- [ ] Add RED reserved-character tests for Forecast.Solar keys and Solcast Site ID/API key; runtime and candidate URLs remain structurally identical and secrets never enter logs.
 - [ ] Add RED legacy runtime tests proving stored `-90` still sends `-90` until adoption, while stored `90` converts to `-90`.
 - [ ] Add RED invalid stored-state tests asserting zero provider requests and preserved stale cache.
 - [ ] Remove both independent URL formatters and import the shared provider helper.
@@ -125,15 +127,39 @@
 - Modify: `tests/test_solar_draft_rest.py`
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/onboarding-solar-gps.test.ts`
 
-- [ ] Add RED Forecast.Solar DTO tests requiring GPS and enabled-string kWp/tilt/compass azimuth while rejecting Solcast fields.
+- [ ] Add RED Forecast.Solar DTO tests requiring GPS and enabled-string kWp/tilt/compass azimuth while rejecting Solcast fields. API key is optional for `daily`/`daily_optimized` and required for `hourly`/`every_4h`.
 - [ ] Add RED Solcast DTO tests requiring credentials, Site ID, enabled flags, and enabled-string kWp while rejecting GPS/tilt/azimuth.
+- [ ] Add shared strict DTO tables: latitude finite `-90..90`, longitude finite `-180..180`, kWp finite `0.1..50`, declination integral `0..90`, azimuth integral `0..360`; reject bool, numeric string, NaN/infinity, fraction where integral, and every out-of-range value with HTTP `400` and zero outbound requests.
 - [ ] Capture the Solcast provider URL/request and assert no geometry or kWp leaves OIG.
 - [ ] Snapshot key-store active/candidate credentials, options, provider, and cache before success/failure/cancel; assert all remain byte-for-byte unchanged.
 - [ ] Remove candidate credential set/promote calls from the test endpoint. Keep explicit module-config save as the only persistence path.
 - [ ] Build the frontend test body by provider contract, not by all visible registry fields.
 - [ ] Run focused backend/frontend candidate tests; expect green.
 
-### Task 7: Align copy, both strings, and secret-switch behavior
+### Task 7: Make explicit save the atomic credential activation boundary
+
+**Files:**
+
+- Modify: `custom_components/oig_cloud/config/solar_key_store.py`
+- Modify: `custom_components/oig_cloud/api/ha_rest_api.py`
+- Modify: `custom_components/oig_cloud/config/steps.py`
+- Modify: `custom_components/oig_cloud/www_v2/src/data/settings-data.ts`
+- Modify: Settings/Onboarding save callers and focused tests
+- Modify: `tests/test_solar_key_store.py`
+- Modify: `tests/test_solar_draft_rest.py`
+- Modify: native flow tests
+
+- [ ] Add a server-side proof store under `hass.data`: cryptographically random opaque token, five-minute TTL, single use, bound to ConfigEntry/provider plus SHA-256 of normalized DTO. Return only the opaque token; never return credentials or their hash.
+- [ ] RED: successful `/solar_test` returns a proof while active/candidate key-store bytes, options, provider, cache, and revision remain unchanged. Failure/cancel returns no usable proof and also mutates nothing.
+- [ ] RED: explicit save with a valid matching proof activates verified credentials; save without proof activates unverified credentials; native HA save follows the unverified path and runtime immediately reads the new active values.
+- [ ] RED: supplied expired, mismatched, or replayed proof fails `400` with old active credentials/options/revision unchanged.
+- [ ] Add one key-store `async_activate` operation that writes provider, active credentials, optional `verified_at`, additive verification metadata, inactive-secret cleanup, and one incremented credential revision in one Store save.
+- [ ] Keep `SolarKeyStore.STORAGE_VERSION` and the legacy top-level `active` shape readable by the previous artifact; all revision/proof-status fields are additive and ignored by old code.
+- [ ] Implement a compensating options/key-store transaction: validate effective DTO, snapshot both states, activate key store, update ConfigEntry options, then reload. Any Store/options/reload failure restores both snapshots and reloads the prior effective state; prior active credentials remain usable and revision does not advance.
+- [ ] RED fault injection at every write/reload boundary plus provider switch. Assert exactly one revision increment on success, exact rollback on failure, and inactive credential/Site-ID deletion only on committed provider switch.
+- [ ] Load the new additive key-store object through a previous-artifact parser fixture; assert legacy code still reads `active` credentials and ignores revision/verification metadata.
+
+### Task 8: Align copy, both strings, and secret-switch behavior
 
 **Files:**
 
@@ -150,7 +176,7 @@
 - [ ] Preserve non-secret geometry on provider switches. Keep and test current inactive credential deletion, including Site ID and candidate state; switch-back requires re-entry.
 - [ ] Parse all JSON catalogs and run translation parity tests.
 
-### Task 8: Add provider-boundary E2E and commit
+### Task 9: Add provider-boundary E2E and commit
 
 **Files:**
 
@@ -160,6 +186,7 @@
 - [ ] E2E: enter east `90`, persist `90`, reload, capture Forecast.Solar outbound `-90`.
 - [ ] E2E: retain operator `138`, capture outbound `-42`.
 - [ ] E2E: switch to Solcast, verify geometry hidden, kWp visible, candidate request succeeds without geometry, cancel leaves persisted state unchanged, and switch back retains geometry but requires credentials.
+- [ ] E2E: save without candidate test activates unverified credentials; test then save with its single-use proof activates verified credentials; replay and transaction fault preserve the prior runtime configuration.
 - [ ] Run focused Python E2E, frontend Playwright, full affected unit suites, typecheck, lint, and build.
 - [ ] Run `git diff --check` and review all duplicated translations.
 - [ ] Commit only this slice: `fix: use compass azimuth at solar provider boundary`.

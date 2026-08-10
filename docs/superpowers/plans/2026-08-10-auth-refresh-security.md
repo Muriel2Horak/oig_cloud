@@ -26,10 +26,10 @@
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/ha-client.test.ts`
 
 - [ ] Replace the immortal token-only `Hass` fixture with a refresh-aware fake exposing `auth.expired` and `fetchWithAuth(path, init)`.
-- [ ] Give the fake a separate `dispatch` spy. When expired, it refreshes once, writes `headers.authorization = "Bearer fresh-token"`, then dispatches. Do not use `global.fetch` as the transport spy.
-- [ ] Add typed and untyped success tests asserting the exact canonical `/api/oig_cloud/...` path, copied plain-object headers, `redirect: "error"`, preserved signal/body/method, fresh bearer token, and zero direct global-fetch calls.
+- [ ] Give the fake a separate `dispatch` spy. When expired, Home Assistant refreshes and writes `headers.authorization = "Bearer fresh-token"` before dispatch. Do not use `global.fetch` as the transport spy and do not assert that upstream coalesces refresh calls.
+- [ ] Add typed and untyped success tests asserting the exact canonical `/api/oig_cloud/...` path, copied plain-object headers, `redirect: "manual"`, preserved signal/body/method, fresh bearer token, and zero direct global-fetch calls.
 - [ ] Add a current-token test asserting zero refreshes and one dispatch.
-- [ ] Add a concurrent-expiry test with two wrapper calls; the HA fake coalesces refresh and neither dispatch contains the stale token.
+- [ ] Add a concurrent-expiry test with two wrapper calls; assert OIG never invokes refresh directly and neither dispatch contains the stale token. Accept one or more HA-owned refresh calls.
 - [ ] Run `TZ=UTC npm run test:unit -- --run src/__tests__/ha-client.test.ts`; expect new delegation tests to fail against manual-token/global-fetch code.
 
 ### Task 2: Lock path, header, and redirect boundaries with RED tests
@@ -42,7 +42,7 @@
 - [ ] Add a rejection table for `https://evil.example`, `//evil.example`, localhost, `127.0.0.1`, `[::1]`, credentials, alternate ports, backslashes, fragments, malformed percent encoding, `/api/other`, `/api/oig_cloud_evil`, raw/encoded dot segments, and double-decoded traversal.
 - [ ] Assert every rejected value causes zero HA transport and zero dispatch calls.
 - [ ] Pass `Authorization`, `authorization`, and mixed-case variants as object, tuple, and `Headers` input. Assert none survives and HA can inject the fresh lowercase property into the copied plain record.
-- [ ] Simulate redirect rejection and assert one dispatch, no follow, no retry, fixed safe failure text.
+- [ ] Return each HTTP `3xx` plus `type: "opaqueredirect"`; assert one dispatch, no follow, no retry, exact `redirect_blocked` classification, and fixed safe failure text.
 - [ ] Run the focused test command; expect failures until the shared seam exists.
 
 ### Task 3: Lock retry, failure-shape, abort, and redaction behavior with RED tests
@@ -53,6 +53,7 @@
 - Modify: `custom_components/oig_cloud/www_v2/src/__tests__/onboarding-soft-gate.test.ts`
 
 - [ ] Use fake timers to assert untyped GET retries transport failures and `502/503/504` only, within the current four-total-attempt bound and one-second delay.
+- [ ] Mirror the full GET retry/no-retry table for HEAD, including transport, `502/503/504`, redirect, abort, auth, `401/403/429`, and mutation exclusion.
 - [ ] Assert untyped GET does not retry `401`, `403`, `429`, abort, redirect failure, or other `4xx/5xx` statuses.
 - [ ] Assert typed calls are always single-dispatch.
 - [ ] Assert POST/PUT/PATCH/DELETE are single-dispatch for transport ambiguity and every tested HTTP status.
@@ -71,7 +72,8 @@
 
 - [ ] Extend `Hass` with `auth.expired: boolean` and `fetchWithAuth(path: string, init?: RequestInit): Promise<Response>`; remove request-dispatch dependence on `auth.data.access_token`.
 - [ ] Add private pure helpers for canonical OIG path validation and plain-record header normalization. Reject before `getHass()` transport use.
-- [ ] Strip caller Authorization case-insensitively, set JSON content type only when absent, and force `redirect: "error"`.
+- [ ] Strip caller Authorization case-insensitively, set JSON content type only when absent, and force `redirect: "manual"`.
+- [ ] Classify returned `3xx` and `opaqueredirect` as terminal `redirect_blocked`. Keep a thrown network `TypeError` retryable only for untyped GET/HEAD; never conflate it with an observed redirect response.
 - [ ] Add one private dispatch method receiving wrapper kind and retry policy. Delegate every attempt to `hass.fetchWithAuth`.
 - [ ] For a rejection, classify `auth` only when HASS is absent or the delegated call rejects while `hass.auth.expired` remains true; otherwise classify a safe transport failure. Never inspect or serialize the token.
 - [ ] Keep untyped retry limited to GET/HEAD transport errors and `502/503/504`. Keep typed and all mutation methods single-dispatch.
@@ -88,6 +90,8 @@
 
 - [ ] Prove call-site status with `rg` before deletion.
 - [ ] Delete the unused arbitrary-base-URL/caller-token client. If a live production caller exists, migrate it to `HaClient` and remove base URL/token parameters.
+- [ ] Run a repository-wide tracked-file scan, excluding dependency/coverage directories, for `auth.data.access_token`, caller bearer construction, authenticated `globalThis.fetch`/`window.fetch`/`fetch`, and the deleted API client. Include `www_v2/dist/assets/index.js` and source maps; allow only documented test fixtures.
+- [ ] Rebuild v2 distribution from reviewed source and fail if `git diff` shows a stale/unreproducible tracked bundle. Assert served `index.js` and map contain no legacy manual-token dispatch.
 - [ ] Run `npm run typecheck` and the full unit suite under `TZ=UTC`.
 
 ### Task 6: Add the browser expiry regression harness
@@ -99,7 +103,7 @@
 
 - [ ] Mount the v2 app with a controllable HA fake whose initial auth is expired.
 - [ ] Record refresh count, bearer value, OIG requests, invalid-auth requests, and mutation dispatches.
-- [ ] Exercise one read and one settings/test POST. Assert one refresh, only fresh credentials, zero invalid-auth requests, and one mutation dispatch.
+- [ ] Exercise one read and one settings/test POST. Assert HA-owned refresh, only fresh credentials, zero invalid-auth requests, and one mutation dispatch; do not require refresh coalescing.
 - [ ] Exercise refresh rejection. Assert zero OIG dispatch, safe UI error, and no sentinels in browser console/page text.
 - [ ] Run `npm run test:e2e -- auth-refresh.spec.ts`; expect green.
 
@@ -109,6 +113,7 @@
 
 - [ ] Run `TZ=UTC npm run test:unit -- --run src/__tests__/ha-client.test.ts src/__tests__/onboarding-soft-gate.test.ts`.
 - [ ] Run `npm run typecheck`, `npm run lint -- --quiet`, `npm run build`, and `npm run test:e2e -- auth-refresh.spec.ts` from `custom_components/oig_cloud/www_v2`.
+- [ ] Re-run the repository-wide source/bundle/map auth scan and a clean-build byte comparison required by the release plan.
 - [ ] Run the repository security commands defined by the quality-gate plan; confirm no token/header/path finding.
 - [ ] Run `git diff --check` and inspect `git diff` for raw secrets or accidental generated changes.
 - [ ] Commit only this slice: `fix: delegate OIG requests to Home Assistant auth`.

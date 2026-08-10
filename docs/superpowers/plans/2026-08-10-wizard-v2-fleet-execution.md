@@ -19,10 +19,14 @@
 
 ### Gate 0: Approve specification and plans
 
-- [ ] Commit revision-2 design plus all plans on `codex/wizard-v2-auth-fix`.
-- [ ] Assign read-only second-pass reviews to architecture/provider, auth/security, and scheduler/quality critics.
+- [x] Commit revision-2 design plus all plans on `codex/wizard-v2-auth-fix`.
+- [x] Assign read-only second-pass reviews to architecture/provider, auth/security, and scheduler/quality critics.
 - [ ] Require each critic to end with `APPROVE` or `REQUEST_CHANGES`, exact paths, missing tests, and verification evidence.
-- [ ] Resolve every P0/P1 and every contract ambiguity; re-run the affected critic until all three approve.
+- [ ] Commit revision-3 resolutions for credential activation, mode-aware DTO validation,
+  URL encoding, HA-owned auth refresh/redirects, tracked served bundles, durable scheduler
+  recovery, and atomic attested HP rollback.
+- [ ] Run a fresh three-lens approval pass against revision 3. Resolve every P0/P1 and
+  every contract ambiguity; repeat only affected lenses until all three approve.
 
 ### Gate 1: Clear deterministic branch blockers serially
 
@@ -33,7 +37,7 @@
 ### Gate 2: Run independent implementation lanes
 
 - [ ] Lane A executor: complete auth plan Tasks 1-7 in an isolated worktree; commit `fix: delegate OIG requests to Home Assistant auth`.
-- [ ] Lane B executor: complete provider plan Tasks 1-8 in an isolated worktree; commit `fix: use compass azimuth at solar provider boundary`.
+- [ ] Lane B executor: complete provider plan Tasks 1-9 in an isolated worktree; commit `fix: use compass azimuth at solar provider boundary`.
 - [ ] Lane C executor: complete quality plan Task 3 component-coverage groups that do not touch Lane A/B files; commit `test: raise v2 behavior coverage`.
 - [ ] Give each lane its own critic. Do not let a critic review its own implementation.
 - [ ] Integrate in order A, B, C. Resolve conflicts by preserving both tested contracts; rerun lane-focused tests after every integration.
@@ -68,4 +72,5 @@
 - Critics are read-only and independent from implementers.
 - Leader inspects diffs/tests before cherry-pick; worker completion is not integration approval.
 - No `|| true`, coverage exclusion, broad lint disable, secret logging, raw token fetch, local deploy build, direct main push, or unreviewed artifact.
+- No implementation lane starts before the three revision-3 critic verdicts are `APPROVE`.
 - Shutdown a durable team only after every task is terminal and results/mailboxes are collected.

@@ -57,8 +57,9 @@
 - [ ] Add RED validation tables: mapping shape, parseable response time, no error, finite non-negative numbers, local today/tomorrow, every enabled Forecast.Solar string, Solcast aggregate plus derived string ratios.
 - [ ] Add RED tests for empty data, partial strings, recent-but-no-tomorrow, NaN/infinity, negative values, malformed dates, and error-bearing payloads.
 - [ ] Add RED atomicity tests: storage failure, generation change, and unload between fetch/save/publish leave prior memory/coordinator/state/broadcast unchanged.
+- [ ] Add RED durable-boundary tests: unload/cancel before HA Store atomic save completes leaves the old envelope; save completion before lifecycle invalidation makes the candidate authoritative, emits no removed-entity state, and replacement setup loads/publishes it exactly once.
 - [ ] Add RED idempotency test: duplicate callback for the same occurrence commits/broadcasts once.
-- [ ] Implement pure `validate_forecast_candidate` and an `async_commit_candidate` sequence: generation check, persist candidate envelope, generation check, then one memory/coordinator/state/broadcast publish.
+- [ ] Implement pure `validate_forecast_candidate` and an `async_commit_candidate` sequence: generation check, HA Store atomic persistence, generation check, then one memory/coordinator/state/broadcast publish. Treat save completion as the durable commit boundary and reconcile it on replacement setup.
 - [ ] Make manual refresh return `True` only after `async_commit_candidate` succeeds.
 
 ### Task 4: Add cache provenance and safe v1 adoption
@@ -71,13 +72,16 @@
 - Add/modify: `tests/test_solar_key_store.py`
 - Modify: `tests/test_entities_solar_forecast_sensor_more2.py`
 
-- [ ] Add a non-secret monotonically increasing credential revision to key-store writes/promotions/clears; never expose credential values.
+- [ ] Consume the provider-plan key store's non-secret monotonically increasing revision from committed activations/clears; never expose credential values and never increment it for `/solar_test`.
 - [ ] Define cache envelope schema `2`: entry ID, provider, normalized non-secret fingerprint, credential revision, last accepted time, response payload, saved time.
+- [ ] Add optional scheduled-retry recovery fields: occurrence ID/local instant, completed attempt index, next-at instant, safe code, and matching provenance. Initial/manual failure must never populate them.
 - [ ] Fingerprint provider/mode/enabled flags/kWp plus Forecast.Solar GPS/tilt/raw stored azimuth. Exclude Solcast geometry; use credential revision for Site ID/API-key change.
 - [ ] Change new storage ownership to include ConfigEntry ID. If new storage is absent, read the legacy box-only envelope once as stale fallback; missing provenance can never be current and triggers immediate fetch.
 - [ ] Add RED tests for provider, azimuth/GPS/tilt/kWp, credential revision, mode, enabled strings, and reused box ID mismatch.
 - [ ] Add RED tests: matching schema-2 cache under 24h with today/tomorrow skips startup fetch; provenance mismatch or recent cache lacking tomorrow triggers it; failed replacement retains stale fallback.
-- [ ] Implement envelope load/save and provenance comparison. Do not rewrite legacy storage on read; write schema 2 only after accepted data.
+- [ ] Add restart RED tests: future retry is restored; overdue retry within the original `+45m` horizon runs once; exhausted/terminal/newer/provenance-mismatched retry state is cleared; no duplicate initial call is introduced.
+- [ ] Implement envelope load/save and provenance comparison. Do not rewrite legacy storage on read; leave the box-only legacy envelope untouched and write schema 2 only under the ConfigEntry-specific key after accepted data.
+- [ ] Prove backward rollback with a previous-artifact cache-reader fixture: it ignores the entry-specific schema-2 key and retains legacy behavior without destructive conversion.
 
 ### Task 5: Implement primary-only wall-clock subscriptions
 
@@ -106,8 +110,10 @@
 - [ ] RED: success at any attempt cancels remaining work; terminal failure schedules none.
 - [ ] RED: newer occurrence cancels older retry handles and old generation cannot commit.
 - [ ] RED: simultaneous manual/scheduled/initial callbacks serialize through one `asyncio.Lock`; no provider overlap.
+- [ ] RED: lock wait plus provider call has one 90-second total attempt deadline. Timeout releases the lock, scheduled occurrence classifies retryable, manual call returns false, and later work proceeds.
 - [ ] RED: duplicated callback for one occurrence is idempotent.
-- [ ] Implement occurrence ID from scheduled local instant plus lifecycle generation. Track retry tasks/handles and calculate delays relative to the original occurrence, not request completion.
+- [ ] Implement occurrence ID from scheduled local instant plus lifecycle generation. Persist retry state before arming its timer and calculate delays relative to the original occurrence, not request completion. Clear persisted/timer state on success, terminal failure, final exhaustion, newer occurrence, unload, or provenance mismatch.
+- [ ] Wrap lock acquisition and provider I/O in one 90-second attempt deadline; never leave an orphaned provider task after timeout.
 - [ ] Use one primary-sensor lock for initial, scheduled, retry, and manual paths.
 
 ### Task 7: Make unload cancellation complete
@@ -119,10 +125,11 @@
 - Modify: `tests/test_entities_solar_forecast_sensor_more3.py`
 - Modify: `tests/test_solar_refresh_scheduler.py`
 
-- [ ] RED: unload with pending initial/retry tasks cancels and awaits them; all unsubscribers run once.
+- [ ] RED: unload with active initial/scheduled/retry/manual tasks cancels and awaits the unified set; all unsubscribers run once.
 - [ ] RED: unload during provider await, storage await, and lock wait produces no subsequent storage/coordinator/state/broadcast write and no pending task warning.
 - [ ] RED: repeated removal is idempotent.
-- [ ] On removal, set removed first, increment lifecycle generation, unsubscribe, cancel tracked tasks, await them with cancellation collected, then call superclass removal.
+- [ ] Register every task-producing callback through one task factory and track initial/scheduled/retry/manual refreshes. Manual refresh registers the current task while active.
+- [ ] On removal, set removed first, increment lifecycle generation, unsubscribe, cancel the unified task set except the current removal task, await it with cancellation collected, then call superclass removal.
 - [ ] Re-check lifecycle immediately before persistence and publish.
 
 ### Task 8: Add stale-recovery integration/E2E coverage
@@ -136,6 +143,7 @@
 - [ ] Scenario: accepted initial forecast, advance two days, verify stale; fire next local occurrence, accept new today/tomorrow data, verify response time advances, age below 24h, covers tomorrow true, stale false.
 - [ ] Scenario: transient 429 then timeout then success at `+45m`; old card remains visible during failures and clears stale after commit.
 - [ ] Scenario: terminal auth/config failure preserves old card, creates no retry, and manual service returns false.
+- [ ] Scenario: restart between attempts restores the exact pending `+15m`/`+45m` recovery without duplicate dispatch; restart after a durable pre-unload save publishes the committed snapshot once.
 - [ ] Run focused E2E and assert no leaked pending tasks at teardown.
 
 ### Task 9: Verify and commit the scheduler slice

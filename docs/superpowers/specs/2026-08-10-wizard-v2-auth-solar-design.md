@@ -138,13 +138,19 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
   include a query string in authentication diagnostics.
 - Route typed and untyped OIG REST wrappers through one internal authenticated transport seam.
 - Delegate token expiry detection and token refresh to `hass.fetchWithAuth`.
+- Do not invoke `refreshAccessToken` directly and do not assume that Home Assistant
+  coalesces concurrent refreshes. Concurrent-call acceptance requires only that no
+  stale credential reaches a downstream dispatch and that OIG performs no refresh of
+  its own.
 - Remove direct reads of `auth.data.access_token` from request dispatch.
 - Remove duplicated manual `Authorization` header construction.
 - Normalize caller headers into a copied plain string record before delegation because
   Home Assistant assigns `headers.authorization` as an object property. Remove every
   case variant of caller-supplied `Authorization`; callers cannot override credentials.
-- Set `redirect: "error"` on the authenticated request. An authenticated redirect is a
-  terminal transport failure and is never followed or retried.
+- Set `redirect: "manual"` on the authenticated request so the adapter can distinguish
+  a returned redirect from a network exception. Treat every HTTP `3xx` response and
+  `Response.type === "opaqueredirect"` as terminal `redirect_blocked`; never follow or
+  retry it.
 - Preserve current public wrapper return shapes, abort behavior, response-body parsing, and status classification.
 - The untyped wrapper retries only `GET` or `HEAD`, and only for
   connection/transport failures or HTTP `502`, `503`, and `504`, with the existing
@@ -162,6 +168,10 @@ Imported baseline: `f1/wizard-v2-impl` at `1f216150c94c2f3f66183172f973d31acaff9
 - Remove the unused arbitrary-base-URL/token helper in `www_v2/src/data/api.ts`, or make
   it private to tests if a verified caller appears. No production raw-fetch escape hatch
   may remain.
+- Rebuild the tracked v2 distribution from the reviewed source. A repository-wide scan
+  of source, tracked bundles, and source maps must find no manual access-token dispatch,
+  caller-supplied bearer construction, or authenticated global-fetch path. Release
+  artifact construction fails when tracked served bytes are stale relative to source.
 
 Authentication data flow:
 
@@ -195,17 +205,39 @@ Authentication logging contract:
 - Update every duplicated Czech and English translation entry.
 - Runtime Forecast.Solar URL builder and candidate-test URL builder call the same outbound helper.
 - The `/solar_test` parser uses a provider-discriminated DTO:
-  - Forecast.Solar accepts provider, its API key, latitude, longitude, enabled flags,
-    and enabled-string kWp/declination/compass azimuth. It rejects Solcast fields.
+  - Forecast.Solar accepts provider, latitude, longitude, enabled flags, and
+    enabled-string kWp/declination/compass azimuth. Its API key is optional for
+    `daily`/`daily_optimized` and required for `hourly`/`every_4h`. It rejects Solcast
+    fields.
   - Solcast accepts provider, API key, Site ID, enabled flags, and enabled-string kWp.
     It rejects latitude, longitude, declination, and azimuth.
+- Canonical numeric validation is shared by save, runtime, and candidate testing:
+  latitude finite `-90..90`, longitude finite `-180..180`, kWp finite `0.1..50`,
+  declination integral `0..90`, and compass azimuth integral `0..360`. Reject booleans,
+  numeric strings, non-finite values, and out-of-range values before any outbound call.
+- Construct provider URLs only after validation. Percent-encode every credential/Site-ID
+  path segment with no safe characters and build query strings with a standard URL
+  encoder. Reserved characters such as slash, question mark, hash, percent, and space
+  must never alter URL structure.
 - Solcast runtime and candidate-test requests contain only Rooftop Site URL identity,
   format, and API key. Geometry and kWp never appear in the provider request.
 - Add provider-aware field visibility without deleting hidden data.
 - Include explicit legacy-negative metadata in the editable read model; do not overload the canonical validator.
 - `/solar_test` is side-effect-free. Success or failure never writes candidate/active
-  credentials, provider selection, options, or cache. Explicit section save owns
-  candidate persistence/promotion under the existing credential workflow.
+  credentials, provider selection, options, or cache. A successful test may create only
+  a short-lived, single-use, in-memory verification proof: a random opaque token bound
+  to ConfigEntry, provider, and a server-side SHA-256 of the normalized DTO. It contains
+  no secret or hash in the response, expires after five minutes, and is lost on restart.
+- Explicit section save is the only credential activation boundary. Save with a valid
+  matching proof activates credentials as verified; save without a proof activates them
+  as unverified so native HA and untested saves remain functional. A supplied expired,
+  mismatched, or replayed proof fails without mutation.
+- Credential/options save is one compensating transaction. Validate the effective DTO,
+  snapshot options and key-store state, atomically write the new active credential record
+  with one incremented revision, update ConfigEntry options, and reload. Any key-store,
+  options, or reload failure restores both snapshots, reloads the prior effective state,
+  and keeps the previous active credentials.
+  Provider-switch inactive-secret deletion occurs inside the same transaction.
 - A provider switch preserves non-secret geometry/options and clears inactive secrets
   according to the credential policy above.
 
@@ -245,9 +277,12 @@ stored -90
 - Maintain a monotonically increasing lifecycle generation and a removed flag. Every
   request captures the generation and may commit only when it still matches and the
   entity has not been removed.
-- Track initial and retry tasks. On unload, mark removed, increment generation,
-  unsubscribe callbacks, cancel and await tracked tasks, and prevent any later storage,
-  coordinator, state, or broadcast write.
+- Track every active initial, scheduled, retry, and manual refresh task in one lifecycle
+  set. On unload, mark removed, increment generation, unsubscribe callbacks, cancel and
+  await the set except the current removal task, and prevent any later provider dispatch,
+  storage, coordinator, state, or broadcast write.
+- Give every attempt a 90-second total deadline covering lock wait and provider I/O. A
+  timeout is retryable only for a scheduled occurrence; manual calls return false.
 - Track retry ownership per scheduled occurrence.
 - Advance `response_time`, persisted storage, coordinator data, and HA state only after accepting a successful provider response.
 - Preserve old data and its stale status on failure.
@@ -268,6 +303,16 @@ Cache provenance and usability:
   current, and triggers an immediate fetch. A failed replacement keeps that stale cache.
 - Reusing a box ID under another ConfigEntry cannot accept the previous entry's cache;
   include ConfigEntry identity in storage ownership or provenance.
+- Persist scheduled-retry recovery state in the entry-specific envelope: occurrence
+  identity/time, completed attempt index, next attempt time, safe failure code, and
+  provenance. On setup, restore a future retry or run one overdue retry still inside the
+  occurrence's `+45m` horizon. Clear it on success, terminal failure, final exhaustion,
+  newer occurrence, or provenance mismatch. Initial/manual failures never create it.
+- Keep backward rollback compatibility: leave the legacy box-only cache untouched and
+  write schema 2 under an entry-specific key; old code ignores that key. Key-store
+  revision/verification metadata is additive in the existing v1-readable object, so the
+  prior artifact still reads `active` credentials. Provider-switch deletion remains an
+  intentional security policy and rollback never resurrects deleted secrets.
 
 Accepted response and atomic commit:
 
@@ -279,10 +324,12 @@ Accepted response and atomic commit:
   then derives enabled-string values from the validated local kWp ratios.
 - Empty, malformed, partial-enabled-string, non-finite, or error-bearing HTTP-200 data
   is a failed attempt and is not retryable.
-- Build and validate a complete candidate snapshot before mutation. Persist the
-  candidate first; only after successful persistence atomically replace last data/time,
-  coordinator data, HA state, and broadcasts. Persistence failure leaves all prior
-  observable state unchanged and reports failure.
+- Build and validate a complete candidate snapshot before mutation. Persist through an
+  atomic HA Store write. Save completion is the durable commit boundary: if lifecycle
+  invalidation happens before completion, the old envelope remains; if save completes
+  first, the new envelope is authoritative. A removed entity emits no state or broadcast,
+  and its replacement setup loads and publishes that durable envelope. Persistence
+  failure leaves all prior observable state unchanged and reports failure.
 - An equivalent accepted snapshot may refresh `response_time` and provenance once, but
   produces one commit/broadcast only; duplicated callbacks for the same occurrence are
   idempotent.
@@ -334,7 +381,7 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
   - expose a classified failure without secrets.
 - Unload:
   - unsubscribe wall-clock callbacks;
-  - cancel pending retry tasks;
+  - cancel and await the unified initial/scheduled/retry/manual task set;
   - avoid state writes after removal.
 
 ## Test-first implementation slices
@@ -343,16 +390,19 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 
 - RED: typed and untyped wrappers delegate to Home Assistant transport with a copied
   plain header record and no caller Authorization.
-- RED: expired credential refreshes once and sends only the fresh credential.
+- RED: expired credential delegates refresh to Home Assistant and sends only a fresh
+  credential; OIG never calls refresh directly and does not assert refresh coalescing.
 - RED: current credential performs no refresh.
 - RED: refresh failure causes no downstream dispatch and returns the exact typed/untyped shapes.
 - RED: canonical OIG paths pass; absolute, protocol-relative, localhost/loopback,
   credentials, alternate-port, traversal, fragment, and malformed paths perform zero
   transport calls.
-- RED: GET transport/502/503/504 failures retry within the existing bound; POST and
+- RED: GET and HEAD transport/502/503/504 failures retry within the existing bound; POST and
   other mutations dispatch exactly once for transport, 401/403/429/5xx outcomes.
 - RED: redirects fail closed; caller authorization casing variants are stripped.
 - RED: concurrent expired requests use Home Assistant refresh and never send stale credentials.
+- RED: tracked built assets and source maps contain no stale manual-token/global-fetch
+  implementation and exactly match a clean reviewed source build.
 - RED: sentinel secrets are absent from logs, return values, and UI text.
 - RED: abort and typed HTTP error classification remain unchanged.
 - GREEN: consolidate both wrappers on `hass.fetchWithAuth`.
@@ -367,6 +417,12 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: Solcast hides Forecast.Solar geometry, retains kWp, and preserves hidden values.
 - RED: Solcast candidate test succeeds without geometry, rejects geometry, sends no
   provider geometry/kWp, and changes no credential or option state.
+- RED: Forecast.Solar API-key optionality follows mode; both provider DTOs reject every
+  invalid numeric type/range before dispatch and encode reserved credential/Site-ID
+  characters without changing URL structure.
+- RED: a successful candidate test mutates no persistent state; proof-backed, unverified,
+  failed, expired, mismatched, replayed, and rollback credential-save paths preserve the
+  exact activation transaction contract.
 - RED: legacy negative value keeps its runtime meaning across GET/render/unrelated save,
   adopts through touched/checkbox control exactly once, and changes only after explicit save.
 - RED: invalid stored `361`, `720`, fractional, and non-finite-like corrupt values are
@@ -389,6 +445,12 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - RED: a newer occurrence cancels older retries; success cancels pending retry work.
 - RED: manual-vs-scheduled overlap serializes; duplicated occurrence callbacks commit once.
 - RED: unload during an active request and unload with a pending retry produce no later writes.
+- RED: unload cancels initial/scheduled/retry/manual tracked tasks; a hung lock/provider
+  hits the 90-second deadline and cannot starve later work.
+- RED: scheduled retry state survives restart and resumes at the correct future/overdue
+  attempt without an extra initial call.
+- RED: unload before storage completion leaves the old durable envelope; unload after
+  completion lets replacement setup reconcile and publish the new envelope once.
 - RED: secondary sensors register no schedule and never call a provider.
 - RED: cache from changed provider/geometry/credentials/ConfigEntry is stale fallback and triggers fetch.
 - RED: recent cache missing tomorrow is not usable; partial/invalid responses and storage
@@ -444,11 +506,25 @@ new occurrence -> cancel older pending retries -> attempt 0 under lock
 - Pull-request CI creates one immutable release archive containing the exact reviewed
   `custom_components/oig_cloud` tree and built/compressed v2 assets. The archive name,
   internal manifest, and SHA-256 identify the reviewed Git commit.
-- `deploy_to_ha.sh` gains artifact-only mode and verifies archive digest, manifest commit,
-  safe paths, and extraction before copying. It never runs npm/vite for artifact deploys.
-- HP deployment records the new commit/digest and retains the immediately previous
-  reviewed archive/digest. Rollback redeploys that previous archive through the same
-  verified artifact path; no worktree rebuild is allowed.
+- CI checks out `github.event.pull_request.head.sha`, never the synthetic merge ref, and
+  asserts checkout HEAD, archive name, manifest commit, attested subject, digest, and
+  deploy expected commit are identical. `workflow_dispatch` accepts only a recorded
+  approved PR-head artifact whose required checks are green; otherwise rollout blocks.
+- `deploy_to_ha.sh` gains artifact-only mode and verifies archive digest, attestation,
+  manifest commit, safe paths, and extraction before staging. It never runs npm/vite for
+  artifact deploys. Archive preflight permits regular files/directories only and rejects
+  absolute/traversal paths, duplicate normalized paths, symlinks, hard links, devices,
+  FIFOs, unsafe link targets, unexpected files, and digest mismatches.
+- Stage each reviewed artifact in
+  `/config/custom_components/.oig_cloud_releases/<full-sha>/`. Keep current and previous
+  releases. Activation atomically replaces the `oig_cloud` symlink only after full stage
+  verification; copy/extract failure cannot affect the active release.
+- Restart and health-check after activation. On failure, atomically restore the previous
+  symlink, restart, and verify previous commit/digest/health. The first transition from a
+  legacy directory requires verified current and previous artifacts, a retained legacy
+  backup, and a proven previous-release health check before current activation.
+- Release integration proves deploy `N`, deploy `N+1`, rollback `N`, and verifies active
+  manifest, digest, commit, and Home Assistant health at every step.
 - Deploy only the reviewed pull-request artifact to HP first.
 - Verify sanitized Home Assistant logs contain no recurring invalid-auth requests from OIG endpoints after natural token refresh.
 - Verify both providers independently:
