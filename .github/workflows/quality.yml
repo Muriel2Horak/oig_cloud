@@ -39,14 +39,18 @@ jobs:
           python -m flake8 custom_components/oig_cloud tests --max-line-length=120
 
       - name: Run pylint
+        env:
+          PYLINT_REPORT: pylint-report.json
         run: |
-          python -m pylint custom_components/oig_cloud --rcfile=.pylintrc --output-format=json > pylint-report.json || true
+          scripts/run_pylint.sh
 
       - name: Upload Pylint report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pylint-report
           path: pylint-report.json
+          if-no-files-found: error
 
   mypy:
     name: Type Checking

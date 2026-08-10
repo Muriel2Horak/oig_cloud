@@ -17,6 +17,17 @@ PYLINT_CONFIG = ROOT / ".pylintrc"
 PRE_COMMIT_CONFIG = ROOT / ".pre-commit-config.yaml"
 PRE_COMMIT_WORKFLOW = ROOT / ".github" / "workflows" / "pre-commit.yml"
 PYLINT_RUNNER = ROOT / "scripts" / "run_pylint.sh"
+PYLINT_CONFIGURATION_DIAGNOSTICS = {
+    "bad-configuration-section",
+    "bad-inline-option",
+    "bad-plugin-value",
+    "config-parse-error",
+    "deprecated-option",
+    "unknown-option-value",
+    "unrecognized-inline-option",
+    "unrecognized-option",
+    "useless-option-value",
+}
 EXPECTED_DISABLED_RULES = {
     "duplicate-code",
     "fixme",
@@ -59,6 +70,36 @@ def test_pylint_enforces_score_and_every_error_or_fatal() -> None:
     assert {"E", "F"} <= fail_on
 
 
+def test_pylint_configuration_emits_no_diagnostics() -> None:
+    """Every known Pylint configuration diagnostic must be absent."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pylint",
+            f"--rcfile={PYLINT_CONFIG}",
+            "--fail-under=0",
+            "--output-format=json2",
+            "custom_components/oig_cloud/config_deprecation.py",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    report = json.loads(result.stdout)
+    diagnostics = [
+        message
+        for message in report["messages"]
+        if message["symbol"] in PYLINT_CONFIGURATION_DIAGNOSTICS
+    ]
+
+    assert not diagnostics
+    assert not result.stderr
+    assert result.returncode == 0
+
+
 def test_pylint_returns_nonzero_for_injected_error(tmp_path: Path) -> None:
     """The configured command must block an otherwise high-scoring E diagnostic."""
     broken_module = tmp_path / "broken.py"
@@ -88,7 +129,7 @@ def test_pylint_returns_nonzero_for_injected_error(tmp_path: Path) -> None:
     report = json.loads(result.stdout)
     assert any(message["type"] == "error" for message in report["messages"])
     assert not any(
-        message["symbol"] in {"unknown-option-value", "deprecated-option"}
+        message["symbol"] in PYLINT_CONFIGURATION_DIAGNOSTICS
         for message in report["messages"]
     )
 
@@ -195,6 +236,37 @@ def test_pre_commit_ci_uses_locked_tools_and_propagates_failure() -> None:
     assert "if: always()" in content
     for swallowed_exit in ("|| true", "|| echo", "continue-on-error"):
         assert swallowed_exit not in content
+
+
+def test_every_workflow_pylint_invocation_is_canonical_and_blocking() -> None:
+    """Every workflow must use the report wrapper without swallowing its exit."""
+    workflow_paths = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
+    invocation_pattern = re.compile(
+        r"(?m)^\s*(?:(?:python\s+-m\s+)?pylint\b|"
+        r"(?:bash\s+)?(?:\./)?scripts/run_pylint\.sh)"
+    )
+    invocations: list[tuple[Path, str]] = []
+
+    for workflow_path in workflow_paths:
+        content = workflow_path.read_text(encoding="utf-8")
+        for step in re.split(r"(?m)^(?=      - name:)", content):
+            if not invocation_pattern.search(step):
+                continue
+            invocations.append((workflow_path, step))
+            assert "scripts/run_pylint.sh" in step
+            assert "python -m pylint" not in step
+            assert "PYLINT_REPORT:" in step
+            for swallowed_exit in ("|| true", "|| echo", "continue-on-error"):
+                assert swallowed_exit not in step
+
+    assert invocations
+    quality_workflow = (ROOT / ".github" / "workflows" / "quality.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "scripts/run_pylint.sh" in quality_workflow
+    assert re.search(
+        r"(?ms)- name: Upload Pylint report\n\s+if: always\(\)", quality_workflow
+    )
 
 
 def test_canonical_dev_input_pins_pylint_and_pre_commit() -> None:

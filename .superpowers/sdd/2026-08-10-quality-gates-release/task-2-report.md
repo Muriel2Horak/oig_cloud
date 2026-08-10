@@ -188,7 +188,35 @@
 
 ## Residual risks
 
-- Pylint still reports 1,631 enabled non-E/F findings; the enforced score and all-E/F failure policy prevent regression beyond the configured threshold.
+- Pylint still reports 1,630 enabled non-E/F findings; the enforced score and all-E/F failure policy prevent regression beyond the configured threshold.
 - The approved whitespace/EOF baseline repair creates a broad mechanical review surface; paths are isolated above and the final all-files rerun is byte-clean.
 - Ten non-failing pytest warnings remain; no new socket or resource-leak warning was observed.
 - No authentication, azimuth/provider, or solar scheduler behavior was changed.
+
+## Review fix — configuration and workflow propagation
+
+### RED
+
+- Canonical reproduction: CPython `3.14.3`; Pylint `4.0.7`; pre-commit `4.6.1`; hash-locked install; `pip check` clean.
+- Focused Pylint run emitted `R0022 useless-option-value` for inherited disabled `no-self-use`; focused module score remained `10.0` and exit remained `0`.
+- Added executable coverage for all known Pylint configuration diagnostic symbols, including `useless-option-value`.
+- Added repository-wide workflow invocation coverage requiring the canonical wrapper, report path, exact exit propagation, and no swallowed invocation.
+- RED command:
+  - `.venv-task2-review/bin/python -m pytest tests/test_quality_gate_policy.py::test_pylint_configuration_emits_no_diagnostics tests/test_quality_gate_policy.py::test_every_workflow_pylint_invocation_is_canonical_and_blocking -q`
+  - Result: 2 failed for intended reasons; no collection or environment failure.
+  - Failure 1: JSON2 contained `R0022 useless-option-value`.
+  - Failure 2: `.github/workflows/quality.yml` invoked `python -m pylint ... || true` directly.
+
+### GREEN
+
+- Loaded `pylint.extensions.no_self_use`; retained the exact inherited 13-rule disable set.
+- Replaced the duplicate quality-workflow command with `scripts/run_pylint.sh` and `PYLINT_REPORT=pylint-report.json`.
+- Added `if: always()` report upload without masking the failed Pylint step.
+- Focused policy suite: 10 passed in 8.16s, including the injected E fixture.
+- Pylint wrapper: exit `0`; score `9.523990304587798`; 1,630 messages; `C=629`; `R=127`; `W=874`; `E=0`; `F=0`.
+- Pylint JSON2 report: 1,124,746 bytes; zero configuration diagnostics; stderr 0 bytes.
+- Pre-commit all-files: two consecutive exit-`0` runs; all nine hooks passed; no rewrites.
+- Flake8: exit `0` across production and tests.
+- Mypy: 198 production files; zero issues.
+- Workflow YAML parse and `bash -n scripts/run_pylint.sh`: exit `0`.
+- Full Python suite was not repeated because this follow-up changes only Pylint configuration, workflow YAML, policy tests, and this report. Reviewed production baseline remains 4,933 passed, 27 skipped, and 91.01% coverage.
