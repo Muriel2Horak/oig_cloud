@@ -2,7 +2,7 @@
 # Runtime requirements are primarily managed by Home Assistant/HACS and
 # vendored libraries, but we keep explicit pins here for security tooling.
 
-homeassistant==2026.1.0
+homeassistant==2026.8.1
 aiodiscover==2.1.0
 pyspeex-noise==1.0.2
 opentelemetry-sdk==1.29.0
@@ -11,10 +11,10 @@ opentelemetry-exporter-otlp-proto-http==1.29.0
 opentelemetry-exporter-otlp-proto-grpc==1.29.0
 
 # Security remediation pins (Mend alerts)
-aiohttp==3.13.4
-requests==2.33.0
+aiohttp==3.14.3
+requests==2.34.2
 urllib3==2.6.3
 protobuf==5.29.5
-pycares==4.11.0
+pycares==5.0.0
 litellm==1.83.0
 python-dotenv==1.2.2

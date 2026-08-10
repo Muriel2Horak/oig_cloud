@@ -21,7 +21,7 @@ PHASE_NEAR_LIMIT_W = 3000       # "getting tight" threshold
 IMBALANCE_W = 1400              # sustained phase imbalance worth noting
 GRID_JUMP_W = 1500             # grid rise over ~40s that counts as a spike
 REARM_TICKS = 9                 # a sustained-state event re-arms only after
-                                # the condition is false this many ticks (~3 min)
+# the condition is false this many ticks (~3 min)
 CONTEXT_TICKS = 5               # full snapshots kept on each side of an event (~90s)
 
 Sample = Tuple[float, Any]      # (epoch_seconds, value)
@@ -98,7 +98,7 @@ def detect_events(
     for i in range(1, n):
         g2 = d["grid"][max(0, i - 2)]
         edge("grid_skok", d["grid"][i] - g2 > GRID_JUMP_W and d["grid"][i] > GRID_JUMP_W, i,
-             lambda i: f"sit +{d['grid'][i]-d['grid'][max(0,i-2)]:.0f}W za 40s na {d['grid'][i]:.0f}; "
+             lambda i: f"sit +{d['grid'][i]-d['grid'][max(0, i-2)]:.0f}W za 40s na {d['grid'][i]:.0f}; "
                        f"zal {d['zal'][i]:.0f} nez {d['nez'][i]:.0f} fve {d['fve'][i]:.0f} "
                        f"bat {d['bat'][i]:+.0f} soc {d['soc'][i]:.0f}")
         edge("faze_limit", d["zpeak"][i] >= PHASE_NEAR_LIMIT_W, i,
@@ -108,8 +108,8 @@ def detect_events(
              lambda i: f"imbalance naskocila na {d['imbalance'][i]:.0f}W, zpeak {d['zpeak'][i]:.0f}")
         b = grid.get("byp", [None] * n)[i]
         edge("bypass", isinstance(b, str) and b.lower() in ("on", "1", "true"), i,
-             lambda i: f"bypass ON, batT {_num(grid.get('batT',[None]*n)[i]):.1f} "
-                       f"invT {_num(grid.get('invT',[None]*n)[i]):.1f}")
+             lambda i: f"bypass ON, batT {_num(grid.get('batT', [None]*n)[i]):.1f} "
+                       f"invT {_num(grid.get('invT', [None]*n)[i]):.1f}")
         # recovery-after-minimum: charging kicks in while SoC sat low a long time
         if d["soc"][i] and d["soc"][i] <= 30:
             soc_low_ticks += 1

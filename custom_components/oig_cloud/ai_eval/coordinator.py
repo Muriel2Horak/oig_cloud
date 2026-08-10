@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -91,7 +91,7 @@ def _states_to_samples(states: List[Any]) -> List[tuple[float, Any]]:
     return samples
 
 
-def _label_fn(start_ts: float, n: int) -> callable:
+def _label_fn(start_ts: float, n: int) -> Callable[[int], str]:
     def label(i: int) -> str:
         t = start_ts + i * detector.STEP_S
         dt = dt_util.as_local(datetime.fromtimestamp(t, tz=timezone.utc))
@@ -202,9 +202,11 @@ class AiEvalCoordinator:
         self.config_entry = config_entry
         self.entry_id = config_entry.entry_id
         self.box_id = _resolve_box_id(config_entry)
-        self._store = Store(hass, STORE_VERSION, f"oig_cloud.ai_eval_{self.entry_id}")
+        self._store: Store[Dict[str, Any]] = Store(
+            hass, STORE_VERSION, f"oig_cloud.ai_eval_{self.entry_id}"
+        )
         self._ledger_entries: List[Dict[str, Any]] = []
-        self._unsub_timer: Optional[callable] = None
+        self._unsub_timer: Optional[Callable[[], None]] = None
         self._shutting_down = False
 
     async def async_setup(self) -> None:

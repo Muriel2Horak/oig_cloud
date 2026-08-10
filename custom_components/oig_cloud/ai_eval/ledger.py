@@ -49,6 +49,6 @@ def format_for_prompt(entries: List[Dict[str, Any]]) -> str:
     if not entries:
         return "(zatím prázdný)"
     return "\n".join(
-        f"{e.get('at','')} | {e.get('kind','')} | {e.get('detail','')}"
+        f"{e.get('at', '')} | {e.get('kind', '')} | {e.get('detail', '')}"
         for e in entries
     )
