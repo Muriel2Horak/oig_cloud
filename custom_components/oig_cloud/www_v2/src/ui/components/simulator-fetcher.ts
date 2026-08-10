@@ -438,7 +438,7 @@ function resolveBoxId(draft: Record<string, unknown>): string | null {
 }
 
 async function postJson<T>(url: string, body: object): Promise<T> {
-  // Auth-aware path: raw fetch() had no Bearer token and the endpoints are
+  // Home Assistant-authenticated path: direct transport lacked credentials and the endpoints are
   // admin-gated, so every simulator call died with HTTP 401 (owner live
   // finding). haClient injects the HASS token and classifies errors.
   const endpoint = url.replace(/^\/api\/oig_cloud/, '');
@@ -456,7 +456,7 @@ async function postJson<T>(url: string, body: object): Promise<T> {
 
 async function getJson<T>(url: string): Promise<T> {
   // Auth-aware GET — same reason as postJson: the preset-list routes are
-  // admin-gated, so a raw fetch() with no Bearer token 401s. haClient injects
+  // admin-gated, so an unauthenticated request fails. haClient delegates
   // the HASS token and classifies errors.
   const endpoint = url.replace(/^\/api\/oig_cloud/, '');
   const result = await haClient.fetchOIGAPITyped<T>(endpoint, { method: 'GET' });

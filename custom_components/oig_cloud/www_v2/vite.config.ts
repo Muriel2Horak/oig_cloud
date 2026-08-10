@@ -1,10 +1,19 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
+import { dirname, relative, resolve, sep } from 'path';
+import { readFileSync } from 'node:fs';
+import { resolveBuildId } from './scripts/build-security.mjs';
 
 // Unique per build — appended as ?v= to the entry asset refs in index.html so
 // the mobile app / browser webview can't serve a stale cached index.js after a
 // deploy (filenames are intentionally NOT content-hashed; see output config).
-const BUILD_ID = Date.now().toString(36);
+const BUILD_ID = resolveBuildId(__dirname, process.env);
+const PACKAGE_VERSION = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).version;
+
+function stableSourceMapPath(relativeSourcePath: string, sourceMapPath: string): string {
+  const absoluteSourcePath = resolve(dirname(sourceMapPath), relativeSourcePath);
+  const projectRelativePath = relative(__dirname, absoluteSourcePath).split(sep).join('/');
+  return `oig-v2:///${projectRelativePath}`;
+}
 
 export default defineConfig({
   root: '.',
@@ -38,6 +47,7 @@ export default defineConfig({
         entryFileNames: 'assets/[name].js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name].[ext]',
+        sourcemapPathTransform: stableSourceMapPath,
         manualChunks: {
           'vendor': ['lit'],
           'charts': ['chart.js', 'chartjs-plugin-zoom', 'chartjs-plugin-datalabels', 'chartjs-plugin-annotation']
@@ -58,6 +68,6 @@ export default defineConfig({
   },
 
   define: {
-    'import.meta.env.VITE_VERSION': JSON.stringify(process.env.npm_package_version || '2.0.0')
+    'import.meta.env.VITE_VERSION': JSON.stringify(PACKAGE_VERSION)
   }
 });

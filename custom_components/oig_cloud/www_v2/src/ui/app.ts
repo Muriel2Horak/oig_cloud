@@ -1030,7 +1030,7 @@ export class OigApp extends LitElement {
   /**
    * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
    * boiler/statistics/battery_prediction module enable flags (modules section)
-   * from module_config in one fetch (best-effort).
+   * from module_config in one request (best-effort).
    */
   private async loadBoxHasHome56(): Promise<void> {
     try {

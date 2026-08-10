@@ -3,7 +3,7 @@
  *
  * Central access layer for Home Assistant:
  * - hass object lookup (window, parent, customPanel)
- * - fetchWithAuth (token injection, security checks)
+ * - HA-owned authenticated transport with local security checks
  * - callService wrapper
  * - openEntityDialog (fire hass-more-info)
  * - fetchOIGAPI (REST API wrapper)
@@ -12,7 +12,7 @@
  * Port of V1 js/core/api.js + ha-client.ts
  */
 
-import { AuthError, NetworkError } from '@/core/errors';
+import { AuthError } from '@/core/errors';
 import { oigLog } from '@/core/logger';
 
 // ============================================================================
@@ -21,10 +21,9 @@ import { oigLog } from '@/core/logger';
 
 export interface Hass {
   auth: {
-    data: {
-      access_token: string;
-    };
+    expired: boolean;
   };
+  fetchWithAuth: (path: string, init?: RequestInit) => Promise<Response>;
   connection?: {
     subscribeEvents: (
       callback: (event: any) => void,
@@ -76,8 +75,149 @@ export type OigApiResult<T> = OigApiSuccess<T> | OigApiFailure;
 // HA CLIENT
 // ============================================================================
 
-const MAX_RETRIES = 3;
+const MAX_ATTEMPTS = 4;
 const RETRY_DELAY = 1000;
+
+type OigWrapperKind = 'typed' | 'untyped';
+
+interface OigDispatchPolicy {
+  kind: OigWrapperKind;
+  retrySafeReads: boolean;
+}
+
+interface OigDispatchSuccess {
+  ok: true;
+  response: Response;
+}
+
+interface OigDispatchFailure {
+  ok: false;
+  code: 'invalid_path' | 'auth' | 'aborted' | 'provider_unreachable' | 'redirect_blocked';
+  error: string;
+}
+
+type OigDispatchResult = OigDispatchSuccess | OigDispatchFailure;
+
+const AUTH_FAILURE: OigDispatchFailure = {
+  ok: false,
+  code: 'auth',
+  error: 'Home Assistant authentication unavailable',
+};
+
+const ABORT_FAILURE: OigDispatchFailure = {
+  ok: false,
+  code: 'aborted',
+  error: 'Request aborted',
+};
+
+const PROVIDER_FAILURE: OigDispatchFailure = {
+  ok: false,
+  code: 'provider_unreachable',
+  error: 'Provider request failed',
+};
+
+const REDIRECT_FAILURE: OigDispatchFailure = {
+  ok: false,
+  code: 'redirect_blocked',
+  error: 'Authenticated redirect blocked',
+};
+
+const INVALID_PATH_FAILURE: OigDispatchFailure = {
+  ok: false,
+  code: 'invalid_path',
+  error: 'Invalid OIG API path',
+};
+
+function decodedVariants(value: string): string[] | null {
+  const variants = [value];
+  let current = value;
+  for (let depth = 0; depth < 5; depth += 1) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(current);
+    } catch {
+      return null;
+    }
+    if (decoded === current) return variants;
+    variants.push(decoded);
+    current = decoded;
+  }
+  try {
+    if (decodeURIComponent(current) !== current) return null;
+  } catch {
+    return null;
+  }
+  return variants;
+}
+
+function hasTraversal(pathname: string): boolean {
+  return pathname.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+function hasUnsafePathSyntax(value: string): boolean {
+  if (value.includes('\\') || value.includes('#')) return true;
+  if ([...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 31 || codePoint === 127;
+  })) return true;
+  const pathname = value.split('?', 1)[0];
+  return hasTraversal(pathname);
+}
+
+function publicEndpointPath(endpoint: string): string | null {
+  if (!endpoint || endpoint.trim() !== endpoint) return null;
+  if (endpoint.startsWith('//')) return null;
+
+  const variants = decodedVariants(endpoint);
+  if (!variants || variants.some(hasUnsafePathSyntax)) return null;
+  for (const variant of variants) {
+    const withoutLeadingSlash = variant.startsWith('/') ? variant.slice(1) : variant;
+    const pathname = withoutLeadingSlash.split('?', 1)[0];
+    if (!pathname || pathname.startsWith('/') || pathname.startsWith('api/oig_cloud')) {
+      return null;
+    }
+    if (/^[a-z][a-z\d+.-]*:/iu.test(pathname) || pathname.includes(':')) return null;
+  }
+
+  const suffix = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+  return `/api/oig_cloud/${suffix}`;
+}
+
+function isCanonicalOigPath(path: string): boolean {
+  if (!path || path.trim() !== path || !path.startsWith('/api/oig_cloud')) return false;
+  if (path.startsWith('//')) return false;
+
+  const variants = decodedVariants(path);
+  if (!variants || variants.some(hasUnsafePathSyntax)) return false;
+  return variants.every((variant) => {
+    const pathname = variant.split('?', 1)[0];
+    if (pathname !== '/api/oig_cloud' && !pathname.startsWith('/api/oig_cloud/')) return false;
+    if (pathname.startsWith('/api/oig_cloud//')) return false;
+    return !/^[a-z][a-z\d+.-]*:/iu.test(pathname);
+  });
+}
+
+function normalizeHeaders(input?: HeadersInit): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  const headers = new Headers(input);
+  for (const [name, value] of headers.entries()) {
+    if (name.toLowerCase() !== 'authorization') normalized[name.toLowerCase()] = value;
+  }
+  if (!Object.prototype.hasOwnProperty.call(normalized, 'content-type')) {
+    normalized['content-type'] = 'application/json';
+  }
+  return normalized;
+}
+
+function isRedirectResponse(response: Response): boolean {
+  return response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError';
+}
 
 export class HaClient {
   private hass: Hass | null = null;
@@ -143,66 +283,87 @@ export class HaClient {
     return null;
   }
 
-  // --------------------------------------------------------------------------
-  // fetchWithAuth — token injection with security checks
-  // --------------------------------------------------------------------------
+  private async dispatchOigRequest(
+    canonicalPath: string,
+    init: RequestInit,
+    policy: OigDispatchPolicy,
+  ): Promise<OigDispatchResult> {
+    if (!isCanonicalOigPath(canonicalPath)) return INVALID_PATH_FAILURE;
+    if (init.signal?.aborted) return ABORT_FAILURE;
 
-  async fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
     const hass = await this.getHass();
-    if (!hass) {
-      throw new AuthError('Cannot get HASS context');
-    }
+    if (!hass?.fetchWithAuth) return AUTH_FAILURE;
 
-    // Security: block non-localhost absolute URLs to prevent token exfiltration
-    try {
-      const parsed = new URL(url, window.location.href);
-      const hostname = parsed.hostname;
-      if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !url.startsWith('/api/')) {
-        throw new Error(`fetchWithAuth rejected for non-localhost URL: ${url}`);
-      }
-    } catch (e) {
-      if ((e as Error).message.includes('rejected')) throw e;
-      // If URL parsing fails, it's likely a relative URL which is fine
-    }
+    const method = (init.method ?? 'GET').toUpperCase();
+    const mayRetry = policy.retrySafeReads && (method === 'GET' || method === 'HEAD');
+    const headers = normalizeHeaders(init.headers);
+    const requestInit: RequestInit = {
+      ...init,
+      method,
+      redirect: 'manual',
+    };
 
-    const token = hass.auth?.data?.access_token;
-    if (!token) {
-      throw new AuthError('No access token available');
-    }
-
-    const headers = new Headers(options.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    if (!headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
-    }
-
-    return this.fetchWithRetry(url, { ...options, headers });
-  }
-
-  private async fetchWithRetry(
-    url: string,
-    options: RequestInit,
-    retries = MAX_RETRIES
-  ): Promise<Response> {
-    try {
-      const response = await fetch(url, options);
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new AuthError('Token expired or invalid');
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      let response: Response;
+      try {
+        response = await hass.fetchWithAuth(canonicalPath, {
+          ...requestInit,
+          headers: { ...headers },
+        });
+      } catch (error) {
+        if (isAbortError(error) || init.signal?.aborted) return ABORT_FAILURE;
+        if (hass.auth.expired) {
+          oigLog.warn('OIG API request failed', {
+            wrapper: policy.kind,
+            method,
+            code: AUTH_FAILURE.code,
+          });
+          return AUTH_FAILURE;
         }
-        throw new NetworkError(`HTTP ${response.status}: ${response.statusText}`);
+        if (mayRetry && attempt < MAX_ATTEMPTS) {
+          oigLog.warn('OIG API request retry', {
+            wrapper: policy.kind,
+            method,
+            code: PROVIDER_FAILURE.code,
+          });
+          await this.delay(RETRY_DELAY);
+          continue;
+        }
+        oigLog.warn('OIG API request failed', {
+          wrapper: policy.kind,
+          method,
+          code: PROVIDER_FAILURE.code,
+        });
+        return PROVIDER_FAILURE;
       }
 
-      return response;
-    } catch (error) {
-      if (retries > 0 && error instanceof NetworkError) {
-        oigLog.warn(`Retrying fetch (${retries} left)`, { url });
-        await this.delay(RETRY_DELAY);
-        return this.fetchWithRetry(url, options, retries - 1);
+      if (isRedirectResponse(response)) {
+        oigLog.warn('OIG API request failed', {
+          wrapper: policy.kind,
+          method,
+          code: REDIRECT_FAILURE.code,
+        });
+        return REDIRECT_FAILURE;
       }
-      throw error;
+
+      if (
+        mayRetry
+        && attempt < MAX_ATTEMPTS
+        && (response.status === 502 || response.status === 503 || response.status === 504)
+      ) {
+        oigLog.warn('OIG API request retry', {
+          wrapper: policy.kind,
+          method,
+          code: 'provider_http',
+        });
+        await this.delay(RETRY_DELAY);
+        continue;
+      }
+
+      return { ok: true, response };
     }
+
+    return PROVIDER_FAILURE;
   }
 
   // --------------------------------------------------------------------------
@@ -247,19 +408,23 @@ export class HaClient {
   // --------------------------------------------------------------------------
 
   async fetchOIGAPI<T = any>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
-    try {
-      const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-      const response = await this.fetchWithAuth(url, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...Object.fromEntries(new Headers(options.headers).entries()),
-        },
-      });
+    const path = publicEndpointPath(endpoint);
+    if (!path) return null;
 
-      return (await response.json()) as T;
-    } catch (e) {
-      oigLog.error(`OIG API fetch error for ${endpoint}`, e as Error);
+    const dispatched = await this.dispatchOigRequest(path, options, {
+      kind: 'untyped',
+      retrySafeReads: true,
+    });
+    if (!dispatched.ok || !dispatched.response.ok) return null;
+
+    try {
+      return (await dispatched.response.json()) as T;
+    } catch {
+      oigLog.warn('OIG API response parse failed', {
+        wrapper: 'untyped',
+        method: (options.method ?? 'GET').toUpperCase(),
+        code: 'invalid_response',
+      });
       return null;
     }
   }
@@ -276,34 +441,19 @@ export class HaClient {
     endpoint: string,
     options: RequestInit = {},
   ): Promise<OigApiResult<T>> {
-    const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-
-    const hass = await this.getHass();
-    if (!hass) {
-      return { ok: false, status: 0, code: 'provider_unreachable', error: 'Cannot get HASS context' };
-    }
-    const token = hass.auth?.data?.access_token;
-    if (!token) {
-      return { ok: false, status: 0, code: 'auth', error: 'No access token available' };
+    const path = publicEndpointPath(endpoint);
+    if (!path) {
+      return { ok: false, status: 0, code: INVALID_PATH_FAILURE.code, error: INVALID_PATH_FAILURE.error };
     }
 
-    const headers = new Headers(options.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    if (!headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json');
+    const dispatched = await this.dispatchOigRequest(path, options, {
+      kind: 'typed',
+      retrySafeReads: false,
+    });
+    if (!dispatched.ok) {
+      return { ok: false, status: 0, code: dispatched.code, error: dispatched.error };
     }
-
-    let response: Response;
-    try {
-      response = await fetch(url, { ...options, headers });
-    } catch (e) {
-      const err = e as Error;
-      if (err.name === 'AbortError') {
-        return { ok: false, status: 0, code: 'aborted', error: err.message };
-      }
-      oigLog.error(`OIG API typed fetch error for ${endpoint}`, err);
-      return { ok: false, status: 0, code: 'provider_unreachable', error: err.message };
-    }
+    const response = dispatched.response;
 
     let body: unknown = null;
     try {
@@ -313,12 +463,12 @@ export class HaClient {
     }
 
     if (!response.ok) {
-      const parsed = (body ?? {}) as { code?: string; error?: string };
+      const parsed = (body ?? {}) as { code?: unknown; error?: unknown };
       return {
         ok: false,
         status: response.status,
-        code: parsed.code ?? 'provider_unreachable',
-        error: parsed.error ?? response.statusText,
+        code: typeof parsed.code === 'string' ? parsed.code : 'provider_unreachable',
+        error: typeof parsed.error === 'string' ? parsed.error : response.statusText,
       };
     }
 
@@ -407,14 +557,6 @@ export class HaClient {
     if (!success) {
       console.log(`[${type.toUpperCase()}] ${title}: ${message}`);
     }
-  }
-
-  // --------------------------------------------------------------------------
-  // Token accessor
-  // --------------------------------------------------------------------------
-
-  getToken(): string | null {
-    return this.hass?.auth?.data?.access_token ?? null;
   }
 
   private delay(ms: number): Promise<void> {
