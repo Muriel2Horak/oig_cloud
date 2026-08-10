@@ -170,7 +170,8 @@ class SolarKeyStore:
 
     async def async_api_state(self) -> Dict[str, Any]:
         data = await self._async_data()
-        active = data.get("active") if isinstance(data.get("active"), dict) else {}
+        active_value = data.get("active")
+        active: Dict[str, Any] = active_value if isinstance(active_value, dict) else {}
         return {
             "provider": active.get("provider"),
             **await self.async_private_field_state(),

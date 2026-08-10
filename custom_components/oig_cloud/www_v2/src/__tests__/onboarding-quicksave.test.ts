@@ -17,7 +17,12 @@ const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>());
 const saveModuleConfigMock = vi.hoisted(() => vi.fn());
 const waitForModuleConfigAfterReloadMock = vi.hoisted(() => vi.fn());
-var realWaitForModuleConfigAfterReload: typeof import('@/data/settings-data').waitForModuleConfigAfterReload;
+const realWaitForModuleConfigAfterReload = vi.hoisted(() =>
+  vi.fn<
+    Parameters<typeof import('@/data/settings-data').waitForModuleConfigAfterReload>,
+    ReturnType<typeof import('@/data/settings-data').waitForModuleConfigAfterReload>
+  >(),
+);
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
@@ -37,7 +42,7 @@ vi.mock('@/data/registry-data', async (importOriginal) => {
 });
 vi.mock('@/data/settings-data', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/data/settings-data')>();
-  realWaitForModuleConfigAfterReload = actual.waitForModuleConfigAfterReload;
+  realWaitForModuleConfigAfterReload.mockImplementation(actual.waitForModuleConfigAfterReload);
   return {
     ...actual,
     saveModuleConfig: saveModuleConfigMock,

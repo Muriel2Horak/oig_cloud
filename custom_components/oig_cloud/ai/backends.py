@@ -313,7 +313,6 @@ class OpenAiCompatBackend:
                         self._entry_id, self._provider, cached,
                     )
                     return result
-                last_code = code
 
         for model in self._models:
             result, code = await self._try_model(model, content, schema)
@@ -335,8 +334,6 @@ class OpenAiCompatBackend:
         response_format=json_object. Groq qwen reasoning_effort=none is
         preserved. Returns None only when every model in the chain fails.
         """
-        last_code: str | None = None
-
         if self._model_cache and self._entry_id and self._provider:
             cached = self._model_cache.get(self._entry_id, self._provider)
             if cached:
@@ -348,7 +345,6 @@ class OpenAiCompatBackend:
                         self._entry_id, self._provider, cached,
                     )
                     return result
-                last_code = code
 
         for model in self._models:
             result, code = await self._try_model_text(
@@ -360,7 +356,6 @@ class OpenAiCompatBackend:
                         self._entry_id, self._provider, model,
                     )
                 return result
-            last_code = code
         return None
 
     async def _try_model_text(

@@ -3575,12 +3575,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             payload = self._build_options_payload(self._wizard_data)
             new_options = dict(entry.options)
             new_options.update(payload)
-            solar_private_updates = {
-                key: self._wizard_data.get(key)
-                for key in SOLAR_PRIVATE_FIELDS
-                if isinstance(self._wizard_data.get(key), str)
-                and self._wizard_data.get(key).strip()
-            }
+            solar_private_updates = {}
+            for key in SOLAR_PRIVATE_FIELDS:
+                private_value = self._wizard_data.get(key)
+                if isinstance(private_value, str) and private_value.strip():
+                    solar_private_updates[key] = private_value
 
             # Submitted-fields-only delta: exactly those keys whose serialized
             # value differs from the one this flow would have written at open.
