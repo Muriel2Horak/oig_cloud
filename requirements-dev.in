@@ -3,6 +3,8 @@
 
 # Canonical Home Assistant test harness; its metadata owns exact test versions.
 pytest-homeassistant-custom-component==0.13.355
+pylint==4.0.7
+pre-commit==4.6.1
 
 # Additional testing dependencies not provided by the canonical harness.
 pylint-per-file-ignores==1.4.0

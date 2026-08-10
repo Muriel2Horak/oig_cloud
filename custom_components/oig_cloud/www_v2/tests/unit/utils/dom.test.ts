@@ -33,12 +33,12 @@ describe('dom utils', () => {
     it('should add event listener and return unsubscribe', () => {
       const target = document.createElement('button');
       const handler = vi.fn();
-      
+
       const unsubscribe = on(target, 'click', handler);
-      
+
       target.click();
       expect(handler).toHaveBeenCalledTimes(1);
-      
+
       unsubscribe();
       target.click();
       expect(handler).toHaveBeenCalledTimes(1);
@@ -110,7 +110,7 @@ describe('dom utils', () => {
     it('should check if element is in viewport', () => {
       const el = document.createElement('div');
       document.body.appendChild(el);
-      
+
       el.getBoundingClientRect = () => ({
         top: 100,
         bottom: 200,

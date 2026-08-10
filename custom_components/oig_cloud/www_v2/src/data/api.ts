@@ -69,7 +69,7 @@ export class ApiClient {
   }
 
   private async doFetch<T>(
-    url: string, 
+    url: string,
     options: { token?: string; method: string; body?: object; signal?: AbortSignal }
   ): Promise<T> {
     const headers: Record<string, string> = {
@@ -110,12 +110,12 @@ export class ApiClient {
   private getFromCache<T>(key: string): T | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
-    
+
     if (Date.now() - entry.timestamp > entry.ttl) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.data as T;
   }
 
@@ -133,7 +133,7 @@ export class ApiClient {
       oigLog.debug('Cache cleared');
       return;
     }
-    
+
     for (const key of this.cache.keys()) {
       if (key.includes(pattern)) {
         this.cache.delete(key);

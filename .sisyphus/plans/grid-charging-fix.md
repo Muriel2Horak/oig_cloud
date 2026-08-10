@@ -127,17 +127,17 @@ Wave 3 (After Task 3 — verification):
 ---
 
 - [x] 1. Napsat failing regression test (RED)
-  
+
   **Status**: ✅ TEST EXISTUJE - Fix již implementován v kódu, test prochází
   **Evidence**: `.sisyphus/evidence/task-1-red-test-fail.txt`
 
 - [x] 2. Dead code audit — `charging_plan_utils.py`
-  
+
   **Status**: ✅ HOTOVO - Žádný dead code nenalezen
   **Evidence**: `.sisyphus/evidence/task-2-dead-code-audit.txt`
 
 - [x] 3. Implementovat fix + debug log (GREEN)
-  
+
   **Status**: ✅ HOTOVO - Guard implementován v hybrid_planning.py:102-132
   **Evidence**: `.sisyphus/evidence/task-3-green-test-pass.txt`
 
@@ -159,7 +159,7 @@ Wave 3 (After Task 3 — verification):
   **Evidence**: `.sisyphus/evidence/task-4-full-suite.txt`
 
 - [ ] 5. Final verification wave
- 
+
 ## Acceptance Criteria (Agent-Executable Verification)
 
 > **Potvrzeno při revizi (2026-03-03)**:
@@ -185,7 +185,7 @@ Wave 3 (After Task 3 — verification):
 ---
 
 ## Final Notes
-Summary a detaily zůstávají v plánu, který oživujeme. Po dokončení navrhnu ws, jak provést PR a commit s popisem změn. 
+Summary a detaily zůstávají v plánu, který oživujeme. Po dokončení navrhnu ws, jak provést PR a commit s popisem změn.
 
 ---
 

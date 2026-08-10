@@ -28,7 +28,7 @@ Dnešní `_global_greedy_charge_intervals` dělá jen krok 3 (statických 33 %).
 Živé primitivy (`_simulate_with_modes`, `find_critical_moments`, `_estimate_future_storable_surplus_kwh`, `_simulate_interval`) jsou zdravé → reuse.
 
 ## Fáze
-- **F0** Baseline & fixtures z živých dat + harness (jen testy). 
+- **F0** Baseline & fixtures z živých dat + harness (jen testy).
 - **F1** Jádro: ekonomické momenty + displacement + η-filtr + percentil; scénářové testy (levná noc/drahé ráno, slunečný den→odloží, celý levný/drahý, η-hranice, prázdná FVE).
 - **F2** Wiring: `forecast_update` předá percentil/η; `target_kwh` reportuje dynamickou rezervu; dlaždice/recommended/timeline odráží.
 - **F3** Cenové entity: 15min jako kanonický zdroj pravdy (2.61 vs 4.17), legacy hodinový deprecovat.

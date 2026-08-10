@@ -2255,7 +2255,11 @@ class BoilerRuntime:
                     current_segment = None
                 continue
 
-            if current_segment is None or current_segment["key"] != source_key:
+            segment_changed = (
+                current_segment is None
+                or current_segment.get("key") != source_key
+            )
+            if segment_changed:
                 if current_segment is not None:
                     current_segment["end"] = timestamp
                     current_segment["active"] = False
@@ -2269,6 +2273,7 @@ class BoilerRuntime:
                     "active": True,
                 }
 
+            assert current_segment is not None
             if i + 1 < len(buffer):
                 next_entry = buffer[i + 1]
                 duration_hours = self._duration_hours(timestamp, next_entry.get("timestamp"))

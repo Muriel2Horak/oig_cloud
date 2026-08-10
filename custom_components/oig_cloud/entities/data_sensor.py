@@ -252,7 +252,7 @@ class OigCloudDataSensor(_DataSensorBase):
 
         except Exception as e:
             _LOGGER.error(
-                f"Error getting state for {self.entity_id}: {e}", exc_info=True
+                "Error getting state for %s: %s", self.entity_id, e, exc_info=True
             )
             return self._fallback_value()
 
@@ -438,17 +438,17 @@ class OigCloudDataSensor(_DataSensorBase):
 
             index = mapping.get(sensor_type)
             if index is None:
-                _LOGGER.warning(f"Unknown extended sensor mapping for {sensor_type}")
+                _LOGGER.warning("Unknown extended sensor mapping for %s", sensor_type)
                 return None
 
             if index >= len(last_values):
-                _LOGGER.warning(f"Index {index} out of range for extended values")
+                _LOGGER.warning("Index %s out of range for extended values", index)
                 return None
 
             return last_values[index]
 
         except (KeyError, IndexError, TypeError) as e:
-            _LOGGER.error(f"Error getting extended value for {sensor_type}: {e}")
+            _LOGGER.error("Error getting extended value for %s: %s", sensor_type, e)
             return None
 
     def _compute_fve_current(self, sensor_type: str) -> Optional[float]:
@@ -483,13 +483,13 @@ class OigCloudDataSensor(_DataSensorBase):
             if voltage != 0:
                 current = power / voltage
                 _LOGGER.debug(
-                    f"{sensor_type}: {current:.3f}A (P={power}W, U={voltage}V)"
+                    "%s: %.3fA (P=%sW, U=%sV)", sensor_type, current, power, voltage
                 )
                 return round(current, 3)
             else:
                 return 0.0
         except (KeyError, TypeError, ZeroDivisionError, IndexError) as e:
-            _LOGGER.error(f"Error computing {sensor_type}: {e}", exc_info=True)
+            _LOGGER.error("Error computing %s: %s", sensor_type, e, exc_info=True)
             return None
 
     def _get_mode_name(self, node_value: int, language: str) -> str:
@@ -521,7 +521,7 @@ class OigCloudDataSensor(_DataSensorBase):
             return _LANGS["unknown"][language]
 
         except (KeyError, ValueError, TypeError) as e:
-            _LOGGER.error(f"[{self.entity_id}] Error determining grid mode: {e}")
+            _LOGGER.error("[%s] Error determining grid mode: %s", self.entity_id, e)
             return _LANGS["unknown"][language]
 
     def _extract_grid_inputs(
@@ -823,9 +823,7 @@ def resolve_grid_delivery_live_state(raw_values: dict) -> GridDeliveryLiveState:
         else None
     )
     to_grid_raw = (
-        invertor_prms.get("to_grid")
-        if isinstance(invertor_prms, dict)
-        else None
+        invertor_prms.get("to_grid") if isinstance(invertor_prms, dict) else None
     )
 
     if grid_enabled_raw is None or max_grid_feed_raw is None or to_grid_raw is None:

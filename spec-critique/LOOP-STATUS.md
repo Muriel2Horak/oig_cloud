@@ -1,7 +1,7 @@
 # LOOP-STATUS (R6–R10)
 
 ## Verdikt smyčky
-Smyčka proběhla v 5 kolech (R6–R10) a v kole R10 dosáhla cíle „0 CRITICAL“ ve všech čtyřech ohniscích (ANTISTUB, SECURITY, PERF, AIKEYS) podle hlaviček reportů: `spec-critique/R10-ANTISTUB-round5.md:1`, `spec-critique/R10-SECURITY-round5.md:1`, `spec-critique/R10-PERF-round5.md:1`, `spec-critique/R10-AIKEYS-round5.md:1`.  
+Smyčka proběhla v 5 kolech (R6–R10) a v kole R10 dosáhla cíle „0 CRITICAL“ ve všech čtyřech ohniscích (ANTISTUB, SECURITY, PERF, AIKEYS) podle hlaviček reportů: `spec-critique/R10-ANTISTUB-round5.md:1`, `spec-critique/R10-SECURITY-round5.md:1`, `spec-critique/R10-PERF-round5.md:1`, `spec-critique/R10-AIKEYS-round5.md:1`.
 To znamená, že v této iteraci byla dosažena shoda, že se návrhy v SPEC mohou považovat za implementačně bezpečné, nikoli však že je tímto krokem opraven nasazený kód: položky v `spec-critique/SHIPPED-CODE-DEFECTS.md` explicitně zůstávají mimo loop a nejsou zavřené (`spec-critique/SHIPPED-CODE-DEFECTS.md:SEC-2`, `spec-critique/SHIPPED-CODE-DEFECTS.md:AIK-1`).
 
 ## Přehled po kolech (R6–R10)
@@ -52,7 +52,7 @@ Všechny položky výše **nebyly** v tomto loopu opravovány, byly vědomě odd
 - Část evidence je v rámci `R10` trvale označena jako PARTIALLY-CLOSED bez jednoznačné poslední implementační podoby a čeká na samostatné rozpracování.
 
 ## Doporučení
-1. Nejprve implementovat po krocích otevřené R10 zbytky `AIKEYS`, `ANTISTUB` a `PERF` v uvedených clausech (`SCOPE-REVISION.md:R10.3`, `spec-critique/R10-ANTISTUB-round5.md`, `SCOPE-REVISION.md:F-*`, `spec-critique/R10-PERF-round5.md`) a potvrdit průchod všech ohnisek bez CRITICAL.  
+1. Nejprve implementovat po krocích otevřené R10 zbytky `AIKEYS`, `ANTISTUB` a `PERF` v uvedených clausech (`SCOPE-REVISION.md:R10.3`, `spec-critique/R10-ANTISTUB-round5.md`, `SCOPE-REVISION.md:F-*`, `spec-critique/R10-PERF-round5.md`) a potvrdit průchod všech ohnisek bez CRITICAL.
 2. Až poté naplánovat samostatný sprint pro SHIPPED-CODE bucket (`spec-critique/SHIPPED-CODE-DEFECTS.md`), protože tyto nálezy nemají vazbu na návrh SPEC v této pětikolové smyčce a vyžadují operativní GO operátora.
 
 > **Pruned 2026-07-19.** The per-item PARTIALLY-CLOSED restatements previously listed here were

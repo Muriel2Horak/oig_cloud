@@ -22,7 +22,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
-  
+
   define: {
     'import.meta.env.VITE_VERSION': JSON.stringify(process.env.npm_package_version || '2.0.0')
   }

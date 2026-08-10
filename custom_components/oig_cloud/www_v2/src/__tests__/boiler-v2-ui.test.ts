@@ -317,7 +317,7 @@ describe('parseStateForTest — no fake temperatures', () => {
   it('returns null nextHeating when no slots', () => {
     const state = parseStateForTest(null, null, emptyConfig);
     // Must NOT be 'Neplánováno' as a fake value when data is truly absent
-    // It's ok to say "Neplánováno" when the plan data is empty, 
+    // It's ok to say "Neplánováno" when the plan data is empty,
     // but currentTemp must not be 45
     expect(state.currentTemp).toBeNull();
   });
@@ -556,7 +556,7 @@ describe('No fabricated temperature values', () => {
     const json = JSON.stringify(vals);
     // Value "45" should not appear as a fabricated temperature
     expect(json).not.toMatch(/"45(?:\.0)?(?:°C)?"/);
-    // "—" (em dash) should appear as the unavailable placeholder  
+    // "—" (em dash) should appear as the unavailable placeholder
     expect(json).toContain('—');
   });
 });

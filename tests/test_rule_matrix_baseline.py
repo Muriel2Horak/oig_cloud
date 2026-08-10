@@ -58,7 +58,7 @@ def matrix_lines(matrix_content: str) -> List[str]:
 
 class TestBaselineMatrixHasRequiredSections:
     """Test that the baseline matrix has all required sections.
-    
+
     This is the main validation test class for Task 1.
     """
 

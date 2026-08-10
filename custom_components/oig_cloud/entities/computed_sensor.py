@@ -243,7 +243,7 @@ class OigCloudComputedSensor(_ComputedBase):
                 key=f"oig_cloud.energy_data_{self._box_id}",
             )
             _LOGGER.debug(
-                f"✅ Initialized Energy Storage: oig_cloud.energy_data_{self._box_id}"
+                "✅ Initialized Energy Storage: oig_cloud.energy_data_%s", self._box_id
             )
         return _energy_stores.get(self._box_id)
 
@@ -417,7 +417,11 @@ class OigCloudComputedSensor(_ComputedBase):
         self._last_update = now
 
     def _apply_charge_delta(
-        self, wh_increment: float, delta_seconds: float, bat_power: float, fv_power: float
+        self,
+        wh_increment: float,
+        delta_seconds: float,
+        bat_power: float,
+        fv_power: float,
     ) -> None:
         self._energy["charge_today"] += wh_increment
         self._energy["charge_month"] += wh_increment
@@ -562,7 +566,7 @@ class OigCloudComputedSensor(_ComputedBase):
             for key in self._energy:
                 cached.setdefault(key, 0.0)
             self._energy = cached
-            _LOGGER.debug(f"[{self.entity_id}] ✅ Loaded energy from cache")
+            _LOGGER.debug("[%s] ✅ Loaded energy from cache", self.entity_id)
             return True
 
         store = self._get_energy_store()
@@ -587,12 +591,16 @@ class OigCloudComputedSensor(_ComputedBase):
 
                 last_save = data.get("last_save", "unknown")
                 _LOGGER.info(
-                    f"[{self.entity_id}] ✅ Loaded energy from storage (saved: {last_save}): "
-                    f"charge_month={stored_energy.get('charge_month', 0):.0f} Wh"
+                    "[%s] ✅ Loaded energy from storage (saved: %s): charge_month=%.0f Wh",
+                    self.entity_id,
+                    last_save,
+                    stored_energy.get("charge_month", 0),
                 )
                 return True
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error loading energy from storage: {e}")
+            _LOGGER.error(
+                "[%s] Error loading energy from storage: %s", self.entity_id, e
+            )
         return False
 
     async def _save_energy_to_storage(self, force: bool = False) -> None:
@@ -637,11 +645,12 @@ class OigCloudComputedSensor(_ComputedBase):
             await store.async_save(data)
             self._last_storage_save = now
             _LOGGER.debug(
-                f"[{self.entity_id}] 💾 Saved energy to storage: "
-                f"charge_month={self._energy.get('charge_month', 0):.0f} Wh"
+                "[%s] 💾 Saved energy to storage: charge_month=%.0f Wh",
+                self.entity_id,
+                self._energy.get("charge_month", 0),
             )
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error saving energy to storage: {e}")
+            _LOGGER.error("[%s] Error saving energy to storage: %s", self.entity_id, e)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -784,15 +793,15 @@ class OigCloudComputedSensor(_ComputedBase):
     async def _reset_daily(self, now: Optional[datetime] = None, *_: Any) -> None:
         if now is None:
             now = dt_util.now()
-        _LOGGER.debug(f"[{self.entity_id}] Resetting daily energy")
+        _LOGGER.debug("[%s] Resetting daily energy", self.entity_id)
         self._reset_energy_by_suffix("today")
 
         if now.day == 1:
-            _LOGGER.debug(f"[{self.entity_id}] Resetting monthly energy")
+            _LOGGER.debug("[%s] Resetting monthly energy", self.entity_id)
             self._reset_energy_by_suffix("month")
 
         if now.month == 1 and now.day == 1:
-            _LOGGER.debug(f"[{self.entity_id}] Resetting yearly energy")
+            _LOGGER.debug("[%s] Resetting yearly energy", self.entity_id)
             self._reset_energy_by_suffix("year")
 
         # Force save after reset
@@ -824,9 +833,9 @@ class OigCloudComputedSensor(_ComputedBase):
         handler = self._sensor_mapping().get(self._sensor_type)
         if handler:
             return handler()
-        if self._sensor_type.startswith("computed_batt_") or self._sensor_type.startswith(
-            "computed_nonbackup_"
-        ):
+        if self._sensor_type.startswith(
+            "computed_batt_"
+        ) or self._sensor_type.startswith("computed_nonbackup_"):
             return self._accumulate_energy()
         if self._sensor_type.startswith("computed_grid_"):
             return self._accumulate_grid_cost()
@@ -964,7 +973,12 @@ class OigCloudComputedSensor(_ComputedBase):
             _grid_cost_last_update_cache[self._box_id] = now
 
         _LOGGER.debug(
-            f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
+            "[%s] Δt=%.1fs bat=%.1fW fv=%.1fW -> ΔWh=%.4f",
+            self.entity_id,
+            delta_seconds,
+            bat_power,
+            fv_power,
+            wh_increment,
         )
 
     def _get_energy_value(self) -> Optional[float]:
@@ -1033,7 +1047,8 @@ class OigCloudComputedSensor(_ComputedBase):
             self._attr_extra_state_attributes = {
                 k: round(v, 4)
                 for k, v in self._energy.items()
-                if k.startswith("grid_import_cost_") or k.startswith("grid_export_earn_")
+                if k.startswith("grid_import_cost_")
+                or k.startswith("grid_export_earn_")
             }
 
             # Per-phase today value
@@ -1141,7 +1156,7 @@ class OigCloudComputedSensor(_ComputedBase):
             else:
                 return 0.0
         except (KeyError, TypeError, ZeroDivisionError) as e:
-            _LOGGER.error(f"Error getting extended_fve_current_1: {e}", exc_info=True)
+            _LOGGER.error("Error getting extended_fve_current_1: %s", e, exc_info=True)
             return None
 
     def _get_extended_fve_current_2(self, coordinator: Any) -> Optional[float]:
@@ -1153,7 +1168,7 @@ class OigCloudComputedSensor(_ComputedBase):
             else:
                 return 0.0
         except (KeyError, TypeError, ZeroDivisionError) as e:
-            _LOGGER.error(f"Error getting extended_fve_current_2: {e}", exc_info=True)
+            _LOGGER.error("Error getting extended_fve_current_2: %s", e, exc_info=True)
             return None
 
     async def async_update(self) -> None:
@@ -1215,9 +1230,7 @@ class OigCloudComputedSensor(_ComputedBase):
             return has_changes
 
         except Exception as err:
-            _LOGGER.error(
-                "[%s] Error checking data changes: %s", self.entity_id, err
-            )
+            _LOGGER.error("[%s] Error checking data changes: %s", self.entity_id, err)
             return False
 
     def _extract_real_data_values(

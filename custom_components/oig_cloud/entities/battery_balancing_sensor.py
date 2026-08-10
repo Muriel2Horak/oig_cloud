@@ -155,7 +155,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
             )
             return entry_data.get("balancing_manager")
         except Exception as e:
-            _LOGGER.debug(f"Could not get BalancingManager: {e}")
+            _LOGGER.debug("Could not get BalancingManager: %s", e)
             return None
 
     def _update_from_manager(self) -> None:
@@ -238,9 +238,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
             {"ts": i.ts, "mode": i.mode} for i in (active_plan.intervals or [])
         ]
 
-        charging_intervals = self._collect_charging_intervals(
-            intervals, holding_start
-        )
+        charging_intervals = self._collect_charging_intervals(intervals, holding_start)
 
         return {
             "mode": getattr(active_plan.mode, "value", str(active_plan.mode)).lower(),

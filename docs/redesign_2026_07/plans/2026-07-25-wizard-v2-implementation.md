@@ -1283,7 +1283,7 @@ test('every registry field key rendered by the wizard has a CS_LABELS entry (no 
   const allSections = ['modules', 'battery', 'solar', 'boiler', 'ai', 'pricing_distribution', 'pricing_supplier', 'basic'];
   for (const section of allSections) {
     for (const f of fieldsFromRegistry(fixtureFullRegistry, section)) {
-      expect(f.label).not.toMatch(/_/); // a humanised fallback still contains the key's underscores-as-spaces... 
+      expect(f.label).not.toMatch(/_/); // a humanised fallback still contains the key's underscores-as-spaces...
       // stronger check: assert CS_LABELS[`field.${f.key}.label`] !== undefined directly
     }
   }

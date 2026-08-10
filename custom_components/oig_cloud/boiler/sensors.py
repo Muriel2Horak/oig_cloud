@@ -258,7 +258,7 @@ class _DailySourceRestoreMixin(RestoreEntity):
             value = float(last.state)
         except (TypeError, ValueError):
             return
-        seed(self._daily_source_key, value)
+        runtime.seed_daily_source_from_state(self._daily_source_key, value)
 
 
 class BoilerTotalEnergySensor(BoilerSensorBase):

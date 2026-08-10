@@ -1,9 +1,9 @@
 # Boiler Subsystem Inputs — Inventory, 3-Bucket Revision, Water-Profile Simulator
 
-**Author:** Research Agent  
-**Date:** 2026-07-26  
-**Branch:** `f1/boiler-research`  
-**Base:** `f1/wizard-v2-impl`  
+**Author:** Research Agent
+**Date:** 2026-07-26
+**Branch:** `f1/boiler-research`
+**Base:** `f1/wizard-v2-impl`
 
 ---
 
@@ -148,7 +148,7 @@ All fields are in `custom_components/oig_cloud/config_registry.py:355–400` and
 
 ### Finding 1: **cold_inlet_c Configured but NOT Passed to Classifier**
 
-**Status:** CONFIRMED  
+**Status:** CONFIRMED
 **File & Line:** `runtime.py:873` (configured) vs. `runtime.py:1483` (snapshot created without it)
 
 **Evidence:**
@@ -173,7 +173,7 @@ cold_inlet_c=_float_config(
 
 ### Finding 2: **COMMAND_ON_W Duplicated**
 
-**Status:** CONFIRMED  
+**Status:** CONFIRMED
 **Files & Lines:**
 - `demand_profiler.py:36` — `COMMAND_ON_W: float = 100.0`
 - `heating_estimator.py:36` — `COMMAND_ON_W = 100.0`
@@ -188,7 +188,7 @@ cold_inlet_c=_float_config(
 
 ### Finding 3: **Battery Cycle Cost Literal 0.50 Defined 4×**
 
-**Status:** CONFIRMED  
+**Status:** CONFIRMED
 **Files & Lines:**
 1. `const.py:80` — `BATTERY_CYCLE_COST_CZK_PER_KWH: Final[float] = 0.50`
 2. `config_registry.py:377` — `Field("boiler_battery_cycle_cost_czk_kwh", ..., default=0.50, ...)`
@@ -203,7 +203,7 @@ cold_inlet_c=_float_config(
 
 ### Finding 4: **Water Consumption Profile Reading**
 
-**Status:** CONFIRMED — Used in F2 Feature  
+**Status:** CONFIRMED — Used in F2 Feature
 **Files & Lines:**
 - `demand_profiler.py` — Builds demand profile from historical water-draw data
 - `runtime.py:2367` — Fetches profile via `await self.async_ensure_profile()`
@@ -313,7 +313,7 @@ cold_inlet_c=_float_config(
 | box_has_home56 | | | | ✓ | ✗ |
 | boiler_home5_maneuver_enabled | | | | ✓ | ✗ |
 
-**Wizard-Exposed Count:** 16 of 25 (64%)  
+**Wizard-Exposed Count:** 16 of 25 (64%)
 **Advanced/Hidden:** 9 of 25 (36%)
 
 ---
@@ -461,30 +461,30 @@ Response:
 ## 5. Known Issues & Deferred Fixes
 
 ### Issue 1: `cold_inlet_c` Not Wired to Activity Classifier
-**Priority:** HIGH — Affects fill_level accuracy  
-**Fix Location:** `runtime.py:1500–1501`  
-**Effort:** 3 lines  
+**Priority:** HIGH — Affects fill_level accuracy
+**Fix Location:** `runtime.py:1500–1501`
+**Effort:** 3 lines
 **Blocks:** None (safe to land independently)
 
 ### Issue 2: `COMMAND_ON_W` Duplication
-**Priority:** MEDIUM — DRY violation, low risk  
-**Fix Location:** Define in `const.py`, import in both `demand_profiler.py` and `heating_estimator.py`  
-**Effort:** 5 lines  
+**Priority:** MEDIUM — DRY violation, low risk
+**Fix Location:** Define in `const.py`, import in both `demand_profiler.py` and `heating_estimator.py`
+**Effort:** 5 lines
 **Blocks:** None
 
 ### Issue 3: Battery Cycle Cost Literal (4×)
-**Priority:** LOW — Config works correctly; maintenance burden only  
-**Fix Location:** `config_registry.py:377` should reference constant  
-**Effort:** 1 line  
+**Priority:** LOW — Config works correctly; maintenance burden only
+**Fix Location:** `config_registry.py:377` should reference constant
+**Effort:** 1 line
 **Blocks:** None
 
 ### Issue 4: Water Profile Reading
-**Priority:** LOW — Already implemented in F2 demand profiler  
+**Priority:** LOW — Already implemented in F2 demand profiler
 **Status:** Functional; no action needed
 
 ### Issue 5: Water-Day Simulator
-**Priority:** DEFERRED — Requires PlannerInput refactoring  
-**Effort:** 2–3 days (architecture review + implementation)  
+**Priority:** DEFERRED — Requires PlannerInput refactoring
+**Effort:** 2–3 days (architecture review + implementation)
 **Blocks:** Owner's F3+ priority; nice-to-have for Phase B
 
 ---
@@ -528,5 +528,5 @@ Response:
 
 ---
 
-**Report Generated:** 2026-07-26  
+**Report Generated:** 2026-07-26
 **Status:** COMPLETE — All milestones met. Input count: 25 registry + 12 planner + 13 classifier = 50 total inputs. Cold inlet audit finding verified; cycle cost duplicates identified; water profile reading confirmed functional; simulator feasibility assessed as Medium effort (3–5 days for full implementation including API endpoint + presets).

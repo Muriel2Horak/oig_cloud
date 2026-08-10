@@ -80,7 +80,14 @@ class OigCloudChmuSensor(OigCloudSensor):
         # Okamžitá inicializace dat při startu - pouze pro hlavní senzor
         if self._sensor_type == "chmu_warning_level" and self._should_fetch_data():
             _LOGGER.debug(
-                f"🌦️ Data is outdated (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S') if self._last_api_call else 'never'}), triggering immediate fetch"
+                "🌦️ Data is outdated (last call: %s), triggering immediate fetch",
+                (
+                    datetime.fromtimestamp(self._last_api_call).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    if self._last_api_call
+                    else "never"
+                ),
             )
             # Spustíme úlohu na pozadí s malým zpožděním
             self.hass.async_create_task(self._delayed_initial_fetch())
@@ -90,7 +97,10 @@ class OigCloudChmuSensor(OigCloudSensor):
                 setattr(self.coordinator, "chmu_warning_data", self._last_warning_data)
             self._refresh_entity_state()
             _LOGGER.debug(
-                f"🌦️ Loaded warning data from storage (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}), skipping immediate fetch"
+                "🌦️ Loaded warning data from storage (last call: %s), skipping immediate fetch",
+                datetime.fromtimestamp(self._last_api_call).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             )
 
     async def _load_persistent_data(self) -> None:
@@ -108,7 +118,10 @@ class OigCloudChmuSensor(OigCloudSensor):
                 if isinstance(data.get("last_api_call"), (int, float)):
                     self._last_api_call = float(data["last_api_call"])
                     _LOGGER.debug(
-                        f"🌦️ Loaded last API call time: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}"
+                        "🌦️ Loaded last API call time: %s",
+                        datetime.fromtimestamp(self._last_api_call).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
                     )
 
                 # Načtení warning dat
@@ -123,7 +136,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             self._refresh_entity_state()
 
         except Exception as e:
-            _LOGGER.warning(f"🌦️ Failed to load persistent data: {e}")
+            _LOGGER.warning("🌦️ Failed to load persistent data: %s", e)
             self._last_api_call = 0
             self._last_warning_data = None
             self._refresh_entity_state()
@@ -145,10 +158,13 @@ class OigCloudChmuSensor(OigCloudSensor):
 
             await store.async_save(save_data)
             _LOGGER.debug(
-                f"🌦️ Saved persistent data: API call time {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}"
+                "🌦️ Saved persistent data: API call time %s",
+                datetime.fromtimestamp(self._last_api_call).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             )
         except Exception as e:
-            _LOGGER.warning(f"🌦️ Failed to save persistent data: {e}")
+            _LOGGER.warning("🌦️ Failed to save persistent data: %s", e)
 
     def _should_fetch_data(self) -> bool:
         """Rozhodne zda je potřeba načíst nová data."""
@@ -215,10 +231,10 @@ class OigCloudChmuSensor(OigCloudSensor):
             self._refresh_entity_state()
 
             _LOGGER.debug(
-                f"🌦️ ČHMÚ warnings updated: "
-                f"{warning_data['all_warnings_count']} total, "
-                f"{warning_data['local_warnings_count']} local, "
-                f"severity={warning_data['severity_level']}"
+                "🌦️ ČHMÚ warnings updated: %s total, %s local, severity=%s",
+                warning_data["all_warnings_count"],
+                warning_data["local_warnings_count"],
+                warning_data["severity_level"],
             )
 
         except Exception as e:
@@ -231,11 +247,14 @@ class OigCloudChmuSensor(OigCloudSensor):
                 else:
                     raise
             except Exception:
-                _LOGGER.error(f"🌦️ Error fetching ČHMÚ warning data: {e}", exc_info=True)
+                _LOGGER.error(
+                    "🌦️ Error fetching ČHMÚ warning data: %s", e, exc_info=True
+                )
             # DŮLEŽITÉ: Při chybě API zachováváme stará data místo jejich mazání!
             if self._last_warning_data:
                 _LOGGER.warning(
-                    f"🌦️ ČHMÚ API nedostupné - používám cached data z {self._last_warning_data.get('last_update', 'unknown')}"
+                    "🌦️ ČHMÚ API nedostupné - používám cached data z %s",
+                    self._last_warning_data.get("last_update", "unknown"),
                 )
                 # Ponecháváme self._attr_available = True, protože máme stará platná data
             else:
@@ -291,7 +310,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             lat = self._config_entry.options.get("solar_forecast_latitude")
             lon = self._config_entry.options.get("solar_forecast_longitude")
             if lat is not None and lon is not None:
-                _LOGGER.debug(f"🌦️ Using GPS from Solar Forecast: {lat}, {lon}")
+                _LOGGER.debug("🌦️ Using GPS from Solar Forecast: %s, %s", lat, lon)
                 return (float(lat), float(lon))
 
         # 2. HA General Settings
@@ -301,7 +320,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             lat = self.hass.config.latitude
             lon = self.hass.config.longitude
             if lat is not None and lon is not None:
-                _LOGGER.debug(f"🌦️ Using GPS from HA config: {lat}, {lon}")
+                _LOGGER.debug("🌦️ Using GPS from HA config: %s, %s", lat, lon)
                 return (float(lat), float(lon))
 
         # 3. Praha default

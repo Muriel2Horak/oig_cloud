@@ -65,5 +65,3 @@ async def test_wizard_battery_invalid_charge_rate():
 
     assert result["type"] == "form"
     assert result["errors"]["charge_rate_kw"] == "invalid_charge_rate_kw"
-
-

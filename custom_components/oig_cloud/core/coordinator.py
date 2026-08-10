@@ -152,7 +152,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self.chmu_warning_data = None
             _LOGGER.debug("ČHMÚ API initialized successfully")
         except Exception as e:
-            _LOGGER.error(f"Failed to initialize ČHMÚ API: {e}")
+            _LOGGER.error("Failed to initialize ČHMÚ API: %s", e)
             self.chmu_api = None
             self.chmu_warning_data = None
 
@@ -198,7 +198,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self.hass.async_create_task(self._update_spot_prices())
 
         except Exception as e:
-            _LOGGER.error(f"Failed to initialize OTE API: {e}")
+            _LOGGER.error("Failed to initialize OTE API: %s", e)
             self.ote_api = None
 
     async def async_config_entry_first_refresh(self) -> None:
@@ -342,8 +342,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self.update_interval = timedelta(seconds=standard_interval)
 
         _LOGGER.info(
-            f"Coordinator intervals updated: standard {old_standard}s→{standard_interval}s, "
-            f"extended {old_extended}s→{extended_interval}s"
+            "Coordinator intervals updated: standard %ss→%ss, extended %ss→%ss",
+            old_standard,
+            standard_interval,
+            old_extended,
+            extended_interval,
         )
 
         # Vynutíme okamžitou aktualizaci s novým intervalem
@@ -360,7 +363,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         else:
             next_update = today_13
 
-        _LOGGER.debug(f"Next spot price update scheduled for: {next_update}")
+        _LOGGER.debug("Next spot price update scheduled for: %s", next_update)
 
         # Naplánujeme callback
         async def spot_price_callback(now: datetime) -> None:
@@ -400,7 +403,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 self._apply_spot_fallback_result(spot_data)
 
             except Exception as e:
-                _LOGGER.warning(f"Hourly fallback: Failed to update spot prices: {e}")
+                _LOGGER.warning("Hourly fallback: Failed to update spot prices: %s", e)
             finally:
                 self._hourly_fallback_active = False
 
@@ -433,7 +436,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 return True
         return False
 
-    async def _fetch_spot_prices_for_fallback(self, now: datetime) -> Optional[Dict[str, Any]]:
+    async def _fetch_spot_prices_for_fallback(
+        self, now: datetime
+    ) -> Optional[Dict[str, Any]]:
         ote_api = self.ote_api
         if ote_api is None:
             return None
@@ -472,7 +477,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             if spot_data and spot_data.get("prices_czk_kwh"):
                 _LOGGER.info(
-                    f"Successfully updated spot prices: {spot_data.get('hours_count', 0)} hours"
+                    "Successfully updated spot prices: %s hours",
+                    spot_data.get("hours_count", 0),
                 )
                 self._spot_prices_cache = spot_data
                 self._last_spot_fetch = dt_util.now()
@@ -494,7 +500,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 self._handle_spot_retry()
 
         except Exception as e:
-            _LOGGER.warning(f"Failed to update spot prices: {e}")
+            _LOGGER.warning("Failed to update spot prices: %s", e)
             self._handle_spot_retry()
 
     def _handle_spot_retry(self) -> None:
@@ -508,7 +514,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         if self._spot_retry_count < 3 and is_important_time:  # Snížit max retries
             # Zkusíme znovu za 30 minut místo 15
             _LOGGER.info(
-                f"Retrying spot price update in 30 minutes (attempt {self._spot_retry_count + 1}/3)"
+                "Retrying spot price update in 30 minutes (attempt %s/3)",
+                self._spot_retry_count + 1,
             )
 
             async def retry_callback() -> None:
@@ -555,10 +562,10 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
         if jitter > 0:
-            _LOGGER.debug(f"⏱️  Applying jitter: +{jitter:.1f}s delay before update")
+            _LOGGER.debug("⏱️  Applying jitter: +%.1fs delay before update", jitter)
             await asyncio.sleep(jitter)
         else:
-            _LOGGER.debug(f"⏱️  Jitter: {jitter:.1f}s (no delay, update now)")
+            _LOGGER.debug("⏱️  Jitter: %.1fs (no delay, update now)", jitter)
 
         try:
             use_cloud = self._resolve_use_cloud()
@@ -599,7 +606,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             return result
 
         except Exception as exception:
-            _LOGGER.error(f"Error updating data: {exception}")
+            _LOGGER.error("Error updating data: %s", exception)
             raise UpdateFailed(
                 f"Error communicating with OIG API: {exception}"
             ) from exception
@@ -666,7 +673,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     )
                     _LOGGER.debug("Notification manager initialized with API session")
                 except Exception as e:
-                    _LOGGER.error(f"Failed to initialize notification manager: {e}")
+                    _LOGGER.error("Failed to initialize notification manager: %s", e)
                     self.notification_manager = None
         else:
             self.notification_manager = None
@@ -690,7 +697,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _resolve_extended_enabled(self) -> bool:
         config_entry = self.config_entry
         if config_entry:
-            extended_enabled = config_entry.options.get("enable_extended_sensors", False)
+            extended_enabled = config_entry.options.get(
+                "enable_extended_sensors", False
+            )
             _LOGGER.debug("Config entry found: True")
             try:
                 _LOGGER.debug(
@@ -752,7 +761,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
         try:
             today_from, today_to = self._today_range()
-            _LOGGER.debug("Date range for extended stats: %s to %s", today_from, today_to)
+            _LOGGER.debug(
+                "Date range for extended stats: %s to %s", today_from, today_to
+            )
 
             extended_batt = await self.api.get_extended_stats(
                 "batt", today_from, today_to
@@ -777,7 +788,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Extended stats updated successfully")
 
         except Exception as e:
-            _LOGGER.warning(f"Failed to fetch extended stats: {e}")
+            _LOGGER.warning("Failed to fetch extended stats: %s", e)
             self.extended_data = {}
 
     async def _maybe_refresh_notifications_with_extended(
@@ -800,7 +811,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             await self.notification_manager.update_from_api()
             _LOGGER.debug("Notification data updated successfully")
         except Exception as e:
-            _LOGGER.debug(f"Notification data fetch failed: {e}")
+            _LOGGER.debug("Notification data fetch failed: %s", e)
 
     async def _maybe_refresh_notifications_standalone(
         self, cloud_notifications_enabled: bool
@@ -838,7 +849,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self._last_notification_update = now
             _LOGGER.debug("Standalone notification data updated successfully")
         except Exception as e:
-            _LOGGER.debug(f"Standalone notification data fetch failed: {e}")
+            _LOGGER.debug("Standalone notification data fetch failed: %s", e)
 
     def _compute_battery_forecast_inputs_hash(self) -> int:
         """Hash relevantnich vstupních entit pro battery forecast (change detection)."""
@@ -887,20 +898,22 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 else:
                     _LOGGER.warning("Initial spot price fetch returned empty data")
             except Exception as e:
-                _LOGGER.warning(f"Initial spot price fetch failed: {e}")
+                _LOGGER.warning("Initial spot price fetch failed: %s", e)
 
     async def _try_get_stats(self) -> Optional[Dict[str, Any]]:
         """Wrapper na načítání standardních statistik s ošetřením chyb."""
         try:
             return await self.api.get_stats()
         except Exception as e:
-            _LOGGER.error(f"Error fetching standard stats: {e}", exc_info=True)
+            _LOGGER.error("Error fetching standard stats: %s", e, exc_info=True)
             raise e
 
     async def _maybe_fill_config_nodes_from_cloud(self, stats: Dict[str, Any]) -> None:
         """In local effective mode, backfill missing configuration nodes from cloud (throttled)."""
         now = self._utcnow()
-        if _should_skip_cloud_fill(now, getattr(self, "_last_cloud_config_fill_ts", None)):
+        if _should_skip_cloud_fill(
+            now, getattr(self, "_last_cloud_config_fill_ts", None)
+        ):
             return
 
         box_id = _resolve_box_id(self.config_entry, stats)
@@ -949,7 +962,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         time_diff = delta.total_seconds()
         _LOGGER.debug(
-            f"Extended time check: now={now.strftime('%H:%M:%S')}, last_update={self._last_extended_update.strftime('%H:%M:%S')}, diff={time_diff:.1f}s, interval={self.extended_interval}s"
+            "Extended time check: now=%s, last_update=%s, diff=%.1fs, interval=%ss",
+            now.strftime("%H:%M:%S"),
+            self._last_extended_update.strftime("%H:%M:%S"),
+            time_diff,
+            self.extended_interval,
         )
 
         return time_diff > self.extended_interval
@@ -996,7 +1013,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             temp_sensor = self._create_forecast_sensor(inverter_sn)
             _LOGGER.debug(
-                f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}"
+                "🔍 Temp sensor created, _hass set: %s", temp_sensor._hass is not None
             )
 
             # Spustíme výpočet - nová metoda async_update()
@@ -1019,7 +1036,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         except Exception as e:
             _LOGGER.error(
-                f"🔋 Failed to update battery forecast in coordinator: {e}",
+                "🔋 Failed to update battery forecast in coordinator: %s",
+                e,
                 exc_info=True,
             )
             self.battery_forecast_data = None
@@ -1088,6 +1106,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _create_forecast_sensor(self, inverter_sn: str) -> Any:
         from ..battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
+
         if self.config_entry is None:
             raise RuntimeError("config_entry is required for forecast sensor creation")
 
@@ -1112,13 +1131,12 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         last_update = getattr(sensor, "_last_update", None)
         return {
             "timeline_data": timeline_data,
-            "calculation_time": (
-                last_update.isoformat() if last_update else None
-            ),
+            "calculation_time": (last_update.isoformat() if last_update else None),
             "data_source": "simplified_calculation",
             # timeline_data is guaranteed non-empty here (early return above).
             "current_battery_kwh": timeline_data[0].get("battery_capacity_kwh", 0),
-            "mode_recommendations": getattr(sensor, "_mode_recommendations", None) or [],
+            "mode_recommendations": getattr(sensor, "_mode_recommendations", None)
+            or [],
         }
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:
@@ -1149,7 +1167,9 @@ def _should_skip_cloud_fill(now: datetime, last: Optional[datetime]) -> bool:
     return False
 
 
-def _resolve_box_id(entry: Optional[ConfigEntry], stats: Dict[str, Any]) -> Optional[str]:
+def _resolve_box_id(
+    entry: Optional[ConfigEntry], stats: Dict[str, Any]
+) -> Optional[str]:
     box_id = _box_id_from_entry(entry)
     if box_id:
         return box_id

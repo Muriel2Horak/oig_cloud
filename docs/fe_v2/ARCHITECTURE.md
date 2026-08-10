@@ -151,7 +151,7 @@ export abstract class OigComponent extends LitElement {
   protected onMount(): void {}
   protected onUnmount(): void {}
   protected onError(error: Error): void {}
-  
+
   // Hass access
   protected get hass(): Hass | null;
   protected subscribeEntity(entityId: string): void;
@@ -167,12 +167,12 @@ export class PricingFeature {
   private data: PricingData | null = null;
   private loading = false;
   private error: Error | null = null;
-  
+
   // Public API
   public async load(): Promise<void>;
   public render(): TemplateResult;
   public destroy(): void;
-  
+
   // Event handlers
   private onChartZoom(range: TimeRange): void;
   private onCardClick(block: PriceBlock): void;
@@ -254,7 +254,7 @@ interface ParticleConfig {
 class ParticleEngine {
   private flows: Map<string, FlowConfig>;
   private animationId: number | null;
-  
+
   public startFlow(key: string, config: ParticleConfig): void;
   public stopFlow(key: string): void;
   public stopAll(): void;
@@ -268,7 +268,7 @@ class ParticleEngine {
 ```typescript
 class ChartManager {
   private charts: Map<string, Chart>;
-  
+
   public createChart(id: string, config: ChartConfig): Chart;
   public destroyChart(id: string): void;
   public updateData(id: string, data: ChartData): void;

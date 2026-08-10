@@ -2555,7 +2555,8 @@ def _build_boiler_blocks(slots: list, now: Any) -> list:
     current: Optional[dict] = None
     for slot in slots:
         cls = _boiler_slot_source_class(slot)
-        if current is None or current["source"] != cls:
+        source_changed = current is None or current.get("source") != cls
+        if source_changed:
             if current is not None:
                 blocks.append(current)
             current = {
@@ -2567,6 +2568,7 @@ def _build_boiler_blocks(slots: list, now: Any) -> list:
                 "_start_dt": slot.start,
                 "_end_dt": slot.end,
             }
+        assert current is not None
         current["end"] = _boiler_hhmm(slot.end)
         current["_end_dt"] = slot.end
         current["planned_kwh"] += _boiler_slot_float(slot, "heating_kwh")

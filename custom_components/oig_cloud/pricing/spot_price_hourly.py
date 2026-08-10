@@ -75,7 +75,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
 
         box_id = _resolve_box_id_from_coordinator(self.coordinator)
         base = self._sensor_config.get("name", self._sensor_type)
-        self._attr_name = f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
+        self._attr_name = (
+            f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
+        )
         self._attr_icon = self._sensor_config.get("icon", "mdi:flash")
         self._attr_native_unit_of_measurement = self._sensor_config.get(
             "unit_of_measurement"
@@ -104,8 +106,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
             self._last_update = dt_now()
             self._refresh_entity_state()
             _LOGGER.debug(
-                f"[{self.entity_id}] Updated spot price data from coordinator: "
-                f"{self._spot_data.get('hours_count', 0)} hours"
+                "[%s] Updated spot price data from coordinator: %s hours",
+                self.entity_id,
+                self._spot_data.get("hours_count", 0),
             )
         super()._handle_coordinator_update()
 
@@ -130,7 +133,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
         await self._ote_api.async_load_cached_spot_prices()
 
         _LOGGER.info(
-            f"[{self.entity_id}] Spot price sensor {self._sensor_type} added to HA - starting data fetch"
+            "[%s] Spot price sensor %s added to HA - starting data fetch",
+            self.entity_id,
+            self._sensor_type,
         )
 
         # Obnovit data ze stavu
@@ -146,7 +151,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
             try:
                 await self._fetch_spot_data_with_retry()
             except Exception as e:
-                _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
+                _LOGGER.error("[%s] Error in initial data fetch: %s", self.entity_id, e)
 
         self._refresh_entity_state()
         if hasattr(self.hass, "loop_thread_id"):
@@ -162,9 +167,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
                         old_state.attributes["last_update"]
                     )
                 self._refresh_entity_state()
-                _LOGGER.info(f"[{self.entity_id}] Restored spot price data")
+                _LOGGER.info("[%s] Restored spot price data", self.entity_id)
             except Exception as e:
-                _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
+                _LOGGER.error("[%s] Error restoring data: %s", self.entity_id, e)
 
     def _setup_time_tracking(self) -> None:
         """Nastavení pravidelného stahování dat - jednou denně po 13:00 s retry logikou."""
@@ -195,7 +200,9 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
         """Stáhne data, vrátí True při úspěchu, jinak False."""
         try:
             _LOGGER.info(
-                f"[{self.entity_id}] Fetching spot data - attempt {self._retry_attempt + 1}"
+                "[%s] Fetching spot data - attempt %s",
+                self.entity_id,
+                self._retry_attempt + 1,
             )
 
             spot_data = await self._ote_api.get_spot_prices()
@@ -207,7 +214,10 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
                 hours_count = spot_data.get("hours_count", 0)
                 tomorrow_available = bool(spot_data.get("tomorrow_stats"))
                 _LOGGER.info(
-                    f"[{self.entity_id}] Spot data successful - {hours_count} hours, tomorrow: {'yes' if tomorrow_available else 'no'}"
+                    "[%s] Spot data successful - %s hours, tomorrow: %s",
+                    self.entity_id,
+                    hours_count,
+                    "yes" if tomorrow_available else "no",
                 )
 
                 # Aktualizovat stav senzoru
@@ -219,17 +229,23 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
                     return True
                 else:
                     _LOGGER.info(
-                        f"[{self.entity_id}] Data received but incomplete (missing tomorrow after 13:00), will retry"
+                        "[%s] Data received but incomplete (missing tomorrow after 13:00), will retry",
+                        self.entity_id,
                     )
                     return False
 
             _LOGGER.warning(
-                f"[{self.entity_id}] Incomplete spot data received on attempt {self._retry_attempt + 1}"
+                "[%s] Incomplete spot data received on attempt %s",
+                self.entity_id,
+                self._retry_attempt + 1,
             )
 
         except Exception as e:
             _LOGGER.error(
-                f"[{self.entity_id}] Error fetching spot data on attempt {self._retry_attempt + 1}: {e}"
+                "[%s] Error fetching spot data on attempt %s: %s",
+                self.entity_id,
+                self._retry_attempt + 1,
+                e,
             )
 
         return False
@@ -239,7 +255,10 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
         delay = get_retry_delay_seconds(self._retry_attempt)
         self._retry_attempt += 1
         _LOGGER.info(
-            f"[{self.entity_id}] Retrying spot data in {delay // 60} minutes (attempt {self._retry_attempt})"
+            "[%s] Retrying spot data in %s minutes (attempt %s)",
+            self.entity_id,
+            delay // 60,
+            self._retry_attempt,
         )
 
         self._cancel_retry_timer()
@@ -276,14 +295,16 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
         # Měli bychom mít alespoň 12 hodin dat (polovina dne)
         if len(today_hours) < 12:
             _LOGGER.debug(
-                f"[{self.entity_id}] Insufficient data - only {len(today_hours)} hours for today"
+                "[%s] Insufficient data - only %s hours for today",
+                self.entity_id,
+                len(today_hours),
             )
             return False
 
         # Kontrola že ceny nejsou nulové
         valid_prices = [v for v in prices.values() if v is not None and v > 0]
         if len(valid_prices) < len(today_hours) * 0.8:  # 80% cen musí být validních
-            _LOGGER.debug(f"[{self.entity_id}] Too many invalid prices")
+            _LOGGER.debug("[%s] Too many invalid prices", self.entity_id)
             return False
 
         return True
@@ -311,7 +332,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
             if self._sensor_type == "spot_price_hourly_all":
                 return self._get_current_price_czk_kwh()
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error getting state: {e}")
+            _LOGGER.error("[%s] Error getting state: %s", self.entity_id, e)
             return None
 
         return None

@@ -8,15 +8,15 @@ export const CSS_VARS = {
   error: 'var(--error-color, #db4437)',
   success: 'var(--success-color, #0f9d58)',
   warning: 'var(--warning-color, #f4b400)',
-  
+
   cardBg: 'var(--card-background-color, #ffffff)',
   // SOLID opaque surface for modals/dialogs. cardBg is translucent in dark mode
   // (rgba(255,255,255,0.06)) which made dialogs almost see-through.
   cardBgSolid: 'var(--oig-surface, #ffffff)',
   cardShadow: 'var(--shadow-elevation-2dp_-_box-shadow, 0 2px 2px 0 rgba(0,0,0,0.14))',
-  
+
   fontFamily: 'var(--primary-font-family, system-ui, sans-serif)',
-  
+
   solar: '#ff9800',
   battery: '#4caf50',
   grid: '#2196f3',

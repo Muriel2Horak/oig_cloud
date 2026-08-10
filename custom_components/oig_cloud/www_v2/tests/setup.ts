@@ -2,14 +2,14 @@ import { beforeAll, afterAll, vi, expect } from 'vitest';
 
 beforeAll(async () => {
   (global as any).OIG_DEBUG = false;
-  
+
   class ResizeObserverMock {
     observe() {}
     unobserve() {}
     disconnect() {}
   }
   (global as any).ResizeObserver = ResizeObserverMock;
-  
+
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation(query => ({
@@ -32,13 +32,13 @@ beforeAll(async () => {
   }
 
   const OriginalHTMLElement = window.HTMLElement;
-  
+
   class MockLitElement extends OriginalHTMLElement {
     static styles: any;
     static properties: any;
-    
+
     shadowRoot = new MockShadowRoot() as any;
-    
+
     connectedCallback() {}
     disconnectedCallback() {}
     requestUpdate() {}
@@ -50,7 +50,7 @@ beforeAll(async () => {
 
   const { LitElement, html, css, unsafeCSS } = await import('lit');
   const { customElement, property, state } = await import('lit/decorators.js');
-  
+
   (window as any).lit = { LitElement, html, css, unsafeCSS };
   (window as any).litDecorators = { customElement, property, state };
 });

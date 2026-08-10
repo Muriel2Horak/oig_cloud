@@ -31,13 +31,13 @@ export class ThemeProvider extends LitElement {
     this.setupMediaQuery();
     this.setupResizeObserver();
     this.detectTheme();
-    
+
     window.addEventListener('oig-theme-change', this.onThemeChange);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    
+
     this.mediaQuery?.removeEventListener('change', this.onMediaChange);
     this.resizeObserver?.disconnect();
     window.removeEventListener('oig-theme-change', this.onThemeChange);
@@ -68,8 +68,8 @@ export class ThemeProvider extends LitElement {
   private onMediaChange = (e: MediaQueryListEvent): void => {
     if (this.mode === 'auto') {
       this.isDark = e.matches;
-      this.dispatchEvent(new CustomEvent('theme-changed', { 
-        detail: { isDark: this.isDark } 
+      this.dispatchEvent(new CustomEvent('theme-changed', {
+        detail: { isDark: this.isDark }
       }));
     }
   };
@@ -95,11 +95,11 @@ export class ThemeProvider extends LitElement {
     this.mode = mode;
     this.saveTheme();
     this.detectTheme();
-    
+
     this.dispatchEvent(new CustomEvent('theme-changed', {
       detail: { mode, isDark: this.isDark }
     }));
-    
+
     oigLog.info('Theme changed', { mode, isDark: this.isDark });
   }
 

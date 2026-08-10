@@ -23,11 +23,11 @@ class PlannerInputs:
     current_soc_kwh: float          # z sensor.battery_level
     max_capacity_kwh: float         # z sensor.installed_battery_capacity_kwh
     hw_min_kwh: float              # z sensor.batt_bat_min
-    
+
     # Z config flow
     planning_min_percent: float      # default = HW%, >= HW%
     charge_rate_kw: float          # default 2.8 kW
-    
+
     # Prognózy (ze senzorů)
     intervals: List[IntervalData]   # 96 intervalů po 15 minutách
     prices: List[float]             # spotové ceny
@@ -374,12 +374,12 @@ def calculate_cost_use_battery(
     # Simuluj od nyní do konce bez nabíjení
     cost = 0
     soc = moment.current_soc
-    
+
     for i in range(moment.interval, len(inputs.intervals)):
         # HOME_I simulace
         ...
         cost += grid_import * inputs.prices[i]
-    
+
     return cost
 ```
 
@@ -402,11 +402,11 @@ def calculate_cost_charge_cheapest(
         for i in range(start_idx, end_idx)
     ]
     candidates.sort(key=lambda x: x[1])
-    
+
     cost = 0
     needed = deficit
     charge_intervals = []
-    
+
     for i, price in candidates:
         if needed <= 0:
             break
@@ -419,7 +419,7 @@ def calculate_cost_charge_cheapest(
         cost += charge * price
         needed -= effective
         charge_intervals.append(i)
-    
+
     return cost, charge_intervals
 ```
 
@@ -440,15 +440,15 @@ def calculate_cost_wait_for_solar(
         if inputs.solar_forecast[i] > inputs.load_forecast[i]:
             solar_start = i
             break
-    
+
     if solar_start is None:
         return float('inf')
-    
+
     # Náklady mezitím
     cost = 0
     for i in range(moment.interval, solar_start):
         ...
-    
+
     return cost
 ```
 
@@ -465,7 +465,7 @@ def make_economic_decisions(
     inputs: PlannerInputs
 ) -> List[Decision]:
     decisions = []
-    
+
     for moment in moments:
         cost_a = calculate_cost_use_battery(moment, inputs)
         cost_b, intervals_b = calculate_cost_charge_cheapest(
@@ -475,22 +475,22 @@ def make_economic_decisions(
             inputs
         )
         cost_c = calculate_cost_wait_for_solar(moment, inputs)
-        
+
         costs = [
             ("USE_BATTERY", cost_a, []),
             ("CHARGE_CHEAPEST", cost_b, intervals_b),
             ("WAIT_FOR_SOLAR", cost_c, [])
         ]
-        
+
         best = min(costs, key=lambda x: x[1])
-        
+
         decisions.append(Decision(
             moment=moment,
             strategy=best[0],
             cost=best[1],
             charge_intervals=best[2]
         ))
-    
+
     return decisions
 ```
 
@@ -509,26 +509,26 @@ def generate_plan(
     inputs: PlannerInputs
 ) -> PlannerResult:
     modes = [0] * len(inputs.intervals)  # HOME_I
-    
+
     for decision in decisions:
         if decision.strategy == "CHARGE_CHEAPEST":
             for idx in decision.charge_intervals:
                 modes[idx] = 3  # HOME_UPS
-    
+
     # FVE priority
     for i in range(len(modes)):
         if modes[i] == 0 and inputs.solar_forecast[i] > 0:
             modes[i] = 2  # HOME_III
-    
+
     # Simulace a validace
     states = simulate_with_modes(modes, inputs)
-    
+
     for state in states:
         if state.soc < inputs.hw_min_kwh * 0.95:
             raise ValueError("BEZPEČNOSTNÍ CHYBA!")
-    
+
     total_cost = sum(s.cost for s in states)
-    
+
     return PlannerResult(
         modes=modes,
         states=states,
@@ -548,20 +548,20 @@ def generate_plan(
 def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
     # Fáze 1: Simulace baseline
     baseline = simulate_home_i_detailed(inputs)
-    
+
     # Fáze 2: Detekce kritických okamžiků
     moments = find_critical_moments(baseline, inputs)
-    
+
     if not moments:
         # Žádné problémy - jednoduchý plán
         return generate_simple_plan(inputs)
-    
+
     # Fáze 3: Ekonomická rozhodnutí
     decisions = make_economic_decisions(moments, inputs)
-    
+
     # Fáze 4: Generování plánu
     result = generate_plan(decisions, inputs)
-    
+
     return result
 ```
 
@@ -590,7 +590,7 @@ def test_scenario_2025_03_05():
     scenario = load_scenario("2025-03-05")
     inputs = create_inputs_from_scenario(scenario)
     result = plan_battery_schedule(inputs)
-    
+
     # Ověření
     assert result.total_cost < scenario["expected_max_cost"]
     assert all(s.soc >= 2.05 for s in result.states)
@@ -609,7 +609,7 @@ results = []
 for scenario in scenarios:
     old_result = run_old_planner(scenario)
     new_result = plan_battery_schedule(scenario)
-    
+
     results.append({
         "date": scenario["id"],
         "old_cost": old_result.total_cost,
@@ -636,13 +636,13 @@ print(f"Celkové úspory za 30 dní: {total_savings:.2f} Kč")
 async def async_update_data(self):
     # Načti dynamické vstupy
     inputs = load_planner_inputs(self, self.config_entry)
-    
+
     # Spusť nový plánovač
     result = plan_battery_schedule(inputs)
-    
+
     # Aplikuj
     await self.apply_plan(result.modes)
-    
+
     # Loguj
     for d in result.decisions:
         _LOGGER.info(f"Rozhodnutí: {d.strategy} - {d.reason}")

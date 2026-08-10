@@ -1,8 +1,8 @@
 # Battery Planner Input Inventory Research
 
-**Author:** Research Phase  
-**Date:** 2026-07-26  
-**Scope:** Complete enumeration of external inputs to the battery economic planning pipeline, with revision recommendations and simulator feasibility assessment.  
+**Author:** Research Phase
+**Date:** 2026-07-26
+**Scope:** Complete enumeration of external inputs to the battery economic planning pipeline, with revision recommendations and simulator feasibility assessment.
 **Deliverable basis:** `custom_components/oig_cloud/battery_forecast/` — planning/, economic_planner.py, data/, boiler integration.
 
 ---
@@ -14,12 +14,12 @@
 Configuration options are read at planning runtime from the Home Assistant config_entry.options dictionary. These are user-configurable via the wizard/settings and persist across power cycles.
 
 #### 1.1.1 Battery Charging Rate
-- **Key:** `home_charge_rate`  
+- **Key:** `home_charge_rate`
 - **File:Line:** `planning/forecast_update.py:902`
 - **Effect:** Max rate at which the battery can charge from grid (UPS mode)
-- **Default:** `2.8` kW  
-- **Effect direction:** Higher value ⇒ planner can charge battery faster, enabling shorter pre-charge windows  
-- **Exposed in wizard:** Currently YES (Nastavení tab, field name TBD)  
+- **Default:** `2.8` kW
+- **Effect direction:** Higher value ⇒ planner can charge battery faster, enabling shorter pre-charge windows
+- **Exposed in wizard:** Currently YES (Nastavení tab, field name TBD)
 - **Plain-Czech draft:** *Maximální rychlost nabíjení baterie ze sítě. Vyšší hodnota umožňuje rychlejší nabíjení, nižší šetří stranou stroje. Příklad: 2.8 kW = cca 0.7 kWh za 15 minut.*
 
 **Impact:** Feeds directly into `PlannerInputs.charge_rate_kw`, determining `charge_rate_per_interval` (= 2.8 × 15/60 = 0.7 kWh/interval). Constrains maximum grid charging during HOME_UPS mode in economic gate.
@@ -27,13 +27,13 @@ Configuration options are read at planning runtime from the Home Assistant confi
 ---
 
 #### 1.1.2 Battery Comfort SoC Target
-- **Key:** `battery_comfort_soc_percent`  
+- **Key:** `battery_comfort_soc_percent`
 - **File:Line:** `planning/forecast_update.py:920-922`
 - **Effect:** Target state of charge to maintain as a buffer above hard floor, charged ONLY from cheap windows
-- **Default:** `50.0` %  
-- **Value range:** 0–95% (clamped in code)  
-- **Effect direction:** Higher value ⇒ planner tops up battery higher during cheap hours, maintaining larger reserve above emergency floor  
-- **Exposed in wizard:** Currently NO (should be offered; see Part 2)  
+- **Default:** `50.0` %
+- **Value range:** 0–95% (clamped in code)
+- **Effect direction:** Higher value ⇒ planner tops up battery higher during cheap hours, maintaining larger reserve above emergency floor
+- **Exposed in wizard:** Currently NO (should be offered; see Part 2)
 - **Plain-Czech draft:** *Cílová rezerva v baterii udržovaná z levných ceníků. Nevyžaduje se nabíjení z draté elektriky. Příklad: 50% = pokud je baterie pod 50% kapacity a elektřina je levná, plán ji nabije, jinak nechat klesat.*
 
 **Impact:** Converted to `PlannerInputs.comfort_soc_kwh` (= max_capacity × 50%). The planner opportunistically charges toward this level only during intervals below the 30th percentile of daily prices (`_COMFORT_CHEAP_PERCENTILE` = 0.30 in economic_planner.py). Zero disables comfort charging entirely.
@@ -41,12 +41,12 @@ Configuration options are read at planning runtime from the Home Assistant confi
 ---
 
 #### 1.1.3 Expensive Price Percentile
-- **Key:** `expensive_percentile`  
+- **Key:** `expensive_percentile`
 - **File:Line:** `planning/forecast_update.py:939`
 - **Effect:** Daily price threshold above which grid import is considered "expensive" and worth displacing with pre-charging
-- **Default:** `0.70` (70th percentile)  
-- **Effect direction:** Higher percentile ⇒ fewer hours classified as "expensive", less pre-charging; lower ⇒ more aggressive pre-charging  
-- **Exposed in wizard:** Currently NO (expert-only; see Part 2)  
+- **Default:** `0.70` (70th percentile)
+- **Effect direction:** Higher percentile ⇒ fewer hours classified as "expensive", less pre-charging; lower ⇒ more aggressive pre-charging
+- **Exposed in wizard:** Currently NO (expert-only; see Part 2)
 - **Plain-Czech draft:** *Hranice ceny pro klasifikaci jako "drahá". Při 70% se za drahé považují nejdražších 30% hodin každého dne. Plán se snaží baterii nabít z levnějších hodin na pokrytí těch drahých. Vyšší hodnota = méně nabíjení ze sítě.*
 
 **Impact:** Feeds `PlannerInputs.expensive_percentile`. Used in `economic_planner.py:_percentile_threshold()` to classify intervals. Only intervals above this threshold trigger displacement (pre-charge) logic.
@@ -60,13 +60,13 @@ Configuration options are read at planning runtime from the Home Assistant confi
 These are real-time or near-real-time values read from Home Assistant entity states at the moment of planning.
 
 #### 1.2.1 Current Battery State of Charge (SoC)
-- **Key:** Via sensor method `_get_current_battery_capacity()`  
+- **Key:** Via sensor method `_get_current_battery_capacity()`
 - **File:Line:** `planning/forecast_update.py:362`
-- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_soc_kwh`)  
-- **Effect:** Starting point for all cost simulation; the planner assumes it begins from here  
-- **Units:** kWh (absolute, not percentage)  
-- **Effect direction:** Higher SoC ⇒ planner may discharge sooner, less pre-charging needed  
-- **Exposed in wizard:** YES (read-only display)  
+- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_soc_kwh`)
+- **Effect:** Starting point for all cost simulation; the planner assumes it begins from here
+- **Units:** kWh (absolute, not percentage)
+- **Effect direction:** Higher SoC ⇒ planner may discharge sooner, less pre-charging needed
+- **Exposed in wizard:** YES (read-only display)
 - **Plain-Czech draft:** *Aktuální energia v baterii nyní. Plán vychází z této hodnoty a počítá, jak ji měnit v následujících hodinách.*
 
 **Impact:** Becomes `PlannerInputs.current_soc_kwh`. Clamped to [hw_min_kwh, max_capacity] before simulation to defend against sensor glitches.
@@ -74,13 +74,13 @@ These are real-time or near-real-time values read from Home Assistant entity sta
 ---
 
 #### 1.2.2 Battery Maximum Capacity
-- **Key:** Via sensor method `_get_max_battery_capacity()`  
+- **Key:** Via sensor method `_get_max_battery_capacity()`
 - **File:Line:** `planning/forecast_update.py:363`
-- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_max_kwh`) or config-defined fallback  
-- **Effect:** All SoC targets and thresholds are computed as fractions of this value; capacity unknown = planning impossible  
-- **Units:** kWh (absolute)  
-- **Effect direction:** Higher capacity ⇒ larger usable buffer, more pre-charging possible, higher comfort target  
-- **Exposed in wizard:** YES (read-only; shows as "Kapacita baterie")  
+- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_max_kwh`) or config-defined fallback
+- **Effect:** All SoC targets and thresholds are computed as fractions of this value; capacity unknown = planning impossible
+- **Units:** kWh (absolute)
+- **Effect direction:** Higher capacity ⇒ larger usable buffer, more pre-charging possible, higher comfort target
+- **Exposed in wizard:** YES (read-only; shows as "Kapacita baterie")
 - **Plain-Czech draft:** *Celková kapacita baterie. Všechny cíle se počítají jako procento z tohoto. Pokud není známo, plán nemůže běžet.*
 
 **Impact:** Feeds `PlannerInputs.max_capacity_kwh`. Used to derive:
@@ -91,13 +91,13 @@ These are real-time or near-real-time values read from Home Assistant entity sta
 ---
 
 #### 1.2.3 Battery Hardware Minimum Capacity
-- **Key:** Via sensor method `_get_min_battery_capacity()`  
+- **Key:** Via sensor method `_get_min_battery_capacity()`
 - **File:Line:** `planning/forecast_update.py:364`
-- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_min_kwh`)  
-- **Effect:** Absolute floor; the planner will not plan below this, and the mode guard enforces it at runtime  
-- **Units:** kWh (absolute)  
-- **Effect direction:** Higher minimum ⇒ narrower usable band, less flexibility for pre-charge depth  
-- **Exposed in wizard:** NO (hardware safety; not user-configurable)  
+- **Source:** Home Assistant entity (typically `sensor.oig_{box_id}_battery_min_kwh`)
+- **Effect:** Absolute floor; the planner will not plan below this, and the mode guard enforces it at runtime
+- **Units:** kWh (absolute)
+- **Effect direction:** Higher minimum ⇒ narrower usable band, less flexibility for pre-charge depth
+- **Exposed in wizard:** NO (hardware safety; not user-configurable)
 - **Plain-Czech draft:** *Absolutní nejnižší stav baterie bezpečný pro hardware. Plán nikdy neplánuje pod toto a box si ho vynutí za každou cenu.*
 
 **Impact:** Becomes `PlannerInputs.hw_min_kwh`. The mode guard also respects this floor; any attempt to discharge below it triggers forced mode guard protection. Typically fixed at ~20% for CBB 3F Home Plus Premium.
@@ -108,15 +108,15 @@ These are real-time or near-real-time values read from Home Assistant entity sta
 
 While not a raw config option, this value is derived at runtime and becomes a planner input.
 
-- **Key:** Computed in `_derive_planning_min_percent()`  
+- **Key:** Computed in `_derive_planning_min_percent()`
 - **File:Line:** `planning/forecast_update.py:912-914`
-- **Inputs:** 
+- **Inputs:**
   - `hw_min_percent` = hw_min_kwh / max_capacity (see §1.2.3)
   - Proxy bat_min value (read from boiler config if coupled; see §1.3.1)
 - **Effect:** The planner's defensive floor — it always charges back above this % before the next expensive window
-- **Default:** hw_min_percent (20%) + boiler proxy safety margin if available  
-- **Effect direction:** Higher percentage ⇒ deeper reserve, more pre-charging  
-- **Exposed in wizard:** NO (currently; see Part 2 for recommendations)  
+- **Default:** hw_min_percent (20%) + boiler proxy safety margin if available
+- **Effect direction:** Higher percentage ⇒ deeper reserve, more pre-charging
+- **Exposed in wizard:** NO (currently; see Part 2 for recommendations)
 - **Plain-Czech draft:** *Bezpečná hranice pro plánování, vždy výš než absolutní minimum. Počítá se z hardwarového minima a (je-li vázán boiler) z jeho minima. Příklad: 20% hardware + 3% marže = plánovat nad 23%.*
 
 **Impact:** Feeds `PlannerInputs.planning_min_percent`. Used to compute `planning_min_kwh` = max_capacity × (planning_min_percent / 100). The economic gate refuses all pre-charges that would leave the battery below this floor at the end of the horizon.
@@ -130,15 +130,15 @@ While not a raw config option, this value is derived at runtime and becomes a pl
 Spot and export prices are fetched at planning time from an external provider (cloud) and used to score every interval.
 
 #### 1.4.1 Spot Prices (Grid Import Prices)
-- **Fetch method:** `_get_spot_price_timeline()` (sensor method)  
+- **Fetch method:** `_get_spot_price_timeline()` (sensor method)
 - **File:Line:** `planning/forecast_update.py:414`
-- **Source:** OIG Cloud API call; results cached by coordinator  
-- **Data shape:** List of dicts: `[{"time": "2026-07-26T10:00:00+02:00", "price": 3.45, ...}, ...]`  
-- **Units:** CZK/kWh (Czech crowns per kilowatt-hour)  
-- **Horizon:** Typically 48 hours (144 intervals × 15 min) from current time  
-- **Effect:** Every hour's grid-charging cost and pre-charge ROI; core input to economic gate  
-- **Effect direction:** Higher prices ⇒ more pre-charging from cheap windows; lower prices ⇒ less pre-charging  
-- **Exposed in wizard:** YES (shown in timeline/forecast view; read-only)  
+- **Source:** OIG Cloud API call; results cached by coordinator
+- **Data shape:** List of dicts: `[{"time": "2026-07-26T10:00:00+02:00", "price": 3.45, ...}, ...]`
+- **Units:** CZK/kWh (Czech crowns per kilowatt-hour)
+- **Horizon:** Typically 48 hours (144 intervals × 15 min) from current time
+- **Effect:** Every hour's grid-charging cost and pre-charge ROI; core input to economic gate
+- **Effect direction:** Higher prices ⇒ more pre-charging from cheap windows; lower prices ⇒ less pre-charging
+- **Exposed in wizard:** YES (shown in timeline/forecast view; read-only)
 - **Plain-Czech draft:** *Ceny elektřiny ze sítě na příštích 48 hodin. Plán se snaží nabít baterii z levných hodin na pokrytí drahých. Bez těchto cen plán nemůže běžet.*
 
 **Impact:** Converted to `PlannerInputs.prices` list (prices[i] for interval i). Filtered to remove past intervals (§1.4.2). Clamped to [0, ∞) to defend against negative prices in raw data.
@@ -148,15 +148,15 @@ Spot and export prices are fetched at planning time from an external provider (c
 ---
 
 #### 1.4.2 Export Prices (Grid Export/FeedIn Prices)
-- **Fetch method:** `_get_export_price_timeline()` (sensor method)  
+- **Fetch method:** `_get_export_price_timeline()` (sensor method)
 - **File:Line:** `planning/forecast_update.py:439`
-- **Source:** OIG Cloud API call (often a separate endpoint from spot prices)  
-- **Data shape:** Same as spot prices  
-- **Units:** CZK/kWh  
-- **Horizon:** Same 48 hours  
-- **Effect:** Scoring for solar export scenarios (HOME III) and economic vs. store trade-off  
-- **Effect direction:** Higher export price ⇒ more export-favorable; lower ⇒ more store-favorable  
-- **Exposed in wizard:** NO (internal; affects timeline cost display)  
+- **Source:** OIG Cloud API call (often a separate endpoint from spot prices)
+- **Data shape:** Same as spot prices
+- **Units:** CZK/kWh
+- **Horizon:** Same 48 hours
+- **Effect:** Scoring for solar export scenarios (HOME III) and economic vs. store trade-off
+- **Effect direction:** Higher export price ⇒ more export-favorable; lower ⇒ more store-favorable
+- **Exposed in wizard:** NO (internal; affects timeline cost display)
 - **Plain-Czech draft:** *Ceny za export elektřiny do sítě (kdy se baterie vyprazdňuje a FVE vyvážím). Ovlivňuje, jestli je levnější vyvezout nebo si uskladnit.*
 
 **Impact:** Feeds timeline cost display and export financial scoring, but NOT directly into the core economic planner's mode decisions (which is based on spot prices + solar availability + load). Used primarily in timeline post-processing to show a "what if we exported this kWh" cost.
@@ -168,16 +168,16 @@ Spot and export prices are fetched at planning time from an external provider (c
 Solar forecast is read from a configured forecast service (typically forecast.solar or Solcast) at planning time.
 
 #### 1.5.1 Solar Generation Forecast
-- **Fetch method:** `sensor._get_solar_forecast()` (sensor method)  
+- **Fetch method:** `sensor._get_solar_forecast()` (sensor method)
 - **File:Line:** `planning/forecast_update.py:1438`
-- **Source:** Home Assistant helper entity (typically `sensor.forecast_solar_estimate_…` or `sensor.solcast_…`)  
-- **Data shape:** Dict mapping ISO timestamps to kWh: `{"2026-07-26T10:00:00": 0.125, "2026-07-26T10:15:00": 0.132, ...}`  
-- **Units:** kWh per 15-minute interval  
-- **Horizon:** 48 hours  
-- **Availability:** Often degrades after sunset (forecasts become zero or missing)  
-- **Effect:** Determines when the battery will fill from solar alone vs. needing grid; enables low-cost export windows  
-- **Effect direction:** Higher solar ⇒ less grid pre-charging needed; lower ⇒ more  
-- **Exposed in wizard:** YES (shown in forecast timeline; read-only)  
+- **Source:** Home Assistant helper entity (typically `sensor.forecast_solar_estimate_…` or `sensor.solcast_…`)
+- **Data shape:** Dict mapping ISO timestamps to kWh: `{"2026-07-26T10:00:00": 0.125, "2026-07-26T10:15:00": 0.132, ...}`
+- **Units:** kWh per 15-minute interval
+- **Horizon:** 48 hours
+- **Availability:** Often degrades after sunset (forecasts become zero or missing)
+- **Effect:** Determines when the battery will fill from solar alone vs. needing grid; enables low-cost export windows
+- **Effect direction:** Higher solar ⇒ less grid pre-charging needed; lower ⇒ more
+- **Exposed in wizard:** YES (shown in forecast timeline; read-only)
 - **Plain-Czech draft:** *Předpověď slunečního generování baterie na příštích 48 hodin. Vyšší sluneční produkce = méně nabíjení ze sítě. Bez té se plán přepočítá levněji, ale s vyšším rizikem nedostatku v noci.*
 
 **Impact:** Converted to `PlannerInputs.solar_forecast` list. Mapped to each interval's timestamp via `_build_solar_kwh_list()`. Solar values are clamped to [0, ∞) to defend against forecaster glitches (negative values).
@@ -191,18 +191,18 @@ Solar forecast is read from a configured forecast service (typically forecast.so
 Consumption (household load) forecast is derived from multiple sources at planning time.
 
 #### 1.6.1 Adaptive Load Profiles
-- **Fetch method:** `AdaptiveConsumptionHelper.get_adaptive_load_prediction()`  
+- **Fetch method:** `AdaptiveConsumptionHelper.get_adaptive_load_prediction()`
 - **File:Line:** `planning/forecast_update.py:1446`
-- **Source:** Home Assistant recorder (learned from 48+ hours of consumption history) via internal helper  
+- **Source:** Home Assistant recorder (learned from 48+ hours of consumption history) via internal helper
 - **Data shape:** Optional dict with "today_profile" and "tomorrow_profile", each containing:
-  - `hourly_consumption`: List of 24 kWh/hour values or dict of hour→kWh  
-  - `avg_kwh_h`: Fallback average if hourly data missing  
-  - `start_hour`: Offset if profiles don't start at midnight  
-- **Units:** kWh/hour (hourly rates; planner divides by 4 for 15-min interval)  
-- **Availability:** Unavailable until ~48h of history is recorded after first config  
-- **Effect:** Primary consumption forecast when available; captures diurnal patterns (high morning peak, midday dip, evening peak)  
-- **Effect direction:** Higher profile values ⇒ higher predicted consumption ⇒ more pre-charging  
-- **Exposed in wizard:** NO (internal; profiles built from historical data)  
+  - `hourly_consumption`: List of 24 kWh/hour values or dict of hour→kWh
+  - `avg_kwh_h`: Fallback average if hourly data missing
+  - `start_hour`: Offset if profiles don't start at midnight
+- **Units:** kWh/hour (hourly rates; planner divides by 4 for 15-min interval)
+- **Availability:** Unavailable until ~48h of history is recorded after first config
+- **Effect:** Primary consumption forecast when available; captures diurnal patterns (high morning peak, midday dip, evening peak)
+- **Effect direction:** Higher profile values ⇒ higher predicted consumption ⇒ more pre-charging
+- **Exposed in wizard:** NO (internal; profiles built from historical data)
 - **Plain-Czech draft:** *Naučený vzorec vaší spotřeby z minulých 2 dnů. Plán ví, že ráno i večer konzumujete víc, v poledne míň. Bez toho se odhaduje ze všeobecného průměru.*
 
 **Impact:** If profiles are usable (have hourly series or avg_kwh_h), the planner uses hourly values for each interval. If missing or corrupt, falls back to load_avg_sensors (§1.6.2).
@@ -210,15 +210,15 @@ Consumption (household load) forecast is derived from multiple sources at planni
 ---
 
 #### 1.6.2 Load Average Sensors
-- **Fetch method:** `sensor._get_load_avg_sensors()` (sensor method)  
+- **Fetch method:** `sensor._get_load_avg_sensors()` (sensor method)
 - **File:Line:** `planning/forecast_update.py:1439`
-- **Source:** Home Assistant historical statistics (integration: `sensor.oig_{box_id}_load_avg_*`)  
-- **Data shape:** Time-series of rolling averages (30-min, 1-hour, 4-hour)  
-- **Units:** kWh per 15-minute interval (averaged from historical 15-min consumption)  
-- **Availability:** Always available if power meter is configured  
-- **Effect:** Fallback consumption forecast when adaptive profiles unavailable or corrupt  
-- **Effect direction:** Higher historical average ⇒ higher predicted consumption  
-- **Exposed in wizard:** NO (internal metric)  
+- **Source:** Home Assistant historical statistics (integration: `sensor.oig_{box_id}_load_avg_*`)
+- **Data shape:** Time-series of rolling averages (30-min, 1-hour, 4-hour)
+- **Units:** kWh per 15-minute interval (averaged from historical 15-min consumption)
+- **Availability:** Always available if power meter is configured
+- **Effect:** Fallback consumption forecast when adaptive profiles unavailable or corrupt
+- **Effect direction:** Higher historical average ⇒ higher predicted consumption
+- **Exposed in wizard:** NO (internal metric)
 - **Plain-Czech draft:** *Průměrná spotřeba ze statistik za poslední hodinu. Pokud není naučený vzorec, plán používá tento průměr jako odhad.*
 
 **Impact:** Via `get_load_avg_for_timestamp()` in `data/input.py`. Used for every interval's `load_forecast[i]` if no usable adaptive profile exists.
@@ -226,15 +226,15 @@ Consumption (household load) forecast is derived from multiple sources at planni
 ---
 
 #### 1.6.3 Boiler Grid Load Overlay (Coupling)
-- **Fetch method:** `_read_boiler_grid_load_overlay()` (local)  
+- **Fetch method:** `_read_boiler_grid_load_overlay()` (local)
 - **File:Line:** `planning/forecast_update.py:545, 1467`
-- **Source:** Last boiler planner result stored in hass.data[DOMAIN][entry_id][KEY_BOILER_RUNTIMES]  
-- **Data shape:** Dict mapping interval start times to boiler load: `{datetime(...): 1.2, ...}`  
-- **Units:** kWh (boiler grid + battery load for this interval only)  
-- **Timing:** One-cycle lag — the boiler plan is from the *previous* battery planner cycle (typically 15–30 min old)  
-- **Effect:** Adds planned boiler heating load on top of historical consumption, so battery pre-charge accounts for boiler's upcoming grid draw  
-- **Effect direction:** Higher overlay ⇒ higher total predicted load ⇒ more pre-charging  
-- **Exposed in wizard:** NO (internal; boiler coupling detail)  
+- **Source:** Last boiler planner result stored in hass.data[DOMAIN][entry_id][KEY_BOILER_RUNTIMES]
+- **Data shape:** Dict mapping interval start times to boiler load: `{datetime(...): 1.2, ...}`
+- **Units:** kWh (boiler grid + battery load for this interval only)
+- **Timing:** One-cycle lag — the boiler plan is from the *previous* battery planner cycle (typically 15–30 min old)
+- **Effect:** Adds planned boiler heating load on top of historical consumption, so battery pre-charge accounts for boiler's upcoming grid draw
+- **Effect direction:** Higher overlay ⇒ higher total predicted load ⇒ more pre-charging
+- **Exposed in wizard:** NO (internal; boiler coupling detail)
 - **Plain-Czech draft:** *Plánovaná spotřeba bojleru ze sítě v příštích intervalech. Plán si ji vezme do úvahy, aby měla baterie dost energie na bojler i na domácnost.*
 
 **Impact:** Applied in `_apply_boiler_grid_load_overlay()` — for each interval in the overlay dict, the load_forecast[i] is incremented. One-cycle lag means the first battery forecast after a new boiler plan sees zero overlay; this is intentional (documented in R6 design).
@@ -248,13 +248,13 @@ Consumption (household load) forecast is derived from multiple sources at planni
 These are defined in code and not currently configurable, but act as planner behavior parameters. Per P8 audit, some should be promoted to config.
 
 #### 1.7.1 Hardware Minimum Fraction
-- **Constant:** `_HW_MIN_FRACTION = 0.20`  
-- **File:Line:** `presentation/detail_tabs_baseline.py:24` (also implicit in forecast_update.py:903)  
-- **Effect:** Hardware safety floor as a fraction of max capacity  
-- **Default:** 20% (0.20)  
-- **Used for:** `hw_min_kwh = max_capacity * 0.20`  
-- **Effect direction:** Higher ⇒ deeper floor, narrower usable band  
-- **Promotion candidate:** YES — could be exposed as "Hardware Safety Margin %" in expert settings  
+- **Constant:** `_HW_MIN_FRACTION = 0.20`
+- **File:Line:** `presentation/detail_tabs_baseline.py:24` (also implicit in forecast_update.py:903)
+- **Effect:** Hardware safety floor as a fraction of max capacity
+- **Default:** 20% (0.20)
+- **Used for:** `hw_min_kwh = max_capacity * 0.20`
+- **Effect direction:** Higher ⇒ deeper floor, narrower usable band
+- **Promotion candidate:** YES — could be exposed as "Hardware Safety Margin %" in expert settings
 - **Plain-Czech draft (if promoted):** *Absolutní bezpečnostní rezerva hardware jako procento kapacity. Zvýšení omezuje, kolik energy se dá použít. Typicky 20% pro CBB.*
 
 **Impact:** When boiler is not coupled, `planning_min_percent` = hw_min_percent (≈20%). When coupled, it may increase per boiler's min_soc_percent + safety margin (see §1.3.1).
@@ -262,13 +262,13 @@ These are defined in code and not currently configurable, but act as planner beh
 ---
 
 #### 1.7.2 Comfort Top-Up Percentile Threshold
-- **Constant:** `_COMFORT_CHEAP_PERCENTILE = 0.30`  
+- **Constant:** `_COMFORT_CHEAP_PERCENTILE = 0.30`
 - **File:Line:** `economic_planner.py:28`
-- **Effect:** Comfort SoC is topped up ONLY during intervals below this price percentile (i.e., the cheapest 30% of the horizon)  
-- **Default:** 0.30 (30th percentile = cheapest third)  
-- **Used for:** Filtering which intervals can contribute to comfort pre-charge  
-- **Effect direction:** Higher threshold ⇒ more intervals eligible for comfort charging  
-- **Promotion candidate:** MAYBE — expert-only; affects comfort aggressiveness  
+- **Effect:** Comfort SoC is topped up ONLY during intervals below this price percentile (i.e., the cheapest 30% of the horizon)
+- **Default:** 0.30 (30th percentile = cheapest third)
+- **Used for:** Filtering which intervals can contribute to comfort pre-charge
+- **Effect direction:** Higher threshold ⇒ more intervals eligible for comfort charging
+- **Promotion candidate:** MAYBE — expert-only; affects comfort aggressiveness
 - **Plain-Czech draft (if promoted):** *Která procenta "levných" cen se počítají pro komfortní nabíjení. 30% = jen v nejlevnější třetině hodin. Nižší = riskantní, vyšší = agresivněji nabíjet.*
 
 **Impact:** In `economic_planner.py:plan_battery_schedule()`, during comfort charging phase, only intervals at or below the 30th percentile price are considered eligible. Above this threshold, comfort charging is rejected (battery allowed to descend).
@@ -276,13 +276,13 @@ These are defined in code and not currently configurable, but act as planner beh
 ---
 
 #### 1.7.3 Mode Guard Window Duration
-- **Constant:** `MODE_GUARD_MINUTES = 60`  
+- **Constant:** `MODE_GUARD_MINUTES = 60`
 - **File:Line:** `planning/forecast_update.py:42`
-- **Effect:** After a mode change, the mode guard prevents switching back for at least this duration to avoid oscillation  
-- **Default:** 60 minutes (4 × 15-min intervals)  
-- **Used for:** `build_plan_lock()` in mode_guard_module  
-- **Effect direction:** Longer guard ⇒ stickier modes, fewer switches; shorter ⇒ more adaptive  
-- **Promotion candidate:** MAYBE — expert-only; affects mode stability  
+- **Effect:** After a mode change, the mode guard prevents switching back for at least this duration to avoid oscillation
+- **Default:** 60 minutes (4 × 15-min intervals)
+- **Used for:** `build_plan_lock()` in mode_guard_module
+- **Effect direction:** Longer guard ⇒ stickier modes, fewer switches; shorter ⇒ more adaptive
+- **Promotion candidate:** MAYBE — expert-only; affects mode stability
 - **Plain-Czech draft (if promoted):** *Jak dlouho se reżim drží po přepnutí, aby se neměnil "příliš často". 60 minut = jednou za hodinu maximum. Vyšší = stabilnější, nižší = více adaptivní.*
 
 **Impact:** After any mode change, a "lock" is recorded with lock_until = now + 60 minutes. The mode guard refuses mode changes during this window, even if conditions favor a different mode. Protects against hysteresis (rapid flip-flop between HOME_I and HOME_III).
@@ -290,13 +290,13 @@ These are defined in code and not currently configurable, but act as planner beh
 ---
 
 #### 1.7.4 Minimum Mode Duration
-- **Constant:** `MIN_MODE_DURATION` dict in `types.py:131-136`  
-- **File:Line:** `types.py:131-136`, enforced in `mode_guard.enforce_min_mode_duration()`  
-- **Effect:** Each mode must run for at least this many intervals to avoid short bursts  
-- **Default:** HOME_UPS ≥ 2 intervals (30 min), others ≥ 1 interval (15 min)  
-- **Used for:** Post-planning smoothing; extends short HOME_UPS windows to ≥30 min  
-- **Effect direction:** Longer minimum ⇒ fewer, longer mode windows; shorter ⇒ more granular  
-- **Promotion candidate:** MAYBE — expert-only; affects battery wear vs. responsiveness trade-off  
+- **Constant:** `MIN_MODE_DURATION` dict in `types.py:131-136`
+- **File:Line:** `types.py:131-136`, enforced in `mode_guard.enforce_min_mode_duration()`
+- **Effect:** Each mode must run for at least this many intervals to avoid short bursts
+- **Default:** HOME_UPS ≥ 2 intervals (30 min), others ≥ 1 interval (15 min)
+- **Used for:** Post-planning smoothing; extends short HOME_UPS windows to ≥30 min
+- **Effect direction:** Longer minimum ⇒ fewer, longer mode windows; shorter ⇒ more granular
+- **Promotion candidate:** MAYBE — expert-only; affects battery wear vs. responsiveness trade-off
 - **Plain-Czech draft (if promoted):** *Minimální doba, kterou se reżim drží. Např. UPS musí běžet alespoň 30 minut, aby se vyplatilo. Nižší = více přepínání, vyšší = delší periody.*
 
 **Impact:** After `plan_battery_schedule()` returns modes, `enforce_min_mode_duration()` scans for windows shorter than the minimum and extends them forward, merging with adjacent intervals. Prevents short UPS "spikes" that would waste energy on switching overhead.
@@ -304,13 +304,13 @@ These are defined in code and not currently configurable, but act as planner beh
 ---
 
 #### 1.7.5 Planning Horizon Maximum Intervals
-- **Constant:** `max_intervals = 36 * 4` (144 intervals)  
+- **Constant:** `max_intervals = 36 * 4` (144 intervals)
 - **File:Line:** `planning/forecast_update.py:883`
-- **Effect:** Planner is capped to this many intervals (~36 hours from current time)  
-- **Default:** 144 intervals = 36 × 4 intervals/hour × 15 min/interval = 36 hours  
-- **Used for:** Truncating spot prices, load, solar if longer data is fetched  
-- **Effect direction:** Longer horizon ⇒ planner can see further ahead (more expensive windows), risk of stale data; shorter ⇒ more responsive, less future visibility  
-- **Promotion candidate:** NO — internal optimization; no user value in exposing  
+- **Effect:** Planner is capped to this many intervals (~36 hours from current time)
+- **Default:** 144 intervals = 36 × 4 intervals/hour × 15 min/interval = 36 hours
+- **Used for:** Truncating spot prices, load, solar if longer data is fetched
+- **Effect direction:** Longer horizon ⇒ planner can see further ahead (more expensive windows), risk of stale data; shorter ⇒ more responsive, less future visibility
+- **Promotion candidate:** NO — internal optimization; no user value in exposing
 - **Plain-Czech draft:** *Jak далeko dopředu si plán počítá. 36 hodin obvykle stačí na pokrytí "drahého" období. Delší = lepší viditelnost, ale pomalejší výpočet.*
 
 **Impact:** If spot_prices, export_prices, load_forecast, solar_kwh_list are longer than 144 intervals, they are silently truncated. This prevents runaway computation and ensures prices don't span >48 hours (most forecasters provide ~48h, so this is rarely hit).
@@ -318,13 +318,13 @@ These are defined in code and not currently configurable, but act as planner beh
 ---
 
 #### 1.7.6 Round-Trip Efficiency (AC-AC)
-- **Constant:** `DEFAULT_ROUND_TRIP_EFFICIENCY = DEFAULT_EFFICIENCY × DEFAULT_CHARGE_EFFICIENCY` = 0.882 × 0.95 = 0.8379  
+- **Constant:** `DEFAULT_ROUND_TRIP_EFFICIENCY = DEFAULT_EFFICIENCY × DEFAULT_CHARGE_EFFICIENCY` = 0.882 × 0.95 = 0.8379
 - **File:Line:** `economic_planner_types.py:21`, `types.py:86-87`
-- **Effect:** AC grid ⇒ battery ⇒ AC load efficiency. Used by the economic gate (cheap/η < expensive) to decide if pre-charging pays off  
-- **Default:** 0.8379 (83.79%)  
-- **Used for:** Clamping `directional_efficiency` in `_round_trip_to_directional()`, and in `PlannerInputs.round_trip_efficiency`  
-- **Effect direction:** Higher efficiency ⇒ cheaper to store energy ⇒ more pre-charging; lower ⇒ more expensive ⇒ less  
-- **Promotion candidate:** YES — per P8 audit; should be read from battery health sensor or config  
+- **Effect:** AC grid ⇒ battery ⇒ AC load efficiency. Used by the economic gate (cheap/η < expensive) to decide if pre-charging pays off
+- **Default:** 0.8379 (83.79%)
+- **Used for:** Clamping `directional_efficiency` in `_round_trip_to_directional()`, and in `PlannerInputs.round_trip_efficiency`
+- **Effect direction:** Higher efficiency ⇒ cheaper to store energy ⇒ more pre-charging; lower ⇒ more expensive ⇒ less
+- **Promotion candidate:** YES — per P8 audit; should be read from battery health sensor or config
 - **Plain-Czech draft (if promoted):** *Účinnost baterie při nabíjení a vybíjení. 84% = když nabiju 100 Wh ze sítě, jen 84 Wh se vrátí do domácnosti. Vyšší = levnější uskladnění, více nabíjení.*
 
 **Impact:** In `_simulate_interval()` and economic gate logic:
@@ -337,13 +337,13 @@ Note: The planner deliberately uses the constant (not a sensor) to ensure all de
 ---
 
 #### 1.7.7 Holding SoC Threshold (Balancing)
-- **Constant:** `_HOLDING_SOC_THRESHOLD = 97.0` (%)  
+- **Constant:** `_HOLDING_SOC_THRESHOLD = 97.0` (%)
 - **File:Line:** `balancing/core.py:629`
-- **Effect:** When battery SoC is ≥97%, it is considered "at holding" and the balancing manager maintains it there  
-- **Default:** 97%  
-- **Used for:** Balancing state machine; determines when holding period begins  
-- **Effect direction:** Higher threshold ⇒ balancing starts at higher SoC; lower ⇒ earlier  
-- **Promotion candidate:** MAYBE — expert-only; affects balancing timing  
+- **Effect:** When battery SoC is ≥97%, it is considered "at holding" and the balancing manager maintains it there
+- **Default:** 97%
+- **Used for:** Balancing state machine; determines when holding period begins
+- **Effect direction:** Higher threshold ⇒ balancing starts at higher SoC; lower ⇒ earlier
+- **Promotion candidate:** MAYBE — expert-only; affects balancing timing
 - **Plain-Czech draft (if promoted):** *Hranice pro začátek "udržování" baterie na 100% během vyvažování. 97% = jakmile je baterie nad 97%, je považována za "drženou na plnou". Nižší = dříve začít, vyšší = později.*
 
 **Impact:** Used in `BalancingManager.is_holding()` to determine if the current SoC qualifies for "holding" state (attempting to maintain 100% during the 3-hour holding window). This is separate from planner min/max logic; it gates when the balancing manager activates its charge-hold discharge cycle.
@@ -494,10 +494,10 @@ The narrowest entry point for a dry-run simulator (accepting synthetic inputs wi
 def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
     """
     Core economic planning engine.
-    
+
     Inputs: PlannerInputs dataclass (all synthetic, no Home Assistant calls)
     Returns: PlannerResult with modes[], decisions[], total_cost, states[]
-    
+
     Pure function; no I/O.
     """
 ```
@@ -848,9 +848,9 @@ custom_components/oig_cloud/battery_forecast/
 | **Min Mode Duration** | Hardcoded `MIN_MODE_DURATION` dict | None — NOT in box telemetry | Hardcoded | Keep hardcoded (safety constraint) | UPS ≥30 min to avoid churn |
 | **Box Floor Safety Margin** | Hardcoded `box_floor_safety_margin_pct` ~309 in forecast_update.py | (Not found in sensor inventory) | Hardcoded | **Verify existence and usage** | Appears in brief but not located in current code |
 
-**Total mapped rows:** 19 planner inputs  
-**Box fields found:** 4 direct sensors (SoC%, min%, boiler state, installed capacity)  
-**Cloud/Config-only inputs:** 8 (prices, solar, comfort %, expensive %, charge rate, load profiles, etc.)  
+**Total mapped rows:** 19 planner inputs
+**Box fields found:** 4 direct sensors (SoC%, min%, boiler state, installed capacity)
+**Cloud/Config-only inputs:** 8 (prices, solar, comfort %, expensive %, charge rate, load profiles, etc.)
 **Missing/Hardcoded:** 5 (efficiency, HW min fraction, mode durations, etc.)
 
 ---
@@ -866,8 +866,8 @@ custom_components/oig_cloud/battery_forecast/
 | **Boiler Installed Power** | Boiler module sensor | `tbl_boiler_prms_p_set` | Data/BOILER | Sensor PRIMARY (diagnostic) | For capacity planning only |
 | **Boiler Temperature (if T-sensor available)** | Would be: `sensor.oig_{box_id}_boiler_temp_*` | (Not found in SENSOR_TYPES; gas boilers may lack T-sensor) | Missing/Optional | Sensor PRIMARY if available | Gas boiler (memory) lacks temperature sensor; electric heater (Devi) has one |
 
-**Total mapped rows:** 6 boiler-related inputs  
-**Box fields found:** 4 direct sensors (state, power, SSR relays, installed power)  
+**Total mapped rows:** 6 boiler-related inputs
+**Box fields found:** 4 direct sensors (state, power, SSR relays, installed power)
 **Temperature sensor:** Not in current inventory for gas boiler
 
 ---
@@ -913,7 +913,7 @@ custom_components/oig_cloud/battery_forecast/
 
 ### Missing Sensor: Box Floor Safety Margin
 
-**Verification required:** The brief mentions `box_floor_safety_margin_pct` at `forecast_update.py:~309`, but this field was not located in the current sensor inventory or code search. 
+**Verification required:** The brief mentions `box_floor_safety_margin_pct` at `forecast_update.py:~309`, but this field was not located in the current sensor inventory or code search.
 
 **Search result:**
 ```bash

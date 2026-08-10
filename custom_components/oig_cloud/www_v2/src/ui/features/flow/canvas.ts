@@ -422,13 +422,13 @@ export class OigFlowCanvas extends LitElement {
         chevron.setAttribute('points', `0,${-chevronSize} ${chevronSize * 1.2},0 0,${chevronSize}`);
         chevron.setAttribute('fill', line.color);
         chevron.setAttribute('opacity', '0.9');
-        
+
         const animateMotion = document.createElementNS(NS, 'animateMotion');
         animateMotion.setAttribute('dur', `${Math.max(1, line.params.speed / 1000)}s`);
         animateMotion.setAttribute('repeatCount', 'indefinite');
         animateMotion.setAttribute('path', `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`);
         animateMotion.setAttribute('rotate', 'auto');
-        
+
         chevron.appendChild(animateMotion);
         svgEl.appendChild(chevron);
       }

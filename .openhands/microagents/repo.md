@@ -56,4 +56,3 @@ This repository provides a Home Assistant integration for ČEZ Battery Box syste
    - Manual workflow for creating releases
    - Updates version information in manifest and release constants
    - Creates GitHub releases and tags
-

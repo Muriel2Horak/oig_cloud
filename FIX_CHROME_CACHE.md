@@ -122,5 +122,5 @@ Po vyčištění byste měli vidět **stejný layout jako v Safari**:
 
 ---
 
-**Vytvořeno:** 2026-02-16  
+**Vytvořeno:** 2026-02-16
 **Pro:** OIG Dashboard V2 deployment

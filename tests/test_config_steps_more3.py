@@ -80,4 +80,3 @@ async def test_pricing_distribution_invalid_fees_and_vat(monkeypatch):
     assert errors["fixed_price_vt_kwh"] == "invalid_price"
     assert errors["fixed_price_nt_kwh"] == "invalid_price"
     assert errors["vat_rate"] == "invalid_vat"
-

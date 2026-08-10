@@ -70,7 +70,7 @@ Projdi baseline výsledek:
 ```
 Pokud baseline dosáhne target:
   → Žádné nabíjení ze sítě (HOME III celou dobu)
-  
+
 Pokud baseline nedosáhne target:
   → Najdi nejlevnější intervaly PŘED deficity
   → Naplánuj UPS v těchto intervalech
@@ -145,19 +145,19 @@ Wave 4 (After Wave 3):
   - Definovat `IntervalState` pro výsledek simulace
   - Definovat `PlannerResult` s timeline a metrikami
   - Exportovat typy pro testy
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - čisté definice typů
   - **Skills**: Typové anotace, dataclasses
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES
   - Wave: Wave 1
-  
+
   **References:**
   - Pattern: `battery_forecast/config.py` - jak definovat config
   - Pattern: `battery_forecast/types.py` - TimelineInterval TypedDict
-  
+
   **Acceptance Criteria:**
   - [ ] Soubor vytvořen a kompiluje se bez chyb
   - [ ] Mypy/pyright kontrola projde
@@ -169,19 +169,19 @@ Wave 4 (After Wave 3):
   - Simuluje N intervalů v HOME III režimu
   - Vrací list `IntervalState` pro každý interval
   - Používá `physics.simulate_interval()` pro fyziku
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - přímá implementace
   - **Skills**: Základní Python, integrace s existujícím kódem
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES (závisí na Task 1)
   - Blocked By: Task 1
-  
+
   **References:**
   - API: `physics.simulate_interval()` - použít pro každý interval
   - Pattern: `hybrid_planning.py:simulate_trajectory()` - jako inspirace
-  
+
   **Acceptance Criteria:**
   - [ ] Simulace běží pro 96 intervalů (24h) za < 100ms
   - [ ] Vrací správné SOC pro jednoduché scénáře (pouze FVE, pouze spotřeba)
@@ -193,18 +193,18 @@ Wave 4 (After Wave 3):
   - Najde intervaly kde SOC < planning_min
   - Spočítá energii potřebnou k dosažení target
   - Vrací list deficitů s indexy a množstvím
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - logika prohledávání
   - **Skills**: List operations, algoritmy
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES (závisí na Task 2)
   - Blocked By: Task 2
-  
+
   **References:**
   - Pattern: `charging_plan.py:_collect_critical_intervals()` - jako inspirace
-  
+
   **Acceptance Criteria:**
   - [ ] Správně detekuje všechny deficity
   - [ ] Správně spočítá potřebnou energii
@@ -216,18 +216,18 @@ Wave 4 (After Wave 3):
   - Testy pro baseline simulaci
   - Testy pro detekci deficitů
   - Mock data (nezávislé na runtime)
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - unit testy
   - **Skills**: pytest, fixtures
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES (závisí na Task 2, 3)
   - Blocked By: Task 2, Task 3
-  
+
   **References:**
   - Pattern: `tests/test_hybrid_planning_more.py` - jak strukturovat testy
-  
+
   **Acceptance Criteria:**
   - [ ] 100% pokrytí Task 2 a Task 3
   - [ ] Všechny testy pass
@@ -241,19 +241,19 @@ Wave 4 (After Wave 3):
   - Pokud baseline dosáhne target → žádné UPS
   - Jinak najde nejlevnější intervaly před deficity
   - Používá greedy algoritmus: vždy nejlevnější dostupný interval
-  
+
   **Recommended Agent Profile:**
   - **Category**: `deep` - jádro algoritmu
   - **Skills**: Optimalizační algoritmy, numpy/pandas optional
-  
+
   **Parallelization:**
   - Can Run In Parallel: NO - je to hlavní logika
   - Blocked By: Task 2, Task 3
-  
+
   **References:**
   - Pattern: `hybrid_planning.py:_find_cheapest_candidate()` - jako inspirace
   - Pattern: `charging_plan.py:_apply_target_charging()` - ale zjednodušené
-  
+
   **Acceptance Criteria:**
   - [ ] Algoritmus vždy najde řešení pokud existuje
   - [ ] Používá nejlevnější možné intervaly
@@ -265,14 +265,14 @@ Wave 4 (After Wave 3):
   - Ověřit že `simulate_interval()` funguje správně
   - Přidat wrapper pokud potřeba
   - Ověřit konzistenci jednotek (kWh vs %)
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - integrace
   - **Skills**: API design, unit testy
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES
-  
+
   **Acceptance Criteria:**
   - [ ] Všechny 4 režimy správně simulovány
   - [ ] Konzistentní jednotky (vždy kWh interně)
@@ -284,14 +284,14 @@ Wave 4 (After Wave 3):
   - Vytvořit JSON soubory s historickými scénáři
   - Různé typy dní: slunečný, zatažený, polojasný
   - Různé ceny: levné, drahé, proměnlivé
-  
+
   **Recommended Agent Profile:**
   - **Category**: `unspecified-high` - datová příprava
   - **Skills**: Data processing, JSON
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES
-  
+
   **Acceptance Criteria:**
   - [ ] Min 5 různých scénářů (JSON soubory)
   - [ ] Každý scénář má: ceny, FVE prognózu, spotřebu, očekávaný výsledek
@@ -305,15 +305,15 @@ Wave 4 (After Wave 3):
   - AC (Acceptance Criteria) testy na historických datech
   - Každý test ověří jeden scénář
   - Výstup: PASS/FAIL s vysvětlením
-  
+
   **Recommended Agent Profile:**
   - **Category**: `deep` - validace
   - **Skills**: pytest, parametrized tests
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES (závisí na Task 5, 7)
   - Blocked By: Task 5, Task 7
-  
+
   **Acceptance Criteria:**
   - [ ] Min 10 AC testů
   - [ ] Každý test má jasný popis co ověřuje
@@ -326,15 +326,15 @@ Wave 4 (After Wave 3):
   - Nahradit volání novým `simple_planner`
   - Aktualizovat config flow pokud potřeba
   - Udržet zpětnou kompatibilitu pro config
-  
+
   **Recommended Agent Profile:**
   - **Category**: `unspecified-high` - integrace
   - **Skills**: Refactoring, HA integrace
-  
+
   **Parallelization:**
   - Can Run In Parallel: NO - postupně
   - Blocked By: Task 5
-  
+
   **Acceptance Criteria:**
   - [ ] Všechny staré volání nahrazeny
   - [ ] Config flow funguje
@@ -346,15 +346,15 @@ Wave 4 (After Wave 3):
   - Smazat `charging_plan.py` (zálohovat do `.old/`)
   - Smazat `charging_plan_utils.py` (zálohovat do `.old/`)
   - Aktualizovat `__init__.py` importy
-  
+
   **Recommended Agent Profile:**
   - **Category**: `quick` - úklid
   - **Skills**: Git, file operations
-  
+
   **Parallelization:**
   - Can Run In Parallel: NO - po Task 9
   - Blocked By: Task 9
-  
+
   **Acceptance Criteria:**
   - [ ] Staré moduly smazány/zálohovány
   - [ ] Nový kód funguje bez nich
@@ -368,15 +368,15 @@ Wave 4 (After Wave 3):
   - Porovnat s očekávaným chováním
   - Ověřit že žádné deficity
   - Ověřit ekonomičnost
-  
+
   **Recommended Agent Profile:**
   - **Category**: `deep` - validace
   - **Skills**: Data analysis, vizualizace
-  
+
   **Parallelization:**
   - Can Run In Parallel: NO
   - Blocked By: Task 9
-  
+
   **Acceptance Criteria:**
   - [ ] 7 dní dat zpracováno bez chyb
   - [ ] Žádný deficity pod planning_min
@@ -388,14 +388,14 @@ Wave 4 (After Wave 3):
   - Popis algoritmu (3 fáze)
   - Příklady použití
   - Troubleshooting
-  
+
   **Recommended Agent Profile:**
   - **Category**: `writing` - dokumentace
   - **Skills**: Technical writing, Markdown
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES
-  
+
   **Acceptance Criteria:**
   - [ ] Dokumentace kompletní a čitelná
   - [ ] Příklady funkční
@@ -406,14 +406,14 @@ Wave 4 (After Wave 3):
   - Měření času výpočtu pro 36h
   - Cíl: < 500ms na 36h plan
   - Profiling pokud pomalé
-  
+
   **Recommended Agent Profile:**
   - **Category**: `unspecified-high` - optimalizace
   - **Skills**: Profiling, performance tuning
-  
+
   **Parallelization:**
   - Can Run In Parallel: YES
-  
+
   **Acceptance Criteria:**
   - [ ] Průměrný čas < 500ms pro 36h
   - [ ] Max čas < 1s pro 36h

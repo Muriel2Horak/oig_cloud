@@ -22,24 +22,26 @@ try:
     from .sensor_types import SENSOR_TYPES
 
     _LOGGER.debug(
-        f"Successfully imported SENSOR_TYPES with {len(SENSOR_TYPES)} sensor types"
+        "Successfully imported SENSOR_TYPES with %s sensor types", len(SENSOR_TYPES)
     )
 
     # Debug informace o obsahu
     for sensor_type, config in SENSOR_TYPES.items():
         _LOGGER.debug(
-            f"Sensor type: {sensor_type}, category: {config.get('sensor_type_category', 'unknown')}"
+            "Sensor type: %s, category: %s",
+            sensor_type,
+            config.get("sensor_type_category", "unknown"),
         )
 
 except ImportError as e:
-    _LOGGER.error(f"Failed to import sensor_types.py: {e}")
+    _LOGGER.error("Failed to import sensor_types.py: %s", e)
     _LOGGER.error("This is a critical error - sensor_types.py must exist and be valid")
     raise
 except AttributeError as e:
-    _LOGGER.error(f"SENSOR_TYPES not found in sensor_types.py: {e}")
+    _LOGGER.error("SENSOR_TYPES not found in sensor_types.py: %s", e)
     raise
 except Exception as e:
-    _LOGGER.error(f"Unexpected error importing sensor_types.py: {e}")
+    _LOGGER.error("Unexpected error importing sensor_types.py: %s", e)
     raise
 
 
@@ -69,9 +71,7 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         "pricing": "enable_pricing",
         "chmu_warnings": "enable_chmu_warnings",
     }
-    battery_prediction_enabled = entry.options.get(
-        "enable_battery_prediction", False
-    )
+    battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
 
     if battery_prediction_enabled:
         expected.add("battery_health")
@@ -90,14 +90,18 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
             continue
 
         # Battery-related sensors (volitelné, společně s battery_prediction)
-        if category in {
-            "battery_prediction",
-            "battery_balancing",
-            "grid_charging_plan",
-            "battery_efficiency",
-            "planner_status",
-            "adaptive_profiles",
-        } and battery_prediction_enabled:
+        if (
+            category
+            in {
+                "battery_prediction",
+                "battery_balancing",
+                "grid_charging_plan",
+                "battery_efficiency",
+                "planner_status",
+                "adaptive_profiles",
+            }
+            and battery_prediction_enabled
+        ):
             expected.add(sensor_type)
             continue
 
@@ -113,7 +117,7 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
         if option_key and entry.options.get(option_key, False):
             expected.add(sensor_type)
 
-    _LOGGER.debug(f"Expected {len(expected)} sensor types based on configuration")
+    _LOGGER.debug("Expected %s sensor types based on configuration", len(expected))
     return expected
 
 
@@ -189,9 +193,8 @@ def _is_boiler_entity(entity_id: str, sensor_type: str) -> bool:
     non-boiler entities that merely mention boiler, e.g. the statistics
     sensor `hourly_real_boiler_kwh`.
     """
-    return (
-        entity_id.startswith("sensor.oig_bojler")
-        or sensor_type.startswith("boiler_")
+    return entity_id.startswith("sensor.oig_bojler") or sensor_type.startswith(
+        "boiler_"
     )
 
 
@@ -339,11 +342,11 @@ async def _cleanup_empty_devices_internal(
 
         if not entities:
             try:
-                _LOGGER.info(f"🗑️ Removing empty device: {device.name}")
+                _LOGGER.info("🗑️ Removing empty device: %s", device.name)
                 device_reg.async_remove_device(device.id)
                 removed += 1
             except Exception as e:
-                _LOGGER.error(f"Failed to remove empty device {device.name}: {e}")
+                _LOGGER.error("Failed to remove empty device %s: %s", device.name, e)
 
     return removed
 
@@ -391,9 +394,11 @@ async def _cleanup_all_orphaned_entities(
     total_removed = removed_sensors + removed_devices + removed_empty
 
     _LOGGER.info(
-        f"✅ Cleanup completed: {removed_sensors} deprecated sensors, "
-        f"{removed_devices} orphaned devices, {removed_empty} empty devices "
-        f"(total: {total_removed} items removed)"
+        "✅ Cleanup completed: %s deprecated sensors, %s orphaned devices, %s empty devices (total: %s items removed)",
+        removed_sensors,
+        removed_devices,
+        removed_empty,
+        total_removed,
     )
 
     return total_removed
@@ -472,7 +477,9 @@ def _resolve_box_id_and_store(
             if new_opts.get("box_id") != inverter_sn:
                 new_opts["box_id"] = inverter_sn
                 hass.config_entries.async_update_entry(entry, options=new_opts)
-                _LOGGER.info("Stored box_id=%s from title into entry options", inverter_sn)
+                _LOGGER.info(
+                    "Stored box_id=%s from title into entry options", inverter_sn
+                )
 
     if inverter_sn == "unknown":
         _LOGGER.error("No valid box_id/inverter_sn resolved, skipping sensor setup")
@@ -516,7 +523,7 @@ def _register_data_source_sensor(
         sensors.append(data_source_sensor)
         _LOGGER.info("Registered data source state sensor")
     except Exception as e:
-        _LOGGER.error(f"Error creating data source sensor: {e}", exc_info=True)
+        _LOGGER.error("Error creating data source sensor: %s", e, exc_info=True)
     return sensors
 
 
@@ -529,7 +536,7 @@ def _register_ai_status_sensor(
         sensors.append(OigCloudAiStatusSensor(hass, entry, box_id))
         _LOGGER.info("Registered AI status sensor")
     except Exception as e:
-        _LOGGER.error(f"Error creating AI status sensor: {e}", exc_info=True)
+        _LOGGER.error("Error creating AI status sensor: %s", e, exc_info=True)
     return sensors
 
 
@@ -542,7 +549,7 @@ def _register_ai_eval_sensor(
         sensors.append(OigCloudAiEvalSensor(hass, entry, box_id))
         _LOGGER.info("Registered AI eval sensor")
     except Exception as e:
-        _LOGGER.error(f"Error creating AI eval sensor: {e}", exc_info=True)
+        _LOGGER.error("Error creating AI eval sensor: %s", e, exc_info=True)
     return sensors
 
 
@@ -554,7 +561,7 @@ def _create_basic_sensors(coordinator: Any) -> List[Any]:
             for k, v in SENSOR_TYPES.items()
             if v.get("sensor_type_category") == "data"
         }
-        _LOGGER.debug(f"Found {len(data_sensors)} data sensors to create")
+        _LOGGER.debug("Found %s data sensors to create", len(data_sensors))
 
         for sensor_type, config in data_sensors.items():
             try:
@@ -565,27 +572,29 @@ def _create_basic_sensors(coordinator: Any) -> List[Any]:
                 if hasattr(sensor, "device_info") and sensor.device_info is not None:
                     if not isinstance(sensor.device_info, dict):
                         _LOGGER.error(
-                            f"Sensor {sensor_type} has invalid device_info type: {type(sensor.device_info)}"
+                            "Sensor %s has invalid device_info type: %s",
+                            sensor_type,
+                            type(sensor.device_info),
                         )
                         continue
 
                 basic_sensors.append(sensor)
-                _LOGGER.debug(f"Created data sensor: {sensor_type}")
+                _LOGGER.debug("Created data sensor: %s", sensor_type)
             except ImportError as e:
                 _LOGGER.error(
-                    f"OigCloudDataSensor not available for {sensor_type}: {e}"
+                    "OigCloudDataSensor not available for %s: %s", sensor_type, e
                 )
                 continue
             except Exception as e:
-                _LOGGER.error(f"Error creating data sensor {sensor_type}: {e}")
+                _LOGGER.error("Error creating data sensor %s: %s", sensor_type, e)
                 continue
 
         if basic_sensors:
-            _LOGGER.info(f"Registering {len(basic_sensors)} basic sensors")
+            _LOGGER.info("Registering %s basic sensors", len(basic_sensors))
         else:
             _LOGGER.warning("No basic sensors could be created")
     except Exception as e:
-        _LOGGER.error(f"Error initializing basic sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing basic sensors: %s", e, exc_info=True)
     return basic_sensors
 
 
@@ -601,9 +610,7 @@ def _create_computed_sensors(coordinator: Any) -> List[Any]:
             for k, v in SENSOR_TYPES.items()
             if v.get("sensor_type_category") == "computed"
         }
-        _LOGGER.debug(
-            f"Found {len(computed_sensor_types)} computed sensors to create"
-        )
+        _LOGGER.debug("Found %s computed sensors to create", len(computed_sensor_types))
 
         for sensor_type, config in computed_sensor_types.items():
             try:
@@ -615,34 +622,36 @@ def _create_computed_sensors(coordinator: Any) -> List[Any]:
                 if sensor_device_info is not None:
                     if not isinstance(sensor_device_info, dict):
                         _LOGGER.error(
-                            f"Computed sensor {sensor_type} has invalid device_info type: {type(sensor_device_info)}"
+                            "Computed sensor %s has invalid device_info type: %s",
+                            sensor_type,
+                            type(sensor_device_info),
                         )
                         continue
 
                 computed_sensors.append(sensor)
-                _LOGGER.debug(f"Created computed sensor: {sensor_type}")
+                _LOGGER.debug("Created computed sensor: %s", sensor_type)
             except ImportError as e:
                 _LOGGER.error(
-                    f"OigCloudComputedSensor not available for {sensor_type}: {e}"
+                    "OigCloudComputedSensor not available for %s: %s", sensor_type, e
                 )
                 continue
             except Exception as e:
-                _LOGGER.error(f"Error creating computed sensor {sensor_type}: {e}")
+                _LOGGER.error("Error creating computed sensor %s: %s", sensor_type, e)
                 continue
 
         if computed_sensors:
-            _LOGGER.info(f"Registering {len(computed_sensors)} computed sensors")
+            _LOGGER.info("Registering %s computed sensors", len(computed_sensors))
         else:
             _LOGGER.debug("No computed sensors found")
     except Exception as e:
-        _LOGGER.error(f"Error initializing computed sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing computed sensors: %s", e, exc_info=True)
     return computed_sensors
 
 
 def _create_extended_sensors(coordinator: Any, entry: ConfigEntry) -> List[Any]:
     extended_sensors: List[Any] = []
     extended_sensors_enabled = entry.options.get("enable_extended_sensors", False)
-    _LOGGER.debug(f"Extended sensors enabled from options: {extended_sensors_enabled}")
+    _LOGGER.debug("Extended sensors enabled from options: %s", extended_sensors_enabled)
 
     if extended_sensors_enabled is not True:
         _LOGGER.info("Extended sensors disabled - skipping creation")
@@ -658,9 +667,7 @@ def _create_extended_sensors(coordinator: Any, entry: ConfigEntry) -> List[Any]:
             for k, v in SENSOR_TYPES.items()
             if v.get("sensor_type_category") == "extended"
         }
-        _LOGGER.debug(
-            f"Found {len(extended_sensor_types)} extended sensors to create"
-        )
+        _LOGGER.debug("Found %s extended sensors to create", len(extended_sensor_types))
 
         for sensor_type, config in extended_sensor_types.items():
             try:
@@ -670,24 +677,22 @@ def _create_extended_sensors(coordinator: Any, entry: ConfigEntry) -> List[Any]:
                     coordinator, sensor_type, extended=True
                 )
                 extended_sensors.append(extended_sensor)
-                _LOGGER.debug(f"Created extended sensor: {sensor_type}")
+                _LOGGER.debug("Created extended sensor: %s", sensor_type)
             except ImportError as e:
                 _LOGGER.error(
-                    f"OigCloudDataSensor not available for {sensor_type}: {e}"
+                    "OigCloudDataSensor not available for %s: %s", sensor_type, e
                 )
                 continue
             except Exception as e:
-                _LOGGER.error(f"Error creating extended sensor {sensor_type}: {e}")
+                _LOGGER.error("Error creating extended sensor %s: %s", sensor_type, e)
                 continue
 
         if extended_sensors:
-            _LOGGER.info(
-                f"Registering {len(extended_sensors)} extended sensors"
-            )
+            _LOGGER.info("Registering %s extended sensors", len(extended_sensors))
         else:
             _LOGGER.debug("No extended sensors found")
     except Exception as e:
-        _LOGGER.error(f"Error initializing extended sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing extended sensors: %s", e, exc_info=True)
     return extended_sensors
 
 
@@ -703,7 +708,9 @@ def _create_statistics_sensors(
     )
     statistics_option = entry.options.get("enable_statistics", True)
     _LOGGER.info(
-        f"Statistics check: option={statistics_option}, hass.data={statistics_enabled}"
+        "Statistics check: option=%s, hass.data=%s",
+        statistics_option,
+        statistics_enabled,
     )
 
     if not statistics_enabled:
@@ -723,29 +730,27 @@ def _create_statistics_sensors(
             if config.get("sensor_type_category") != "statistics":
                 continue
             try:
-                _LOGGER.debug(f"Creating statistics sensor: {sensor_type}")
+                _LOGGER.debug("Creating statistics sensor: %s", sensor_type)
                 sensor = OigCloudStatisticsSensor(
                     coordinator, sensor_type, analytics_device_info
                 )
                 statistics_sensors.append(sensor)
-                _LOGGER.debug(
-                    f"Successfully created statistics sensor: {sensor_type}"
-                )
+                _LOGGER.debug("Successfully created statistics sensor: %s", sensor_type)
             except Exception as e:
                 _LOGGER.error(
-                    f"Error creating statistics sensor {sensor_type}: {e}",
+                    "Error creating statistics sensor %s: %s",
+                    sensor_type,
+                    e,
                     exc_info=True,
                 )
                 continue
 
         if statistics_sensors:
-            _LOGGER.info(
-                f"Registering {len(statistics_sensors)} statistics sensors"
-            )
+            _LOGGER.info("Registering %s statistics sensors", len(statistics_sensors))
         else:
             _LOGGER.debug("No statistics sensors found")
     except Exception as e:
-        _LOGGER.error(f"Error initializing statistics sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing statistics sensors: %s", e, exc_info=True)
     return statistics_sensors
 
 
@@ -769,10 +774,10 @@ def _create_solar_forecast_sensors(
         )
         _register_solar_forecast_sensors(hass, entry, solar_sensors)
     except ImportError as e:
-        _LOGGER.warning(f"Solar forecast sensors not available: {e}")
+        _LOGGER.warning("Solar forecast sensors not available: %s", e)
         return []
     except Exception as e:
-        _LOGGER.error(f"Error initializing solar forecast sensors: {e}")
+        _LOGGER.error("Error initializing solar forecast sensors: %s", e)
         return []
     return solar_sensors
 
@@ -817,7 +822,7 @@ def _create_shield_sensors(coordinator: Any) -> List[Any]:
             log_label="ServiceShield",
         )
     except Exception as e:
-        _LOGGER.error(f"Error initializing ServiceShield sensors: {e}")
+        _LOGGER.error("Error initializing ServiceShield sensors: %s", e)
         return []
 
 
@@ -835,7 +840,7 @@ def _create_notification_sensors(coordinator: Any) -> List[Any]:
             log_info=True,
         )
     except Exception as e:
-        _LOGGER.error(f"Error initializing notification sensors: {e}")
+        _LOGGER.error("Error initializing notification sensors: %s", e)
         return []
 
 
@@ -908,9 +913,7 @@ def _try_create_category_sensor(
     return sensor
 
 
-def _is_sensor_device_info_valid(
-    sensor: Any, log_label: str, sensor_type: str
-) -> bool:
+def _is_sensor_device_info_valid(sensor: Any, log_label: str, sensor_type: str) -> bool:
     if not hasattr(sensor, "device_info") or sensor.device_info is None:
         return True
     if isinstance(sensor.device_info, dict):
@@ -941,7 +944,7 @@ def _create_battery_prediction_sensors(
     analytics_device_info: Dict[str, Any],
 ) -> List[Any]:
     battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
-    _LOGGER.info(f"Battery prediction enabled: {battery_prediction_enabled}")
+    _LOGGER.info("Battery prediction enabled: %s", battery_prediction_enabled)
     if not battery_prediction_enabled:
         _LOGGER.info("Battery prediction sensors disabled - skipping creation")
         if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
@@ -951,7 +954,7 @@ def _create_battery_prediction_sensors(
     try:
         from .battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
     except ImportError as e:
-        _LOGGER.warning(f"Battery prediction sensors not available: {e}")
+        _LOGGER.warning("Battery prediction sensors not available: %s", e)
         return []
 
     try:
@@ -963,7 +966,7 @@ def _create_battery_prediction_sensors(
             OigCloudBatteryForecastSensor,
         )
     except Exception as e:
-        _LOGGER.error(f"Error initializing battery prediction sensors: {e}")
+        _LOGGER.error("Error initializing battery prediction sensors: %s", e)
         return []
 
 
@@ -1040,9 +1043,9 @@ def _connect_balancing_manager(
         return
     try:
         balancing_manager = hass.data[DOMAIN][entry.entry_id].get("balancing_manager")
-        hass.data[DOMAIN][entry.entry_id]["battery_forecast_sensors"] = (
-            battery_forecast_sensors
-        )
+        hass.data[DOMAIN][entry.entry_id][
+            "battery_forecast_sensors"
+        ] = battery_forecast_sensors
         if balancing_manager:
             forecast_sensor = battery_forecast_sensors[0]
             balancing_manager.set_forecast_sensor(forecast_sensor)
@@ -1063,9 +1066,7 @@ def _create_battery_support_sensors(
     sensors: List[Any] = []
 
     sensors.extend(
-        _create_battery_health_sensor(
-            coordinator, entry, analytics_device_info, hass
-        )
+        _create_battery_health_sensor(coordinator, entry, analytics_device_info, hass)
     )
     sensors.extend(
         _create_battery_balancing_sensors(
@@ -1074,9 +1075,7 @@ def _create_battery_support_sensors(
     )
 
     sensors.extend(
-        _create_grid_charging_plan_sensors(
-            coordinator, analytics_device_info
-        )
+        _create_grid_charging_plan_sensors(coordinator, analytics_device_info)
     )
     sensors.extend(
         _create_battery_efficiency_sensors(
@@ -1084,9 +1083,7 @@ def _create_battery_support_sensors(
         )
     )
     sensors.extend(
-        _create_planner_status_sensors(
-            coordinator, entry, analytics_device_info, hass
-        )
+        _create_planner_status_sensors(coordinator, entry, analytics_device_info, hass)
     )
     sensors.extend(
         _create_adaptive_profiles_sensors(
@@ -1116,7 +1113,7 @@ def _create_battery_health_sensor(
         _LOGGER.info("✅ Registered Battery Health sensor")
         return [health_sensor]
     except Exception as e:
-        _LOGGER.error(f"Failed to create Battery Health sensor: {e}")
+        _LOGGER.error("Failed to create Battery Health sensor: %s", e)
         return []
 
 
@@ -1129,7 +1126,7 @@ def _create_battery_balancing_sensors(
     try:
         from .entities.battery_balancing_sensor import OigCloudBatteryBalancingSensor
     except Exception as e:
-        _LOGGER.error(f"Error creating battery balancing sensors: {e}")
+        _LOGGER.error("Error creating battery balancing sensors: %s", e)
         return []
 
     balancing_sensors: List[Any] = []
@@ -1147,9 +1144,7 @@ def _create_battery_balancing_sensors(
         _LOGGER.debug("Created battery balancing sensor: %s", sensor_type)
 
     if balancing_sensors:
-        _LOGGER.info(
-            "Registering %d battery balancing sensors", len(balancing_sensors)
-        )
+        _LOGGER.info("Registering %d battery balancing sensors", len(balancing_sensors))
     return balancing_sensors
 
 
@@ -1162,7 +1157,7 @@ def _create_grid_charging_plan_sensors(
             OigCloudGridChargingPlanSensor,
         )
     except Exception as e:
-        _LOGGER.error(f"Error creating grid charging plan sensors: {e}")
+        _LOGGER.error("Error creating grid charging plan sensors: %s", e)
         return []
 
     grid_charging_sensors: List[Any] = []
@@ -1194,7 +1189,7 @@ def _create_battery_efficiency_sensors(
             OigCloudBatteryEfficiencySensor,
         )
     except Exception as e:
-        _LOGGER.error(f"Error creating battery efficiency sensors: {e}")
+        _LOGGER.error("Error creating battery efficiency sensors: %s", e)
         return []
 
     efficiency_sensors: List[Any] = []
@@ -1229,7 +1224,7 @@ def _create_planner_status_sensors(
             OigCloudPlannerRecommendedModeSensor,
         )
     except Exception as e:
-        _LOGGER.error(f"Error creating planner status sensors: {e}")
+        _LOGGER.error("Error creating planner status sensors: %s", e)
         return []
 
     planner_status_sensors: List[Any] = []
@@ -1264,7 +1259,7 @@ def _create_adaptive_profiles_sensors(
             OigCloudAdaptiveLoadProfilesSensor,
         )
     except Exception as e:
-        _LOGGER.error(f"Error creating adaptive load profiles sensors: {e}")
+        _LOGGER.error("Error creating adaptive load profiles sensors: %s", e)
         return []
 
     adaptive_sensors: List[Any] = []
@@ -1294,7 +1289,7 @@ def _create_pricing_sensors(
     analytics_device_info: Dict[str, Any],
 ) -> List[Any]:
     pricing_enabled = entry.options.get("enable_pricing", False)
-    _LOGGER.info(f"Pricing and spot prices enabled: {pricing_enabled}")
+    _LOGGER.info("Pricing and spot prices enabled: %s", pricing_enabled)
     if not pricing_enabled:
         _LOGGER.info("💰 Pricing disabled - skipping pricing and spot price sensors")
         return []
@@ -1317,12 +1312,12 @@ def _create_pricing_sensors(
             if v.get("sensor_type_category") == "pricing"
         }
 
-        _LOGGER.debug(f"Found {len(pricing_sensors)} pricing sensors to create")
+        _LOGGER.debug("Found %s pricing sensors to create", len(pricing_sensors))
 
         for sensor_type, config in pricing_sensors.items():
             try:
                 sensor: Any
-                _LOGGER.debug(f"Creating analytics sensor: {sensor_type}")
+                _LOGGER.debug("Creating analytics sensor: %s", sensor_type)
 
                 if sensor_type == "spot_price_current_15min":
                     sensor = SpotPrice15MinSensor(
@@ -1331,9 +1326,7 @@ def _create_pricing_sensors(
                         sensor_type,
                         cast(DeviceInfo, analytics_device_info),
                     )
-                    _LOGGER.debug(
-                        f"Created 15min spot price sensor: {sensor_type}"
-                    )
+                    _LOGGER.debug("Created 15min spot price sensor: %s", sensor_type)
                 elif sensor_type == "export_price_current_15min":
                     sensor = ExportPrice15MinSensor(
                         coordinator,
@@ -1341,44 +1334,44 @@ def _create_pricing_sensors(
                         sensor_type,
                         cast(DeviceInfo, analytics_device_info),
                     )
-                    _LOGGER.debug(
-                        f"Created 15min export price sensor: {sensor_type}"
-                    )
+                    _LOGGER.debug("Created 15min export price sensor: %s", sensor_type)
                 else:
                     sensor = OigCloudAnalyticsSensor(
                         coordinator, sensor_type, entry, analytics_device_info
                     )
-                    _LOGGER.debug(f"Created analytics sensor: {sensor_type}")
+                    _LOGGER.debug("Created analytics sensor: %s", sensor_type)
 
                 analytics_sensors.append(sensor)
-                _LOGGER.debug(
-                    f"Successfully created analytics sensor: {sensor_type}"
-                )
+                _LOGGER.debug("Successfully created analytics sensor: %s", sensor_type)
             except Exception as e:
                 _LOGGER.error(
-                    f"Failed to create analytics sensor {sensor_type}: {e}",
+                    "Failed to create analytics sensor %s: %s",
+                    sensor_type,
+                    e,
                     exc_info=True,
                 )
                 continue
 
         if analytics_sensors:
-            _LOGGER.info(f"Registering {len(analytics_sensors)} analytics sensors")
+            _LOGGER.info("Registering %s analytics sensors", len(analytics_sensors))
             _LOGGER.info(
-                f"Successfully registered {len(analytics_sensors)} analytics sensors"
+                "Successfully registered %s analytics sensors", len(analytics_sensors)
             )
 
             for sensor in analytics_sensors:
                 _LOGGER.debug(
-                    f"💰 Registered analytics sensor: {sensor.entity_id} (unique_id: {sensor.unique_id})"
+                    "💰 Registered analytics sensor: %s (unique_id: %s)",
+                    sensor.entity_id,
+                    sensor.unique_id,
                 )
         else:
             _LOGGER.warning("No analytics sensors could be created")
 
         return analytics_sensors
     except ImportError as e:
-        _LOGGER.error(f"OigCloudAnalyticsSensor not available: {e}")
+        _LOGGER.error("OigCloudAnalyticsSensor not available: %s", e)
     except Exception as e:
-        _LOGGER.error(f"Error initializing analytics sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing analytics sensors: %s", e, exc_info=True)
     return []
 
 
@@ -1388,7 +1381,7 @@ def _create_chmu_sensors(
     analytics_device_info: Dict[str, Any],
 ) -> List[Any]:
     chmu_enabled = entry.options.get("enable_chmu_warnings", False)
-    _LOGGER.info(f"ČHMÚ weather warnings enabled: {chmu_enabled}")
+    _LOGGER.info("ČHMÚ weather warnings enabled: %s", chmu_enabled)
     if not chmu_enabled:
         _LOGGER.info("🌦️ ČHMÚ warnings disabled - skipping weather warning sensors")
         return []
@@ -1407,11 +1400,11 @@ def _create_chmu_sensors(
             if v.get("sensor_type_category") == "chmu_warnings"
         }
 
-        _LOGGER.debug(f"Found {len(chmu_sensor_types)} ČHMÚ sensors to create")
+        _LOGGER.debug("Found %s ČHMÚ sensors to create", len(chmu_sensor_types))
 
         for sensor_type, config in chmu_sensor_types.items():
             try:
-                _LOGGER.debug(f"Creating ČHMÚ sensor: {sensor_type}")
+                _LOGGER.debug("Creating ČHMÚ sensor: %s", sensor_type)
 
                 sensor = OigCloudChmuSensor(
                     coordinator,
@@ -1420,24 +1413,26 @@ def _create_chmu_sensors(
                     cast(DeviceInfo, analytics_device_info),
                 )
                 chmu_sensors.append(sensor)
-                _LOGGER.debug(f"Created ČHMÚ sensor: {sensor_type}")
+                _LOGGER.debug("Created ČHMÚ sensor: %s", sensor_type)
 
             except Exception as e:
                 _LOGGER.error(
-                    f"Failed to create ČHMÚ sensor {sensor_type}: {e}",
+                    "Failed to create ČHMÚ sensor %s: %s",
+                    sensor_type,
+                    e,
                     exc_info=True,
                 )
                 continue
 
         if chmu_sensors:
-            _LOGGER.info(f"Registering {len(chmu_sensors)} ČHMÚ sensors")
-            _LOGGER.info(
-                f"Successfully registered {len(chmu_sensors)} ČHMÚ sensors"
-            )
+            _LOGGER.info("Registering %s ČHMÚ sensors", len(chmu_sensors))
+            _LOGGER.info("Successfully registered %s ČHMÚ sensors", len(chmu_sensors))
 
             for sensor in chmu_sensors:
                 _LOGGER.debug(
-                    f"🌦️ Registered ČHMÚ sensor: {sensor.entity_id} (unique_id: {sensor.unique_id})"
+                    "🌦️ Registered ČHMÚ sensor: %s (unique_id: %s)",
+                    sensor.entity_id,
+                    sensor.unique_id,
                 )
         else:
             _LOGGER.warning("No ČHMÚ sensors could be created")
@@ -1445,9 +1440,9 @@ def _create_chmu_sensors(
         return chmu_sensors
 
     except ImportError as e:
-        _LOGGER.error(f"OigCloudChmuSensor not available: {e}")
+        _LOGGER.error("OigCloudChmuSensor not available: %s", e)
     except Exception as e:
-        _LOGGER.error(f"Error initializing ČHMÚ sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing ČHMÚ sensors: %s", e, exc_info=True)
     return []
 
 
@@ -1493,15 +1488,13 @@ def _create_grid_cost_sensors(
 
 def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]:
     boiler_enabled = entry.options.get("enable_boiler", False)
-    _LOGGER.info(f"Boiler module enabled: {boiler_enabled}")
+    _LOGGER.info("Boiler module enabled: %s", boiler_enabled)
     if not boiler_enabled:
         _LOGGER.info("🔥 Boiler module disabled - skipping boiler sensors")
         return []
 
     try:
-        boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get(
-            "boiler_coordinator"
-        )
+        boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator")
 
         if boiler_coordinator is None:
             _LOGGER.warning(
@@ -1522,14 +1515,16 @@ def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]
         boiler_sensors = get_boiler_sensors(boiler_coordinator, runtime=runtime)
 
         if boiler_sensors:
-            _LOGGER.info(f"Registering {len(boiler_sensors)} boiler sensors")
+            _LOGGER.info("Registering %s boiler sensors", len(boiler_sensors))
             _LOGGER.info(
-                f"Successfully registered {len(boiler_sensors)} boiler sensors"
+                "Successfully registered %s boiler sensors", len(boiler_sensors)
             )
 
             for sensor in boiler_sensors:
                 _LOGGER.debug(
-                    f"🔥 Registered boiler sensor: {sensor.entity_id} (unique_id: {sensor.unique_id})"
+                    "🔥 Registered boiler sensor: %s (unique_id: %s)",
+                    sensor.entity_id,
+                    sensor.unique_id,
                 )
         else:
             _LOGGER.warning("No boiler sensors could be created")
@@ -1537,9 +1532,9 @@ def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]
         return boiler_sensors
 
     except ImportError as e:
-        _LOGGER.error(f"Boiler sensors not available: {e}")
+        _LOGGER.error("Boiler sensors not available: %s", e)
     except Exception as e:
-        _LOGGER.error(f"Error initializing boiler sensors: {e}", exc_info=True)
+        _LOGGER.error("Error initializing boiler sensors: %s", e, exc_info=True)
     return []
 
 
@@ -1549,10 +1544,11 @@ def _register_all_sensors(
     if all_sensors:
         _apply_legacy_entity_naming(all_sensors)
         _LOGGER.info(
-            f"🚀 Registering {len(all_sensors)} sensors in one batch (PERFORMANCE OPTIMIZATION)"
+            "🚀 Registering %s sensors in one batch (PERFORMANCE OPTIMIZATION)",
+            len(all_sensors),
         )
         async_add_entities(all_sensors, False)
-        _LOGGER.info(f"✅ All {len(all_sensors)} sensors registered successfully")
+        _LOGGER.info("✅ All %s sensors registered successfully", len(all_sensors))
     else:
         _LOGGER.warning("⚠️ No sensors were created during setup")
 
@@ -1625,7 +1621,7 @@ async def async_setup_entry(  # noqa: C901
             entity_reg, entry, expected_sensor_types, boiler_enabled=boiler_enabled
         )
     except Exception as e:
-        _LOGGER.error(f"Module-disable entity cleanup failed: {e}", exc_info=True)
+        _LOGGER.error("Module-disable entity cleanup failed: %s", e, exc_info=True)
 
     inverter_sn = _resolve_box_id_and_store(hass, entry, coordinator)
     if inverter_sn is None:
@@ -1638,7 +1634,7 @@ async def async_setup_entry(  # noqa: C901
 
     # ServiceShield Device
 
-    _LOGGER.debug(f"Created device_info objects for box_id: {inverter_sn}")
+    _LOGGER.debug("Created device_info objects for box_id: %s", inverter_sn)
 
     # ================================================================
     # SECTION 0: DATA SOURCE STATE SENSOR (always on)
@@ -1761,9 +1757,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třída: OigCloudComputedSensor (shared energy cache)
     # ================================================================
-    deferred_factories.append(
-        lambda: _create_grid_cost_sensors(coordinator, entry)
-    )
+    deferred_factories.append(lambda: _create_grid_cost_sensors(coordinator, entry))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1801,12 +1795,13 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     try:
         # Zkontrolujeme, zda máme data pro tuto config entry
         if DOMAIN not in hass.data:
-            _LOGGER.debug(f"Domain {DOMAIN} not found in hass.data during unload")
+            _LOGGER.debug("Domain %s not found in hass.data during unload", DOMAIN)
             return True
 
         if config_entry.entry_id not in hass.data[DOMAIN]:
             _LOGGER.debug(
-                f"Config entry {config_entry.entry_id} not found in domain data during unload"
+                "Config entry %s not found in domain data during unload",
+                config_entry.entry_id,
             )
             return True
 
@@ -1817,7 +1812,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
             coordinator = domain_data["coordinator"]
             if hasattr(coordinator, "async_shutdown"):
                 await coordinator.async_shutdown()
-            _LOGGER.debug(f"Coordinator shut down for entry {config_entry.entry_id}")
+            _LOGGER.debug("Coordinator shut down for entry %s", config_entry.entry_id)
 
         # Vyčistíme data pro tuto config entry
         del hass.data[DOMAIN][config_entry.entry_id]
@@ -1826,10 +1821,10 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         if not hass.data[DOMAIN]:
             del hass.data[DOMAIN]
 
-        _LOGGER.debug(f"Successfully unloaded config entry {config_entry.entry_id}")
+        _LOGGER.debug("Successfully unloaded config entry %s", config_entry.entry_id)
         return True
     except Exception as e:
-        _LOGGER.error(f"Error unloading config entry {config_entry.entry_id}: {e}")
+        _LOGGER.error("Error unloading config entry %s: %s", config_entry.entry_id, e)
         return False
 
 
@@ -1843,7 +1838,7 @@ async def _cleanup_empty_devices(
     from homeassistant.helpers.device_registry import DeviceEntryType
 
     _LOGGER.info(
-        f"Starting cleanup of empty devices for config entry {config_entry.entry_id}"
+        "Starting cleanup of empty devices for config entry %s", config_entry.entry_id
     )
 
     device_reg = dr.async_get(hass)
@@ -1851,7 +1846,7 @@ async def _cleanup_empty_devices(
 
     # Najdeme všechna zařízení pro tuto config entry
     devices = dr.async_entries_for_config_entry(device_reg, config_entry.entry_id)
-    _LOGGER.debug(f"Found {len(devices)} devices for config entry")
+    _LOGGER.debug("Found %s devices for config entry", len(devices))
 
     removed_count = 0
     kept_count = 0
@@ -1864,29 +1859,40 @@ async def _cleanup_empty_devices(
         )
 
         _LOGGER.debug(
-            f"Checking {device_type}: {device.name} (ID: {device.id}) - {len(entities)} entities"
+            "Checking %s: %s (ID: %s) - %s entities",
+            device_type,
+            device.name,
+            device.id,
+            len(entities),
         )
 
         # Pokud zařízení nemá žádné entity, smažeme ho
         if not entities:
             _LOGGER.warning(
-                f"Removing empty {device_type}: {device.name} ({device.id})"
+                "Removing empty %s: %s (%s)", device_type, device.name, device.id
             )
             try:
                 device_reg.async_remove_device(device.id)
                 removed_count += 1
-                _LOGGER.info(f"Successfully removed empty {device_type}: {device.name}")
+                _LOGGER.info(
+                    "Successfully removed empty %s: %s", device_type, device.name
+                )
             except Exception as e:
-                _LOGGER.error(f"Failed to remove {device_type} {device.name}: {e}")
+                _LOGGER.error("Failed to remove %s %s: %s", device_type, device.name, e)
         else:
             entity_names = [entity.entity_id for entity in entities]
             _LOGGER.debug(
-                f"Keeping {device_type} {device.name} with entities: {entity_names}"
+                "Keeping %s %s with entities: %s",
+                device_type,
+                device.name,
+                entity_names,
             )
             kept_count += 1
 
     _LOGGER.info(
-        f"Device cleanup completed: removed {removed_count}, kept {kept_count} devices"
+        "Device cleanup completed: removed %s, kept %s devices",
+        removed_count,
+        kept_count,
     )
 
 

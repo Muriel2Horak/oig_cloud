@@ -84,10 +84,10 @@ def calculate_solar_surplus(
     total_solar = sum(solar_forecast)   # kWh za den
     total_load = sum(load_forecast)   # kWh za den
     surplus = total_solar - total_load
-    
+
     projected_max = min(current_soc + surplus, max_capacity)
     can_reach = projected_max >= target_soc
-    
+
     return can_reach, projected_max
 ```
 
@@ -118,8 +118,8 @@ class IntervalData:
     solar_kwh: float       # FVE výroba v tomto intervalu
     load_kwh: float        # Spotřeba v tomto intervalu
     price_czk: float       # Cena za kWh
-    
-@dataclass  
+
+@dataclass
 class SimulatedInterval:
     interval: IntervalData
     start_soc: float       # SOC na začátku intervalu
@@ -146,13 +146,13 @@ def simulate_interval(
     if mode == 3:  # HOME_UPS
         # Nabíjení ze sítě + FVE
         grid_charge = min(ups_rate_kwh, max_capacity - start_soc)
-        solar_charge = min(interval.solar_kwh, 
+        solar_charge = min(interval.solar_kwh,
                           max_capacity - start_soc - grid_charge)
         total_charge = (grid_charge + solar_charge) * charge_efficiency
         end_soc = min(max_capacity, start_soc + total_charge)
         grid_import = interval.load_kwh + grid_charge
         grid_export = max(0, interval.solar_kwh - solar_charge)
-        
+
     elif mode == 0:  # HOME_I
         # Standardní: FVE -> spotřeba -> baterie
         if interval.solar_kwh >= interval.load_kwh:
@@ -167,19 +167,19 @@ def simulate_interval(
             available = max(0, start_soc - hw_min)
             usable = available * discharge_efficiency
             discharge = min(deficit, usable)
-            
+
             if discharge > 0:
                 end_soc = start_soc - discharge / discharge_efficiency
                 grid_import = deficit - discharge
             else:
                 end_soc = start_soc
                 grid_import = deficit
-                
+
             solar_charge = interval.solar_kwh
             grid_export = 0
-    
+
     # HOME_II a HOME_III implementace podobně...
-    
+
     return SimulatedInterval(
         interval=interval,
         start_soc=start_soc,
@@ -201,7 +201,7 @@ def simulate_timeline(
     """Simuluje celou timeline s danými režimy."""
     results = []
     soc = initial_soc
-    
+
     for interval, mode in zip(intervals, modes):
         result = simulate_interval(
             interval=interval,
@@ -212,7 +212,7 @@ def simulate_timeline(
         )
         results.append(result)
         soc = result.end_soc
-        
+
     return results
 ```
 
@@ -251,7 +251,7 @@ def optimize_charging(
     """
     Najde nejlevnější intervaly pro nabíjení tak,
     aby se odstranily všechny deficity.
-    
+
     Algoritmus:
     1. Pro každý deficit najdi všechny intervaly před ním
     2. Seřaď podle ceny (nejlevnější první)
@@ -260,7 +260,7 @@ def optimize_charging(
     5. Jinak pokračuj dalším nejlevnějším
     """
     charging_intervals = set()
-    
+
     for deficit_idx, deficit_amount in deficits:
         # Najdi všechny intervaly před deficitem
         candidates = [
@@ -268,15 +268,15 @@ def optimize_charging(
             for i in range(deficit_idx)
             if i not in charging_intervals
         ]
-        
+
         # Seřaď podle ceny
         candidates.sort(key=lambda x: x[1])
-        
+
         needed = deficit_amount
         for idx, price in candidates:
             if needed <= 0:
                 break
-                
+
             # Simuluj přidání UPS do tohoto intervalu
             test_intervals = list(intervals)
             test_intervals[idx] = IntervalData(
@@ -285,12 +285,12 @@ def optimize_charging(
                 load_kwh=intervals[idx].load_kwh,
                 price_czk=intervals[idx].price_czk
             )
-            
+
             test_modes = [0] * len(intervals)  # HOME_I
             for ci in charging_intervals:
                 test_modes[ci] = 3  # HOME_UPS
             test_modes[idx] = 3  # Přidáme UPS
-            
+
             simulated = simulate_timeline(
                 intervals=test_intervals,
                 initial_soc=initial_soc,
@@ -298,15 +298,15 @@ def optimize_charging(
                 max_capacity=max_capacity,
                 hw_min=hw_min
             )
-            
+
             # Kontrola zda je deficit opraven
             new_deficits = find_deficits(simulated, planning_min)
             deficit_fixed = all(d[0] != deficit_idx for d in new_deficits)
-            
+
             if deficit_fixed:
                 charging_intervals.add(idx)
                 needed -= ups_rate_kwh
-                
+
     return sorted(charging_intervals)
 ```
 
@@ -322,18 +322,18 @@ def generate_modes(
 ) -> List[int]:
     """
     Vygeneruje režim pro každý interval.
-    
+
     Logika:
     - Pokud FVE stačí: HOME_III (solar priority)
     - Pokud interval v charging_indices: HOME_UPS
     - Jinak: HOME_I (grid priority pro deficit)
     """
     modes = []
-    
+
     if solar_surplus_sufficient:
         # Dnes stačí FVE, celý den HOME_III
         return [2] * len(intervals)  # HOME_III
-    
+
     for i, interval in enumerate(intervals):
         if i in charging_indices:
             modes.append(3)  # HOME_UPS - nabíjení ze sítě
@@ -341,7 +341,7 @@ def generate_modes(
             modes.append(2)  # HOME_III - solar priority
         else:
             modes.append(0)  # HOME_I - grid priority (noc)
-            
+
     return modes
 ```
 
@@ -362,21 +362,21 @@ def plan_battery_schedule(
 ) -> Tuple[List[int], List[SimulatedInterval], str]:
     """
     Hlavní plánovací funkce.
-    
+
     Returns:
     - modes: Seznam režimů pro každý interval
     - simulated: Simulovaná timeline
     - reason: Důvod rozhodnutí (pro debug)
     """
-    
+
     # ========== FÁZE 1: Solar Surplus Analysis ==========
     total_solar = sum(i.solar_kwh for i in intervals)
     total_load = sum(i.load_kwh for i in intervals)
     solar_surplus = total_solar - total_load
-    
+
     projected_max = min(current_soc + solar_surplus, max_capacity)
     can_reach_target = projected_max >= target_soc
-    
+
     if can_reach_target:
         # FVE sama nabije na target, žádné nabíjení ze sítě
         modes = [2] * len(intervals)  # HOME_III celý den
@@ -388,7 +388,7 @@ def plan_battery_schedule(
             hw_min=hw_min
         )
         return modes, simulated, f"FVE surplus: {solar_surplus:.2f} kWh"
-    
+
     # ========== FÁZE 2: Simulace s HOME_I ==========
     baseline_modes = [0] * len(intervals)  # HOME_I
     baseline_sim = simulate_timeline(
@@ -398,14 +398,14 @@ def plan_battery_schedule(
         max_capacity=max_capacity,
         hw_min=hw_min
     )
-    
+
     deficits = find_deficits(baseline_sim, planning_min)
-    
+
     if not deficits:
         # Žádné deficity, FVE stačí i když nedosáhne targetu
         modes = [2] * len(intervals)  # HOME_III
         return modes, baseline_sim, "No deficits with FVE only"
-    
+
     # ========== FÁZE 3: Optimalizace Nabíjení ==========
     charging_indices = optimize_charging(
         intervals=intervals,
@@ -416,7 +416,7 @@ def plan_battery_schedule(
         planning_min=planning_min,
         ups_rate_kwh=ups_rate_kwh
     )
-    
+
     # ========== FÁZE 4: Generování Režimů ==========
     modes = []
     for i, interval in enumerate(intervals):
@@ -424,7 +424,7 @@ def plan_battery_schedule(
             modes.append(3)  # HOME_UPS
         else:
             modes.append(2 if interval.solar_kwh > 0 else 0)
-    
+
     # Finální simulace
     simulated = simulate_timeline(
         intervals=intervals,
@@ -433,12 +433,12 @@ def plan_battery_schedule(
         max_capacity=max_capacity,
         hw_min=hw_min
     )
-    
+
     # Ověření
     final_deficits = find_deficits(simulated, planning_min)
     if final_deficits:
         return modes, simulated, f"WARNING: Still deficits at {final_deficits}"
-    
+
     return modes, simulated, f"Optimized: {len(charging_indices)} UPS intervals"
 ```
 

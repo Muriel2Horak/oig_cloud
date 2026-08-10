@@ -5,7 +5,7 @@ Každá položka má unikátní ID (`PAR-XXX`) a acceptance kritéria (Given/Whe
 
 ## Legenda stavů
 - 🔴 Not started
-- 🟡 In progress  
+- 🟡 In progress
 - 🟢 Done
 - ⚪ Skipped (s explicitním souhlasem)
 
@@ -18,7 +18,7 @@ Každá položka má unikátní ID (`PAR-XXX`) a acceptance kritéria (Given/Whe
 ### PAR-001A: Header
 - Given: Dashboard je načten
 - When: Zobrazí se header
-- Then: 
+- Then:
   - Nadpis "⚡ Energetické Toky"
   - Čas aktuální
   - Status badge (výstrahy)

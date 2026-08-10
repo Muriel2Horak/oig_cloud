@@ -32,10 +32,10 @@ export const oigLog = {
   },
 
   error(message: string, error?: Error, data?: LogData): void {
-    const errorData = error ? { 
-      error: error.message, 
+    const errorData = error ? {
+      error: error.message,
       stack: error.stack,
-      ...data 
+      ...data
     } : data;
     console.error(LOG_PREFIX, formatMessage('error', message), errorData ?? '');
   },

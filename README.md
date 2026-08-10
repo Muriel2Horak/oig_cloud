@@ -19,7 +19,7 @@ Integrace umí čerpat telemetrii buď přímo z OIG Cloud, nebo z lokálního z
 - **Cloud**: oficiální OIG Cloud API (standardní režim)
 - **Local (OIG Proxy)**: lokální zdroj telemetrie pro rychlejší refresh a fallback (typicky v LAN)
 
-📖 Podrobnosti: [Zdroj telemetrie](./docs/user/DATA_SOURCE.md)  
+📖 Podrobnosti: [Zdroj telemetrie](./docs/user/DATA_SOURCE.md)
 🔗 OIG Proxy repo: https://github.com/Muriel2Horak/oig-proxy
 
 ### 📊 **Monitorování v reálném čase**

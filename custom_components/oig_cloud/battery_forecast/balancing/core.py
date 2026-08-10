@@ -216,7 +216,8 @@ class BalancingManager:
                 self._last_plan_mode = data.get("last_plan_mode")
 
             _LOGGER.info(
-                f"BalancingManager: State loaded. Last balancing: {self._last_balancing_ts}"
+                "BalancingManager: State loaded. Last balancing: %s",
+                self._last_balancing_ts,
             )
         except Exception as err:
             _LOGGER.warning(
@@ -290,7 +291,7 @@ class BalancingManager:
         Returns:
             BalancingPlan if created, None otherwise
         """
-        _LOGGER.debug(f"BalancingManager: check_balancing() CALLED (force={force})")
+        _LOGGER.debug("BalancingManager: check_balancing() CALLED (force=%s)", force)
 
         if not self._forecast_sensor:
             _LOGGER.debug(
@@ -317,7 +318,7 @@ class BalancingManager:
         cycle_days = self._get_cycle_days()
         cooldown_hours = self._get_cooldown_hours()
 
-        _LOGGER.info(f"📊 Balancing check: {days_since_last:.1f} days since last")
+        _LOGGER.info("📊 Balancing check: %.1f days since last", days_since_last)
 
         natural_plan = await self._maybe_apply_natural_plan()
         if natural_plan:
@@ -671,19 +672,19 @@ class BalancingManager:
             holding_duration = completion_time - holding_start
             if holding_duration >= timedelta(hours=holding_time_hours):
                 _LOGGER.info(
-                    f"Detected ongoing balancing completion: "
-                    f"SoC ≥99% since {holding_start.strftime('%Y-%m-%d %H:%M')} "
-                    f"({holding_duration.total_seconds() / 3600:.1f}h)"
+                    "Detected ongoing balancing completion: SoC ≥99%% since %s (%.1fh)",
+                    holding_start.strftime("%Y-%m-%d %H:%M"),
+                    holding_duration.total_seconds() / 3600,
                 )
                 return completion_time
 
         if latest_completion is not None:
             start, completion_time, holding_duration = latest_completion
             _LOGGER.info(
-                f"Detected last balancing completion: "
-                f"SoC ≥99% from {start.strftime('%Y-%m-%d %H:%M')} "
-                f"to {completion_time.strftime('%Y-%m-%d %H:%M')} "
-                f"({holding_duration.total_seconds() / 3600:.1f}h)"
+                "Detected last balancing completion: SoC ≥99%% from %s to %s (%.1fh)",
+                start.strftime("%Y-%m-%d %H:%M"),
+                completion_time.strftime("%Y-%m-%d %H:%M"),
+                holding_duration.total_seconds() / 3600,
             )
             return completion_time
         return None
@@ -749,7 +750,9 @@ class BalancingManager:
         await asyncio.sleep(0)
         _LOGGER.debug("_check_natural_balancing: Getting HYBRID timeline...")
         raw_timeline = self._get_hybrid_timeline()
-        timeline: list[dict[str, Any]] = raw_timeline if isinstance(raw_timeline, list) else []
+        timeline: list[dict[str, Any]] = (
+            raw_timeline if isinstance(raw_timeline, list) else []
+        )
         if not timeline:
             _LOGGER.warning(
                 "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
@@ -757,7 +760,7 @@ class BalancingManager:
             )
             return None
 
-        _LOGGER.debug(f"Timeline has {len(timeline)} intervals")
+        _LOGGER.debug("Timeline has %s intervals", len(timeline))
 
         # Look for 12 consecutive intervals (3 hours) at >= 99% SoC
         battery_capacity_kwh = self._get_battery_capacity_kwh()
@@ -824,22 +827,24 @@ class BalancingManager:
         soc_threshold = self._get_soc_threshold()
         if current_soc_percent < soc_threshold:
             _LOGGER.debug(
-                f"SoC {current_soc_percent:.1f}% below threshold {soc_threshold}%, "
-                "no opportunistic balancing"
+                "SoC %.1f%% below threshold %s%%, no opportunistic balancing",
+                current_soc_percent,
+                soc_threshold,
             )
             return None
 
         # Cost optimization: evaluate immediate vs. all delayed windows
         _LOGGER.info(
-            f"Evaluating balancing costs (SoC={current_soc_percent:.1f}%, "
-            f"threshold={soc_threshold}%)"
+            "Evaluating balancing costs (SoC=%.1f%%, threshold=%s%%)",
+            current_soc_percent,
+            soc_threshold,
         )
 
         # 1. Calculate immediate balancing cost
         immediate_cost = await self._calculate_immediate_balancing_cost(
             current_soc_percent
         )
-        _LOGGER.info(f"Immediate balancing cost: {immediate_cost:.2f} CZK")
+        _LOGGER.info("Immediate balancing cost: %.2f CZK", immediate_cost)
 
         # 2. Find all possible holding windows in next 48h
         prices = await self._get_spot_prices_48h()
@@ -950,8 +955,8 @@ class BalancingManager:
     ) -> tuple[datetime, datetime]:
         if best_window_start is None:
             _LOGGER.info(
-                f"✅ Immediate balancing selected: {immediate_cost:.2f} CZK "
-                f"(cheapest option)"
+                "✅ Immediate balancing selected: %.2f CZK (cheapest option)",
+                immediate_cost,
             )
             holding_start = datetime.now() + timedelta(hours=1)
             holding_end = holding_start + timedelta(hours=holding_time_hours)
@@ -964,9 +969,11 @@ class BalancingManager:
         holding_end = holding_start + timedelta(hours=holding_time_hours)
         savings = immediate_cost - min_cost
         _LOGGER.info(
-            f"⏰ Delayed balancing selected: {min_cost:.2f} CZK at "
-            f"{holding_start.strftime('%H:%M')} "
-            f"(vs immediate {immediate_cost:.2f} CZK, saving {savings:.2f} CZK)"
+            "⏰ Delayed balancing selected: %.2f CZK at %s (vs immediate %.2f CZK, saving %.2f CZK)",
+            min_cost,
+            holding_start.strftime("%H:%M"),
+            immediate_cost,
+            savings,
         )
         self._last_immediate_cost = immediate_cost
         self._last_selected_cost = min_cost
@@ -1025,9 +1032,12 @@ class BalancingManager:
         holding_end = holding_start + timedelta(hours=holding_time_hours)
 
         _LOGGER.info(
-            f"⚡ Forced balancing schedule: SoC {current_soc_percent:.1f}% → 100%, "
-            f"charging ~{charging_hours:.1f}h ({intervals_needed} intervals), "
-            f"holding {holding_start.strftime('%H:%M')}-{holding_end.strftime('%H:%M')}"
+            "⚡ Forced balancing schedule: SoC %.1f%% → 100%%, charging ~%.1fh (%s intervals), holding %s-%s",
+            current_soc_percent,
+            charging_hours,
+            intervals_needed,
+            holding_start.strftime("%H:%M"),
+            holding_end.strftime("%H:%M"),
         )
 
         # Plan aggressive UPS charging NOW
@@ -1095,8 +1105,10 @@ class BalancingManager:
             current_ts += timedelta(minutes=15)
 
         _LOGGER.debug(
-            f"Planned {intervals_needed} UPS intervals "
-            f"from {charging_start.strftime('%H:%M')} to {target_time.strftime('%H:%M')}"
+            "Planned %s UPS intervals from %s to %s",
+            intervals_needed,
+            charging_start.strftime("%H:%M"),
+            target_time.strftime("%H:%M"),
         )
 
         return intervals
@@ -1176,8 +1188,10 @@ class BalancingManager:
         immediate_cost = charge_needed_kwh * current_price
 
         _LOGGER.debug(
-            f"Immediate cost: {charge_needed_kwh:.2f} kWh * {current_price:.4f} CZK/kWh "
-            f"= {immediate_cost:.2f} CZK"
+            "Immediate cost: %.2f kWh * %.4f CZK/kWh = %.2f CZK",
+            charge_needed_kwh,
+            current_price,
+            immediate_cost,
         )
 
         return immediate_cost
@@ -1237,10 +1251,16 @@ class BalancingManager:
         total_cost = waiting_cost + charging_cost
 
         _LOGGER.debug(
-            f"Delayed cost for window {window_start.strftime('%H:%M')}: "
-            f"waiting={waiting_cost:.2f} CZK ({battery_loss_kwh:.2f} + {grid_consumption_kwh:.2f} kWh @ {avg_wait_price:.4f}), "
-            f"charging={charging_cost:.2f} CZK ({charge_needed_kwh:.2f} kWh @ {avg_charging_price:.4f}), "
-            f"total={total_cost:.2f} CZK"
+            "Delayed cost for window %s: waiting=%.2f CZK (%.2f + %.2f kWh @ %.4f), charging=%.2f CZK (%.2f kWh @ %.4f), total=%.2f CZK",
+            window_start.strftime("%H:%M"),
+            waiting_cost,
+            battery_loss_kwh,
+            grid_consumption_kwh,
+            avg_wait_price,
+            charging_cost,
+            charge_needed_kwh,
+            avg_charging_price,
+            total_cost,
         )
 
         return total_cost
@@ -1350,8 +1370,10 @@ class BalancingManager:
         if best_start:
             best_end = best_start + timedelta(hours=holding_time_hours)
             _LOGGER.debug(
-                f"Found cheap window: {best_start.strftime('%H:%M')} - "
-                f"{best_end.strftime('%H:%M')}, avg price {min_avg_price:.2f} CZK/kWh"
+                "Found cheap window: %s - %s, avg price %.2f CZK/kWh",
+                best_start.strftime("%H:%M"),
+                best_end.strftime("%H:%M"),
+                min_avg_price,
             )
             return best_start, best_end
 
@@ -1417,7 +1439,11 @@ class BalancingManager:
                 capacity = capacity_raw / 1000.0
 
             _LOGGER.debug(
-                f"Battery capacity: {capacity:.2f} kWh from {sensor_id} (raw={capacity_raw}, unit={unit})"
+                "Battery capacity: %.2f kWh from %s (raw=%s, unit=%s)",
+                capacity,
+                sensor_id,
+                capacity_raw,
+                unit,
             )
             return capacity
         except (ValueError, TypeError):
@@ -1439,7 +1465,9 @@ class BalancingManager:
 
         # Get active timeline from forecast sensor (_timeline_data attribute)
         raw_timeline = getattr(self._forecast_sensor, "_timeline_data", None)
-        timeline: list[dict[str, Any]] = raw_timeline if isinstance(raw_timeline, list) else []
+        timeline: list[dict[str, Any]] = (
+            raw_timeline if isinstance(raw_timeline, list) else []
+        )
         if not timeline:
             _LOGGER.warning(
                 "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
@@ -1461,10 +1489,10 @@ class BalancingManager:
                 if spot_price is not None:
                     prices[ts] = float(spot_price)
             except (ValueError, TypeError) as e:
-                _LOGGER.debug(f"Failed to parse interval timestamp/price: {e}")
+                _LOGGER.debug("Failed to parse interval timestamp/price: %s", e)
                 continue
 
-        _LOGGER.debug(f"Loaded {len(prices)} spot price intervals from forecast")
+        _LOGGER.debug("Loaded %s spot price intervals from forecast", len(prices))
         return prices
 
     def get_active_plan(self) -> Optional[BalancingPlan]:

@@ -27,7 +27,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
-  
+
   build: {
     outDir: 'dist',
     sourcemap: true,
@@ -45,7 +45,7 @@ export default defineConfig({
       }
     }
   },
-  
+
   server: {
     port: 5174,
     strictPort: true,
@@ -56,7 +56,7 @@ export default defineConfig({
       }
     }
   },
-  
+
   define: {
     'import.meta.env.VITE_VERSION': JSON.stringify(process.env.npm_package_version || '2.0.0')
   }

@@ -210,7 +210,13 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
         super().__setattr__(name, value)
         try:
             if object.__getattribute__(self, "_initialized"):
-                if name in ("_current_prediction", "_profiling_status", "_profiling_error", "_last_profile_reason", "_last_profile_created"):
+                if name in (
+                    "_current_prediction",
+                    "_profiling_status",
+                    "_profiling_error",
+                    "_last_profile_reason",
+                    "_last_profile_created",
+                ):
                     self._refresh_attrs()
         except AttributeError:
             pass
@@ -311,7 +317,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
                     await self._create_and_update_profile()
 
                 except Exception as e:
-                    _LOGGER.error(f"❌ Profiling loop error: {e}", exc_info=True)
+                    _LOGGER.error("❌ Profiling loop error: %s", e, exc_info=True)
                     self._profiling_status = "error"
                     self._profiling_error = str(e)
                     self.async_schedule_update_ha_state(force_refresh=True)
@@ -323,7 +329,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             _LOGGER.info("Profiling loop cancelled")
             raise
         except Exception as e:
-            _LOGGER.error(f"Fatal profiling loop error: {e}", exc_info=True)
+            _LOGGER.error("Fatal profiling loop error: %s", e, exc_info=True)
 
     async def _wait_for_next_profile_window(self) -> None:
         """Počkat do dalšího profiling okna (00:30)."""
@@ -336,7 +342,9 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
 
         wait_seconds = (target_time - now).total_seconds()
         _LOGGER.info(
-            f"⏱️ Waiting {wait_seconds / 3600:.1f} hours until next profile window at {target_time}"
+            "⏱️ Waiting %.1f hours until next profile window at %s",
+            wait_seconds / 3600,
+            target_time,
         )
 
         await asyncio.sleep(wait_seconds)
@@ -368,7 +376,8 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             self._last_profile_reason = None
 
             _LOGGER.info(
-                f"✅ Profile updated: predicted {prediction.get('predicted_total_kwh', 0):.2f} kWh for next 24h"
+                "✅ Profile updated: predicted %.2f kWh for next 24h",
+                prediction.get("predicted_total_kwh", 0),
             )
         else:
             reason = self._last_profile_reason or "unknown"
@@ -386,12 +395,12 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
         if self._hass:
             self.async_write_ha_state()
 
-    # Notify dependent sensors (BatteryForecast) that profiles are ready
+            # Notify dependent sensors (BatteryForecast) that profiles are ready
             if prediction:  # Only signal if we have valid data
                 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
                 signal_name = f"oig_cloud_{self._box_id}_profiles_updated"
-                _LOGGER.debug(f"📡 Sending signal: {signal_name}")
+                _LOGGER.debug("📡 Sending signal: %s", signal_name)
                 async_dispatcher_send(self._hass, signal_name)
 
     # ============================================================================
@@ -527,7 +536,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             return series
 
         except Exception as e:
-            _LOGGER.error(f"Failed to load hourly series: {e}", exc_info=True)
+            _LOGGER.error("Failed to load hourly series: %s", e, exc_info=True)
             return []
 
     async def _get_earliest_statistics_start(
@@ -559,15 +568,13 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
 
         except Exception as e:
             _LOGGER.error(
-                f"Failed to resolve earliest statistics start: {e}", exc_info=True
+                "Failed to resolve earliest statistics start: %s", e, exc_info=True
             )
             return None
 
     def _build_daily_profiles(
         self, hourly_series: List[Tuple[datetime, float]]
-    ) -> Tuple[
-        Dict[date, List[float]], Dict[int, float], Dict[date, int]
-    ]:
+    ) -> Tuple[Dict[date, List[float]], Dict[int, float], Dict[date, int]]:
         """Zarovnat hodinová data na kalendářní dny a dopočítat chybějící hodiny."""
         if not hourly_series:
             return {}, {}, {}
@@ -822,7 +829,9 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
         """
         if len(current_data) != len(profile_data):
             _LOGGER.warning(
-                f"Invalid data length for similarity: {len(current_data)} != {len(profile_data)}"
+                "Invalid data length for similarity: %s != %s",
+                len(current_data),
+                len(profile_data),
             )
             return 0.0
 
@@ -866,7 +875,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             return float(similarity)
 
         except Exception as e:
-            _LOGGER.error(f"Failed to calculate similarity: {e}", exc_info=True)
+            _LOGGER.error("Failed to calculate similarity: %s", e, exc_info=True)
             return 0.0
 
     async def _find_best_matching_profile(
@@ -951,9 +960,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             self._last_profile_reason = "no_current_match"
             _LOGGER.debug("No current match data available")
             return None
-        if not _has_enough_current_match(
-            self, current_match, window["match_hours"]
-        ):
+        if not _has_enough_current_match(self, current_match, window["match_hours"]):
             return None
 
         profiles = self._build_72h_profiles(daily_profiles)
@@ -1038,7 +1045,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             return result
 
         except Exception as e:
-            _LOGGER.error(f"Failed to find matching profile: {e}", exc_info=True)
+            _LOGGER.error("Failed to find matching profile: %s", e, exc_info=True)
             self._last_profile_reason = "error"
             return None
 
@@ -1108,9 +1115,7 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
         is_weekend_today = now.weekday() >= 5
         is_weekend_tomorrow = (now.weekday() + 1) % 7 >= 5
 
-        name_suffix = self._build_profile_name_suffix(
-            sample_count, similarity_score
-        )
+        name_suffix = self._build_profile_name_suffix(sample_count, similarity_score)
         today_name_source, tomorrow_name_source = self._resolve_name_sources(
             prediction.get("matched_profile_full", []),
             today_hours,
@@ -1315,9 +1320,7 @@ def _has_enough_current_match(
         return True
     current_len = len(current_match) if current_match else 0
     sensor._last_profile_reason = f"not_enough_current_data_{current_len}"
-    _LOGGER.debug(
-        "Not enough current match data (%s/%s)", current_len, match_hours
-    )
+    _LOGGER.debug("Not enough current match data (%s/%s)", current_len, match_hours)
     return False
 
 

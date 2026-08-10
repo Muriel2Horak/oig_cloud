@@ -59,7 +59,7 @@
 **Doporučení:** přidat `test_migration_marker_present_after_commit` a `test_migration_marker_absent_after_restore`. **INFERRED** z textového rozporu v plánu.
 
 #### M-4. Dead-key záloha sdílí Store s migrační zálohou
-**Plán:** `Task 2` ukládá `snapshot` + `journal` do `oig_cloud.migration_backup_<entry_id>`. `Task 5` ukládá `removed_keys` do **stejného** Store (kód ukázaný v `:691-705`). 
+**Plán:** `Task 2` ukládá `snapshot` + `journal` do `oig_cloud.migration_backup_<entry_id>`. `Task 5` ukládá `removed_keys` do **stejného** Store (kód ukázaný v `:691-705`).
 **Důsledek:** Pokud `_entry_with_options` přijde o Store (vymazání, rotace logů), ztratí se obojí. Hůř: `strip_dead_keys` čte backup, **modifikuje ho** (přidává `removed_keys` + `backup_until_version`) a **přepisuje** – tím riskuje přepsání `journal` záznamů, pokud obě metody běží paralelně. Plán tuto koexistenci neřeší. **VERIFIED** plán `:691-705` ukazuje zápis bez `journal` merge.
 **Doporučení:** Buď dva oddělené Stores (`oig_cloud.dead_keys_<entry_id>` + `oig_cloud.migration_backup_<entry_id>`), nebo **explicitně serializovat přes `asyncio.Lock`**. Plán neříká ani jedno.
 

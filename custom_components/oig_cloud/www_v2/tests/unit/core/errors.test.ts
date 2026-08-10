@@ -191,11 +191,11 @@ describe('errors', () => {
         colno: 0,
         preventDefault: vi.fn(),
       } as unknown as ErrorEvent);
-      
+
       expect(getErrorHistory().length).toBeGreaterThan(0);
-      
+
       clearErrorHistory();
-      
+
       expect(getErrorHistory().length).toBe(0);
     });
   });

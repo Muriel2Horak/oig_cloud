@@ -227,6 +227,10 @@ astral==2.2 \
     --hash=sha256:b9ef70faf32e81a8ba174d21e8f29dc0b53b409ef035f27e0749ddc13cb5982a \
     --hash=sha256:e41d9967d5c48be421346552f0f4dedad43ff39a83574f5ff2ad32b6627b6fbe
     # via homeassistant
+astroid==4.0.4 \
+    --hash=sha256:52f39653876c7dec3e3afd4c2696920e05c83832b9737afc21928f2d2eb7a753 \
+    --hash=sha256:986fed8bcf79fb82c78b18a53352a0b287a73817d6dbcfba3162da36667c49a0
+    # via pylint
 async-interrupt==1.2.2 \
     --hash=sha256:0a8deb884acfb5fe55188a693ae8a4381bbbd2cb6e670dac83869489513eec2c \
     --hash=sha256:be4331a029b8625777905376a6dc1370984c8c810f30b79703f3ee039d262bf7
@@ -573,6 +577,10 @@ cffi==2.1.1 \
     #   cryptography
     #   pycares
     #   pynacl
+cfgv==3.5.0 \
+    --hash=sha256:a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0 \
+    --hash=sha256:d5b1034354820651caa73ede66a6294d6e95c1b00acc5e9b098e917404669132
+    # via pre-commit
 charset-normalizer==3.4.9 \
     --hash=sha256:0327fcd59a935777d83410750c50600ee9571af2846f71ce40f25b13da1ef380 \
     --hash=sha256:03d07803992c6c7bbc976327f34b18b6160327fc81cb82c9d504720ac0be3b62 \
@@ -751,6 +759,7 @@ colorama==0.4.6 ; os_name == 'nt' or sys_platform == 'win32' \
     # via
     #   build
     #   click
+    #   pylint
     #   pytest
     #   tqdm
 coverage==7.15.2 \
@@ -974,6 +983,14 @@ deprecated==1.3.1 \
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-semantic-conventions
+dill==0.4.1 \
+    --hash=sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d \
+    --hash=sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa
+    # via pylint
+distlib==0.4.3 \
+    --hash=sha256:4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b \
+    --hash=sha256:f152097224a0ae24be5a0f6bae1b9359af82133bce63f98a95f86cae1aede9ed
+    # via virtualenv
 distro==1.9.0 \
     --hash=sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed \
     --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
@@ -1073,7 +1090,10 @@ fastuuid==0.14.0 \
 filelock==3.32.2 \
     --hash=sha256:87dd94cf281e586d135fa51132b8e3d9a598b316e90377a288663c9321036c82 \
     --hash=sha256:c33351e1f49cae33414acbc6d56784e6ecee82514ec90795da1161fc4836b5b8
-    # via huggingface-hub
+    # via
+    #   huggingface-hub
+    #   python-discovery
+    #   virtualenv
 flake8==7.3.0 \
     --hash=sha256:b9696257b9ce8beb888cdbe31cf885c90d31928fe202be0889a7cdafad32f01e \
     --hash=sha256:fe044858146b9fc69b551a4b490d69cf960fcb78ad1edcb84e7fbb1b4a8e3872
@@ -1531,6 +1551,10 @@ icmplib==3.0.4 \
     --hash=sha256:336b75c6c23c5ce99ddec33f718fab09661f6ad698e35b6f1fc7cc0ecf809398 \
     --hash=sha256:57868f2cdb011418c0e1d5586b16d1fabd206569fe9652654c27b6b2d6a316de
     # via hass-nabucasa
+identify==2.6.19 \
+    --hash=sha256:20e6a87f786f768c092a721ad107fc9df0eb89347be9396cadf3f4abbd1fb78a \
+    --hash=sha256:6be5020c38fcb07da56c53733538a3081ea5aa70d36a156f83044bfbf9173842
+    # via pre-commit
 idna==3.18 \
     --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2 \
     --hash=sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848
@@ -1559,7 +1583,9 @@ iniconfig==2.3.0 \
 isort==7.0.0 \
     --hash=sha256:1bcabac8bc3c36c7fb7b98a76c8abb18e0f841a3ba81decac7691008592499c1 \
     --hash=sha256:5513527951aadb3ac4292a41a16cbc50dd1642432f5e8c20057d414bdafb4187
-    # via -r requirements-dev.in
+    # via
+    #   -r requirements-dev.in
+    #   pylint
 jinja2==3.1.6 \
     --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
     --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
@@ -1899,7 +1925,9 @@ mashumaro==3.22 \
 mccabe==0.7.0 \
     --hash=sha256:348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325 \
     --hash=sha256:6c2d30ab6be0e4a46919781807b4f0d834ebdd6c6e3dca0bda5a15f863427b6e
-    # via flake8
+    # via
+    #   flake8
+    #   pylint
 mock-open==1.4.0 \
     --hash=sha256:c3ecb6b8c32a5899a4f5bf4495083b598b520c698bba00e1ce2ace6e9c239100
     # via pytest-homeassistant-custom-component
@@ -2131,6 +2159,10 @@ netifaces==0.11.0 \
     --hash=sha256:e76c7f351e0444721e85f975ae92718e21c1f361bda946d60a214061de1f00a1 \
     --hash=sha256:eb4813b77d5df99903af4757ce980a98c4d702bbcb81f32a0b305a1537bdf0b1
     # via aiodiscover
+nodeenv==1.10.0 \
+    --hash=sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827 \
+    --hash=sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb
+    # via pre-commit
 numpy==2.3.2 \
     --hash=sha256:07b62978075b67eee4065b166d000d457c82a1efe726cce608b9db9dd66a73a5 \
     --hash=sha256:087ffc25890d89a43536f75c5fe8770922008758e8eeeef61733957041ed2f9b \
@@ -2464,13 +2496,20 @@ pipdeptree==2.26.1 \
 platformdirs==4.11.1 \
     --hash=sha256:2efd27d363e8dd2e661639ffb398865a5e0a46442a11d266bf375a0e0c10e386 \
     --hash=sha256:bb1af68078f25e2f3e111e2d43b8d536df41b73c8a684b40bb018223b66fae27
-    # via black
+    # via
+    #   black
+    #   pylint
+    #   virtualenv
 pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
     # via
     #   pytest
     #   pytest-cov
+pre-commit==4.6.1 \
+    --hash=sha256:03e809865c7d178b9979d06c761fcbfe6808fdaded8581a745bb110e52050421 \
+    --hash=sha256:0e3b2942510d1fb34eec167a3ec57331bf8442122f1153a9fb8b58f5c49b2717
+    # via -r requirements-dev.in
 propcache==0.5.2 \
     --hash=sha256:01c4fc7480cd0598bb4b57022df55b9ca296da7fc5a8760bd8451a7e63a7d427 \
     --hash=sha256:04dc2390d9edbbaef7461f33322555976ffddf0b650a038649d026358714e6c5 \
@@ -2892,6 +2931,10 @@ pyjwt==2.13.0 \
     #   homeassistant
     #   pycognito
     #   pygithub
+pylint==4.0.7 \
+    --hash=sha256:9b2d1d15791c84b77a4fe2aafe8f0d9570717e2dea06d53b19c105cf60275a52 \
+    --hash=sha256:be4a3111557a614411ed1fc89347ce4a8e1013a59e1f33d11485227a02e3304d
+    # via -r requirements-dev.in
 pylint-per-file-ignores==1.4.0 \
     --hash=sha256:0cd82d22551738b4e63a0aa1dab2a1fc4016e8f27f1429159616483711e122fd \
     --hash=sha256:c0de7b3d0169571aefaa1ac3a82a265641b8825b54a0b6f5ef27c3b76b988609
@@ -3078,6 +3121,10 @@ python-dateutil==2.9.0.post0 \
     # via
     #   botocore
     #   freezegun
+python-discovery==1.5.1 \
+    --hash=sha256:ac07f44cade589d954e9d6a1e1468539fdddd2cf676beb51da73e0f156b7c932 \
+    --hash=sha256:e2ea8b884cd1701f386eda8cf327b87743f1dc21b7f784470799537d95635384
+    # via virtualenv
 python-dotenv==1.2.2 \
     --hash=sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a \
     --hash=sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3
@@ -3214,6 +3261,7 @@ pyyaml==6.0.3 \
     #   annotatedyaml
     #   homeassistant
     #   huggingface-hub
+    #   pre-commit
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
@@ -3672,6 +3720,10 @@ tokenizers==0.23.1 \
     --hash=sha256:ea5a0ce170074329faaa8ea3f6400ecde604b6678192688533af80980daae71a \
     --hash=sha256:f836ca703b89ae07919a309f9651f7a88fd5a33d5f718ba5ad0870ec0256bad6
     # via litellm
+tomlkit==0.15.1 \
+    --hash=sha256:177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304 \
+    --hash=sha256:e25bbf38843005246210a12982776f27f99cb9be67160e14434d0c0d21ee1e97
+    # via pylint
 tqdm==4.67.1 \
     --hash=sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2 \
     --hash=sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2
@@ -3799,6 +3851,10 @@ uv==0.11.31 \
     # via
     #   -r requirements-dev.in
     #   homeassistant
+virtualenv==21.7.3 \
+    --hash=sha256:26dfda3c34f29bf1a3ca167426a67658d59979b9954e705aef60a5f724ce1773 \
+    --hash=sha256:5e9e287f5c808070eea3b40403d3368248e64b24f1b60bd9a36e85ac841d2c3e
+    # via pre-commit
 voluptuous==0.15.2 \
     --hash=sha256:016348bc7788a9af9520b1764ebd4de0df41fe2138ebe9e06fa036bf86a65566 \
     --hash=sha256:6ffcab32c4d3230b4d2af3a577c87e1908a714a11f6f95570456b1849b0279aa
