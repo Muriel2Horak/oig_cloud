@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -90,12 +91,17 @@ class MemoryStore:
     block_next_cache_save = False
     blocked_save_started = None
     blocked_save_release = None
+    blocked_cache_save_error = None
+    fail_next_load_keys = set()
 
     def __init__(self, _hass, version, key, **_kwargs):
         self.version = version
         self.key = key
 
     async def async_load(self):
+        if self.key in self.fail_next_load_keys:
+            self.fail_next_load_keys.remove(self.key)
+            raise RuntimeError("transient Store read failure")
         return copy.deepcopy(self.bucket.get(self.key))
 
     async def async_save(self, value):
@@ -108,6 +114,10 @@ class MemoryStore:
             self.block_next_cache_save = False
             self.blocked_save_started.set()
             await self.blocked_save_release.wait()
+            if self.blocked_cache_save_error is not None:
+                error = self.blocked_cache_save_error
+                self.blocked_cache_save_error = None
+                raise error
         self.bucket[self.key] = snapshot
 
     async def async_remove(self):
@@ -121,6 +131,8 @@ def make_sensor(monkeypatch, values=None, *, reset=False):
         MemoryStore.block_next_cache_save = False
         MemoryStore.blocked_save_started = None
         MemoryStore.blocked_save_release = None
+        MemoryStore.blocked_cache_save_error = None
+        MemoryStore.fail_next_load_keys = set()
     monkeypatch.setattr(module, "Store", MemoryStore)
     monkeypatch.setattr(solar_key_store, "Store", MemoryStore)
     sensor = OigCloudSolarForecastSensor(
@@ -765,3 +777,203 @@ async def test_repeated_cancel_keeps_cache_lock_until_newer_snapshot_can_win(
     assert "retry_state" not in stored
     assert sensor._last_forecast_data["total_today_kwh"] == 9.0
     assert sensor._durable_write_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_setup_recovers_provenance_before_registering_wall_clock(monkeypatch):
+    sensor = make_sensor(monkeypatch, reset=True)
+    private_key = "oig_cloud.solar_entry-retry-atomic"
+    MemoryStore.fail_next_load_keys = {private_key}
+    schedules = []
+    setup_recoveries = []
+    retry_timers = []
+
+    def track_time_change(_hass, callback, **_kwargs):
+        schedules.append(callback)
+        return lambda: None
+
+    def call_later(_hass, _delay, callback):
+        setup_recoveries.append(callback)
+        return lambda: None
+
+    def track_point(_hass, callback, when):
+        retry_timers.append((callback, when))
+        return lambda: None
+
+    monkeypatch.setattr(module, "async_track_time_change", track_time_change)
+    monkeypatch.setattr(module, "async_call_later", call_later, raising=False)
+    monkeypatch.setattr(module, "async_track_point_in_utc_time", track_point)
+    monkeypatch.setattr(sensor, "_should_fetch_data", lambda: False)
+
+    await sensor._async_initialize_after_add()
+
+    assert sensor._cache_provenance is None
+    assert schedules == []
+    assert len(setup_recoveries) == 1
+
+    recovered = setup_recoveries[0](NOW + timedelta(minutes=1))
+    if asyncio.iscoroutine(recovered):
+        await recovered
+
+    assert sensor._cache_provenance == build_cache_provenance(
+        "entry-retry-atomic", sensor._config_entry.options, 0
+    )
+    assert len(schedules) == 1
+
+    async def blocked_context(**_kwargs):
+        await asyncio.Event().wait()
+
+    sensor._async_capture_candidate_context = blocked_context
+    monkeypatch.setattr(module, "ATTEMPT_TIMEOUT_SECONDS", 0.01)
+
+    await schedules[0](SCHEDULED)
+
+    stored = MemoryStore.bucket[sensor._storage_key]
+    assert stored["retry_state"]["code"] == "timeout"
+    assert stored["retry_state"]["next_at"] == (
+        SCHEDULED + timedelta(minutes=15)
+    ).isoformat()
+    assert len(retry_timers) == 1
+
+
+@pytest.mark.asyncio
+async def test_cache_artifact_read_failure_retains_setup_provenance(monkeypatch):
+    sensor = make_sensor(monkeypatch, reset=True)
+    MemoryStore.fail_next_load_keys = {sensor._storage_key}
+    schedules = []
+    setup_recoveries = []
+
+    def track_time_change(_hass, callback, **_kwargs):
+        schedules.append(callback)
+        return lambda: None
+
+    def call_later(_hass, _delay, callback):
+        setup_recoveries.append(callback)
+        return lambda: None
+
+    monkeypatch.setattr(module, "async_track_time_change", track_time_change)
+    monkeypatch.setattr(module, "async_call_later", call_later, raising=False)
+    monkeypatch.setattr(sensor, "_should_fetch_data", lambda: False)
+
+    await sensor._async_initialize_after_add()
+
+    assert sensor._cache_provenance == build_cache_provenance(
+        "entry-retry-atomic", sensor._config_entry.options, 0
+    )
+    assert len(schedules) == 1
+    assert setup_recoveries == []
+
+
+@pytest.mark.asyncio
+async def test_accepted_commit_refreshes_loaded_source_provenance(monkeypatch):
+    sensor = make_sensor(monkeypatch, reset=True)
+    context = await request_context(
+        sensor,
+        request_id="accepted:coherent-provenance",
+        request_sequence=1,
+        occurrence_id="occurrence:accepted",
+    )
+    sensor._current_occurrence_id = context.occurrence_id
+    sensor._cache_provenance = None
+
+    assert await sensor.async_commit_candidate(
+        SolarCandidate(candidate(6.0), context)
+    )
+    assert sensor._cache_provenance == context.provenance()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["retry", "accepted"])
+async def test_cancelled_store_failure_is_consumed_without_raw_loop_diagnostic(
+    monkeypatch, caplog, path
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    state = retry_state(provenance)
+    occurrence_id = state["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    context = await request_context(
+        sensor,
+        request_id=f"request:{path}:storage-failure",
+        request_sequence=1,
+        occurrence_id=occurrence_id,
+    )
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    sentinel = "secret-bearing-store-message"
+    MemoryStore.blocked_cache_save_error = RuntimeError(sentinel)
+    loop_contexts = []
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, item: loop_contexts.append(item))
+    caplog.set_level(logging.WARNING)
+    caller = asyncio.create_task(
+        sensor._async_persist_retry_state(state, source_context=context)
+        if path == "retry"
+        else sensor.async_commit_candidate(SolarCandidate(candidate(4.0), context))
+    )
+    await MemoryStore.blocked_save_started.wait()
+    caller.cancel()
+    await asyncio.sleep(0)
+    caller.cancel()
+    await asyncio.sleep(0)
+    unload = asyncio.create_task(sensor.async_will_remove_from_hass())
+    await asyncio.sleep(0)
+
+    try:
+        assert caller.done() is False
+        assert unload.done() is False
+        assert len(sensor._durable_write_tasks) == 1
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(caller, unload, return_exceptions=True)
+        for _ in range(3):
+            await asyncio.sleep(0)
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(caller, unload, return_exceptions=True)
+        loop.set_exception_handler(previous_handler)
+
+    assert caller.cancelled()
+    assert loop_contexts == []
+    assert sentinel not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
+    assert sensor._durable_write_tasks == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["retry", "accepted"])
+async def test_store_task_cancellation_propagates_without_orphan(
+    monkeypatch, path
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    state = retry_state(provenance)
+    occurrence_id = state["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    context = await request_context(
+        sensor,
+        request_id=f"request:{path}:store-cancelled",
+        request_sequence=1,
+        occurrence_id=occurrence_id,
+    )
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    caller = asyncio.create_task(
+        sensor._async_persist_retry_state(state, source_context=context)
+        if path == "retry"
+        else sensor.async_commit_candidate(SolarCandidate(candidate(4.0), context))
+    )
+    await MemoryStore.blocked_save_started.wait()
+    durable_task = next(iter(sensor._durable_write_tasks))
+
+    durable_task.cancel()
+    await asyncio.gather(caller, return_exceptions=True)
+
+    assert caller.cancelled()
+    assert durable_task.cancelled()
+    assert sensor._durable_write_tasks == set()
+    assert MemoryStore.bucket[sensor._storage_key]["forecast_data"] == candidate(1.0)

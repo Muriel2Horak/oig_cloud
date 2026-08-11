@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_point_in_utc_time,
     async_track_time_change,
     async_track_time_interval,
@@ -51,6 +52,7 @@ from .base_sensor import OigCloudSensor
 _LOGGER = logging.getLogger(__name__)
 
 ATTEMPT_TIMEOUT_SECONDS = 90.0
+SETUP_RETRY_SECONDS = 60.0
 
 # URL pro forecast.solar API
 FORECAST_SOLAR_API_URL = (
@@ -246,6 +248,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         self._occurrence_generation = 0
         self._claimed_occurrences: set[str] = set()
         self._retry_unsubscribe: Optional[Callable[[], None]] = None
+        self._setup_retry_unsubscribe: Optional[Callable[[], None]] = None
         self._active_refresh_tasks: set[asyncio.Task[Any]] = set()
         self._removal_complete = False
         self._removal_task: Optional[asyncio.Task[None]] = None
@@ -300,10 +303,14 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         """Load cache, restore recovery, and register one refresh schedule."""
 
         # Načtení posledního času API volání a dat z persistentního úložiště
-        await self._load_persistent_data()
+        provenance_ready = await self._load_persistent_data()
         if self._removed:
             return
+        if provenance_ready is False:
+            self._arm_setup_recovery()
+            return
 
+        self._cancel_setup_recovery()
         self._register_refresh_schedule()
         retry_restored = await self._async_restore_retry_recovery(dt_util.now())
 
@@ -336,17 +343,28 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         if hasattr(self.hass, "loop_thread_id"):
             self.async_write_ha_state()
 
-    async def _load_persistent_data(self) -> None:
+    async def _load_persistent_data(self) -> bool:
         """Načte čas posledního API volání a forecast data z persistentního úložiště."""
         self._cache_usable = False
         self._forced_stale_reason = None
         self._retry_state = None
         self._durable_cache_envelope = None
-        try:
-            entry_id = getattr(self._config_entry, "entry_id", None)
-            if isinstance(entry_id, str) and entry_id:
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if isinstance(entry_id, str) and entry_id:
+            try:
                 provenance = await self._async_current_cache_provenance()
-                self._cache_provenance = provenance
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                self._cache_provenance = None
+                self._last_api_call = 0
+                self._last_forecast_data = None
+                _LOGGER.warning(
+                    "Solar cache provenance unavailable: error_class=%s",
+                    type(err).__name__,
+                )
+                return False
+
+            self._cache_provenance = provenance
+            try:
                 store: Store[Dict[str, Any]] = Store(
                     self.hass,
                     version=SCHEMA_VERSION,
@@ -355,7 +373,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 data = await store.async_load()
                 if isinstance(data, Mapping) and data.get("schema") == SCHEMA_VERSION:
                     self._adopt_schema2_cache(data, provenance)
-                    return
+                    return True
 
                 legacy_store: Store[Dict[str, Any]] = Store(
                     self.hass,
@@ -365,8 +383,16 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 legacy = await legacy_store.async_load()
                 if isinstance(legacy, Mapping):
                     self._adopt_legacy_cache(legacy)
-                return
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning(
+                    "Solar cache artifact unavailable: error_class=%s",
+                    type(err).__name__,
+                )
+                self._last_api_call = 0
+                self._last_forecast_data = None
+            return True
 
+        try:
             legacy_store = Store(
                 self.hass,
                 version=1,
@@ -382,6 +408,38 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             )
             self._last_api_call = 0
             self._last_forecast_data = None
+        return True
+
+    def _arm_setup_recovery(self) -> None:
+        """Retry provenance setup without registering an identity-less schedule."""
+        if self._removed or self._setup_retry_unsubscribe is not None:
+            return
+
+        async def _retry_setup(_now: datetime) -> None:
+            self._setup_retry_unsubscribe = None
+            task = self._register_current_refresh_task()
+            try:
+                if not self._removed:
+                    await self._async_initialize_after_add_impl()
+            finally:
+                self._unregister_refresh_task(task)
+
+        try:
+            self._setup_retry_unsubscribe = async_call_later(
+                self.hass,
+                SETUP_RETRY_SECONDS,
+                _retry_setup,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning(
+                "Solar provenance recovery registration failed: error_class=%s",
+                type(err).__name__,
+            )
+
+    def _cancel_setup_recovery(self) -> None:
+        if self._setup_retry_unsubscribe is not None:
+            self._setup_retry_unsubscribe()
+            self._setup_retry_unsubscribe = None
 
     async def _async_current_cache_provenance(self) -> Dict[str, Any]:
         entry_id = getattr(self._config_entry, "entry_id", None)
@@ -1008,18 +1066,16 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
     async def _async_reconcile_durable_write(task: asyncio.Task[Any]) -> bool:
         """Wait through arbitrary caller cancellation without cancelling Store I/O."""
         caller_cancelled = False
+        completed = asyncio.Event()
+        task.add_done_callback(lambda _task: completed.set())
         while not task.done():
             try:
-                await asyncio.shield(task)
+                await completed.wait()
             except asyncio.CancelledError:
-                if task.cancelled():
-                    raise
                 caller_cancelled = True
                 current_task = asyncio.current_task()
                 if current_task is not None:
                     current_task.uncancel()
-            except Exception:  # pylint: disable=broad-exception-caught
-                break
         return caller_cancelled
 
     async def _async_restore_retry_recovery(self, now: datetime) -> bool:
@@ -1206,6 +1262,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             self._update_interval_remover()
             self._update_interval_remover = None
         self._cancel_retry_timer()
+        self._cancel_setup_recovery()
         current = asyncio.current_task()
         refresh_tasks = [
             task
@@ -1218,7 +1275,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             await asyncio.gather(*refresh_tasks, return_exceptions=True)
         durable_tasks = [task for task in self._durable_write_tasks if not task.done()]
         if durable_tasks:
-            await asyncio.gather(*durable_tasks, return_exceptions=True)
+            await asyncio.wait(durable_tasks)
         await super().async_will_remove_from_hass()
         self._removal_complete = True
 
@@ -1617,6 +1674,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 setattr(self.coordinator, "solar_forecast_data", snapshot)
                 self._cache_usable = True
                 self._forced_stale_reason = None
+                self._cache_provenance = context.provenance()
                 self._retry_state = None
                 self._cancel_retry_timer()
                 self.async_write_ha_state()

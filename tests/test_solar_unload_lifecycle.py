@@ -155,12 +155,13 @@ async def test_unload_runs_schedule_and_retry_unsubscribers_once_and_is_idempote
     unsubscribed = []
     sensor._update_interval_remover = lambda: unsubscribed.append("schedule")
     sensor._retry_unsubscribe = lambda: unsubscribed.append("retry")
+    sensor._setup_retry_unsubscribe = lambda: unsubscribed.append("setup")
     sensor._retry_state = {"durable": True}
 
     await sensor.async_will_remove_from_hass()
     await sensor.async_will_remove_from_hass()
 
-    assert unsubscribed == ["schedule", "retry"]
+    assert unsubscribed == ["schedule", "retry", "setup"]
     assert sensor._retry_state == {"durable": True}
     assert sensor._active_refresh_tasks == set()
 

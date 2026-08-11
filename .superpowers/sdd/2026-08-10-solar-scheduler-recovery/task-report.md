@@ -6,11 +6,13 @@
 - Critic-remediation base: `a0014f1da12e38c92b3eb56ef35db3dc631738d9`.
 - Second critic-remediation base: `0d1722732addf67eba00cefeab92b1a3b1bd2866`.
 - Third critic-remediation base: `6f0fb6b54b32d9635dc35c3bbb97ba8deb10890d`.
+- Fourth critic-remediation base: `25b1cdca5a54d5a7fb1931f6a462ac837e4c87f7`.
 - Branch: `codex/wizard-v2-auth-fix`.
 - Original scheduler commit: `fix: schedule solar refreshes on local wall clock`.
 - Remediation commit message: `fix: harden solar refresh commit ordering`.
 - Second remediation commit message: `fix: unify solar cache write transactions`.
 - Third remediation commit message: `fix: preserve solar recovery through cancellation`.
+- Fourth remediation commit message: `fix: recover solar setup without shield leakage`.
 - Execute Tasks 1-9 from `docs/superpowers/plans/2026-08-10-solar-scheduler-recovery.md`, then close the ordering, durable retry, lifecycle, real-clock, privacy, restart, and reporting gaps found by critic review.
 - Preserve approved provider/authentication contracts.
 - Preserve stored azimuth bytes. No migration, modulo rewrite, or ConfigFlow version change. Stored `138` remains `138`; Forecast.Solar receives `-42` only at the provider boundary.
@@ -23,16 +25,17 @@
 - Provider DTO and secret-free full effective options are captured together under the shared entry transaction lock. The strict provider-discriminated DTO drives I/O; the full options drive provenance, including intentionally retained defaults for disabled strings.
 - Every scheduled attempt synchronously captures a frozen, non-secret source identity from setup-validated provenance before any blocking context lookup: entry ID, provider, config fingerprint, credential revision, request identity, occurrence identity/generation, lifecycle generation, and monotonic request sequence. Provider results normally carry the stronger transaction-confirmed context; a context-capture timeout intentionally keeps `context=None` and retains only the pre-wait source identity. Accepted results additionally own a deep-copied snapshot.
 - Candidate commit is ordered by one commit lock and the shared per-entry solar transaction lock. It rejects raw, duplicate, older, wrong-provider/config/revision, superseded-occurrence, or obsolete-lifecycle candidates before validation/save. The same captured context is checked again before publish.
-- The ordered commit validates, performs one tracked shielded Store write with captured provenance and no retry record, then rechecks context before adopting any cache/forecast memory or publishing coordinator/HA/broadcast state. A newer durable sequence prevents an older completed provider call from overwriting it.
-- Accepted snapshots and retry set/clear writes use the same lock order: sensor candidate lock, then shared entry transaction lock. Retry writes re-read Store only after both locks, validate failed-attempt request/occurrence/sequence context, and use tracked shielded Store tasks with caller-cancellation reconciliation.
-- Durable Store task ownership is independent of its caller. Retry and accepted writes stay tracked through arbitrary repeated caller cancellation, retain both ordered locks until Store completion, reconcile memory only after the durable outcome is known, and then preserve caller cancellation semantics. Unload waits for the same task-owned boundary; a newer write cannot pass an older blocked write and therefore wins last.
+- Setup acquires current, secret-free provenance independently before reading cache artifacts. A transient provenance read failure registers no broken schedule and arms a bounded setup-recovery callback; a cache artifact read failure retains the valid current provenance and can safely register the schedule. Accepted commits refresh the loaded source provenance from the captured context.
+- The ordered commit validates, performs one tracked Store write with captured provenance and no retry record, then rechecks context before adopting any cache/forecast memory or publishing coordinator/HA/broadcast state. A newer durable sequence prevents an older completed provider call from overwriting it.
+- Accepted snapshots and retry set/clear writes use the same lock order: sensor candidate lock, then shared entry transaction lock. Retry writes re-read Store only after both locks, validate failed-attempt request/occurrence/sequence context, and use tracked Store tasks with caller-cancellation reconciliation.
+- Durable Store task ownership is independent of its caller. Retry and accepted writes stay tracked through arbitrary repeated caller cancellation, retain both ordered locks until Store completion, reconcile memory only after the durable outcome is known, and then preserve caller cancellation semantics. Reconciliation waits on a local completion event rather than `asyncio.shield`, consumes the Store result exactly once in the ordered caller, and does not expose raw Store exceptions through the Python 3.14 loop exception handler. Unload waits for the same task-owned boundary; a newer write cannot pass an older blocked write and therefore wins last.
 - Schema-2 entry-specific retry rewrites preserve existing cache data and provenance, including mismatched or invalid artifacts. Legacy box-only storage remains read-only and forced stale. An executable reader copied from the pre-scheduler artifact proves the previous release ignores entry-specific schema 2 and continues reading the untouched box key.
 - An accepted retry writes the new validated snapshot and removes retry recovery in the same Store write. There is no later unshielded retry-clear write after a successful commit.
 - Daily optimized mode subscribes to HA-local `06:00`, `12:00`, and `16:00`; daily mode subscribes to `06:00`. Hourly and every-four-hour modes retain interval subscriptions. Manual and secondary sensors register none.
 - Registered HA time callbacks are canonicalized to the configured local scheduled instant. Delivery seconds/microseconds do not change the occurrence ID or retry baseline; non-target hours/minutes produce no catch-up.
 - Scheduled occurrence identity is restart-stable from ConfigEntry ID, mode, and scheduled local ISO instant including UTC offset. Retryable outcomes run at original occurrence `+15m` and `+45m` under one 90-second lock-wait/provider deadline and one pre-dispatch occurrence claim.
 - Valid persisted retry recovery takes precedence over startup refresh. Future recovery is re-armed; overdue recovery inside the original horizon runs once; unsafe, exhausted, terminal, superseded, or provenance-mismatched recovery is cleared.
-- Initial, scheduled, retry, interval, manual, and publish-side `update_entity` work is lifecycle tracked. Unload invalidates lifecycle/occurrence generations, unsubscribes schedule/retry callbacks once, cancels and awaits refresh and service tasks, reconciles shielded durable writes, and prevents post-remove publish.
+- Initial, setup-recovery, scheduled, retry, interval, manual, and publish-side `update_entity` work is lifecycle tracked. Unload invalidates lifecycle/occurrence generations, unsubscribes setup/schedule/retry callbacks once, cancels and awaits refresh and service tasks, reconciles durable writes, and prevents post-remove publish.
 - Concurrent removal calls share one teardown task and one superclass removal call.
 - Provider diagnostics do not log GPS coordinates, response bodies, credential-bearing URLs, response-derived malformed timestamp/sample keys, or raw provider exception text.
 
@@ -59,6 +62,13 @@
 - Repeated-cancellation RED failed on both retry and accepted Store paths: both caller tasks became cancelled while Store remained blocked, proving that caller-owned cleanup had dropped durable tracking and released transaction locks early.
 - The two passing controls showed that one cancellation source was already reconciled; the defect required repeated cancellation. Final tests add two explicit cancellations plus unload, and a blocked older write followed by a newer accepted write, for both retry and accepted paths.
 
+### Mandatory fourth-critic RED
+
+- Before fourth-remediation production edits, the canonical CPython 3.14.3 grouped selection collected `7` tests and produced `4 failed, 3 passed`.
+- Real-setup RED proved a private provenance Store read failure was swallowed by the combined cache loader, still registered the wall-clock schedule, and left no setup-recovery callback. Accepted-commit RED proved the durable snapshot could succeed while the in-memory source provenance stayed absent.
+- Python 3.14 cancellation RED failed for both retry and accepted paths: repeated caller cancellation followed by a secret-bearing Store failure reached the loop exception handler through `asyncio.shield` before integration-level sanitization.
+- Passing controls proved cache-artifact-only failure already retained provenance and direct Store-task cancellation already terminated both write paths without an orphan. The final setup-unload assertion also has executable mutation evidence: temporarily omitting setup-recovery cancellation produced one behavioral failure, and restoring it passed.
+
 ### Task 1: classified results
 
 - Original RED: missing classified result type and false-positive manual success.
@@ -76,14 +86,14 @@
 - Original RED covered validation, storage failure, lifecycle change, cancellation, duplicate occurrence, and manual truthfulness.
 - Critic RED added B-before-A commit ordering, all captured context invalidations, and replacement of the obsolete tuple-mock revision test with a real classified candidate.
 - Ordering/context GREEN: `16 passed`; cache contract GREEN: `25 passed`.
-- Final commit boundary uses the full-config context captured beside the provider DTO, monotonic durable request sequence, ordered candidate lock, shared entry transaction lock, pre-save validation/context guard, one shielded durable write, and a pre-publish context guard before any memory adoption.
+- Final commit boundary uses the full-config context captured beside the provider DTO, monotonic durable request sequence, ordered candidate lock, shared entry transaction lock, pre-save validation/context guard, one tracked durable write, and a pre-publish context guard before any memory adoption.
 
 ### Task 4: provenance, cache, and durable retry recovery
 
 - Original RED covered schema-2 provenance, legacy rollback, forced stale behavior, and restart precedence.
 - Critic RED added mismatched, legacy, and invalid artifact preservation plus same-write accepted retry clearing and restart-before-publish recovery.
 - Current retry atomicity GREEN: `17 passed`; provenance GREEN: `27 passed`.
-- Retry set/clear re-read the current durable envelope under the same two locks as accepted commit, reject stale request/occurrence/sequence sources, and reconcile shielded Store completion across cancellation/unload. Successful retry writes the accepted snapshot without `retry_state` once; restart cannot replay the cleared retry.
+- Current provenance acquisition is separate from cache-artifact loading: setup retries provenance failure without registering a schedule, while an artifact failure keeps the established identity. Retry set/clear re-read the current durable envelope under the same two locks as accepted commit, reject stale request/occurrence/sequence sources, and reconcile Store completion across cancellation/unload. Successful retry writes the accepted snapshot without `retry_state` once; restart cannot replay the cleared retry.
 
 ### Task 5: real HA-local wall-clock scheduling
 
@@ -103,9 +113,10 @@
 
 - Original RED exposed surviving provider/lock tasks, abandoned durable work, missing retry unsubscribe, and non-idempotent removal.
 - Critic RED added publish-side service tasks and concurrent removals.
-- Lifecycle GREEN: `7 passed`.
+- Lifecycle GREEN: `7 passed`; the fourth-remediation setup-recovery unsubscribe assertion is included in this selection.
 - Every task-producing path now uses the unified refresh-task tracker; concurrent removal callers await one teardown; no `update_entity` work survives removal.
 - Repeated cancellation during either retry or accepted Store save no longer removes the durable task early. Unload stays pending until Store completes, removed entities publish nothing, both ordered locks remain held, and a follow-on newer snapshot persists last.
+- Setup-recovery callbacks are tracked separately from the wall-clock and retry subscriptions, cancel exactly once during concurrent/idempotent removal, and cannot register post-remove work.
 
 ### Task 8: stale recovery integration/E2E
 
@@ -116,11 +127,11 @@
 
 ### Task 9: compatibility and complete gates
 
-- Final scheduler/cache/provider/entity/service/E2E compatibility selection: `481 passed`.
-- Final second-remediation concurrency/context/E2E selection: `49 passed`.
+- Final scheduler/cache/provider/entity/service/E2E compatibility selection: `488 passed`.
+- Final fourth-remediation focused selection: `7 passed`; combined retry/cache/deadline/order/unload/E2E selection: `121 passed`.
 - Canonical full Python environment: CPython `3.14.3`, pytest `9.0.3`, pytest-asyncio `1.4.0`, Home Assistant `2026.8.1`, HA custom-component plugin `0.13.355`.
-- Canonical full suite: `5266 passed, 29 skipped, 10 warnings in 126.54s`.
-- Coverage: `33,062/36,300` lines, `91.08%`, above required `80.01%`.
+- Canonical full suite on the final production and test bytes: `5273 passed, 29 skipped, 10 warnings in 127.65s`.
+- Coverage: `33,104/36,337` lines, `91.10%`, above required `80.01%`.
 - A non-authoritative repository Python `3.13.4` symlink reproduced an event-loop fixture cascade after an inherited sync `asyncio.run()` test. The locked Python 3.14.3 gate completed naturally, so the 3.13 result is environment drift, not a release failure.
 
 ## Static, frontend, and security verification
@@ -132,7 +143,7 @@
 - Bandit full production tree: `0 HIGH`, `0 MEDIUM`, `44 LOW`; no finding in either changed production file.
 - Gitleaks over every modified/untracked task file: no findings. The public numeric legacy storage fixture ID has a documented inline scanner allow.
 - Trivy: v2 npm lock `0` vulnerabilities; Python lock `11 HIGH`, `2 CRITICAL`, `2 MEDIUM`, `1 LOW`.
-- pip-audit with repository runtime policy: `17` advisories affecting `cryptography`, `litellm`, and `urllib3`.
+- pip-audit against the unchanged runtime lock with the current advisory database: `18` advisories affecting `cryptography`, `litellm`, `protobuf`, and `urllib3`.
 - Safety with repository runtime policy: `9` found, `1` ignored.
 - Dependency findings are inherited: current and remediation-base `requirements.txt` share blob `18c42aaeb2f4b2949af6001f5f0f79a6331266c5`; current and base v2 `package-lock.json` share blob `1739c5100ff236eb5a13bddf0774a6ec7a5b7623`.
 - The two report-bearing pre-commit runs, `git diff --check`, lifecycle/cancellation audit, and staged-scope status are recorded in the external final handoff after this report is force-added; the report intentionally does not make a self-referential pre-commit claim.
