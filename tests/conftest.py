@@ -80,9 +80,11 @@ def _reset_integration_version_cache() -> Any:
     """Reset the process-global integration-version cache between tests.
 
     The manifest version resolver caches for the process lifetime (the file is
-    immutable at runtime). Tests that drive the executor path with stub hass
-    objects can otherwise pollute the cache ("unknown") for later tests. This
-    fixture makes each test start uncached without weakening production caching.
+    immutable at runtime). Tests that stub the manifest read would otherwise
+    leave their value visible to every later test in the same process. This
+    fixture makes each test start uncached without weakening production
+    caching. The per-loop lock needs no reset: it is held in a
+    ``WeakKeyDictionary`` keyed by the event loop.
     """
     try:
         from custom_components.oig_cloud.shared import integration_version as mod

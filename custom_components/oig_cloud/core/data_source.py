@@ -437,6 +437,15 @@ class DataSourceController:
         self._snapshot_publish_handle: Optional[Any] = None
         self._last_snapshot_publish_monotonic: Optional[float] = None
         self._previous_effective_mode: Optional[str] = None
+        # Incident classification needs a *settled* baseline to compare against.
+        # During Home Assistant startup the local proxy's entities may not be
+        # registered yet, so setup seeds effective_mode=cloud_only and the mode
+        # flips to local_only as soon as the proxy appears. That flip is a
+        # startup artifact, not an operational transition: reporting it emits a
+        # false incident, logs a WARNING on every restart, and consumes the
+        # cloud->local dedupe slot that the genuine later recovery needs.
+        self._incident_baseline_armed = False
+        self._first_evaluation_utc: Optional[datetime] = None
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
@@ -702,6 +711,15 @@ class DataSourceController:
         proxy_entity_dt = _get_proxy_entity_timestamp(proxy_state)
         now = dt_util.utcnow()
 
+        if self._first_evaluation_utc is None:
+            self._first_evaluation_utc = now
+        # Readiness is bounded. Arming on the elapsed window happens *before*
+        # this evaluation is classified, because the window passing is not
+        # caused by this evaluation: a proxy that finally shows up long after
+        # startup is a genuine recovery and must be reported.
+        if not self._incident_baseline_armed and self._readiness_window_elapsed(now):
+            self._incident_baseline_armed = True
+
         expected_box_id = _get_expected_box_id(self.entry)
         proxy_box_id = _get_proxy_box_id(self.hass)
 
@@ -739,8 +757,13 @@ class DataSourceController:
         )
 
         if changed:
+            # ``None`` means "no settled baseline yet"; the transition table in
+            # _on_effective_mode_changed matches no pair, so the startup
+            # artifact is neither reported nor deduped away.
             self._previous_effective_mode = (
-                prev.effective_mode if had_previous_state else None
+                prev.effective_mode
+                if (had_previous_state and self._incident_baseline_armed)
+                else None
             )
             new_state = DataSourceState(
                 configured_mode=configured,
@@ -750,7 +773,31 @@ class DataSourceController:
                 reason=reason,
             )
             entry_data["data_source_state"] = new_state
+
+        # Arm *after* classifying: a cloud-only entry never waits for a proxy,
+        # and the first successful local reading is the settle point itself, so
+        # the evaluation that produced it must not be read as a transition.
+        if not self._incident_baseline_armed and (
+            configured == DATA_SOURCE_CLOUD_ONLY or local_available
+        ):
+            self._incident_baseline_armed = True
+
         return changed, mode_changed
+
+    def _readiness_window_elapsed(self, now: datetime) -> bool:
+        """Has the bounded startup-readiness window passed with no local data?
+
+        Reuses the operator's ``local_proxy_stale_minutes`` option rather than
+        introducing another tunable: it already expresses how long a healthy
+        proxy may stay silent, so it is exactly how long a healthy proxy may
+        take to first appear.
+        """
+        started = self._first_evaluation_utc
+        if started is None:
+            return False
+        return (now - started).total_seconds() >= get_proxy_stale_minutes(
+            self.entry
+        ) * 60
 
     @callback
     def _on_effective_mode_changed(self) -> None:

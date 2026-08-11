@@ -12,10 +12,17 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "node_id": "dc_in",
         "node_key": "fv_ad",
         # Daily accumulator (dc_in.fv_ad = "FVE aktual denni"): resets to 0 at
-        # midnight and may be re-aggregated downward a few Wh during the day.
-        # TOTAL (not TOTAL_INCREASING) so the recorder does not treat a small
-        # dip as a meter reset and the Energy Dashboard sums the day correctly.
+        # LOCAL midnight and may be re-aggregated downward a few Wh during the
+        # day. TOTAL (not TOTAL_INCREASING) so the small intraday dip is not
+        # mistaken for a meter reset -- but TOTAL alone is not enough: the
+        # recorder gates its reset branch on `last_reset is not None`, so
+        # without the marker below the midnight drop to 0 is booked as a
+        # negative delta and the completed day is subtracted from the sum.
+        # `daily_cycle_reset` makes OigCloudDataSensor publish `last_reset` at
+        # local midnight. The two belong together; see
+        # tests/test_dc_in_fv_ad_daily_cycle.py.
         "state_class": SensorStateClass.TOTAL,
+        "daily_cycle_reset": True,
         "sensor_type_category": "data",
         "device_mapping": "main",
         "local_entity_suffix": "tbl_dc_in_fv_ad",

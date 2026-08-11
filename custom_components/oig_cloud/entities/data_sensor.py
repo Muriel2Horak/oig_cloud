@@ -2,9 +2,14 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypedDict, Union
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import dt as dt_util
 
 from ..core.local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
 
@@ -322,6 +327,33 @@ class OigCloudDataSensor(_DataSensorBase):
         if self._sensor_type in {"boiler_is_use", "box_prms_crct", "box_prms_crcte"}:
             return self._get_on_off_name(raw_value, "cs")
         return _STATE_NOT_HANDLED
+
+    @property
+    def last_reset(self) -> Optional[datetime]:
+        """Local midnight for sensors that carry the daily-cycle marker.
+
+        A sensor config opts in explicitly with ``daily_cycle_reset: True``.
+        Only accumulators that really do restart at local midnight may do so --
+        announcing a daily cycle for a monthly/yearly counter would corrupt its
+        long-term sum just as badly as announcing none for a daily one.
+
+        ``last_reset`` is only meaningful for ``TOTAL``; Home Assistant raises
+        if it is set for any other state class, so the state class is checked
+        here rather than trusted from configuration.
+
+        The boundary comes from ``dt_util.start_of_local_day()``, i.e. the
+        timezone Home Assistant is configured with -- never a hardcoded zone.
+        """
+        if not self._sensor_config.get("daily_cycle_reset"):
+            return None
+        if self._attr_state_class != SensorStateClass.TOTAL:
+            _LOGGER.debug(
+                "[%s] daily_cycle_reset ignored for state_class %s",
+                self.entity_id,
+                self._attr_state_class,
+            )
+            return None
+        return dt_util.start_of_local_day()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

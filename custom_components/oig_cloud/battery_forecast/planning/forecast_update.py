@@ -11,6 +11,11 @@ from typing import Any, List, Optional
 from homeassistant.util import dt as dt_util
 
 from ...const import DOMAIN
+from ...core.data_source import (
+    DATA_SOURCE_CLOUD_ONLY,
+    DEFAULT_PROXY_STALE_MINUTES,
+    get_configured_mode,
+)
 from ...shared.cloud_contract import (
     DETAIL_ENUMS,
     build_failure_summary,
@@ -267,31 +272,61 @@ async def _emit_planner_summary_event(
         )
 
 
-def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
-    """Read the BOX bat_min trigger (%) from the local-proxy sensor if available.
+# Why the box floor is unusable. The distinction is what lets startup be told
+# apart from a genuine problem: "not registered yet" is a wait, "the box gave
+# us nonsense" is a fault, and they must not share a log severity.
+BAT_MIN_OK = "ok"
+BAT_MIN_ABSENT = "absent"  # entity not registered (HA still starting, or cloud-only)
+BAT_MIN_UNAVAILABLE = "unavailable"  # registered, no value yet
+BAT_MIN_MALFORMED = "malformed"  # registered, non-numeric
+BAT_MIN_IMPLAUSIBLE = "implausible"  # numeric but outside (0, 100) %
+BAT_MIN_NO_CONTEXT = "no_context"  # sensor not bound to hass/box yet
+
+# Classes meaning "not knowable yet" rather than "known to be bad".
+_BAT_MIN_NOT_YET_READABLE = frozenset(
+    {BAT_MIN_ABSENT, BAT_MIN_UNAVAILABLE, BAT_MIN_NO_CONTEXT}
+)
+
+
+def _resolve_proxy_bat_min(sensor: Any) -> tuple[Optional[float], str]:
+    """Read the BOX bat_min trigger (%) and classify why it is unusable.
 
     Entity: ``sensor.oig_local_{box_id}_tbl_batt_prms_bat_min``. Cloud-only
-    installs do not have it; callers use the configured fallback fraction
-    (20 % by default). Returned
-    as a plain float so the pure planning layer stays HA-agnostic.
+    installs do not have it at all. The value is returned as a plain float so
+    the pure planning layer stays HA-agnostic; the class is for callers that
+    must decide between waiting and falling back.
     """
+    box_id = getattr(sensor, "_box_id", None)
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    if not box_id or hass is None or getattr(hass, "states", None) is None:
+        return None, BAT_MIN_NO_CONTEXT
+
+    entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
     try:
-        box_id = getattr(sensor, "_box_id", None)
-        if not box_id:
-            return None
-        hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
-        if hass is None:
-            return None
-        entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
         state = hass.states.get(entity_id)
-        if state is None or state.state in {"unknown", "unavailable", "", None}:
-            return None
-        value = float(state.state)
-        if 0.0 < value < 100.0:
-            return value
-    except (TypeError, ValueError, AttributeError):
-        pass
-    return None
+    except (TypeError, AttributeError):
+        return None, BAT_MIN_NO_CONTEXT
+
+    if state is None:
+        return None, BAT_MIN_ABSENT
+
+    raw = getattr(state, "state", None)
+    if raw is None or raw in {"unknown", "unavailable", ""}:
+        return None, BAT_MIN_UNAVAILABLE
+
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, BAT_MIN_MALFORMED
+
+    if not 0.0 < value < 100.0:
+        return None, BAT_MIN_IMPLAUSIBLE
+    return value, BAT_MIN_OK
+
+
+def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
+    """Value-only view of :func:`_resolve_proxy_bat_min`."""
+    return _resolve_proxy_bat_min(sensor)[0]
 
 
 def _resolve_hw_min_kwh(
@@ -301,14 +336,20 @@ def _resolve_hw_min_kwh(
     fallback_fraction: Optional[float] = None,
     correlation_id: str | None = None,
     run_id: str | None = None,
+    reason_class: str | None = None,
 ) -> float:
     """Hardware minimum capacity (kWh): sensor > config > constant fallback.
 
     ``sensor_min_kwh`` is the box-reported bat_min trigger already converted
-    to kWh (see ``_resolve_proxy_bat_min_pct``). Plausibility guards against
+    to kWh (see ``_resolve_proxy_bat_min``). Plausibility guards against
     sensor glitches (stuck at 0, or reporting >= max_capacity). The configured
     fraction is used only when the sensor is missing or implausible. Never
     raises — a missing/bad sensor or option must not crash planning.
+
+    ``reason_class`` is the classification from :func:`_resolve_proxy_bat_min`.
+    The fallback warning reports that class rather than the raw reading: the
+    class is what an operator can act on, and echoing raw box telemetry into
+    the log adds nothing diagnostic.
     """
     if sensor_min_kwh is not None and 0 < sensor_min_kwh < max_capacity:
         return sensor_min_kwh
@@ -323,14 +364,81 @@ def _resolve_hw_min_kwh(
         configured_fraction = _HW_MIN_FRACTION
 
     _LOGGER.warning(
-        "%s hw_min sensor unavailable or implausible (value=%s, max_capacity=%.2f kWh); "
+        "%s hw_min unusable (reason_class=%s, max_capacity=%.2f kWh); "
         "using %.0f%% fallback",
         _planner_log_marker("WARNING", correlation_id or "unknown", run_id or "unknown"),
-        sensor_min_kwh,
+        reason_class or BAT_MIN_IMPLAUSIBLE,
         max_capacity,
         configured_fraction * 100.0,
     )
     return max_capacity * configured_fraction
+
+
+def _box_floor_grace_minutes(sensor: Any) -> int:
+    """Bounded readiness window for the box floor.
+
+    Reuses the operator's ``local_proxy_stale_minutes`` option instead of
+    adding another tunable: it already states how long a healthy proxy may
+    stay silent, which is exactly how long one may take to first appear.
+    """
+    options = getattr(getattr(sensor, "_config_entry", None), "options", None) or {}
+    try:
+        return int(options.get("local_proxy_stale_minutes", DEFAULT_PROXY_STALE_MINUTES))
+    except (TypeError, ValueError):
+        return DEFAULT_PROXY_STALE_MINUTES
+
+
+def _should_defer_for_box_floor(
+    sensor: Any, reason_class: str, now_aware: datetime
+) -> bool:
+    """Wait, rather than guess, while the box's own floor is not yet readable.
+
+    A plan is not a log line: it is applied to the sensor, broadcast to
+    dependent entities and can lock a mode for the next hour. Publishing one
+    built on the configured fallback floor during startup silently commits the
+    install to a floor the box does not use, so for an install configured to
+    take local data the planner defers until the proxy answers.
+
+    The wait is bounded. Past the grace window a proxy that never appeared is
+    reported truthfully — once — and planning proceeds on the fallback, because
+    an install with a permanently missing proxy still needs a plan.
+    """
+    if reason_class not in _BAT_MIN_NOT_YET_READABLE:
+        sensor._box_floor_wait_started_at = None
+        return False
+
+    entry = getattr(sensor, "_config_entry", None)
+    if entry is None or get_configured_mode(entry) == DATA_SOURCE_CLOUD_ONLY:
+        # No local proxy is expected at all; the fallback floor is the contract.
+        return False
+
+    started = getattr(sensor, "_box_floor_wait_started_at", None)
+    if started is None:
+        started = now_aware
+        sensor._box_floor_wait_started_at = started
+
+    grace_minutes = _box_floor_grace_minutes(sensor)
+    if (now_aware - started).total_seconds() < grace_minutes * 60:
+        sensor._log_rate_limited(
+            "box_floor_not_ready",
+            "debug",
+            "BOX bat_min not readable yet (reason_class=%s); deferring the plan",
+            reason_class,
+            cooldown_s=60.0,
+        )
+        sensor._schedule_forecast_retry(10.0)
+        return True
+
+    sensor._log_rate_limited(
+        "box_floor_absent_after_grace",
+        "warning",
+        "BOX bat_min still not readable after %s min (reason_class=%s); "
+        "planning on the configured fallback floor",
+        grace_minutes,
+        reason_class,
+        cooldown_s=3600.0,
+    )
+    return False
 
 
 # The BOX itself force-balances (uncontrolled grid charge to ~full) whenever
@@ -939,7 +1047,7 @@ def _run_planner(
         # to the configured fallback fraction (20% by default) when the sensor
         # is unavailable/implausible (see _resolve_hw_min_kwh). Reused below for
         # planning_min_percent, so the sensor is read once, not twice.
-        proxy_bat_min_pct = _resolve_proxy_bat_min_pct(sensor)
+        proxy_bat_min_pct, bat_min_reason_class = _resolve_proxy_bat_min(sensor)
         sensor_min_kwh = (
             max_capacity * proxy_bat_min_pct / 100.0
             if proxy_bat_min_pct is not None
@@ -951,6 +1059,7 @@ def _run_planner(
             fallback_fraction=opts.get("hw_min_fraction", _HW_MIN_FRACTION),
             correlation_id=correlation_id,
             run_id=run_id,
+            reason_class=bat_min_reason_class,
         )
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
         # Floor defense protects the hardware safety minimum PLUS a small
@@ -1544,6 +1653,13 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
 
         # Enforce single in-flight computation.
         if _should_skip_bucket(sensor, bucket_start):
+            return
+
+        # The box's own bat_min trigger is a planning input, not a decoration:
+        # publish nothing until it is readable (or provably absent). Leaving the
+        # bucket open makes the next tick retry.
+        _, bat_min_reason_class = _resolve_proxy_bat_min(sensor)
+        if _should_defer_for_box_floor(sensor, bat_min_reason_class, now_aware):
             return
 
         planner_run_id = _build_planner_run_id(sensor, bucket_start)
