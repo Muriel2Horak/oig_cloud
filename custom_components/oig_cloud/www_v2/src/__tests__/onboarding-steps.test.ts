@@ -438,6 +438,9 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
       );
       expect(warning).toBeTruthy();
       expect(warning?.textContent).toContain(String(storedValue));
+      expect(warning?.textContent).toContain('0');
+      expect(warning?.textContent).toContain('360');
+      expect(warning?.textContent).not.toMatch(/[−-]180\s*°?\s*(?:až|to)\s*360/);
     },
   );
 

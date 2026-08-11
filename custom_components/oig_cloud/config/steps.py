@@ -3266,7 +3266,10 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                 and value.strip()
             }
             token = await async_stage_initial_credentials(
-                self.hass, provider, credentials
+                self.hass,
+                provider,
+                credentials,
+                owner=str(self._wizard_data.get(CONF_USERNAME, "")),
             )
             if token:
                 options[INITIAL_CREDENTIALS_TOKEN_FIELD] = token
@@ -3480,17 +3483,21 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_section_solar(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
+        await self._async_prepare_solar_section()
+        return await self._enter_section("solar", "wizard_solar")
+
+    async def _async_prepare_solar_section(self) -> None:
+        """Load private validation credentials and the optimistic revision guard."""
         entry = getattr(self, "_config_entry_cache", None)
         if entry is not None:
             provider = self._wizard_data.get(
                 CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
             )
-            active = await SolarKeyStore(self.hass, entry.entry_id).async_get_active(
-                provider
-            )
+            store = SolarKeyStore(self.hass, entry.entry_id)
+            active = await store.async_get_active(provider)
             self._active_solar_provider = provider
             self._active_solar_credentials = active or {}
-        return await self._enter_section("solar", "wizard_solar")
+            self._solar_revision_at_open = await store.async_revision()
 
     async def async_step_section_battery(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3637,6 +3644,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
         self._section = None
+        await self._async_prepare_solar_section()
         return await self.async_step_wizard_welcome_reconfigure()
 
     async def async_step_wizard_welcome_reconfigure(
@@ -3740,7 +3748,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     if (registry_field := FIELD_REGISTRY.get(key)) is not None
                     and registry_field.section == "solar"
                 }
-                solar_committed = getattr(self, "_section", None) == "solar" and bool(
+                solar_committed = getattr(self, "_section", "unselected") in (None, "solar") and bool(
                     solar_delta or solar_private_updates
                 )
                 if not solar_committed:
@@ -3752,6 +3760,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                         solar_delta,
                         solar_private_updates,
                         proof=None,
+                        expected_revision=getattr(
+                            self, "_solar_revision_at_open", None
+                        ),
                     )
                 remaining_delta = {
                     key: value for key, value in delta.items() if key not in solar_delta

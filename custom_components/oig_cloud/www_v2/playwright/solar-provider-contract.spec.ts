@@ -132,6 +132,38 @@ async function installSolarFake(page: Page) {
       solcast_api_key_set: !!persisted.privateCredentials.solcast?.solcast_api_key,
       solcast_site_id_set: !!persisted.privateCredentials.solcast?.solcast_site_id,
     });
+    const effectiveSolar = (incoming: Record<string, unknown>) => {
+      const patch = { ...incoming };
+      const provider = String(
+        patch.solar_forecast_provider ?? patch.provider ??
+        persisted.moduleConfig.solar.solar_forecast_provider,
+      );
+      delete patch.provider;
+      const effective: Record<string, unknown> = {
+        ...persisted.moduleConfig.solar,
+        ...patch,
+        solar_forecast_provider: provider,
+      };
+      for (const key of Object.keys(effective)) {
+        if (key.endsWith('_set')) delete effective[key];
+      }
+      for (const key of ['solar_forecast_api_key', 'solcast_api_key', 'solcast_site_id']) {
+        delete effective[key];
+      }
+      const privateFields = provider === 'solcast'
+        ? ['solcast_api_key', 'solcast_site_id']
+        : ['solar_forecast_api_key'];
+      for (const key of privateFields) {
+        const supplied = patch[key];
+        const retained = persisted.privateCredentials[provider]?.[key];
+        if (typeof supplied === 'string' && supplied) effective[key] = supplied;
+        else if (retained) effective[key] = retained;
+      }
+      return effective;
+    };
+    const canonical = (value: Record<string, unknown>) => JSON.stringify(
+      Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))),
+    );
     const hass = {
       auth: { expired: false, refreshAccessToken: async () => undefined },
       fetchWithAuth: async (path: string, init: RequestInit = {}) => {
@@ -163,29 +195,25 @@ async function installSolarFake(page: Page) {
           };
         } else if (method === 'POST' && path.endsWith('/solar_test')) {
           const proof = `opaque-browser-proof-${++persisted.proofCounter}`;
-          persisted.proofs[proof] = body ?? {};
+          persisted.proofs[proof] = effectiveSolar(body ?? {});
           response = {
             tomorrow_total_kwh: 7.5,
             forecast_covers_tomorrow: true,
             proof,
           };
         } else if (method === 'POST' && path.endsWith('/module_config')) {
-          const proof = typeof body?.solar_test_proof === 'string'
-            ? persisted.proofs[body.solar_test_proof]
+          const proofToken = typeof body?.solar_test_proof === 'string'
+            ? body.solar_test_proof
             : undefined;
+          const proof = proofToken ? persisted.proofs[proofToken] : undefined;
           const values = body?.values ?? {};
           const selectedProvider = String(
             values.solar_forecast_provider ?? persisted.moduleConfig.solar.solar_forecast_provider,
           );
-          const proofProvider = String(proof?.provider ?? '');
-          const proofMatches = body?.section !== 'solar' || (
-            proof !== undefined && proofProvider === selectedProvider &&
-            Object.entries(values).every(([key, value]) => {
-              const proofKey = key === 'solar_forecast_provider' ? 'provider' : key;
-              if (!(proofKey in proof)) return true;
-              return String(proof[proofKey]) === String(value);
-            })
+          const proofMatches = body?.section !== 'solar' || proofToken === undefined || (
+            proof !== undefined && canonical(proof) === canonical(effectiveSolar(values))
           );
+          if (proofToken) delete persisted.proofs[proofToken];
           if (!proofMatches) {
             status = 409;
             response = { error: 'solar_test_proof_mismatch' };
@@ -210,8 +238,11 @@ async function installSolarFake(page: Page) {
             delete nextSolar.solcast_site_id;
             nextSolar.solar_forecast_provider = selectedProvider;
             persisted.moduleConfig.solar = nextSolar;
-            if (body.solar_test_proof) delete persisted.proofs[body.solar_test_proof];
-            response = { updated: true, revision: persisted.proofCounter, verified: true };
+            response = {
+              updated: true,
+              revision: persisted.proofCounter,
+              verified: proofToken !== undefined,
+            };
           }
         } else if (method === 'GET' && path.endsWith('/ai')) {
           response = { provider: 'ai_task', status: 'not_configured' };
@@ -319,24 +350,81 @@ test('Solcast hides local geometry, retains kWp, and forwards proof only on save
   await expect(fieldRow(finalWizard, 'Solcast site ID').locator('input')).toHaveValue('');
 });
 
-test('fake backend rejects a proof for a different effective DTO and persists only valid saves', async ({ page }) => {
+test('fake backend binds a real proof to the complete effective DTO, including persisted fields omitted from the draft', async ({ page }) => {
   await installSolarFake(page);
   await page.goto('./?sn=browser-e2e');
 
   const result = await page.evaluate(async () => {
     const hass = (window as any).hass;
-    const wrong = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+    const tested = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'forecast_solar', solar_forecast_mode: 'daily' }),
+    });
+    const { proof } = await tested.json();
+    const mismatched = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
       method: 'POST',
       body: JSON.stringify({
         section: 'solar',
-        values: { solar_forecast_provider: 'solcast' },
-        solar_test_proof: 'proof-for-a-different-dto',
+        values: { solar_forecast_string1_kwp: 6 },
+        solar_test_proof: proof,
       }),
     });
     const persisted = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config');
-    return { status: wrong.status, persisted: await persisted.json() };
+    return { status: mismatched.status, persisted: await persisted.json() };
   });
 
   expect(result.status).toBe(409);
-  expect(result.persisted.solar.solar_forecast_provider).toBe('forecast_solar');
+  expect(result.persisted.solar.solar_forecast_string1_kwp).toBe(5.5);
+});
+
+test('fake backend rejects replay of a genuinely consumed proof', async ({ page }) => {
+  await installSolarFake(page);
+  await page.goto('./?sn=browser-e2e');
+
+  const result = await page.evaluate(async () => {
+    const hass = (window as any).hass;
+    const tested = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'forecast_solar', solar_forecast_mode: 'daily',
+        solar_forecast_string1_kwp: 6,
+      }),
+    });
+    const { proof } = await tested.json();
+    const payload = JSON.stringify({
+      section: 'solar', values: { solar_forecast_string1_kwp: 6 }, solar_test_proof: proof,
+    });
+    const first = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+      method: 'POST', body: payload,
+    });
+    const replay = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+      method: 'POST', body: payload,
+    });
+    return { first: first.status, replay: replay.status };
+  });
+
+  expect(result.first).toBe(200);
+  expect(result.replay).toBe(409);
+});
+
+test('fake backend permits a proofless explicit save and marks it unverified', async ({ page }) => {
+  await installSolarFake(page);
+  await page.goto('./?sn=browser-e2e');
+
+  const result = await page.evaluate(async () => {
+    const hass = (window as any).hass;
+    const saved = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+      method: 'POST',
+      body: JSON.stringify({
+        section: 'solar', values: { solar_forecast_string1_kwp: 6 },
+      }),
+    });
+    const body = await saved.json();
+    const persisted = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config');
+    return { status: saved.status, body, persisted: await persisted.json() };
+  });
+
+  expect(result.status).toBe(200);
+  expect(result.body.verified).toBe(false);
+  expect(result.persisted.solar.solar_forecast_string1_kwp).toBe(6);
 });

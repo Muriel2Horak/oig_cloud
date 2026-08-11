@@ -24,6 +24,10 @@ class SolarTransactionError(RuntimeError):
     """A persistence boundary failed after transaction validation."""
 
 
+class SolarTransactionConflict(SolarTransactionError):
+    """The private credential revision changed after the caller's snapshot."""
+
+
 _PROVIDER_PRIVATE_FIELDS = {
     "forecast_solar": ("solar_forecast_api_key",),
     "solcast": ("solcast_api_key", "solcast_site_id"),
@@ -107,6 +111,7 @@ async def async_commit_solar_configuration(
     private_updates: Mapping[str, Any],
     *,
     proof: str | None,
+    expected_revision: int | None = None,
 ) -> tuple[int, bool]:
     """Activate credentials, update options, reload, or compensate both snapshots."""
     lock = get_solar_transaction_lock(hass, entry.entry_id)
@@ -114,6 +119,9 @@ async def async_commit_solar_configuration(
         old_options = deepcopy(dict(entry.options))
         store = SolarKeyStore(hass, entry.entry_id)
         old_store = await store.async_snapshot()
+        current_revision = int(old_store.get("revision", 0))
+        if expected_revision is not None and current_revision != expected_revision:
+            raise SolarTransactionConflict("solar configuration changed concurrently")
         patch = {**dict(updates), **dict(private_updates)}
         provider = _selected_provider(old_options, patch)
         active = solar_credentials_with_legacy_options(

@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler, WizardMixin
 from custom_components.oig_cloud.config import solar_key_store as solar_key_store_module
+from custom_components.oig_cloud.config import solar_transaction as solar_transaction_module
 from custom_components.oig_cloud.config_registry import fields_for_section
 from custom_components.oig_cloud.const import CONF_USERNAME
 
@@ -543,6 +544,135 @@ async def test_options_flow_blank_solar_secrets_retain_active_private_credential
 
     assert result["step_id"] == "wizard_summary"
     assert await store.async_get_active(provider) == credentials
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "credentials", "submitted"),
+    [
+        (
+            "forecast_solar",
+            {"solar_forecast_api_key": "full-flow-forecast-secret"},
+            _solar_values(
+                solar_forecast_provider="forecast_solar",
+                solar_forecast_mode="hourly",
+                solar_forecast_api_key="",
+            ),
+        ),
+        (
+            "solcast",
+            {
+                "solcast_api_key": "full-flow-solcast-secret",
+                "solcast_site_id": "full-flow-rooftop-id",
+            },
+            _solar_values(
+                solar_forecast_provider="solcast",
+                solar_forecast_mode="hourly",
+                solcast_api_key="",
+                solcast_site_id="",
+            ),
+        ),
+    ],
+)
+async def test_options_flow_section_all_retains_blank_active_private_credentials(
+    mem_solar_store,
+    provider,
+    credentials,
+    submitted,
+):
+    """Removing the section-specific loader must not lose full-flow credentials."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(
+            solar_forecast_provider=provider,
+            solar_forecast_mode="hourly",
+        ),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(provider, credentials, verified_at=None)
+
+    await flow.async_step_section_all()
+    result = await flow.async_step_wizard_solar(submitted)
+
+    assert result["step_id"] == "wizard_summary"
+    assert await store.async_get_active(provider) == credentials
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_all_commits_solar_through_atomic_transaction(
+    mem_solar_store,
+):
+    """Bypassing the solar transaction must lose this private activation/revision."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_kwp=5.5),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    await flow.async_step_section_all()
+    flow._wizard_data.update(
+        _solar_values(
+            solar_forecast_api_key="full-flow-new-secret",
+            solar_forecast_string1_kwp=6.5,
+        )
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "full-flow-new-secret"
+    }
+    state = await store.async_api_state()
+    assert state["revision"] == 1
+    assert state["verified"] is False
+    assert entry.options["solar_forecast_string1_kwp"] == 6.5
+    assert "full-flow-new-secret" not in repr(entry.options)
+    assert flow.hass.config_entries.reloaded == ["entry1"]
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_all_rejects_concurrent_solar_revision(
+    mem_solar_store,
+):
+    """Removing the revision check must overwrite a newer solar transaction."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_kwp=5.5),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "opening-secret"},
+        verified_at=None,
+    )
+    await flow.async_step_section_all()
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "concurrent-secret"},
+        verified_at="2026-08-11T00:00:00+00:00",
+    )
+    flow._wizard_data["solar_forecast_string1_kwp"] = 7.0
+
+    conflict_type = getattr(
+        solar_transaction_module, "SolarTransactionConflict", RuntimeError
+    )
+    with pytest.raises(conflict_type):
+        await flow.async_step_wizard_summary({})
+
+    assert entry.options["solar_forecast_string1_kwp"] == 5.5
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "concurrent-secret"
+    }
+    assert (await store.async_api_state())["revision"] == 2
 
 
 @pytest.mark.asyncio

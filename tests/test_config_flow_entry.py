@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -223,7 +224,11 @@ async def test_initial_wizard_credentials_activate_privately_after_entry_creatio
     assert "solcast_site_id" not in result["options"]
     assert result["options"].get("_solar_credentials_setup_token")
 
-    entry = SimpleNamespace(entry_id="created-entry", options=result["options"])
+    entry = SimpleNamespace(
+        entry_id="created-entry",
+        data=result["data"],
+        options=result["options"],
+    )
     activate = getattr(
         solar_key_store_module, "async_activate_initial_credentials", None
     )
@@ -239,6 +244,43 @@ async def test_initial_wizard_credentials_activate_privately_after_entry_creatio
     state = await store.async_api_state()
     assert state["verified"] is False
     assert state["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_setup_stops_when_initial_credentials_claim_is_unusable(monkeypatch):
+    """Ignoring a failed bootstrap claim must continue into planner setup."""
+    integration_module = importlib.import_module("custom_components.oig_cloud")
+
+    entry = SimpleNamespace(
+        entry_id="unusable-bootstrap-entry",
+        title="OIG Cloud",
+        data={"username": "owner"},
+        options={
+            solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD: "missing-token",
+            "solar_forecast_provider": "forecast_solar",
+        },
+    )
+    hass = SimpleNamespace(data={})
+    continued = False
+
+    async def _unusable(_hass, _entry):
+        return False
+
+    async def _continued(*_args, **_kwargs):
+        nonlocal continued
+        continued = True
+
+    monkeypatch.setattr(
+        solar_key_store_module, "async_activate_initial_credentials", _unusable
+    )
+    monkeypatch.setattr(
+        integration_module, "_ensure_planner_option_defaults", _continued
+    )
+
+    result = await integration_module.async_setup_entry(hass, entry)
+
+    assert result is False
+    assert continued is False
 
 
 @pytest.mark.asyncio

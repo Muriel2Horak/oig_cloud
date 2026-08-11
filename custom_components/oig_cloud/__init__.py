@@ -1720,9 +1720,18 @@ async def async_setup_entry(
     _LOGGER.debug("Config data keys: %s", list(entry.data.keys()))
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
-    from .config.solar_key_store import async_activate_initial_credentials
+    from .config.solar_key_store import (
+        INITIAL_CREDENTIALS_TOKEN_FIELD,
+        async_activate_initial_credentials,
+    )
 
-    await async_activate_initial_credentials(hass, entry)
+    if INITIAL_CREDENTIALS_TOKEN_FIELD in entry.options:
+        if not await async_activate_initial_credentials(hass, entry):
+            _LOGGER.error(
+                "Solar initial credential claim is unavailable for entry %s",
+                entry.entry_id,
+            )
+            return False
 
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     await _ensure_planner_option_defaults(hass, entry)

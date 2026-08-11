@@ -23,6 +23,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.solar_test.error.invalid_response': 'Neočekávaná odpověď poskytovatele.',
     'onboarding.solar_test.error.aborted': 'Test byl přerušen.',
     'onboarding.solar_test.error.generic': 'Test selhal.',
+    'onboarding.solar.legacy_invalid': 'Uložená hodnota {stored} není platný celočíselný azimut v rozsahu 0–360°. Opravte ji před uložením.',
+    'onboarding.solar.legacy_adoption': 'Starší hodnota {stored} je zobrazena jako kompasová hodnota {display}. Kompas: sever 0°/360°, východ 90°, jih 180°, západ 270° (rozsah 0–360°). Uložením pole ji převezmete.',
 
     'onboarding.bootstrap.load_failed': 'Načtení dat selhalo.',
     'onboarding.bootstrap.state_load_failed': 'Stav průvodce se nepodařilo načíst.',
@@ -136,6 +138,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.solar_test.error.invalid_response': 'Unexpected response from provider.',
     'onboarding.solar_test.error.aborted': 'Test was aborted.',
     'onboarding.solar_test.error.generic': 'Test failed.',
+    'onboarding.solar.legacy_invalid': 'The stored value {stored} is not a valid integer azimuth in the 0–360° range. Correct it before saving.',
+    'onboarding.solar.legacy_adoption': 'The legacy value {stored} is displayed as compass value {display}. Compass: north 0°/360°, east 90°, south 180°, west 270° (range 0–360°). Saving the field adopts it.',
 
     'onboarding.bootstrap.load_failed': 'Failed to load data.',
     'onboarding.bootstrap.state_load_failed': 'Failed to load wizard state.',
@@ -208,9 +212,17 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 export type OnboardingKey = keyof typeof STRINGS['cs'];
 
 /** Falls back to the Czech table, then to the raw key — never throws on a miss. */
-export function t(key: OnboardingKey, lang: Lang = 'cs'): string {
+export function t(
+  key: OnboardingKey,
+  lang: Lang = 'cs',
+  parameters: Readonly<Record<string, string | number>> = {},
+): string {
   const table = STRINGS[lang] ?? STRINGS.cs;
-  if (key in table) return table[key];
-  if (key in STRINGS.cs) return STRINGS.cs[key];
-  return key;
+  const template = key in table
+    ? table[key]
+    : key in STRINGS.cs
+      ? STRINGS.cs[key]
+      : key;
+  return template.replace(/\{([^}]+)\}/g, (match, name: string) =>
+    name in parameters ? String(parameters[name]) : match);
 }

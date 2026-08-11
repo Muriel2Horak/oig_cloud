@@ -210,3 +210,71 @@
 - Aggregate v2 statement coverage is `73.22%`, below the operator's `>80%` release criterion. No threshold or exclusion was weakened; global coverage uplift remains outside this provider remediation slice.
 - Previously documented inherited dependency High/Critical findings, exact release Node/npm toolchain, Ubuntu PEP 517/wheelhouse, and live HP/natural-refresh gates remain unresolved external release obligations.
 - No push, PR, deploy, HP access, or remote mutation occurred.
+
+## Second critic remediation: setup and retry hardening
+
+### Scope and preserved decisions
+
+- Reviewed base: `c683fe3f9e11b357a0eb96e7953d7277a4fe630e`.
+- Preserve `ConfigFlow.VERSION == 1`, the no-migration policy, and byte-identical non-negative stored azimuth. Stored `138` remains `138`; only the Forecast.Solar provider boundary sends `-42`.
+- Preserve Solcast-owned geometry and local-only enabled-string kWp metadata.
+- Keep authentication, authorization, proof binding, and transaction atomicity strict.
+- Keep the confirmed scheduler phase-lock defect out of this provider remediation.
+
+### Mandatory RED evidence
+
+- Full native OptionsFlow: `4 failed`; `section_all` lost blank retained Forecast.Solar/Solcast credentials, bypassed the private solar transaction, and did not enforce the expected revision.
+- Pending bootstrap record: `3 failed`; staged records lacked owner/expiry metadata and deterministic cleanup.
+- Pending bootstrap concurrency: two entries racing one token returned `[True, True]` instead of exactly one success.
+- Pending bootstrap validation/rollback: wrong owner claims succeeded, malformed/missing/expired records did not fail closed consistently, and removal/activation/token-strip failure could lose a retryable claim reference.
+- Wizard retry/reset/i18n: `13 failed, 59 passed`; a successful solar section remained dirty after a later failure, stale candidate proof/result/error/match state survived discard/reopen, corrupt guidance advertised `-180..360`, and Wizard warnings were hardcoded Czech.
+- Realistic Playwright proof behavior: `2 failed, 2 passed`; the fake accepted a real proof for a different effective DTO and rejected the production-supported proofless explicit save.
+- Setup/import failures were not counted as behavioral RED.
+
+### Implemented remediation
+
+- Load active selected-provider credentials and the solar revision for direct solar and `section_all`. Route both through `async_commit_solar_configuration`, retaining blank secrets, stripping public credentials, enforcing one revision increment, and rolling back atomically.
+- Add an explicit expected-revision conflict at the shared solar transaction boundary before proof claim or credential activation.
+- Bind pending initial credentials to a stable owner digest and provider, give records a five-minute expiry, maintain a private pending index, and clean expired/abandoned records deterministically.
+- Claim each pending token under one global bootstrap lock. Reject malformed, missing, expired, replayed, wrong-owner, wrong-provider, or incomplete records. Restore private state, public claim reference, pending record, and index on any activation/removal/token-strip failure.
+- Fail entry setup closed when a referenced pending credential claim cannot activate; log only safe diagnostics.
+- Advance the Wizard baseline after each successfully committed section. A later section failure and retry no longer repeats solar activation, revision, reload, or proof consumption; later user edits remain visible as dirty.
+- Clear candidate proof/result/error/match state on discard and bootstrap, refresh legacy metadata, and prevent an old candidate result from satisfying a newly loaded draft.
+- Move corrupt/adoption warning copy into CS/EN catalogs and advertise only the accepted canonical correction range `0..360`.
+- Make the Playwright fake reconstruct the complete effective DTO from persisted state plus draft, bind issued proofs to it, reject a real mismatch, reject a genuinely consumed replay, and accept a proofless explicit save as unverified.
+
+### Focused GREEN evidence
+
+- Pending key store, including concurrency, expiry/owner/provider validation, cleanup, replay, and rollback: `15 passed` in the plugin-isolated group.
+- Native OptionsFlow: `49 passed`; initial ConfigFlow/setup: `21 passed`.
+- Wizard/Settings focused selection: `4 files, 72 passed`.
+- Realistic Playwright provider contract: `4 passed`.
+- Full frontend unit suite under `TZ=UTC`: `102 files, 2,043 passed`.
+
+### Full-gate evidence
+
+- Broad affected Python selection: `584 passed, 1 failed`. The sole failure is the inherited no-entry-ID solar sensor fixture described below; no changed production or test line participates.
+- Native provider E2E under mock data mode: `8 passed, 3 skipped`.
+- Full v2 coverage under `TZ=UTC`: statements/lines `73.23%` (`33,405/45,612`), branches `77.73%` (`4,451/5,726`), functions `72.47%` (`911/1,257`).
+- Flake8: pass.
+- Canonical Mypy: `Success: no issues found in 200 source files`.
+- Pylint `4.0.7`: exit `0`, score `9.52/10`, `E=0`, `F=0`.
+- ESLint errors-only and TypeScript typecheck: pass.
+- Production build and read-only `build:verify`: pass; tracked distribution rebuilt.
+- Translation JSON parse and parity: pass.
+- `git diff --check`: pass.
+- Final pre-commit: two consecutive `pre-commit run --all-files` executions passed all nine hooks without rewrites under the repository Python environment.
+- Gitleaks diff scan: two generated-source-map `sourceKey` metadata false positives; no credential finding.
+- Bounded Trivy secret scan: zero secrets.
+- No dependency manifest or lockfile changed; no dependency finding was introduced by this slice.
+- Codex Security diff scan `a4c909fa-117f-4d73-867f-64c0ff9ffcee`: complete and sealed, `12/12` unique full-file receipts, four complete coverage surfaces, zero candidates, and zero reportable findings.
+- Security report: `/private/var/folders/vj/680smcyn26b89dfkt2hsp96m0000gn/T/codex-security-scans-w4gF6A/wizard-v2-auth-fix/c683fe3f9e11b357a0eb96e7953d7277a4fe630e_20260811T040817Z_t3eglsxt/report.md`.
+- Scanner completion metadata did not expose workbench token counters. Scan-goal usage: `138,542` tokens over `15m05s`.
+
+### Systematic regression isolation and residual blockers
+
+- `tests/test_entities_solar_forecast_sensor_more.py::test_async_fetch_forecast_success` supplies neither an entry ID nor a valid provider DTO. The same no-entry fixture class is inherited, and the changed slice does not touch its sensor or test path; the focused provider paths and current-revision control pass.
+- Confirmed scheduler release blocker remains a separate slice: a startup phase of 10:42 produces zero accepted wall-clock refresh hits over 96 hours because interval callbacks never enter the required minute/hour windows. No scheduler production change is included here.
+- Aggregate v2 statement coverage is `73.23%`, below the operator's `>80%` release criterion. No threshold or exclusion was weakened; global coverage uplift remains outside this provider remediation.
+- Previously documented dependency High/Critical findings, exact release Node/npm toolchain, Ubuntu PEP 517/wheelhouse, and live HP/natural-refresh gates remain unresolved external release obligations.
+- No push, PR, deploy, HP access, or remote mutation occurred.

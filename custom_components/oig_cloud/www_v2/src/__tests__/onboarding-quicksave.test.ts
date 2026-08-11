@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import type { FieldRegistry } from '@/data/registry-data';
+import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 
 const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
@@ -136,6 +137,29 @@ const MULTI_SECTION_DOC = {
   battery: { charge_rate_kw: 1.5 },
   basic: { data_source_mode: 'cloud_only', standard_scan_interval: 30 },
   boiler: { boiler_target_temp_c: 60 },
+};
+
+const SOLAR_RETRY_REGISTRY_FIXTURE: FieldRegistry = {
+  sections: ['solar', 'boiler'],
+  fields: {
+    ...SOLAR_REGISTRY_FIXTURE.fields,
+    boiler_target_temp_c: MULTI_SECTION_REGISTRY_FIXTURE.fields.boiler_target_temp_c,
+  },
+};
+
+const SOLAR_RETRY_DOC = {
+  solar: {
+    solar_forecast_provider: 'forecast_solar',
+    solar_forecast_mode: 'hourly',
+    solar_forecast_api_key_set: true,
+    solar_forecast_string1_enabled: true,
+    solar_forecast_string1_kwp: 5.5,
+    solar_forecast_string1_declination: 35,
+    solar_forecast_string1_azimuth: 180,
+    solar_forecast_string2_enabled: false,
+  },
+  boiler: { boiler_target_temp_c: 60 },
+  _meta: { legacy_fields: {} },
 };
 
 const PRICING_SAVE_REGISTRY_FIXTURE: FieldRegistry = {
@@ -296,6 +320,10 @@ describe('quick-save bar (fe/fix defect #2)', () => {
     const wizard = await openWizard();
     const w = internals(wizard);
     w.modulesDraft = { ...w.modulesDraft, enable_chmu_warnings: false, enable_boiler: true };
+    w.solarTestProof = 'stale-proof';
+    w.solarTestResult = { tomorrow_total_kwh: 7.5, forecast_covers_tomorrow: true };
+    w.solarTestError = { code: 'timeout', message: 'stale-error' };
+    w.solarTestMatchesDraft = true;
     await wizard.updateComplete;
 
     const discardBtn = wizard.shadowRoot!.querySelector('[data-testid="quicksave-discard"]') as HTMLButtonElement;
@@ -315,9 +343,37 @@ describe('quick-save bar (fe/fix defect #2)', () => {
 
     expect(w.modulesDraft.enable_chmu_warnings).toBe(true);
     expect(w.modulesDraft.enable_boiler).toBe(false);
+    expect(w.solarTestProof).toBeNull();
+    expect(w.solarTestResult).toBeNull();
+    expect(w.solarTestError).toBeNull();
+    expect(w.solarTestMatchesDraft).toBe(false);
     expect(wizard.shadowRoot!.querySelector('[data-testid="quicksave-discard-confirm"]')).toBeFalsy();
     expect(wizard.shadowRoot!.querySelector('[data-testid="quicksave-bar"]')).toBeFalsy();
     expect(saveModuleConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('a new bootstrap clears candidate state so an old result cannot satisfy the newly loaded draft', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.solarTestProof = 'old-proof';
+    w.solarTestResult = { tomorrow_total_kwh: 7.5, forecast_covers_tomorrow: true };
+    w.solarTestError = { code: 'timeout', message: 'old-error' };
+    w.solarTestMatchesDraft = true;
+    w.legacySolarFields = {
+      solar_forecast_string1_azimuth: { stored_value: -90, display_value: 90 },
+    };
+
+    w.open = false;
+    await settle(wizard);
+    w.open = true;
+    await settle(wizard);
+
+    expect(w.solarTestProof).toBeNull();
+    expect(w.solarTestResult).toBeNull();
+    expect(w.solarTestError).toBeNull();
+    expect(w.solarTestMatchesDraft).toBe(false);
+    expect(w.legacySolarFields).toEqual({});
   });
 
   it('Zahodit cancel leaves the draft untouched and dismisses the confirm dialog', async () => {
@@ -446,6 +502,105 @@ describe('post-save reload (fe/fix defect #1)', () => {
     expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-error"]')).toBeTruthy();
     expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-retry"]')).toBeTruthy();
     expect(reloadPanelSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('solar retry transaction baseline', () => {
+  let reloadPanelSpy: any;
+
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    waitForModuleConfigAfterReloadMock.mockReset();
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(SOLAR_RETRY_DOC));
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_RETRY_REGISTRY_FIXTURE);
+    waitForModuleConfigAfterReloadMock.mockImplementation((onSuccess: (cfg: unknown) => void) => {
+      onSuccess({});
+    });
+    reloadPanelSpy = vi.spyOn(
+      customElements.get('oig-onboarding-wizard')!.prototype as unknown as { reloadPanel(): void },
+      'reloadPanel',
+    ).mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+    reloadPanelSpy.mockRestore();
+  });
+
+  it('does not resave a committed verified solar section when a later section fails and is retried', async () => {
+    let boilerAttempts = 0;
+    saveModuleConfigMock.mockImplementation(async (section: string) => {
+      if (section === 'boiler' && boilerAttempts++ === 0) return { ok: false };
+      return { ok: true };
+    });
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.solarDraft = { ...w.solarDraft, solar_forecast_string1_kwp: 6 };
+    w.boilerDraft = { ...w.boilerDraft, boiler_target_temp_c: 66 };
+    w.solarTestProof = 'verified-proof';
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="quicksave-save"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(saveModuleConfigMock.mock.calls.map(([section]) => section)).toEqual(['solar', 'boiler']);
+    expect(saveModuleConfigMock.mock.calls[0]).toEqual([
+      'solar',
+      { solar_forecast_string1_kwp: 6 },
+      [],
+      'verified-proof',
+    ]);
+    expect(w.solarTestProof).toBeNull();
+    expect(fetchOIGAPITyped).not.toHaveBeenCalled();
+
+    (wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-retry"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(saveModuleConfigMock.mock.calls.map(([section]) => section)).toEqual([
+      'solar', 'boiler', 'boiler',
+    ]);
+    expect(w.originalValues.solar_forecast_string1_kwp).toBe(6);
+    expect(fetchOIGAPITyped).toHaveBeenCalledTimes(1);
+    expect(waitForModuleConfigAfterReloadMock).toHaveBeenCalledTimes(1);
+    expect(reloadPanelSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('advances a successful section baseline without hiding a later edit', async () => {
+    let boilerAttempts = 0;
+    saveModuleConfigMock.mockImplementation(async (section: string) => {
+      if (section === 'boiler' && boilerAttempts++ === 0) return { ok: false };
+      return { ok: true };
+    });
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.solarDraft = { ...w.solarDraft, solar_forecast_string1_kwp: 6 };
+    w.boilerDraft = { ...w.boilerDraft, boiler_target_temp_c: 66 };
+    w.solarTestProof = 'verified-proof';
+    await w.saveAllChangedSections();
+
+    w.solarDraft = { ...w.solarDraft, solar_forecast_string1_kwp: 7 };
+    await w.saveAllChangedSections();
+
+    const solarCalls = saveModuleConfigMock.mock.calls.filter(([section]) => section === 'solar');
+    expect(solarCalls).toHaveLength(2);
+    expect(solarCalls[1][1]).toEqual({ solar_forecast_string1_kwp: 7 });
+  });
+
+  it('keeps the proof when the solar section itself is not committed', async () => {
+    saveModuleConfigMock.mockResolvedValue({ ok: false });
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.solarDraft = { ...w.solarDraft, solar_forecast_string1_kwp: 6 };
+    w.solarTestProof = 'retryable-proof';
+
+    await w.saveAllChangedSections();
+
+    expect(w.solarTestProof).toBe('retryable-proof');
+    expect(w.originalValues.solar_forecast_string1_kwp).toBe(5.5);
   });
 });
 

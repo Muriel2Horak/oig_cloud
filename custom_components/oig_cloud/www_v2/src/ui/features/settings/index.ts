@@ -612,7 +612,7 @@ export class OigSettings extends LitElement {
       return [
         html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
           Uložená hodnota ${String(legacy.stored_value)} není platný celočíselný
-          azimut v rozsahu −180° až 360°. Opravte ji před uložením.
+          azimut v rozsahu 0° až 360°. Opravte ji před uložením.
         </p>`,
         field,
       ];

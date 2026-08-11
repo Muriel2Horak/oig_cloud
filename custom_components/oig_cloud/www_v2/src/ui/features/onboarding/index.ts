@@ -1930,6 +1930,7 @@ export class OigOnboardingWizard extends LitElement {
         }
         break;
       }
+      this.originalValues = Object.freeze({ ...this.originalValues, ...changed });
     }
     return errors;
   }
@@ -2233,6 +2234,14 @@ export class OigOnboardingWizard extends LitElement {
     this.tariffMatrixOverride = {};
     this.tariffMatrixError = {};
     this.touchedLegacySolarFields = new Set();
+    this.clearSolarCandidateState();
+  }
+
+  private clearSolarCandidateState(): void {
+    this.solarTestProof = null;
+    this.solarTestResult = null;
+    this.solarTestError = null;
+    this.solarTestMatchesDraft = false;
   }
 
   private requestDiscardDrafts(): void {
@@ -2340,7 +2349,9 @@ export class OigOnboardingWizard extends LitElement {
     this.aiState = null;
     this.aiValidation = { kind: 'idle' };
     this.originalValues = {};
+    this.legacySolarFields = {};
     this.touchedLegacySolarFields = new Set();
+    this.clearSolarCandidateState();
     this.pricing = null;
     this.pricingLoadFailed = false;
     this._pendingPrereqOff = null;
@@ -3176,14 +3187,16 @@ export class OigOnboardingWizard extends LitElement {
               const legacy = this.legacySolarFields[f.key];
               const warning = legacy?.invalid_legacy_value
                 ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
-                    Uložená hodnota ${String(legacy.stored_value)} není platný celočíselný
-                    azimut v rozsahu −180° až 360°. Opravte ji před uložením.
+                    ${t('onboarding.solar.legacy_invalid', this.wizardLang, {
+                      stored: String(legacy.stored_value),
+                    })}
                   </p>`
                 : legacy?.requires_adoption
                 ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
-                    Starší hodnota ${String(legacy.stored_value)} je zobrazena jako
-                    kompasová hodnota ${String(legacy.display_value)}. Kompas: sever 0°/360°,
-                    východ 90°, jih 180°, západ 270° (rozsah 0–360°). Uložením pole ji převezmete.
+                    ${t('onboarding.solar.legacy_adoption', this.wizardLang, {
+                      stored: String(legacy.stored_value),
+                      display: String(legacy.display_value),
+                    })}
                   </p>`
                 : nothing;
               // Live-walk defect 3: guide card directly below the provider
