@@ -115,6 +115,16 @@ def test_deferred_annotations_resolve_only_under_the_seam():
     ``migration._find_schema_errors`` is exactly the callable the plugin's
     ``recorder_mock`` fixture autospecs on the ``migration`` side -- not
     ``migration.validate_db_schema``, which the fixture never patches.
+
+    The post-seam proof is namespace restoration, not a repeated
+    ``NameError``. Once CPython 3.14's PEP 649 machinery has successfully
+    evaluated a deferred annotation, it may keep that successful evaluation
+    cached internally -- so a second ``get_type_hints`` call can keep
+    succeeding even after the seam has removed ``Recorder``/``Session`` from
+    the module namespaces again. That cache is not a namespace leak: the
+    attributes themselves, which is what the seam contracts to restore, are
+    proven absent (or restored to their exact prior value) below without
+    touching any private annotation cache.
     """
     # NOT ``MIGRATION.validate_db_schema``: both declare an identical
     # ``instance: Recorder`` parameter, but the plugin's ``recorder_mock``
@@ -136,6 +146,8 @@ def test_deferred_annotations_resolve_only_under_the_seam():
         pytest.skip("Home Assistant recorder patch module not loaded")
     session_scope = patch_recorder.real_session_scope
 
+    before = _current()
+
     with pytest.raises(NameError, match="Recorder"):
         typing.get_type_hints(migration_callable)
     with pytest.raises(NameError, match="Session"):
@@ -145,12 +157,26 @@ def test_deferred_annotations_resolve_only_under_the_seam():
         typing.get_type_hints(migration_callable)
         typing.get_type_hints(session_scope)
 
-    # ...and the failure comes back once the seam is gone, so the binding is
-    # scoped rather than permanent.
-    with pytest.raises(NameError, match="Recorder"):
-        typing.get_type_hints(migration_callable)
-    with pytest.raises(NameError, match="Session"):
-        typing.get_type_hints(session_scope)
+    # Post-seam: prove the module namespaces -- the thing the seam actually
+    # contracts to restore -- are back to their exact pre-seam state. Do NOT
+    # assert that ``get_type_hints`` raises again: CPython 3.14 may keep the
+    # now-successful deferred-annotation evaluation cached internally even
+    # after ``Recorder``/``Session`` are gone from the namespace again, so a
+    # repeated-``NameError`` assertion is invalid and this test must not
+    # depend on that private cache either way.
+    after = _current()
+    for name, previous in before.items():
+        namespace = MIGRATION if name == "Recorder" else HELPERS_RECORDER
+        if previous is ABSENT:
+            assert name not in namespace.__dict__, (
+                f"{namespace.__name__}.{name} was absent before the seam and "
+                "must be absent again"
+            )
+        else:
+            assert after[name] is previous, (
+                f"{namespace.__name__}.{name} was not restored to its exact "
+                "prior value"
+            )
 
 
 def test_context_manager_restores_after_an_exception():
