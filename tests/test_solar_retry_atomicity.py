@@ -578,3 +578,190 @@ async def test_unload_during_retry_save_preserves_one_durable_recovery(
     assert writes == []
     assert sensor._active_refresh_tasks == set()
     assert sensor._durable_write_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_context_capture_timeout_persists_one_retry_and_duplicate_is_inert(
+    monkeypatch,
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    await seed_current_cache(sensor)
+    timers = []
+
+    async def blocked_context(**_kwargs):
+        await asyncio.Event().wait()
+
+    def track_point(_hass, callback, when):
+        timers.append((callback, when))
+        return lambda: None
+
+    sensor._async_capture_candidate_context = blocked_context
+    monkeypatch.setattr(module, "ATTEMPT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(module, "async_track_point_in_utc_time", track_point)
+
+    await sensor._wall_clock_update(SCHEDULED)
+    await sensor._wall_clock_update(SCHEDULED.replace(second=37))
+
+    stored = MemoryStore.bucket[sensor._storage_key]
+    state = stored["retry_state"]
+    assert state["code"] == "timeout"
+    assert state["completed_attempt_index"] == 0
+    assert state["next_at"] == (SCHEDULED + timedelta(minutes=15)).isoformat()
+    assert len(timers) == 1
+    assert timers[0][1] == SCHEDULED + timedelta(minutes=15)
+    retry_saves = [
+        item
+        for key, item in MemoryStore.saves
+        if key == sensor._storage_key and "retry_state" in item
+    ]
+    assert len(retry_saves) == 1
+
+
+@pytest.mark.asyncio
+async def test_context_timeout_identity_rejects_options_changed_during_capture(
+    monkeypatch,
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    await seed_current_cache(sensor)
+    timers = []
+
+    async def blocked_context(**_kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            sensor._config_entry.options["solar_forecast_string1_azimuth"] = 90
+
+    def track_point(_hass, _callback, when):
+        timers.append(when)
+        return lambda: None
+
+    sensor._async_capture_candidate_context = blocked_context
+    monkeypatch.setattr(module, "ATTEMPT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(module, "async_track_point_in_utc_time", track_point)
+
+    await sensor._wall_clock_update(SCHEDULED)
+
+    stored = MemoryStore.bucket[sensor._storage_key]
+    assert "retry_state" not in stored
+    assert timers == []
+    assert MemoryStore.saves == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["retry", "accepted"])
+async def test_repeated_external_cancel_then_unload_keeps_durable_task_owned_until_save(
+    monkeypatch, path
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    await seed_current_cache(sensor)
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    writes = []
+
+    async def fetch(**_kwargs):
+        if path == "retry":
+            return SolarFetchResult.retry("timeout")
+        return SolarFetchResult.accept(candidate(4.0))
+
+    sensor.async_fetch_forecast_data = fetch
+    sensor.async_write_ha_state = lambda: writes.append("state")
+
+    async def broadcast():
+        writes.append("broadcast")
+
+    sensor._broadcast_forecast_data = broadcast
+    caller = asyncio.create_task(
+        sensor._wall_clock_update(SCHEDULED)
+        if path == "retry"
+        else sensor.async_manual_update()
+    )
+    await MemoryStore.blocked_save_started.wait()
+    caller.cancel()
+    await asyncio.sleep(0)
+    caller.cancel()
+    await asyncio.sleep(0)
+    unload = asyncio.create_task(sensor.async_will_remove_from_hass())
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    try:
+        assert caller.done() is False
+        assert len(sensor._durable_write_tasks) == 1
+        assert unload.done() is False
+        MemoryStore.blocked_save_release.set()
+        await unload
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(caller, unload, return_exceptions=True)
+
+    stored = MemoryStore.bucket[sensor._storage_key]
+    if path == "retry":
+        assert stored["retry_state"]["code"] == "timeout"
+    else:
+        assert stored["forecast_data"]["total_today_kwh"] == 4.0
+        assert sensor._last_forecast_data["total_today_kwh"] == 1.0
+    assert writes == []
+    assert caller.cancelled()
+    assert sensor._active_refresh_tasks == set()
+    assert sensor._durable_write_tasks == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_path", ["retry", "accepted"])
+async def test_repeated_cancel_keeps_cache_lock_until_newer_snapshot_can_win(
+    monkeypatch, old_path
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    state = retry_state(provenance)
+    occurrence_id = state["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    old_context = await request_context(
+        sensor,
+        request_id=f"request:{old_path}:old",
+        request_sequence=1,
+        occurrence_id=occurrence_id,
+    )
+    newer_context = await request_context(
+        sensor,
+        request_id=f"request:{old_path}:new",
+        request_sequence=2,
+        occurrence_id=occurrence_id,
+    )
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    old_write = asyncio.create_task(
+        sensor._async_persist_retry_state(state, source_context=old_context)
+        if old_path == "retry"
+        else sensor.async_commit_candidate(SolarCandidate(candidate(4.0), old_context))
+    )
+    await MemoryStore.blocked_save_started.wait()
+    old_write.cancel()
+    await asyncio.sleep(0)
+    old_write.cancel()
+    await asyncio.sleep(0)
+    newer_write = asyncio.create_task(
+        sensor.async_commit_candidate(
+            SolarCandidate(candidate(9.0), newer_context)
+        )
+    )
+    await asyncio.sleep(0)
+
+    try:
+        assert old_write.done() is False
+        assert len(sensor._durable_write_tasks) == 1
+        assert newer_write.done() is False
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(old_write, newer_write, return_exceptions=True)
+
+    assert old_write.cancelled()
+    assert newer_write.result() is True
+    stored = MemoryStore.bucket[sensor._storage_key]
+    assert stored["forecast_data"]["total_today_kwh"] == 9.0
+    assert "retry_state" not in stored
+    assert sensor._last_forecast_data["total_today_kwh"] == 9.0
+    assert sensor._durable_write_tasks == set()

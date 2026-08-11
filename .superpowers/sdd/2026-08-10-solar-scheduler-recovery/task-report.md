@@ -5,10 +5,12 @@
 - Original scheduler base: `81405e06ad606f24c659107cca5a9da530ae9b68`.
 - Critic-remediation base: `a0014f1da12e38c92b3eb56ef35db3dc631738d9`.
 - Second critic-remediation base: `0d1722732addf67eba00cefeab92b1a3b1bd2866`.
+- Third critic-remediation base: `6f0fb6b54b32d9635dc35c3bbb97ba8deb10890d`.
 - Branch: `codex/wizard-v2-auth-fix`.
 - Original scheduler commit: `fix: schedule solar refreshes on local wall clock`.
 - Remediation commit message: `fix: harden solar refresh commit ordering`.
 - Second remediation commit message: `fix: unify solar cache write transactions`.
+- Third remediation commit message: `fix: preserve solar recovery through cancellation`.
 - Execute Tasks 1-9 from `docs/superpowers/plans/2026-08-10-solar-scheduler-recovery.md`, then close the ordering, durable retry, lifecycle, real-clock, privacy, restart, and reporting gaps found by critic review.
 - Preserve approved provider/authentication contracts.
 - Preserve stored azimuth bytes. No migration, modulo rewrite, or ConfigFlow version change. Stored `138` remains `138`; Forecast.Solar receives `-42` only at the provider boundary.
@@ -19,10 +21,11 @@
 
 - Provider fetches return classified results without mutating sensor memory, coordinator state, Home Assistant state, storage, or broadcasts.
 - Provider DTO and secret-free full effective options are captured together under the shared entry transaction lock. The strict provider-discriminated DTO drives I/O; the full options drive provenance, including intentionally retained defaults for disabled strings.
-- Every classified runtime result carries a frozen pre-I/O context: entry ID, provider, non-secret config fingerprint, credential revision, request identity, occurrence identity/generation, lifecycle generation, and monotonic request sequence. Accepted results additionally own a deep-copied snapshot.
+- Every scheduled attempt synchronously captures a frozen, non-secret source identity from setup-validated provenance before any blocking context lookup: entry ID, provider, config fingerprint, credential revision, request identity, occurrence identity/generation, lifecycle generation, and monotonic request sequence. Provider results normally carry the stronger transaction-confirmed context; a context-capture timeout intentionally keeps `context=None` and retains only the pre-wait source identity. Accepted results additionally own a deep-copied snapshot.
 - Candidate commit is ordered by one commit lock and the shared per-entry solar transaction lock. It rejects raw, duplicate, older, wrong-provider/config/revision, superseded-occurrence, or obsolete-lifecycle candidates before validation/save. The same captured context is checked again before publish.
 - The ordered commit validates, performs one tracked shielded Store write with captured provenance and no retry record, then rechecks context before adopting any cache/forecast memory or publishing coordinator/HA/broadcast state. A newer durable sequence prevents an older completed provider call from overwriting it.
 - Accepted snapshots and retry set/clear writes use the same lock order: sensor candidate lock, then shared entry transaction lock. Retry writes re-read Store only after both locks, validate failed-attempt request/occurrence/sequence context, and use tracked shielded Store tasks with caller-cancellation reconciliation.
+- Durable Store task ownership is independent of its caller. Retry and accepted writes stay tracked through arbitrary repeated caller cancellation, retain both ordered locks until Store completion, reconcile memory only after the durable outcome is known, and then preserve caller cancellation semantics. Unload waits for the same task-owned boundary; a newer write cannot pass an older blocked write and therefore wins last.
 - Schema-2 entry-specific retry rewrites preserve existing cache data and provenance, including mismatched or invalid artifacts. Legacy box-only storage remains read-only and forced stale. An executable reader copied from the pre-scheduler artifact proves the previous release ignores entry-specific schema 2 and continues reading the untouched box key.
 - An accepted retry writes the new validated snapshot and removes retry recovery in the same Store write. There is no later unshielded retry-clear write after a successful commit.
 - Daily optimized mode subscribes to HA-local `06:00`, `12:00`, and `16:00`; daily mode subscribes to `06:00`. Hourly and every-four-hour modes retain interval subscriptions. Manual and secondary sensors register none.
@@ -49,6 +52,13 @@
 - Additional bounded REDs proved the request-context capture sat outside the 90-second attempt deadline, pre-publish Store completion already mutated `_durable_cache_envelope`, and an older retry sequence could replace newer recovery.
 - Positive controls proved the executable previous-release reader and Store-complete unload/restart path were otherwise reproducible before their stricter assertions.
 
+### Mandatory third-critic RED
+
+- Before third-remediation production edits, the canonical CPython 3.14.3 grouped selection collected `6` tests and produced `4 failed, 2 passed`.
+- Context identity RED failed because `SolarFetchResult` had no pre-wait source identity; the executable scheduled regression then failed because the claimed occurrence persisted no `retry_state` and armed no timer after context capture timed out.
+- Repeated-cancellation RED failed on both retry and accepted Store paths: both caller tasks became cancelled while Store remained blocked, proving that caller-owned cleanup had dropped durable tracking and released transaction locks early.
+- The two passing controls showed that one cancellation source was already reconciled; the defect required repeated cancellation. Final tests add two explicit cancellations plus unload, and a blocked older write followed by a newer accepted write, for both retry and accepted paths.
+
 ### Task 1: classified results
 
 - Original RED: missing classified result type and false-positive manual success.
@@ -72,7 +82,7 @@
 
 - Original RED covered schema-2 provenance, legacy rollback, forced stale behavior, and restart precedence.
 - Critic RED added mismatched, legacy, and invalid artifact preservation plus same-write accepted retry clearing and restart-before-publish recovery.
-- Retry atomicity GREEN: `11 passed`; provenance GREEN: `27 passed`.
+- Current retry atomicity GREEN: `17 passed`; provenance GREEN: `27 passed`.
 - Retry set/clear re-read the current durable envelope under the same two locks as accepted commit, reject stale request/occurrence/sequence sources, and reconcile shielded Store completion across cancellation/unload. Successful retry writes the accepted snapshot without `retry_state` once; restart cannot replay the cleared retry.
 
 ### Task 5: real HA-local wall-clock scheduling
@@ -85,7 +95,8 @@
 ### Task 6: retry, deduplication, and deadline
 
 - Original RED: `10 failed` across timing, overlap, deduplication, deadline, and persistence faults.
-- Scheduler GREEN: `15 passed`; remediation compatibility keeps the exact `+15m`/`+45m`, no-fourth-attempt, terminal, timer-failure, persistence-failure, restart, request serialization, and 90-second deadline contracts green. The deadline now includes request-context capture as well as lock wait and provider I/O.
+- Scheduler GREEN: `15 passed`; remediation compatibility keeps the exact `+15m`/`+45m`, no-fourth-attempt, terminal, timer-failure, persistence-failure, restart, request serialization, and 90-second deadline contracts green. The deadline includes request-context capture as well as lock wait and provider I/O.
+- A context-capture timeout after occurrence claim now persists exactly one `+15m` recovery record and arms one timer from the immutable pre-wait identity. Duplicate or jittered callback delivery remains inert. If options, lifecycle, occurrence, entry, or loaded provenance changes before persistence, the timeout identity is rejected and never stamped with current provenance.
 - Accepted retry commit clears durable recovery in the accepted snapshot write; rejected accepted candidates clear any prior recovery without publishing.
 
 ### Task 7: complete lifecycle cancellation
@@ -94,6 +105,7 @@
 - Critic RED added publish-side service tasks and concurrent removals.
 - Lifecycle GREEN: `7 passed`.
 - Every task-producing path now uses the unified refresh-task tracker; concurrent removal callers await one teardown; no `update_entity` work survives removal.
+- Repeated cancellation during either retry or accepted Store save no longer removes the durable task early. Unload stays pending until Store completes, removed entities publish nothing, both ordered locks remain held, and a follow-on newer snapshot persists last.
 
 ### Task 8: stale recovery integration/E2E
 
@@ -104,11 +116,11 @@
 
 ### Task 9: compatibility and complete gates
 
-- Final scheduler/cache/provider/entity/service/E2E compatibility selection: `473 passed`.
+- Final scheduler/cache/provider/entity/service/E2E compatibility selection: `481 passed`.
 - Final second-remediation concurrency/context/E2E selection: `49 passed`.
 - Canonical full Python environment: CPython `3.14.3`, pytest `9.0.3`, pytest-asyncio `1.4.0`, Home Assistant `2026.8.1`, HA custom-component plugin `0.13.355`.
-- Canonical full suite: `5260 passed, 29 skipped, 10 warnings in 125.66s`.
-- Coverage: `91.09%`, above required `80.01%`.
+- Canonical full suite: `5266 passed, 29 skipped, 10 warnings in 126.54s`.
+- Coverage: `33,062/36,300` lines, `91.08%`, above required `80.01%`.
 - A non-authoritative repository Python `3.13.4` symlink reproduced an event-loop fixture cascade after an inherited sync `asyncio.run()` test. The locked Python 3.14.3 gate completed naturally, so the 3.13 result is environment drift, not a release failure.
 
 ## Static, frontend, and security verification
@@ -116,7 +128,7 @@
 - Full Flake8 over production and tests: exit `0`.
 - Mypy with CI flags: `Success: no issues found in 202 source files`.
 - Canonical full-tree Pylint wrapper: exit `0`, score `9.54/10`, JSON2 `E=0`, `F=0`. Existing backlog: `880` warnings, `633` conventions, `128` refactors.
-- Existing frontend solar data/stale selections: `72 passed`. `flow-data.test.ts` proves `forecast_stale` propagation; `flow-solar-tile.test.ts` provides the existing string-assembly stale indicator contract. No frontend source/dist changed, and this is not claimed as a new mounted pricing-card regression.
+- Existing frontend solar data/stale selections: `77 passed` across three files. `flow-data.test.ts` proves `forecast_stale` propagation; `flow-solar-tile.test.ts` provides the existing string-assembly stale indicator contract. No frontend source/dist changed, and this is not claimed as a new mounted pricing-card regression.
 - Bandit full production tree: `0 HIGH`, `0 MEDIUM`, `44 LOW`; no finding in either changed production file.
 - Gitleaks over every modified/untracked task file: no findings. The public numeric legacy storage fixture ID has a documented inline scanner allow.
 - Trivy: v2 npm lock `0` vulnerabilities; Python lock `11 HIGH`, `2 CRITICAL`, `2 MEDIUM`, `1 LOW`.

@@ -45,6 +45,7 @@ def test_result_factories_expose_only_classified_outcome(
         "code",
         "candidate",
         "context",
+        "source_identity",
     }
 
 
@@ -64,6 +65,7 @@ def test_retryable_result_retains_immutable_request_context():
     result = SolarFetchResult.retry("timeout").with_context(context)
 
     assert result.context is context
+    assert result.source_identity is context
     assert result.candidate is None
     assert "secret" not in repr(result)
 

@@ -376,6 +376,9 @@ async def test_total_attempt_deadline_covers_provider_and_releases_lock(monkeypa
 async def test_total_attempt_deadline_includes_request_context_capture(monkeypatch):
     sensor = OigCloudSolarForecastSensor(Coordinator(), "solar_forecast", Entry(), {})
     sensor.hass = SimpleNamespace(data={})
+    sensor._cache_provenance = build_cache_provenance(
+        "entry-scheduler", Entry.options, 0
+    )
 
     async def blocked_context(**_kwargs):
         await asyncio.Event().wait()
@@ -391,6 +394,10 @@ async def test_total_attempt_deadline_includes_request_context_capture(monkeypat
     assert result.retryable is True
     assert result.code == "timeout"
     assert result.context is None
+    assert result.source_identity is not None
+    assert result.source_identity.entry_id == "entry-scheduler"
+    assert result.source_identity.request_id == "deadline-context"
+    assert result.source_identity.request_sequence == 1
 
 
 @pytest.mark.asyncio

@@ -27,8 +27,8 @@ TERMINAL_CODES = frozenset(
 
 
 @dataclass(frozen=True)
-class SolarCandidateContext:
-    """Immutable identity captured before provider I/O."""
+class SolarRequestIdentity:
+    """Immutable non-secret request identity available before blocking I/O."""
 
     entry_id: str
     provider: str
@@ -48,6 +48,11 @@ class SolarCandidateContext:
             "config_fingerprint": self.config_fingerprint,
             "credential_revision": self.credential_revision,
         }
+
+
+@dataclass(frozen=True)
+class SolarCandidateContext(SolarRequestIdentity):
+    """Request identity confirmed from the provider transaction snapshot."""
 
 
 @dataclass(frozen=True)
@@ -83,6 +88,7 @@ class SolarFetchResult:
     code: str
     candidate: Mapping[str, Any] | None = None
     context: SolarCandidateContext | None = None
+    source_identity: SolarRequestIdentity | None = None
 
     def __post_init__(self) -> None:
         if self.accepted:
@@ -95,6 +101,8 @@ class SolarFetchResult:
                 if self.context is not None and self.context != candidate_context:
                     raise ValueError("candidate and result contexts differ")
                 object.__setattr__(self, "context", candidate_context)
+            if self.context is not None and self.source_identity is None:
+                object.__setattr__(self, "source_identity", self.context)
             return
         if self.candidate is not None:
             raise ValueError("failed result cannot carry a candidate")
@@ -129,6 +137,22 @@ class SolarFetchResult:
             self.code,
             self.candidate,
             context,
+            self.source_identity or context,
+        )
+
+    def with_source_identity(
+        self, source_identity: SolarRequestIdentity | None
+    ) -> SolarFetchResult:
+        """Bind the safe identity captured before any blocking context lookup."""
+        if source_identity is None or self.source_identity is not None:
+            return self
+        return SolarFetchResult(
+            self.accepted,
+            self.retryable,
+            self.code,
+            self.candidate,
+            self.context,
+            source_identity,
         )
 
 
