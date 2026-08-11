@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import sys
 import types
 from pathlib import Path
@@ -144,5 +145,103 @@ def test_solar_key_store_merges_partial_solcast_candidate_updates() -> None:
             "solcast_api_key": "sc_secret_123456789",
             "solcast_site_id": "site-123",
         }
+
+    asyncio.run(_run())
+
+
+def test_atomic_activation_is_additive_v1_storage_and_increments_once() -> None:
+    async def _run() -> None:
+        store = SolarKeyStore(SimpleNamespace(), "entry1")
+        await store.async_set_candidate(
+            "solcast",
+            {"solcast_api_key": "old-secret", "solcast_site_id": "old-site"},
+        )
+        await store.async_promote_candidate("solcast", "2026-08-10T00:00:00+00:00")
+        before_revision = (await store.async_api_state())["revision"]
+
+        result = await store.async_activate(
+            "forecast_solar",
+            {"solar_forecast_api_key": "new-secret"},
+            verified_at=None,
+        )
+
+        assert result == before_revision + 1
+        raw = deepcopy(_MemStore.bucket["oig_cloud.solar_entry1"])
+        assert solar_key_store_module.STORAGE_VERSION == 1
+        assert raw["active"] == {
+            "provider": "forecast_solar",
+            "solar_forecast_api_key": "new-secret",
+        }
+        assert raw["revision"] == result
+        assert raw["verification"] == {"status": "unverified"}
+        assert raw["candidates"] == {}
+        assert await store.async_get_active("solcast") is None
+
+        # Previous-artifact parser contract: legacy code reads only top-level active.
+        legacy_active = raw.get("active")
+        assert legacy_active["provider"] == "forecast_solar"
+        assert legacy_active["solar_forecast_api_key"] == "new-secret"
+
+    asyncio.run(_run())
+
+
+def test_store_snapshot_restore_recovers_exact_revision_and_active_state() -> None:
+    async def _run() -> None:
+        store = SolarKeyStore(SimpleNamespace(), "entry1")
+        await store.async_activate(
+            "forecast_solar",
+            {"solar_forecast_api_key": "old-secret"},
+            verified_at="2026-08-10T00:00:00+00:00",
+        )
+        snapshot = await store.async_snapshot()
+        before = deepcopy(_MemStore.bucket["oig_cloud.solar_entry1"])
+
+        await store.async_activate(
+            "solcast",
+            {"solcast_api_key": "new-secret", "solcast_site_id": "new-site"},
+            verified_at=None,
+        )
+        await store.async_restore_snapshot(snapshot)
+
+        assert _MemStore.bucket["oig_cloud.solar_entry1"] == before
+        assert await store.async_get_active("forecast_solar") == {
+            "solar_forecast_api_key": "old-secret"
+        }
+
+    asyncio.run(_run())
+
+
+def test_proof_is_opaque_bound_expiring_single_use_and_atomically_claimed() -> None:
+    async def _run() -> None:
+        proof_cls = getattr(solar_key_store_module, "SolarProofStore", None)
+        assert proof_cls is not None
+        now = 1_000.0
+        hass = SimpleNamespace(data={})
+        proof_store = proof_cls(hass, now=lambda: now)
+        dto = {
+            "solar_forecast_provider": "forecast_solar",
+            "solar_forecast_mode": "daily",
+            "solar_forecast_string1_enabled": True,
+        }
+        token = await proof_store.async_issue("entry1", dto)
+        assert isinstance(token, str) and len(token) >= 32
+        assert "forecast_solar" not in token and "daily" not in token
+
+        claims = await asyncio.gather(
+            proof_store.async_claim("entry1", token, dto),
+            proof_store.async_claim("entry1", token, dto),
+        )
+        assert claims.count(True) == 1
+        assert claims.count(False) == 1
+
+        mismatched = await proof_store.async_issue("entry1", dto)
+        assert await proof_store.async_claim(
+            "entry1", mismatched, {**dto, "solar_forecast_mode": "hourly"}
+        ) is False
+        assert await proof_store.async_claim("entry1", mismatched, dto) is False
+
+        expired = await proof_store.async_issue("entry1", dto)
+        now += 301
+        assert await proof_store.async_claim("entry1", expired, dto) is False
 
     asyncio.run(_run())

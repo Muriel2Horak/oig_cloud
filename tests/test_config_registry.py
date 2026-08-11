@@ -126,7 +126,19 @@ def test_solar_and_boiler_sections_ported():
     assert solar["solar_forecast_api_key"].secret is True
     assert solar["solcast_api_key"].secret is True
     assert solar["solar_forecast_latitude"].min == -90.0
-    assert solar["solar_forecast_string1_azimuth"].min == -180
+    for key in (
+        "solar_forecast_string1_azimuth",
+        "solar_forecast_string2_azimuth",
+    ):
+        assert solar[key].min == 0
+        assert solar[key].max == 360
+        assert solar[key].step == 1
+    assert solar["solar_forecast_mode"].enum == (
+        "hourly",
+        "every_4h",
+        "daily",
+        "daily_optimized",
+    )
     assert "boiler_target_temp_c" in boiler
     assert boiler["boiler_volume_l"].reload_on_change is True
 
@@ -305,6 +317,30 @@ def test_solar_secrets_are_provider_conditional():
         "solar_forecast_provider", ("forecast_solar",))
 
 
+def test_solar_geometry_visibility_matches_provider_ownership():
+    reg = FIELD_REGISTRY
+    for key in ("solar_forecast_latitude", "solar_forecast_longitude"):
+        assert reg[key].show_if == (
+            "solar_forecast_provider",
+            ("forecast_solar",),
+        )
+        assert reg[key].show_if_all is None
+
+    for number in (1, 2):
+        enabled_key = f"solar_forecast_string{number}_enabled"
+        assert reg[f"solar_forecast_string{number}_kwp"].show_if == (
+            enabled_key,
+            (True,),
+        )
+        assert reg[f"solar_forecast_string{number}_kwp"].show_if_all is None
+        for suffix in ("declination", "azimuth"):
+            field = reg[f"solar_forecast_string{number}_{suffix}"]
+            assert field.show_if == (enabled_key, (True,))
+            assert field.show_if_all == (
+                ("solar_forecast_provider", ("forecast_solar",)),
+            )
+
+
 def test_string2_geometry_is_gated_on_string2_enabled():
     """U7: geometry fields hide when their string is off."""
     for key in ("solar_forecast_string2_kwp", "solar_forecast_string2_declination",
@@ -324,6 +360,9 @@ def test_show_if_targets_are_real_registry_keys():
         for value in allowed:
             # allowed values must be legal for the TARGET field's own type
             assert isinstance(value, tf.type), f"{key}.show_if: {value!r} not a {tf.type.__name__}"
+        for target, allowed in f.show_if_all or ():
+            assert target in FIELD_REGISTRY, f"{key}.show_if_all points at unknown {target}"
+            assert allowed, f"{key}.show_if_all has an empty allowed set"
 
 
 @pytest.mark.parametrize("key", [
@@ -497,7 +536,7 @@ def test_pricing_supplier_show_if_predicates_resolve_to_known_fields():
             assert target in known_targets, f"{key}: unknown show_if target {target}"
             assert allowed
         if field.show_if_all is not None:
-            assert len(field.show_if_all) >= 2, f"{key}: show_if_all needs 2+ conditions"
+            assert len(field.show_if_all) >= 1, f"{key}: show_if_all cannot be empty"
             for target, allowed in field.show_if_all:
                 assert target in known_targets, f"{key}: unknown show_if_all target {target}"
                 assert allowed

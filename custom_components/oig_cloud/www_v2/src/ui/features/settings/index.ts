@@ -20,6 +20,7 @@ import {
   loadModuleConfig,
   saveModuleConfig,
   waitForModuleConfigAfterReload,
+  legacyAdoptionsForChanges,
   ModuleConfig,
   SettingsSection,
 } from '@/data/settings-data';
@@ -69,6 +70,8 @@ export interface FieldDef {
   entity?: { domain: string };
   /** Registry-driven conditional visibility (UX-AUDIT U1). */
   showIf?: { field: string; in: unknown[] };
+  /** Additional registry conditions; every condition is ANDed. */
+  showIfAll?: { field: string; in: unknown[] }[];
   /** Registry `secret` flag — replaces the endsWith('api_key') sniff at :627. */
   secret?: boolean;
 }
@@ -509,20 +512,10 @@ export class OigSettings extends LitElement {
     return undefined;
   }
 
-  /**
-   * Field visibility, extended for `show_if_all` (F1 U4 R3): registry-data's
-   * `isVisible` only evaluates the single-condition `show_if`; pricing_supplier's
-   * NT-variant fields need a second, ANDed condition (scenario AND tariff
-   * dual-ness), read straight off the raw registry spec since FieldDef has
-   * no showIfAll of its own.
-   */
+  /** Evaluate the canonical generic registry visibility predicate. */
   private isFieldVisible(section: SettingsSection | 'ai', f: FieldDef): boolean {
     const get = (k: string) => this.currentCrossSection(section, k);
-    if (!isVisible(f, get)) return false;
-    const spec: any = this.registry?.fields[f.key];
-    const extra: { field: string; in: unknown[] }[] | undefined = spec?.show_if_all;
-    if (!extra) return true;
-    return extra.every((cond) => cond.in.some((v) => v === get(cond.field)));
+    return isVisible(f, get);
   }
 
   private setPending(section: SettingsSection | 'ai', key: string, value: unknown): void {
@@ -546,7 +539,12 @@ export class OigSettings extends LitElement {
     if (!values || this.saving) return;
     this.saving = section;
     this.toast = null;
-    const res = await saveModuleConfig(section as SettingsSection, values);
+    const adoptions = section === 'solar'
+      ? legacyAdoptionsForChanges(this.config?._meta?.legacy_fields, values)
+      : [];
+    const res = adoptions.length > 0
+      ? await saveModuleConfig(section as SettingsSection, values, adoptions)
+      : await saveModuleConfig(section as SettingsSection, values);
     this.saving = null;
 
     if (!res.ok) {
@@ -599,7 +597,7 @@ export class OigSettings extends LitElement {
     const dirty = !!(this.pending[section] && f.key in this.pending[section]);
     const isSecret = f.secret ?? f.key.endsWith('api_key');
     const secretSet = isSecret && !!this.current(section, `${f.key}_set`);
-    return renderFieldPresenter(f, {
+    const field = renderFieldPresenter(f, {
       value: this.current(section, f.key),
       dirty,
       secretSet,
@@ -607,6 +605,18 @@ export class OigSettings extends LitElement {
       entityCatalog: this.entityCatalog,
       disabled,
     });
+    const legacy = section === 'solar'
+      ? this.config?._meta?.legacy_fields?.[f.key]
+      : undefined;
+    if (!legacy?.requires_adoption) return field;
+    return [
+      html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+        Starší hodnota ${String(legacy.stored_value)} je zobrazena jako kompasová
+        hodnota ${String(legacy.display_value)}. Kompas: sever 0°/360°, východ 90°,
+        jih 180°, západ 270° (rozsah 0–360°). Uložením tohoto pole ji převezmete.
+      </p>`,
+      field,
+    ];
   }
 
   private renderRegistryUnavailable(section: SettingsSection, title: string, sub: string) {

@@ -23,6 +23,7 @@ export interface RegistrySpec {
   min?: number; max?: number; step?: number; enum?: string[];
   secret?: boolean; reload_on_change?: boolean;
   show_if?: { field: string; in: unknown[] };
+  show_if_all?: { field: string; in: unknown[] }[];
   widget?: string; scale?: number; optional?: boolean; entity_domain?: string;
 }
 export interface FieldRegistry { fields: Record<string, RegistrySpec>; sections: string[]; }
@@ -58,12 +59,14 @@ export function fieldsFromRegistry(reg: FieldRegistry, section: string): FieldDe
       optional: spec.optional,
       secret: spec.secret,
       showIf: spec.show_if,
+      showIfAll: spec.show_if_all,
       entity: spec.entity_domain ? { domain: spec.entity_domain } : undefined,
     }));
 }
 
 /** U1: a field is rendered only when its showIf predicate holds. */
 export function isVisible(f: FieldDef, get: (key: string) => unknown): boolean {
-  if (!f.showIf) return true;
-  return f.showIf.in.some((v) => v === get(f.showIf!.field));
+  if (f.showIf && !f.showIf.in.some((v) => v === get(f.showIf!.field))) return false;
+  return (f.showIfAll ?? []).every((condition) =>
+    condition.in.some((value) => value === get(condition.field)));
 }

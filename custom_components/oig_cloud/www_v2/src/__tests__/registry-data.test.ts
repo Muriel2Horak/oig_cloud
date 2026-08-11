@@ -41,7 +41,7 @@ const REGISTRY_WITH_SOLAR_FORECAST_MODE = {
     solar_forecast_mode: {
       section: 'solar', type: 'str', scope: 'premium',
       label: 'field.solar_forecast_mode.label', hint: 'field.solar_forecast_mode.hint',
-      default: 'daily_optimized', enum: ['hourly', 'every_4h', 'daily_optimized'],
+      default: 'daily_optimized', enum: ['hourly', 'every_4h', 'daily', 'daily_optimized'],
     },
   },
   sections: ['battery', 'solar'],
@@ -102,6 +102,7 @@ describe('fieldsFromRegistry', () => {
     expect(modeField.options).toEqual([
       ['hourly', 'Každou hodinu (vyžaduje API klíč)'],
       ['every_4h', 'Každé 4 hodiny (vyžaduje API klíč)'],
+      ['daily', 'Denně v 06:00'],
       ['daily_optimized', 'Denně, optimalizovaně (výchozí)'],
     ]);
   });
@@ -127,6 +128,34 @@ describe('isVisible', () => {
   it('treats a field with no showIf as always visible', () => {
     const provider = defs.find((d) => d.key === 'solar_forecast_provider')!;
     expect(isVisible(provider, () => undefined)).toBe(true);
+  });
+
+  it('carries and AND-evaluates every show_if_all condition generically', () => {
+    const registry = {
+      fields: {
+        marker: {
+          section: 'solar', type: 'int', scope: 'premium',
+          label: 'field.marker.label', hint: 'field.marker.hint',
+          show_if: { field: 'enabled', in: [true] },
+          show_if_all: [
+            { field: 'provider', in: ['forecast_solar'] },
+            { field: 'mode', in: ['daily', 'daily_optimized'] },
+          ],
+        },
+      },
+      sections: ['solar'],
+    } as FieldRegistry;
+    const [marker] = fieldsFromRegistry(registry, 'solar');
+    expect(marker.showIfAll).toEqual([
+      { field: 'provider', in: ['forecast_solar'] },
+      { field: 'mode', in: ['daily', 'daily_optimized'] },
+    ]);
+    expect(isVisible(marker, (key) => ({
+      enabled: true, provider: 'forecast_solar', mode: 'daily',
+    } as Record<string, unknown>)[key])).toBe(true);
+    expect(isVisible(marker, (key) => ({
+      enabled: true, provider: 'solcast', mode: 'daily',
+    } as Record<string, unknown>)[key])).toBe(false);
   });
 });
 
@@ -258,7 +287,7 @@ describe('CS_LABELS completeness parity guard (Task 23)', () => {
 // reaches the screen, kept in the enum only for a legacy GET/POST round-trip.
 const ALL_ENUM_FIELDS: Record<string, { values: readonly string[]; skipValues?: readonly string[] }> = {
   solar_forecast_provider: { values: ['forecast_solar', 'solcast'] },
-  solar_forecast_mode: { values: ['hourly', 'every_4h', 'daily_optimized'] },
+  solar_forecast_mode: { values: ['hourly', 'every_4h', 'daily', 'daily_optimized'] },
   boiler_alt_source_type: { values: ['gas', 'heat_pump', 'fireplace', 'other'] },
   ai_provider: { values: ['ai_task', 'groq', 'nvidia'] },
   spot_pricing_model: { values: ['percentage', 'fixed', 'fixed_prices'] },

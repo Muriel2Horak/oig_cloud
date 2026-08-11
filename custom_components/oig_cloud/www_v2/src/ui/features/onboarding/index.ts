@@ -77,7 +77,13 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
-import { saveModuleConfig, waitForModuleConfigAfterReload, type SettingsSection } from '@/data/settings-data';
+import {
+  saveModuleConfig,
+  waitForModuleConfigAfterReload,
+  legacyAdoptionsForChanges,
+  type LegacySolarFields,
+  type SettingsSection,
+} from '@/data/settings-data';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
 import { fieldLabel } from '@/i18n/fields';
 
@@ -699,6 +705,7 @@ const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
 interface SolarTestResult {
   tomorrow_total_kwh: number;
   forecast_covers_tomorrow: boolean;
+  proof?: string;
 }
 
 /**
@@ -713,16 +720,16 @@ interface SolarTestResult {
 type BootstrapOutcome = 'pending' | 'success' | 'aborted' | 'failed';
 
 /**
- * Q1 wire schema (plan §Task 6): registry key names verbatim, with ONE fixed
- * rename — `solar_forecast_provider` → `provider` — plus one exclusion:
- * `solar_forecast_mode` is registry-visible but not part of the schema the
- * backend (`_SOLAR_TEST_ALLOWED_KEYS`, `ha_rest_api.py`) accepts.
+ * Solar candidate wire schema: registry key names verbatim, with one fixed
+ * rename — `solar_forecast_provider` → `provider`. Mode is always included,
+ * including for Solcast where provider-owned geometry hides the mode control.
  */
 const SOLAR_TEST_WIRE_RENAME: Readonly<Record<string, string>> = {
   solar_forecast_provider: 'provider',
 };
 const SOLAR_TEST_ALLOWED_WIRE_KEYS: ReadonlySet<string> = new Set([
   'provider',
+  'solar_forecast_mode',
   'solar_forecast_api_key',
   'solcast_api_key',
   'solcast_site_id',
@@ -755,7 +762,9 @@ function solarTestErrorMessage(code: string, lang: Lang): string | undefined {
 
 /** Shape of a `/module_config` GET — every registry section, keyed loosely
  * since not every section is populated in every fixture/response. */
-type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
+type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>> & {
+  _meta?: { legacy_fields?: LegacySolarFields };
+};
 
 /**
  * Flatten a `/module_config` response into one cross-section map, read two
@@ -771,7 +780,8 @@ type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
  */
 function flattenModuleConfig(doc: ModuleConfigDoc): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const section of Object.values(doc)) {
+  for (const [sectionName, section] of Object.entries(doc)) {
+    if (sectionName === '_meta') continue;
     if (!section) continue;
     for (const [key, value] of Object.entries(section)) {
       out[key] = value;
@@ -945,6 +955,7 @@ export class OigOnboardingWizard extends LitElement {
   private _registry: FieldRegistry | null = null;
   private _registryLoaded = false;
   @state() private solarDraft: Record<string, unknown> = {};
+  @state() private legacySolarFields: LegacySolarFields = {};
 
   /** Battery step (Task 18): draft form values, seeded alongside `solarDraft`
    * from the same shared `_registry` fetch — the registry is not fetched a
@@ -955,6 +966,7 @@ export class OigOnboardingWizard extends LitElement {
   @state() private solarTestLoading = false;
   @state() private solarTestResult: SolarTestResult | null = null;
   @state() private solarTestError: { code: string; message: string } | null = null;
+  private solarTestProof: string | null = null;
   /**
    * True only right after a successful test for the values currently in the
    * draft (Q2) — Task 8's `goNext` reads this to decide whether the solar
@@ -1883,7 +1895,15 @@ export class OigOnboardingWizard extends LitElement {
     for (const section of saveOrder) {
       const changed = changedBySection.get(section);
       if (!changed || Object.keys(changed).length === 0) continue;
-      const res = await saveModuleConfig(section, changed);
+      const adoptions = section === 'solar'
+        ? legacyAdoptionsForChanges(this.legacySolarFields, changed)
+        : [];
+      const res = section === 'solar' && this.solarTestProof
+        ? await saveModuleConfig(section, changed, adoptions, this.solarTestProof)
+        : adoptions.length > 0
+          ? await saveModuleConfig(section, changed, adoptions)
+          : await saveModuleConfig(section, changed);
+      if (section === 'solar' && res.ok) this.solarTestProof = null;
       if (!res.ok && res.fields) {
         for (const [key, message] of Object.entries(res.fields)) {
           errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
@@ -2239,6 +2259,7 @@ export class OigOnboardingWizard extends LitElement {
       );
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
       if (data) {
+        this.legacySolarFields = data._meta?.legacy_fields ?? {};
         this.originalValues = Object.freeze(flattenModuleConfig(data));
         if (data.pricing || data.pricing_supplier) {
           // Supplier-step redesign: the Nakup/Prodej scenario cards must
@@ -2416,6 +2437,7 @@ export class OigOnboardingWizard extends LitElement {
   private buildSolarTestBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {};
     if (!this._registry) return body;
+    body.solar_forecast_mode = this.solarDraft.solar_forecast_mode;
     const visible = STEP_SOLAR.visibleFields(this._registry, this.solarDraft);
     for (const f of visible) {
       const wireKey = SOLAR_TEST_WIRE_RENAME[f.key] ?? f.key;
@@ -2431,6 +2453,7 @@ export class OigOnboardingWizard extends LitElement {
     this.solarTestLoading = true;
     this.solarTestResult = null;
     this.solarTestError = null;
+    this.solarTestProof = null;
 
     const result = await haClient.fetchOIGAPITyped<SolarTestResult>(
       `/${this.inverterSn}/solar_test`,
@@ -2440,6 +2463,7 @@ export class OigOnboardingWizard extends LitElement {
     this.solarTestLoading = false;
     if (result.ok) {
       this.solarTestResult = result.data;
+      this.solarTestProof = result.data.proof ?? null;
       this.solarTestMatchesDraft = true;
     } else {
       this.solarTestError = {
@@ -2447,6 +2471,7 @@ export class OigOnboardingWizard extends LitElement {
         message: solarTestErrorMessage(result.code, this.wizardLang) ?? result.error ?? t('onboarding.solar_test.error.generic', this.wizardLang),
       };
       this.solarTestMatchesDraft = false;
+      this.solarTestProof = null;
     }
   }
 
@@ -3102,18 +3127,28 @@ export class OigOnboardingWizard extends LitElement {
                 onChange: (v: unknown) => {
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
                   this.solarTestMatchesDraft = false;
+                  this.solarTestProof = null;
                 },
                 entityCatalog: [],
               });
+              const legacy = this.legacySolarFields[f.key];
+              const warning = legacy?.requires_adoption
+                ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+                    Starší hodnota ${String(legacy.stored_value)} je zobrazena jako
+                    kompasová hodnota ${String(legacy.display_value)}. Kompas: sever 0°/360°,
+                    východ 90°, jih 180°, západ 270° (rozsah 0–360°). Uložením pole ji převezmete.
+                  </p>`
+                : nothing;
               // Live-walk defect 3: guide card directly below the provider
               // select, before its credential field(s).
-              if (f.key === 'solar_forecast_provider') return [row, this.renderSolarProviderGuide()];
+              if (f.key === 'solar_forecast_provider') return [warning, row, this.renderSolarProviderGuide()];
               // Owner correction round 2 (UX-SPEC §Step 3): one-click action
               // directly below the GPS pair, wiring hass.config into the
               // fields the user could otherwise only type by hand — not a
               // new data source (steps.py:1687-1688 reads the same values).
-              if (f.key !== 'solar_forecast_longitude') return [row];
+              if (f.key !== 'solar_forecast_longitude') return [warning, row];
               return [
+                warning,
                 row,
                 html`<button
                   type="button"
@@ -3126,6 +3161,7 @@ export class OigOnboardingWizard extends LitElement {
                       solar_forecast_longitude: this.hass?.config?.longitude,
                     };
                     this.solarTestMatchesDraft = false;
+                    this.solarTestProof = null;
                   }}
                 >📍 Převzít z Home Assistanta</button>`,
               ];

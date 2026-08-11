@@ -1,15 +1,19 @@
-"""Solar provider credential storage.
-
-Solar credentials live in `.storage/oig_cloud.solar_<entry_id>` and nowhere in
-config-entry options. Module config writes candidates; successful `/solar_test`
-promotes one candidate to the active provider credentials.
-"""
+"""Solar credential, proof, and per-entry transaction primitives."""
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
 import logging
+import secrets
+import time
+from copy import deepcopy
+from collections.abc import Callable
 from typing import Any, Dict, Mapping, Optional
 
 from homeassistant.helpers.storage import Store
+
+from ..forecast.provider_contract import serialize_effective_solar_dto
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +27,9 @@ _PROVIDER_FIELDS = {
     PROVIDER_FORECAST_SOLAR: ("solar_forecast_api_key",),
     PROVIDER_SOLCAST: ("solcast_api_key", "solcast_site_id"),
 }
+_TRANSACTION_DATA_KEY = "_oig_cloud_solar_transactions"
+_PROOF_DATA_KEY = "_oig_cloud_solar_proofs"
+_PROOF_TTL_SECONDS = 300.0
 
 
 def _redact(raw: Optional[str]) -> str:
@@ -63,6 +70,19 @@ class SolarKeyStore:
             candidates = self._data.get("candidates")
             if not isinstance(candidates, dict):
                 self._data["candidates"] = {}
+            revision = self._data.get("revision")
+            if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+                self._data["revision"] = 0
+            verification = self._data.get("verification")
+            if not isinstance(verification, dict):
+                active = self._data.get("active")
+                self._data["verification"] = {
+                    "status": (
+                        "verified"
+                        if isinstance(active, dict) and active.get("verified_at")
+                        else "unverified"
+                    )
+                }
         return self._data
 
     async def async_set_candidate(
@@ -98,16 +118,49 @@ class SolarKeyStore:
         candidate = await self.async_get_candidate(provider)
         if not candidate:
             return False
-        data = await self._async_data()
-        data["active"] = {
-            "provider": provider,
-            **candidate,
-            "verified_at": verified_at,
-        }
-        data.setdefault("candidates", {}).pop(provider, None)
-        await self._store.async_save(data)
+        await self.async_activate(provider, candidate, verified_at=verified_at)
         _LOGGER.debug("Solar candidate promoted for provider %s", provider)
         return True
+
+    async def async_activate(
+        self,
+        provider: str,
+        credentials: Mapping[str, Any],
+        *,
+        verified_at: Optional[str],
+    ) -> int:
+        """Atomically activate one provider and advance the additive revision once."""
+        cleaned = _clean_credentials(provider, credentials)
+        data = await self._async_data()
+        revision = int(data.get("revision", 0)) + 1
+        active: Dict[str, Any] = {"provider": provider, **cleaned}
+        verification: Dict[str, Any] = {"status": "unverified"}
+        if verified_at:
+            active["verified_at"] = verified_at
+            verification = {"status": "verified", "verified_at": verified_at}
+        data.update(
+            {
+                "active": active,
+                "candidates": {},
+                "revision": revision,
+                "verification": verification,
+            }
+        )
+        await self._store.async_save(data)
+        _LOGGER.debug("Solar credentials activated for provider %s", provider)
+        return revision
+
+    async def async_snapshot(self) -> Dict[str, Any]:
+        """Return an exact private-store snapshot for compensating transactions."""
+        return deepcopy(await self._async_data())
+
+    async def async_restore_snapshot(self, snapshot: Mapping[str, Any]) -> None:
+        """Restore a previously captured private-store snapshot exactly."""
+        self._data = deepcopy(dict(snapshot))
+        await self._store.async_save(self._data)
+
+    async def async_revision(self) -> int:
+        return int((await self._async_data()).get("revision", 0))
 
     async def async_clear_inactive(self, provider: str) -> None:
         """Clear credentials that do not belong to the selected provider."""
@@ -176,4 +229,87 @@ class SolarKeyStore:
             "provider": active.get("provider"),
             **await self.async_private_field_state(),
             "verified": bool(active.get("verified_at")),
+            "revision": int(data.get("revision", 0)),
+            "verification": deepcopy(data.get("verification", {})),
         }
+
+
+def get_solar_transaction_lock(hass: Any, entry_id: str) -> asyncio.Lock:
+    """Return the shared per-entry proof/credential/options transaction lock."""
+    root = getattr(hass, "data", None)
+    if not isinstance(root, dict):
+        root = {}
+        hass.data = root
+    locks = root.setdefault(_TRANSACTION_DATA_KEY, {})
+    lock = locks.get(entry_id)
+    if not isinstance(lock, asyncio.Lock):
+        lock = asyncio.Lock()
+        locks[entry_id] = lock
+    return lock
+
+
+class SolarProofStore:
+    """In-memory opaque five-minute single-use solar verification proofs."""
+
+    def __init__(
+        self,
+        hass: Any,
+        *,
+        now: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._hass = hass
+        self._now = now
+        root = getattr(hass, "data", None)
+        if not isinstance(root, dict):
+            root = {}
+            hass.data = root
+        self._proofs: Dict[str, Dict[str, Any]] = root.setdefault(_PROOF_DATA_KEY, {})
+
+    @staticmethod
+    def _binding(entry_id: str, dto: Mapping[str, Any]) -> tuple[str, str, str, bytes]:
+        return (
+            entry_id,
+            str(dto.get("solar_forecast_provider", "")),
+            str(dto.get("solar_forecast_mode", "")),
+            hashlib.sha256(serialize_effective_solar_dto(dto)).digest(),
+        )
+
+    async def async_issue(self, entry_id: str, dto: Mapping[str, Any]) -> str:
+        async with get_solar_transaction_lock(self._hass, entry_id):
+            return self.issue_locked(entry_id, dto)
+
+    def issue_locked(self, entry_id: str, dto: Mapping[str, Any]) -> str:
+        self._prune()
+        token = secrets.token_urlsafe(32)
+        self._proofs[token] = {
+            "binding": self._binding(entry_id, dto),
+            "expires_at": self._now() + _PROOF_TTL_SECONDS,
+        }
+        return token
+
+    async def async_claim(
+        self, entry_id: str, token: str, dto: Mapping[str, Any]
+    ) -> bool:
+        async with get_solar_transaction_lock(self._hass, entry_id):
+            return self.claim_locked(entry_id, token, dto)
+
+    def claim_locked(self, entry_id: str, token: str, dto: Mapping[str, Any]) -> bool:
+        record = self._proofs.pop(token, None)
+        if not isinstance(record, dict) or record.get("expires_at", 0) < self._now():
+            return False
+        expected = record.get("binding")
+        actual = self._binding(entry_id, dto)
+        if not isinstance(expected, tuple) or len(expected) != len(actual):
+            return False
+        return all(
+            hmac.compare_digest(left, right)
+            if isinstance(left, bytes) and isinstance(right, bytes)
+            else left == right
+            for left, right in zip(expected, actual)
+        )
+
+    def _prune(self) -> None:
+        now = self._now()
+        for token, record in list(self._proofs.items()):
+            if not isinstance(record, dict) or record.get("expires_at", 0) < now:
+                self._proofs.pop(token, None)

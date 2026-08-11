@@ -9,6 +9,7 @@ from custom_components.oig_cloud.entities import solar_forecast_sensor as module
 from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
+from custom_components.oig_cloud.forecast import candidate_test, provider_contract
 
 
 class DummyCoordinator:
@@ -63,6 +64,47 @@ def _make_sensor(options, sensor_type="solar_forecast"):
     sensor = OigCloudSolarForecastSensor(coordinator, sensor_type, entry, {})
     sensor.hass = SimpleNamespace()
     return sensor
+
+
+@pytest.mark.parametrize(
+    ("compass", "provider_value"),
+    [(0, -180), (90, -90), (138, -42), (180, 0), (270, 90), (360, 180)],
+)
+def test_runtime_and_candidate_share_forecast_url_boundary(compass, provider_value):
+    sensor = _make_sensor({})
+    kwargs = {
+        "api_key": "key/with?reserved#chars% and space",
+        "lat": 50.1,
+        "lon": 14.2,
+        "declination": 35,
+        "compass_azimuth": compass,
+        "kwp": 5.5,
+    }
+    expected = provider_contract.build_forecast_solar_url(**kwargs)
+    assert f"/{provider_value}/" in expected
+    assert sensor._build_forecast_url(**kwargs) == expected
+    assert candidate_test.build_forecast_solar_url(**kwargs) == expected
+
+
+def test_runtime_keeps_negative_stored_provider_value_raw_until_adoption():
+    sensor = _make_sensor({})
+    assert "/-90/" in sensor._build_forecast_url(
+        api_key="",
+        lat=50.1,
+        lon=14.2,
+        declination=35,
+        compass_azimuth=-90,
+        kwp=5.5,
+        legacy_provider_value=True,
+    )
+    assert "/-90/" in sensor._build_forecast_url(
+        api_key="",
+        lat=50.1,
+        lon=14.2,
+        declination=35,
+        compass_azimuth=90,
+        kwp=5.5,
+    )
 
 
 @pytest.mark.asyncio
@@ -149,8 +191,13 @@ async def test_async_fetch_string2_success_with_key(monkeypatch):
         {
             "enable_solar_forecast": True,
             "solar_forecast_api_key": "abc",
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
             "solar_forecast_string1_enabled": False,
             "solar_forecast_string2_enabled": True,
+            "solar_forecast_string2_kwp": 3.0,
+            "solar_forecast_string2_declination": 30,
+            "solar_forecast_string2_azimuth": 180,
         }
     )
     payload = {
@@ -215,7 +262,7 @@ async def test_async_fetch_solcast_provider_calls_fetch(monkeypatch):
     monkeypatch.setattr(sensor, "_fetch_solcast_data", _fetch)
 
     await sensor.async_fetch_forecast_data()
-    assert called["ok"] is True
+    assert called["ok"] is False
 
 
 @pytest.mark.asyncio

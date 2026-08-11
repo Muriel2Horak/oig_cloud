@@ -7,9 +7,6 @@ from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 from ..entities.solar_forecast_sensor import (
-    FORECAST_SOLAR_API_URL,
-    FORECAST_SOLAR_API_URL_WITH_KEY,
-    SOLCAST_ROOFTOP_API_URL,
     _build_string_payload,
     _date_value_kwh,
     _extract_string_data,
@@ -17,6 +14,7 @@ from ..entities.solar_forecast_sensor import (
     _merge_totals,
     _normalize_hourly_keys,
 )
+from .provider_contract import build_forecast_solar_url, build_solcast_url
 
 _LOGGER = logging.getLogger(__name__)
 _TIMEOUT_SECONDS = 10
@@ -38,15 +36,26 @@ class _ProviderUnavailable(Exception):
 
 async def run_solar_candidate_test(
     session: Any,
-    provider: str,
-    credentials: Mapping[str, Any],
-    gps: Mapping[str, float],
-    strings: Sequence[Mapping[str, float]],
+    dto_or_provider: Mapping[str, Any] | str,
+    credentials: Mapping[str, Any] | None = None,
+    gps: Mapping[str, float] | None = None,
+    strings: Sequence[Mapping[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Run a bounded, side-effect-free probe for unsaved solar settings."""
+    dto = (
+        dict(dto_or_provider)
+        if isinstance(dto_or_provider, Mapping)
+        else _legacy_candidate_dto(
+            dto_or_provider,
+            credentials or {},
+            gps or {},
+            strings or (),
+        )
+    )
+    provider = str(dto.get("solar_forecast_provider", ""))
     try:
         return await asyncio.wait_for(
-            _run_provider_candidate(session, provider, credentials, gps, strings),
+            _run_provider_candidate(session, dto),
             timeout=_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
@@ -72,41 +81,39 @@ async def run_solar_candidate_test(
 
 async def _run_provider_candidate(
     session: Any,
-    provider: str,
-    credentials: Mapping[str, Any],
-    gps: Mapping[str, float],
-    strings: Sequence[Mapping[str, float]],
+    dto: Mapping[str, Any],
 ) -> dict[str, Any]:
+    provider = dto.get("solar_forecast_provider")
     if provider == "forecast_solar":
-        return await _run_forecast_solar(session, credentials, gps, strings)
+        return await _run_forecast_solar(session, dto)
     if provider == "solcast":
-        return await _run_solcast(session, credentials, strings)
+        return await _run_solcast(session, dto)
     raise ValueError("unknown provider")
 
 
 async def _run_forecast_solar(
     session: Any,
-    credentials: Mapping[str, Any],
-    gps: Mapping[str, float],
-    strings: Sequence[Mapping[str, float]],
+    dto: Mapping[str, Any],
 ) -> dict[str, Any]:
+    strings = _enabled_strings(dto)
     if not strings:
         return {"tomorrow_total_kwh": 0.0, "forecast_covers_tomorrow": False}
 
-    api_key = str(credentials.get("solar_forecast_api_key") or "").strip()
-    lat = _float_required(gps.get("latitude"))
-    lon = _float_required(gps.get("longitude"))
+    api_key = str(dto.get("solar_forecast_api_key") or "").strip()
+    lat = _float_required(dto.get("solar_forecast_latitude"))
+    lon = _float_required(dto.get("solar_forecast_longitude"))
     per_string: list[dict[str, dict[str, float]]] = []
     raw_payloads: list[dict[str, Any] | None] = []
 
     for string in strings[:2]:
-        url = _forecast_solar_url(
+        url = build_forecast_solar_url(
             api_key=api_key,
             lat=lat,
             lon=lon,
-            declination=_float_required(string.get("declination")),
-            azimuth=_float_required(string.get("azimuth")),
+            declination=int(_float_required(string.get("declination"))),
+            compass_azimuth=int(_float_required(string.get("azimuth"))),
             kwp=_float_required(string.get("kwp")),
+            legacy_provider_value=bool(string.get("legacy_provider_value", False)),
         )
         raw = await _fetch_json(session, url)
         raw_payloads.append(raw)
@@ -136,24 +143,21 @@ async def _run_forecast_solar(
 
 async def _run_solcast(
     session: Any,
-    credentials: Mapping[str, Any],
-    strings: Sequence[Mapping[str, float]],
+    dto: Mapping[str, Any],
 ) -> dict[str, Any]:
+    strings = _enabled_strings(dto)
     if not strings:
         return {"tomorrow_total_kwh": 0.0, "forecast_covers_tomorrow": False}
 
-    api_key = str(credentials.get("solcast_api_key") or "").strip()
-    site_id = str(credentials.get("solcast_site_id") or "").strip()
+    api_key = str(dto.get("solcast_api_key") or "").strip()
+    site_id = str(dto.get("solcast_site_id") or "").strip()
     kwp1 = _float_required(strings[0].get("kwp")) if len(strings) >= 1 else 0.0
     kwp2 = _float_required(strings[1].get("kwp")) if len(strings) >= 2 else 0.0
     total_kwp = kwp1 + kwp2
     if not api_key or not site_id or total_kwp <= 0:
         raise ValueError("invalid solcast request")
 
-    url = (
-        f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
-        f"?format=json&api_key={api_key}"
-    )
+    url = build_solcast_url(api_key=api_key, site_id=site_id)
     payload = await _fetch_json(session, url)
     forecasts = payload.get("forecasts")
     if not isinstance(forecasts, list) or not forecasts:
@@ -211,31 +215,52 @@ async def _fetch_json(session: Any, url: str) -> dict[str, Any]:
     return payload
 
 
-def _forecast_solar_url(
-    *,
-    api_key: str,
-    lat: float,
-    lon: float,
-    declination: float,
-    azimuth: float,
-    kwp: float,
-) -> str:
-    if api_key:
-        return FORECAST_SOLAR_API_URL_WITH_KEY.format(
-            api_key=api_key,
-            lat=lat,
-            lon=lon,
-            declination=declination,
-            azimuth=azimuth,
-            kwp=kwp,
-        )
-    return FORECAST_SOLAR_API_URL.format(
-        lat=lat,
-        lon=lon,
-        declination=declination,
-        azimuth=azimuth,
-        kwp=kwp,
-    )
+def _enabled_strings(dto: Mapping[str, Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for number in (1, 2):
+        prefix = f"solar_forecast_string{number}"
+        if not dto.get(f"{prefix}_enabled", False):
+            continue
+        string: dict[str, Any] = {"kwp": dto.get(f"{prefix}_kwp")}
+        if dto.get("solar_forecast_provider") == "forecast_solar":
+            string.update(
+                {
+                    "declination": dto.get(f"{prefix}_declination"),
+                    "azimuth": dto.get(f"{prefix}_azimuth"),
+                    "legacy_provider_value": dto.get(
+                        f"{prefix}_azimuth_legacy_provider_value", False
+                    ),
+                }
+            )
+        result.append(string)
+    return result
+
+
+def _legacy_candidate_dto(
+    provider: str,
+    credentials: Mapping[str, Any],
+    gps: Mapping[str, float],
+    strings: Sequence[Mapping[str, float]],
+) -> dict[str, Any]:
+    """Adapt the pre-DTO internal call shape during the compatibility window."""
+    dto: dict[str, Any] = {
+        "solar_forecast_provider": provider,
+        "solar_forecast_mode": "daily_optimized",
+        **credentials,
+        "solar_forecast_latitude": gps.get("latitude"),
+        "solar_forecast_longitude": gps.get("longitude"),
+    }
+    for number in (1, 2):
+        prefix = f"solar_forecast_string{number}"
+        enabled = number <= len(strings)
+        dto[f"{prefix}_enabled"] = enabled
+        if not enabled:
+            continue
+        string = strings[number - 1]
+        dto[f"{prefix}_kwp"] = string.get("kwp")
+        dto[f"{prefix}_declination"] = string.get("declination")
+        dto[f"{prefix}_azimuth"] = string.get("azimuth")
+    return dto
 
 
 def _summary(forecast_data: Mapping[str, Any]) -> dict[str, Any]:

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Union
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -15,6 +15,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..config.solar_key_store import SolarKeyStore
+from ..config.solar_transaction import async_solar_dto_snapshot
+from ..config.solar_rules import legacy_azimuth_read_model
+from ..forecast.provider_contract import (
+    build_forecast_solar_url,
+    build_solcast_url,
+)
 from .base_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -504,25 +510,19 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         api_key: str,
         lat: float,
         lon: float,
-        declination: float,
-        azimuth: float,
+        declination: int,
+        compass_azimuth: int,
         kwp: float,
+        legacy_provider_value: bool = False,
     ) -> str:
-        if api_key:
-            return FORECAST_SOLAR_API_URL_WITH_KEY.format(
-                api_key=api_key,
-                lat=lat,
-                lon=lon,
-                declination=declination,
-                azimuth=azimuth,
-                kwp=kwp,
-            )
-        return FORECAST_SOLAR_API_URL.format(
+        return build_forecast_solar_url(
+            api_key=api_key,
             lat=lat,
             lon=lon,
             declination=declination,
-            azimuth=azimuth,
+            compass_azimuth=compass_azimuth,
             kwp=kwp,
+            legacy_provider_value=legacy_provider_value,
         )
 
     async def _fetch_forecast_solar_strings(
@@ -533,17 +533,18 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         api_key: str,
         string1_enabled: bool,
         string2_enabled: bool,
+        dto: Mapping[str, Any] | None = None,
     ) -> tuple[Optional[dict], Optional[dict]]:
         data_string1: Optional[dict] = None
         data_string2: Optional[dict] = None
 
         async with aiohttp.ClientSession() as session:
             if string1_enabled:
-                string1_config = self._forecast_string_config("string1")
+                string1_config = self._forecast_string_config("string1", dto)
                 if string1_config is None:
                     _LOGGER.warning("🌞 String 1 forecast config missing; forecast unavailable")
                     return None, None
-                declination, azimuth, kwp = string1_config
+                declination, azimuth, kwp, legacy_provider_value = string1_config
                 data_string1, fatal = await self._fetch_forecast_string(
                     session=session,
                     label="string 1",
@@ -551,8 +552,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     lon=lon,
                     api_key=api_key,
                     declination=declination,
-                    azimuth=azimuth,
+                    compass_azimuth=azimuth,
                     kwp=kwp,
+                    legacy_provider_value=legacy_provider_value,
                     fatal_on_error=True,
                 )
                 if fatal:
@@ -561,11 +563,11 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 _LOGGER.debug("🌞 String 1 disabled")
 
             if string2_enabled:
-                string2_config = self._forecast_string_config("string2")
+                string2_config = self._forecast_string_config("string2", dto)
                 if string2_config is None:
                     _LOGGER.warning("🌞 String 2 forecast config missing; skipping string 2")
                     return data_string1, None
-                declination, azimuth, kwp = string2_config
+                declination, azimuth, kwp, legacy_provider_value = string2_config
                 data_string2, _fatal = await self._fetch_forecast_string(
                     session=session,
                     label="string 2",
@@ -573,8 +575,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     lon=lon,
                     api_key=api_key,
                     declination=declination,
-                    azimuth=azimuth,
+                    compass_azimuth=azimuth,
                     kwp=kwp,
+                    legacy_provider_value=legacy_provider_value,
                     fatal_on_error=False,
                 )
             else:
@@ -582,15 +585,40 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
         return data_string1, data_string2
 
-    def _forecast_string_config(self, prefix: str) -> tuple[float, float, float] | None:
-        declination = self._float_option(f"solar_forecast_{prefix}_declination")
-        azimuth = self._float_option(f"solar_forecast_{prefix}_azimuth")
-        kwp = self._float_option(f"solar_forecast_{prefix}_kwp")
-        if declination is None or azimuth is None or kwp is None:
-            if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
-                return None
-            return declination or 0.0, azimuth or 0.0, kwp or 0.0
-        return declination, azimuth, kwp
+    def _forecast_string_config(
+        self, prefix: str, dto: Mapping[str, Any] | None = None
+    ) -> tuple[int, int, float, bool] | None:
+        source = dto if dto is not None else self._config_entry.options
+        declination_value = source.get(f"solar_forecast_{prefix}_declination")
+        kwp_value = source.get(f"solar_forecast_{prefix}_kwp")
+        if declination_value is None or kwp_value is None:
+            return None
+        try:
+            declination = float(declination_value)
+            kwp = float(kwp_value)
+        except (TypeError, ValueError):
+            return None
+        azimuth = source.get(f"solar_forecast_{prefix}_azimuth")
+        legacy = legacy_azimuth_read_model(azimuth)
+        if (
+            not declination.is_integer()
+            or not 0 <= declination <= 90
+            or legacy is None
+            or not legacy["valid_for_provider"]
+            or not 0.1 <= kwp <= 50
+        ):
+            return None
+        return (
+            int(declination),
+            int(legacy["stored_value"]),
+            kwp,
+            bool(
+                source.get(
+                    f"solar_forecast_{prefix}_azimuth_legacy_provider_value",
+                    legacy["legacy_provider_value"],
+                )
+            ),
+        )
 
     def _float_option(self, key: str) -> float | None:
         value = self._config_entry.options.get(key)
@@ -637,9 +665,10 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         lat: float,
         lon: float,
         api_key: str,
-        declination: float,
-        azimuth: float,
+        declination: int,
+        compass_azimuth: int,
         kwp: float,
+        legacy_provider_value: bool,
         fatal_on_error: bool,
     ) -> tuple[Optional[dict], bool]:
         url = self._build_forecast_url(
@@ -647,8 +676,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             lat=lat,
             lon=lon,
             declination=declination,
-            azimuth=azimuth,
+            compass_azimuth=compass_azimuth,
             kwp=kwp,
+            legacy_provider_value=legacy_provider_value,
         )
         # Do not log the full URL — the forecast.solar API key is a path segment.
         _LOGGER.info("🌞 Calling forecast.solar API for %s (lat=%s, lon=%s)", label, lat, lon)
@@ -678,36 +708,40 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             if self._is_rate_limited(current_time):
                 return
 
-            provider = self._config_entry.options.get(
-                "solar_forecast_provider", "forecast_solar"
-            )
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            if entry_id:
+                dto, _revision = await async_solar_dto_snapshot(
+                    self.hass, self._config_entry, {}
+                )
+            else:
+                provider_for_credentials = self._config_entry.options.get(
+                    "solar_forecast_provider", "forecast_solar"
+                )
+                active = await self._active_solar_credentials(provider_for_credentials)
+                from ..forecast.provider_contract import build_effective_solar_dto
+
+                dto = build_effective_solar_dto(
+                    self._config_entry.options,
+                    active,
+                    {},
+                )
+            provider = dto["solar_forecast_provider"]
             if provider == "solcast":
-                await self._fetch_solcast_data(current_time)
+                await self._fetch_solcast_data(current_time, dto)
                 return
 
             # Konfigurační parametry — Plan 4 Task 4 / P7: no implicit author GPS fallback.
             # When the user has not configured a location we surface `unavailable` with
             # a visible warning on the mounted surface (R5.5).
-            lat = self._float_option("solar_forecast_latitude")
-            lon = self._float_option("solar_forecast_longitude")
-            active_credentials = await self._active_solar_credentials("forecast_solar")
-            api_key = (active_credentials or {}).get("solar_forecast_api_key", "")
-            if lat is None or lon is None:
-                if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
-                    _LOGGER.warning("🌞 Solar forecast GPS missing; forecast unavailable")
-                    return
-                lat = lat or 0.0
-                lon = lon or 0.0
+            lat = dto["solar_forecast_latitude"]
+            lon = dto["solar_forecast_longitude"]
+            api_key = dto.get("solar_forecast_api_key", "")
 
             # String 1 - zapnutý podle checkboxu
-            string1_enabled = self._config_entry.options.get(
-                "solar_forecast_string1_enabled", True
-            )
+            string1_enabled = dto["solar_forecast_string1_enabled"]
 
             # String 2 - zapnutý podle checkboxu
-            string2_enabled = self._config_entry.options.get(
-                "solar_forecast_string2_enabled", False
-            )
+            string2_enabled = dto["solar_forecast_string2_enabled"]
 
             _LOGGER.debug("🌞 String 1: enabled=%s", string1_enabled)
             _LOGGER.debug("🌞 String 2: enabled=%s", string2_enabled)
@@ -718,6 +752,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 api_key=api_key,
                 string1_enabled=string1_enabled,
                 string2_enabled=string2_enabled,
+                dto=dto,
             )
 
             # Kontrola, zda máme alespoň jeden string s daty
@@ -778,11 +813,19 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 )
             # else: necháváme _last_forecast_data = None
 
-    async def _fetch_solcast_data(self, current_time: float) -> None:
+    async def _fetch_solcast_data(
+        self, current_time: float, dto: Mapping[str, Any] | None = None
+    ) -> None:
         """Fetch forecast data from Solcast API and map to unified structure."""
-        active_credentials = await self._active_solar_credentials("solcast")
-        api_key = (active_credentials or {}).get("solcast_api_key", "").strip()
-        site_id = (active_credentials or {}).get("solcast_site_id", "").strip()
+        if dto is None:
+            active_credentials = await self._active_solar_credentials("solcast")
+            api_key = (active_credentials or {}).get("solcast_api_key", "").strip()
+            site_id = (active_credentials or {}).get("solcast_site_id", "").strip()
+            source: Mapping[str, Any] = self._config_entry.options
+        else:
+            api_key = str(dto.get("solcast_api_key", "")).strip()
+            site_id = str(dto.get("solcast_site_id", "")).strip()
+            source = dto
 
         if not api_key:
             _LOGGER.error("🌞 Solcast API key missing")
@@ -791,20 +834,20 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             _LOGGER.error("🌞 Solcast site ID missing")
             return
 
-        string1_enabled = self._config_entry.options.get(
+        string1_enabled = source.get(
             "solar_forecast_string1_enabled", True
         )
-        string2_enabled = self._config_entry.options.get(
+        string2_enabled = source.get(
             "solar_forecast_string2_enabled", False
         )
 
         kwp1 = (
-            float(self._config_entry.options.get("solar_forecast_string1_kwp") or 0)
+            float(source.get("solar_forecast_string1_kwp") or 0)
             if string1_enabled
             else 0.0
         )
         kwp2 = (
-            float(self._config_entry.options.get("solar_forecast_string2_kwp") or 0)
+            float(source.get("solar_forecast_string2_kwp") or 0)
             if string2_enabled
             else 0.0
         )
@@ -813,15 +856,8 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             _LOGGER.error("🌞 Solcast requires at least one enabled string with kWp")
             return
 
-        url = (
-            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
-            f"?format=json&api_key={api_key}"
-        )
-        safe_url = (
-            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
-            "?format=json&api_key=***"
-        )
-        _LOGGER.info("🌞 Calling Solcast API: %s", safe_url)
+        url = build_solcast_url(api_key=api_key, site_id=site_id)
+        _LOGGER.info("🌞 Calling Solcast API")
 
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:

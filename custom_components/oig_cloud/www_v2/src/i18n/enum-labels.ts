@@ -15,6 +15,7 @@ const CS_ENUM_LABELS: Record<string, string> = {
 
   'field.solar_forecast_mode.enum.hourly': 'Každou hodinu (vyžaduje API klíč)',
   'field.solar_forecast_mode.enum.every_4h': 'Každé 4 hodiny (vyžaduje API klíč)',
+  'field.solar_forecast_mode.enum.daily': 'Denně v 06:00',
   'field.solar_forecast_mode.enum.daily_optimized': 'Denně, optimalizovaně (výchozí)',
 
   // data_source_mode (Task 20, UX-SPEC §Step 8) — 'hybrid' deliberately has

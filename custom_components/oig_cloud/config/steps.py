@@ -13,8 +13,13 @@ from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .modules_validation import missing_dashboard_requirements, validate_modules_selection
-from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
-from .solar_rules import normalize_azimuth, validate_solar_effective
+from .solar_key_store import SOLAR_PRIVATE_FIELDS
+from .solar_transaction import async_commit_solar_configuration
+from .solar_rules import (
+    legacy_azimuth_read_model,
+    validate_compass_azimuth,
+    validate_solar_effective,
+)
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -1488,6 +1493,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_solar")
 
+            self._consume_legacy_solar_controls(user_input)
+
             if self._should_refresh_solar_form(user_input):
                 return self._show_solar_form(user_input)
 
@@ -1510,6 +1517,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
             data_schema=self._get_solar_schema(),
             description_placeholders=self._get_step_placeholders("wizard_solar"),
         )
+
+    def _consume_legacy_solar_controls(self, user_input: Dict[str, Any]) -> None:
+        """Consume transient native adoption controls before persistence."""
+        legacy_models = getattr(self, "_legacy_solar_azimuths", {})
+        adopted: set[str] = set(
+            getattr(self, "_adopt_legacy_solar_fields", set())
+        )
+        for key, model in legacy_models.items():
+            control = f"adopt_legacy_{key}"
+            if bool(user_input.pop(control, False)):
+                adopted.add(key)
+            if key in user_input and user_input[key] != model["display_value"]:
+                adopted.add(key)
+        self._adopt_legacy_solar_fields = adopted
 
     def _show_solar_form(
         self,
@@ -1577,17 +1598,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
             decl1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35))
-            azim1 = normalize_azimuth(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
-            # Persist the normalised, signed azimuth so it matches the registry
-            # bounds (-180..180) that REST and the schema enforce (U6).
-            user_input[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = azim1
-
             if not (0 < kwp1 <= 15):
                 errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
             if not (0 <= decl1 <= 90):
                 errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = "invalid_declination"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string1_params"
+        try:
+            validate_compass_azimuth(
+                user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0)
+            )
+        except ValueError:
+            errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
         return errors
 
     def _validate_solar_string2(self, user_input: Dict[str, Any]) -> Dict[str, str]:
@@ -1595,17 +1617,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
             decl2 = int(user_input.get("solar_forecast_string2_declination", 35))
-            azim2 = normalize_azimuth(user_input.get("solar_forecast_string2_azimuth", 180))
-            # Persist the normalised, signed azimuth so it matches the registry
-            # bounds (-180..180) that REST and the schema enforce (U6).
-            user_input["solar_forecast_string2_azimuth"] = azim2
-
             if not (0 < kwp2 <= 15):
                 errors["solar_forecast_string2_kwp"] = "invalid_kwp"
             if not (0 <= decl2 <= 90):
                 errors["solar_forecast_string2_declination"] = "invalid_declination"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string2_params"
+        try:
+            validate_compass_azimuth(
+                user_input.get("solar_forecast_string2_azimuth", 180)
+            )
+        except ValueError:
+            errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
         return errors
 
     def _get_hass_gps(self) -> tuple[Optional[float], Optional[float]]:
@@ -1756,6 +1779,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): vol.Coerce(int),
                 }
             )
+
+        for legacy_key in getattr(self, "_legacy_solar_azimuths", {}):
+            string_enabled_key = (
+                CONF_SOLAR_FORECAST_STRING1_ENABLED
+                if legacy_key == CONF_SOLAR_FORECAST_STRING1_AZIMUTH
+                else "solar_forecast_string2_enabled"
+            )
+            if defaults.get(string_enabled_key, False):
+                schema_fields[
+                    vol.Optional(f"adopt_legacy_{legacy_key}", default=False)
+                ] = bool
 
         # Přidat go_back na konec
         schema_fields[vol.Optional("go_back", default=False)] = bool
@@ -3242,6 +3276,17 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             self._options_read_ok = False
             backend_options = {}
 
+        self._legacy_solar_azimuths: Dict[str, Dict[str, Any]] = {}
+        self._adopt_legacy_solar_fields: set[str] = set()
+        for key in (
+            CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+            "solar_forecast_string2_azimuth",
+        ):
+            model = legacy_azimuth_read_model(backend_options.get(key))
+            if model["legacy_provider_value"]:
+                self._legacy_solar_azimuths[key] = model
+                backend_options[key] = model["display_value"]
+
         # Pre-seed basic keys into the snapshot so that registry defaults are not
         # treated as user deltas for keys that predate the registry. Without this,
         # a save after a concurrent REST write that introduced a basic key would
@@ -3593,6 +3638,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 for key, value in payload.items()
                 if value != self._options_payload_at_open.get(key)
             }
+            for key in getattr(self, "_adopt_legacy_solar_fields", set()):
+                if key in payload:
+                    delta[key] = payload[key]
 
             # A mirror pair (charge_rate_kw / home_charge_rate) is ONE logical
             # field. The serializer writes the same value to both aliases, so a
@@ -3616,34 +3664,30 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                if getattr(self, "_section", None) == "solar" and (
-                    solar_private_updates or CONF_SOLAR_FORECAST_PROVIDER in delta
-                ):
-                    solar_store = SolarKeyStore(self.hass, entry.entry_id)
-                    provider = payload.get(
-                        CONF_SOLAR_FORECAST_PROVIDER,
-                        entry.options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"),
+                solar_delta = {
+                    key: value
+                    for key, value in delta.items()
+                    if (registry_field := FIELD_REGISTRY.get(key)) is not None
+                    and registry_field.section == "solar"
+                }
+                solar_committed = getattr(self, "_section", None) == "solar" and bool(
+                    solar_delta or solar_private_updates
+                )
+                if not solar_committed:
+                    solar_delta = {}
+                if solar_committed:
+                    await async_commit_solar_configuration(
+                        self.hass,
+                        entry,
+                        solar_delta,
+                        solar_private_updates,
+                        proof=None,
                     )
-                    if CONF_SOLAR_FORECAST_PROVIDER in delta:
-                        await solar_store.async_clear_inactive(str(provider))
-                    if CONF_SOLAR_FORECAST_API_KEY in solar_private_updates:
-                        await solar_store.async_set_candidate(
-                            "forecast_solar",
-                            {
-                                CONF_SOLAR_FORECAST_API_KEY: solar_private_updates[
-                                    CONF_SOLAR_FORECAST_API_KEY
-                                ]
-                            },
-                        )
-                    solcast_updates = {
-                        key: solar_private_updates[key]
-                        for key in (CONF_SOLCAST_API_KEY, CONF_SOLCAST_SITE_ID)
-                        if key in solar_private_updates
-                    }
-                    if solcast_updates:
-                        await solar_store.async_set_candidate("solcast", solcast_updates)
-                did_write = merge_entry_options(
-                    self.hass, entry, delta, suppress_reload=True
+                remaining_delta = {
+                    key: value for key, value in delta.items() if key not in solar_delta
+                }
+                did_write = solar_committed or merge_entry_options(
+                    self.hass, entry, remaining_delta, suppress_reload=True
                 )
                 _LOGGER.warning("🔍 async_update_entry completed")
 
@@ -3694,7 +3738,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
                 # Automaticky reloadnout integraci pro aplikování změn
                 _LOGGER.warning("🔍 About to reload integration")
-                await self.hass.config_entries.async_reload(entry.entry_id)
+                if not solar_committed:
+                    await self.hass.config_entries.async_reload(entry.entry_id)
                 _LOGGER.warning("🔍 Integration reload completed")
 
                 # CRITICAL: V OptionsFlow NESMÍME volat async_create_entry,

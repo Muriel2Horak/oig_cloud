@@ -182,9 +182,13 @@ const CS_HINTS: Record<string, string> = {
   'field.cheap_window_percentile.hint': 'Balancování se plánuje do hodin pod tímto cenovým percentilem',
 
   // --- solar settings hints ---
-  'field.solcast_site_id.hint': 'Jen pro Solcast (z rooftop site URL)',
+  'field.solar_forecast_provider.hint': 'Forecast.Solar používá místní geometrii; Solcast přebírá geometrii z Rooftop Site.',
+  'field.solcast_site_id.hint': 'Geometrii nastavte v Solcast Rooftop Site. Zde zadejte jeho Site ID.',
   'field.solcast_api_key.hint': 'Nech prázdné = beze změny',
-  'field.solar_forecast_string1_azimuth.hint': '0 = jih, −90 = východ, 90 = západ',
+  'field.solar_forecast_string1_kwp.hint': 'Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.',
+  'field.solar_forecast_string2_kwp.hint': 'Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.',
+  'field.solar_forecast_string1_azimuth.hint': 'Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.',
+  'field.solar_forecast_string2_azimuth.hint': 'Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.',
 
   // --- boiler settings hints ---
   'field.boiler_volume_l.hint': 'Jmenovitý objem zásobníku v litrech',

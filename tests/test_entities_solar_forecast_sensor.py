@@ -274,6 +274,9 @@ async def test_async_fetch_forecast_data_string1_only(monkeypatch):
             "solar_forecast_string2_enabled": False,
             "solar_forecast_latitude": 50.0,
             "solar_forecast_longitude": 14.0,
+            "solar_forecast_string1_kwp": 5.0,
+            "solar_forecast_string1_declination": 35,
+            "solar_forecast_string1_azimuth": 180,
         }
     )
     sensor._min_api_interval = 0

@@ -93,7 +93,10 @@
         "title": "☀️ Konfigurace solární předpovědi",
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
         "data": {
+          "solar_forecast_provider": "Poskytovatel solární předpovědi",
           "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solcast_api_key": "Solcast API klíč",
+          "solcast_site_id": "Solcast Site ID",
           "solar_forecast_mode": "Režim aktualizace předpovědi",
           "solar_forecast_latitude": "GPS šířka instalace",
           "solar_forecast_longitude": "GPS délka instalace",
@@ -108,18 +111,21 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
+          "solar_forecast_provider": "Forecast.Solar používá místní geometrii; Solcast přebírá geometrii z Rooftop Site.",
           "solar_forecast_api_key": "Nepovinné pro ZDARMA režimy. Povinné pro časté aktualizace (4h, 1h)",
+          "solcast_api_key": "Povinné pro Solcast; prázdná hodnota ponechá aktivní klíč beze změny.",
+          "solcast_site_id": "Geometrii nastavte v Solcast Rooftop Site. Zde zadejte jeho Site ID.",
           "solar_forecast_mode": "🎯 Optimalizovaný = 3× denně v 6:00, 12:00, 16:00 (DOPORUČENO)\n🌅 Denní = 1× denně v 6:00\n🕐 4h/⚡1h = vyžaduje API klíč",
           "solar_forecast_latitude": "Rozsah: -90° až 90° (Střední Evropa cca 48-51°)",
           "solar_forecast_longitude": "Rozsah: -180° až 180° (Střední Evropa cca 12-19°)",
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
-          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
+          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
-          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
+          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -390,7 +396,10 @@
         "title": "☀️ Konfigurace solární předpovědi",
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
         "data": {
+          "solar_forecast_provider": "Poskytovatel solární předpovědi",
           "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solcast_api_key": "Solcast API klíč",
+          "solcast_site_id": "Solcast Site ID",
           "solar_forecast_mode": "Režim aktualizace předpovědi",
           "solar_forecast_latitude": "GPS šířka instalace",
           "solar_forecast_longitude": "GPS délka instalace",
@@ -405,18 +414,21 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
+          "solar_forecast_provider": "Forecast.Solar používá místní geometrii; Solcast přebírá geometrii z Rooftop Site.",
           "solar_forecast_api_key": "Nepovinné pro ZDARMA režimy. Povinné pro časté aktualizace (4h, 1h)",
+          "solcast_api_key": "Povinné pro Solcast; prázdná hodnota ponechá aktivní klíč beze změny.",
+          "solcast_site_id": "Geometrii nastavte v Solcast Rooftop Site. Zde zadejte jeho Site ID.",
           "solar_forecast_mode": "🎯 Optimalizovaný = 3× denně v 6:00, 12:00, 16:00 (DOPORUČENO)\n🌅 Denní = 1× denně v 6:00\n🕐 4h/⚡1h = vyžaduje API klíč",
           "solar_forecast_latitude": "Rozsah: -90° až 90° (Střední Evropa cca 48-51°)",
           "solar_forecast_longitude": "Rozsah: -180° až 180° (Střední Evropa cca 12-19°)",
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
-          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
+          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
-          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
+          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },

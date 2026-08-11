@@ -258,6 +258,42 @@ describe('oig-settings registry-driven render', () => {
 });
 
 describe('settings registry-driven — showIf field gating', () => {
+  it('shows an adoption warning for a rendered legacy azimuth', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(
+      registryWith({
+        solar_forecast_string1_azimuth: {
+          section: 'solar', type: 'int', scope: 'premium',
+          label: 'field.solar_forecast_string1_azimuth.label',
+          hint: 'field.solar_forecast_string1_azimuth.hint',
+          min: 0, max: 360, step: 1,
+        },
+      }),
+    );
+    loadModuleConfigMock.mockResolvedValueOnce({
+      ...moduleConfigWith({
+        solar: { solar_forecast_string1_azimuth: 90 },
+      }),
+      _meta: {
+        legacy_fields: {
+          solar_forecast_string1_azimuth: {
+            stored_value: -90,
+            display_value: 90,
+            legacy_provider_value: true,
+            requires_adoption: true,
+          },
+        },
+      },
+    });
+
+    const settings = await mountSettings();
+    const warning = settings.shadowRoot!.querySelector(
+      '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+    );
+    expect(warning).toBeTruthy();
+    expect(warning?.textContent).toContain('-90');
+    expect(warning?.textContent).toContain('90');
+  });
+
   it('renders a field when enable_boiler is true', async () => {
     loadFieldRegistryMock.mockResolvedValueOnce(
       registryWith({

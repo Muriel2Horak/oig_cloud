@@ -18,6 +18,7 @@ class DummyConfigEntries:
         self.reloaded = []
 
     def async_update_entry(self, entry, options=None):
+        entry.options = options or {}
         self.updated.append((entry, options))
 
     async def async_reload(self, entry_id):
@@ -448,11 +449,47 @@ async def test_options_flow_solar_provider_switch_without_key_clears_inactive_st
     reloaded = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
     assert await reloaded.async_get_active("solcast") is None
     assert await reloaded.async_get_candidate("solcast") is None
+    state = await reloaded.async_api_state()
+    assert state["provider"] == "forecast_solar"
+    assert state["verified"] is False
+    assert state["revision"] == 2
     options = flow.hass.config_entries.updated[0][1]
     assert options["solar_forecast_provider"] == "forecast_solar"
+    assert options["solar_forecast_latitude"] == 50.12
+    assert options["solar_forecast_string1_declination"] == 35
+    assert options["solar_forecast_string1_azimuth"] == 0
     assert "solcast_api_key" not in options
     assert "solcast_site_id" not in options
     assert "sc_secret_123456789" not in str(options)
+
+
+@pytest.mark.asyncio
+async def test_native_solar_save_activates_new_credentials_as_unverified(
+    mem_solar_store,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+
+    result = await flow.async_step_wizard_solar(
+        _solar_values(solar_forecast_api_key="native-secret")
+    )
+    assert result["type"] == "form"
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "native-secret"
+    }
+    state = await store.async_api_state()
+    assert state["verified"] is False
+    assert state["revision"] == 1
 
 
 @pytest.mark.asyncio
@@ -523,6 +560,58 @@ async def test_options_flow_section_jumps_to_summary():
     flow._section = None
     # without a section, battery continues into pricing as before
     assert flow._get_next_step("wizard_battery") == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_legacy_azimuth_requires_change_or_transient_adoption():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_azimuth=-90),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+
+    schema = flow._get_solar_schema()
+    keys = {marker.schema for marker in schema.schema}
+    assert "adopt_legacy_solar_forecast_string1_azimuth" in keys
+    assert flow._wizard_data["solar_forecast_string1_azimuth"] == 90
+
+    await flow.async_step_wizard_solar(
+        _solar_values(
+            solar_forecast_string1_azimuth=90,
+            adopt_legacy_solar_forecast_string1_azimuth=False,
+        )
+    )
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+    assert flow.hass.config_entries.updated == []
+    assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+async def test_options_flow_transient_checkbox_adopts_legacy_without_storing_control(
+    mem_solar_store,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_azimuth=-90),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+    await flow.async_step_wizard_solar(
+        _solar_values(
+            solar_forecast_string1_azimuth=90,
+            adopt_legacy_solar_forecast_string1_azimuth=True,
+        )
+    )
+    await flow.async_step_wizard_summary({})
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["solar_forecast_string1_azimuth"] == 90
+    assert not any(key.startswith("adopt_legacy_") for key in options)
 
 
 @pytest.mark.asyncio
