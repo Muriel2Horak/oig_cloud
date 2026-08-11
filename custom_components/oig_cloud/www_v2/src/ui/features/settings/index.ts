@@ -608,6 +608,15 @@ export class OigSettings extends LitElement {
     const legacy = section === 'solar'
       ? this.config?._meta?.legacy_fields?.[f.key]
       : undefined;
+    if (legacy?.invalid_legacy_value) {
+      return [
+        html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+          Uložená hodnota ${String(legacy.stored_value)} není platný celočíselný
+          azimut v rozsahu −180° až 360°. Opravte ji před uložením.
+        </p>`,
+        field,
+      ];
+    }
     if (!legacy?.requires_adoption) return field;
     return [
       html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>

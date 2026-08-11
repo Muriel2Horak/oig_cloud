@@ -1720,6 +1720,10 @@ async def async_setup_entry(
     _LOGGER.debug("Config data keys: %s", list(entry.data.keys()))
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
+    from .config.solar_key_store import async_activate_initial_credentials
+
+    await async_activate_initial_credentials(hass, entry)
+
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     await _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)

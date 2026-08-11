@@ -72,9 +72,9 @@ def _query_earliest_statistics_start(
         {"sum", "mean", "state"},
     )
     rows = stats.get(sensor_entity_id) if stats else None
-    if not rows:
+    if not isinstance(rows, list) or not rows:
         return None
-    first_row = rows[0]
+    first_row = next(iter(rows))
     start = first_row.get("start") or first_row.get("start_time")
     if isinstance(start, datetime):
         return start if start.tzinfo else start.replace(tzinfo=dt_util.UTC)

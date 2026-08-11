@@ -210,6 +210,14 @@ describe('onboarding classified-error rendering is catalog-driven (Task 12)', ()
   });
 
   it('Finish retry error renders the catalog copy for a classified finish failure', async () => {
+    fetchOIGAPI.mockImplementation((path: string, options?: RequestInit) => {
+      if (path.includes('/module_config') && options?.method === 'POST') {
+        return Promise.resolve({ updated: true });
+      }
+      if (path.includes('/onboarding')) return Promise.resolve(ONBOARDING_STATE);
+      if (path.includes('/pricelists')) return Promise.resolve(PRICELISTS);
+      return Promise.resolve(null);
+    });
     fetchOIGAPITyped.mockResolvedValueOnce({ ok: false, status: 409, code: 'finish_in_progress' });
 
     const wizard = await openWizardOnSolarStep();

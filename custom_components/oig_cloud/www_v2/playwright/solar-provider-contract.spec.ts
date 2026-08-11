@@ -29,7 +29,7 @@ const registry = {
       show_if: { field: 'solar_forecast_provider', in: ['solcast'] },
     },
     solcast_site_id: {
-      section: 'solar', type: 'str', scope: 'premium',
+      section: 'solar', type: 'str', scope: 'premium', secret: true,
       label: 'field.solcast_site_id.label', hint: 'field.solcast_site_id.hint',
       show_if: { field: 'solar_forecast_provider', in: ['solcast'] },
     },
@@ -80,8 +80,8 @@ const registry = {
 
 async function installSolarFake(page: Page) {
   await page.addInitScript(({ registryResponse }) => {
-    const state: SolarHarnessState = { requests: [] };
-    const moduleConfig = {
+    const storageKey = 'oig-solar-provider-e2e-state';
+    const initialModuleConfig = {
       basic: {}, modules: {}, battery: {}, boiler: {}, pricing: {}, pricing_supplier: {},
       solar: {
         solar_forecast_provider: 'forecast_solar',
@@ -99,6 +99,39 @@ async function installSolarFake(page: Page) {
       },
       _meta: { legacy_fields: {} },
     };
+    type PersistedHarness = {
+      moduleConfig: typeof initialModuleConfig;
+      privateCredentials: Record<string, Record<string, string>>;
+      proofs: Record<string, Record<string, unknown>>;
+      requests: SolarHarnessState['requests'];
+      proofCounter: number;
+    };
+    const initial: PersistedHarness = {
+      moduleConfig: initialModuleConfig,
+      privateCredentials: {
+        forecast_solar: { solar_forecast_api_key: 'previously-set-forecast-key' },
+      },
+      proofs: {},
+      requests: [],
+      proofCounter: 0,
+    };
+    let persisted: PersistedHarness;
+    try {
+      persisted = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null') ?? initial;
+    } catch {
+      persisted = initial;
+    }
+    const state: SolarHarnessState = { requests: persisted.requests };
+    const saveHarness = () => {
+      persisted.requests = state.requests;
+      sessionStorage.setItem(storageKey, JSON.stringify(persisted));
+    };
+    const publicSolar = () => ({
+      ...persisted.moduleConfig.solar,
+      solar_forecast_api_key_set: !!persisted.privateCredentials.forecast_solar?.solar_forecast_api_key,
+      solcast_api_key_set: !!persisted.privateCredentials.solcast?.solcast_api_key,
+      solcast_site_id_set: !!persisted.privateCredentials.solcast?.solcast_site_id,
+    });
     const hass = {
       auth: { expired: false, refreshAccessToken: async () => undefined },
       fetchWithAuth: async (path: string, init: RequestInit = {}) => {
@@ -106,7 +139,10 @@ async function installSolarFake(page: Page) {
         const body = typeof init.body === 'string' ? JSON.parse(init.body) : null;
         state.requests.push({ path, method, body });
         let response: unknown = {};
-        if (method === 'GET' && path.endsWith('/module_config')) response = moduleConfig;
+        let status = 200;
+        if (method === 'GET' && path.endsWith('/module_config')) {
+          response = { ...persisted.moduleConfig, solar: publicSolar() };
+        }
         else if (method === 'GET' && path.endsWith('/config_registry')) response = registryResponse;
         else if (method === 'GET' && path.endsWith('/onboarding')) {
           response = {
@@ -126,18 +162,63 @@ async function installSolarFake(page: Page) {
             confirmed_distribution_unit: '', stale_warning: false, valid_from: null, year: null,
           };
         } else if (method === 'POST' && path.endsWith('/solar_test')) {
+          const proof = `opaque-browser-proof-${++persisted.proofCounter}`;
+          persisted.proofs[proof] = body ?? {};
           response = {
             tomorrow_total_kwh: 7.5,
             forecast_covers_tomorrow: true,
-            proof: 'opaque-browser-proof',
+            proof,
           };
         } else if (method === 'POST' && path.endsWith('/module_config')) {
-          response = { updated: true, revision: 1, verified: true };
+          const proof = typeof body?.solar_test_proof === 'string'
+            ? persisted.proofs[body.solar_test_proof]
+            : undefined;
+          const values = body?.values ?? {};
+          const selectedProvider = String(
+            values.solar_forecast_provider ?? persisted.moduleConfig.solar.solar_forecast_provider,
+          );
+          const proofProvider = String(proof?.provider ?? '');
+          const proofMatches = body?.section !== 'solar' || (
+            proof !== undefined && proofProvider === selectedProvider &&
+            Object.entries(values).every(([key, value]) => {
+              const proofKey = key === 'solar_forecast_provider' ? 'provider' : key;
+              if (!(proofKey in proof)) return true;
+              return String(proof[proofKey]) === String(value);
+            })
+          );
+          if (!proofMatches) {
+            status = 409;
+            response = { error: 'solar_test_proof_mismatch' };
+          } else {
+            const priorProvider = persisted.moduleConfig.solar.solar_forecast_provider;
+            const nextSolar = { ...persisted.moduleConfig.solar, ...values };
+            if (selectedProvider === 'solcast') {
+              persisted.privateCredentials.solcast = {
+                solcast_api_key: String(values.solcast_api_key ?? ''),
+                solcast_site_id: String(values.solcast_site_id ?? ''),
+              };
+            } else if (values.solar_forecast_api_key) {
+              persisted.privateCredentials.forecast_solar = {
+                solar_forecast_api_key: String(values.solar_forecast_api_key),
+              };
+            }
+            if (priorProvider !== selectedProvider) {
+              delete persisted.privateCredentials[priorProvider];
+            }
+            delete nextSolar.solar_forecast_api_key;
+            delete nextSolar.solcast_api_key;
+            delete nextSolar.solcast_site_id;
+            nextSolar.solar_forecast_provider = selectedProvider;
+            persisted.moduleConfig.solar = nextSolar;
+            if (body.solar_test_proof) delete persisted.proofs[body.solar_test_proof];
+            response = { updated: true, revision: persisted.proofCounter, verified: true };
+          }
         } else if (method === 'GET' && path.endsWith('/ai')) {
           response = { provider: 'ai_task', status: 'not_configured' };
         }
+        saveHarness();
         return new Response(JSON.stringify(response), {
-          status: 200,
+          status,
           headers: { 'Content-Type': 'application/json' },
         });
       },
@@ -155,7 +236,7 @@ async function openSolarStep(page: Page) {
   await page.getByTestId('launch-onboarding').click();
   const wizard = page.locator('oig-onboarding-wizard');
   await wizard.locator('button[data-step="solar"]').click();
-  await expect(fieldRow(wizard, 'String 1 azimut (°)')).toBeVisible();
+  await expect(fieldRow(wizard, 'Poskytovatel')).toBeVisible();
   return wizard;
 }
 
@@ -166,6 +247,7 @@ function fieldRow(wizard: Locator, label: string) {
 test('Solcast hides local geometry, retains kWp, and forwards proof only on save', async ({ page }) => {
   await installSolarFake(page);
   const wizard = await openSolarStep(page);
+  await expect(fieldRow(wizard, 'String 1 azimut (°)')).toBeVisible();
 
   const providerRow = fieldRow(wizard, 'Poskytovatel');
   await providerRow.locator('select').selectOption('solcast');
@@ -190,15 +272,71 @@ test('Solcast hides local geometry, retains kWp, and forwards proof only on save
   expect(testRequest.body).not.toHaveProperty('solar_forecast_string1_azimuth');
   expect(state.requests.filter((request) => request.method === 'POST' && request.path.endsWith('/module_config'))).toHaveLength(0);
 
-  await wizard.evaluate(async (wizardElement: any) => {
-    await wizardElement.saveAllChangedSections();
-  });
+  await wizard.getByTestId('quicksave-save').click();
+  await expect.poll(async () => {
+    const current = await page.evaluate(() => (window as any).__solarHarnessState as SolarHarnessState);
+    return current.requests.filter(
+      (request) => request.method === 'POST' && request.path.endsWith('/module_config'),
+    ).length;
+  }).toBe(1);
   state = await page.evaluate(() => (window as any).__solarHarnessState as SolarHarnessState);
   const saveRequest = state.requests.find((request) => request.method === 'POST' && request.path.endsWith('/module_config'))!;
-  expect(saveRequest.body?.solar_test_proof).toBe('opaque-browser-proof');
+  expect(saveRequest.body?.solar_test_proof).toBe('opaque-browser-proof-1');
 
-  await providerRow.locator('select').selectOption('forecast_solar');
-  await expect(fieldRow(wizard, 'String 1 azimut (°)').locator('input')).toHaveValue('138');
-  await expect(fieldRow(wizard, 'Zeměpisná šířka').locator('input')).toHaveValue('50.12');
-  await expect(fieldRow(wizard, 'forecast.solar API klíč').locator('input')).toHaveValue('');
+  await page.waitForLoadState('load');
+  const reopened = await openSolarStep(page);
+  await expect(fieldRow(reopened, 'String 1 azimut (°)')).toHaveCount(0);
+  await expect(fieldRow(reopened, 'Solcast API klíč').getByTestId('secret-badge')).toBeVisible();
+  await expect(fieldRow(reopened, 'Solcast site ID').getByTestId('secret-badge')).toBeVisible();
+
+  const reopenedProvider = fieldRow(reopened, 'Poskytovatel');
+  await reopenedProvider.locator('select').selectOption('forecast_solar');
+  await expect(fieldRow(reopened, 'String 1 azimut (°)').locator('input')).toHaveValue('138');
+  await expect(fieldRow(reopened, 'Zeměpisná šířka').locator('input')).toHaveValue('50.12');
+  const forecastKey = fieldRow(reopened, 'forecast.solar API klíč');
+  await expect(forecastKey.getByTestId('secret-badge')).toHaveCount(0);
+  await expect(forecastKey.locator('input')).toHaveValue('');
+  await forecastKey.locator('input').fill('replacement-forecast-key');
+  await reopened.getByTestId('solar-test').click();
+  await expect(reopened.getByTestId('solar-test-success')).toContainText('7.5');
+  await reopened.getByTestId('quicksave-save').click();
+  await expect.poll(async () => {
+    const current = await page.evaluate(() => (window as any).__solarHarnessState as SolarHarnessState);
+    return current.requests.filter(
+      (request) => request.method === 'POST' && request.path.endsWith('/module_config'),
+    ).length;
+  }).toBe(2);
+
+  await page.waitForLoadState('load');
+  const finalWizard = await openSolarStep(page);
+  await expect(fieldRow(finalWizard, 'Poskytovatel').locator('select')).toHaveValue('forecast_solar');
+  await expect(fieldRow(finalWizard, 'String 1 azimut (°)').locator('input')).toHaveValue('138');
+  await expect(fieldRow(finalWizard, 'Zeměpisná šířka').locator('input')).toHaveValue('50.12');
+  await expect(fieldRow(finalWizard, 'forecast.solar API klíč').getByTestId('secret-badge')).toBeVisible();
+  await fieldRow(finalWizard, 'Poskytovatel').locator('select').selectOption('solcast');
+  await expect(fieldRow(finalWizard, 'Solcast API klíč').getByTestId('secret-badge')).toHaveCount(0);
+  await expect(fieldRow(finalWizard, 'Solcast API klíč').locator('input')).toHaveValue('');
+  await expect(fieldRow(finalWizard, 'Solcast site ID').locator('input')).toHaveValue('');
+});
+
+test('fake backend rejects a proof for a different effective DTO and persists only valid saves', async ({ page }) => {
+  await installSolarFake(page);
+  await page.goto('./?sn=browser-e2e');
+
+  const result = await page.evaluate(async () => {
+    const hass = (window as any).hass;
+    const wrong = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+      method: 'POST',
+      body: JSON.stringify({
+        section: 'solar',
+        values: { solar_forecast_provider: 'solcast' },
+        solar_test_proof: 'proof-for-a-different-dto',
+      }),
+    });
+    const persisted = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config');
+    return { status: wrong.status, persisted: await persisted.json() };
+  });
+
+  expect(result.status).toBe(409);
+  expect(result.persisted.solar.solar_forecast_provider).toBe('forecast_solar');
 });

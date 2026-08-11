@@ -13,7 +13,12 @@ from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .modules_validation import missing_dashboard_requirements, validate_modules_selection
-from .solar_key_store import SOLAR_PRIVATE_FIELDS
+from .solar_key_store import (
+    INITIAL_CREDENTIALS_TOKEN_FIELD,
+    SOLAR_PRIVATE_FIELDS,
+    SolarKeyStore,
+    async_stage_initial_credentials,
+)
 from .solar_transaction import async_commit_solar_configuration
 from .solar_rules import (
     legacy_azimuth_read_model,
@@ -1567,9 +1572,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # provider/mode/key AND no_strings_enabled now come from the single
         # shared rule set, so this surface can never drift from the REST POST
         # (U3). See config/solar_rules.py.
-        return validate_solar_effective(user_input)
+        effective = dict(user_input)
+        provider = effective.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+        if provider == getattr(self, "_active_solar_provider", None):
+            for key, value in getattr(self, "_active_solar_credentials", {}).items():
+                if not str(effective.get(key, "")).strip():
+                    effective[key] = value
+        return validate_solar_effective(effective)
 
     def _validate_solar_coordinates(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        if user_input.get(CONF_SOLAR_FORECAST_PROVIDER) == "solcast":
+            return {}
         errors: Dict[str, str] = {}
         try:
             lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
@@ -1587,6 +1600,19 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # _validate_solar_provider, called first at :1570). Only per-string
         # geometry stays here.
         errors: Dict[str, str] = {}
+        if user_input.get(CONF_SOLAR_FORECAST_PROVIDER) == "solcast":
+            for enabled_key, kwp_key in (
+                (CONF_SOLAR_FORECAST_STRING1_ENABLED, CONF_SOLAR_FORECAST_STRING1_KWP),
+                ("solar_forecast_string2_enabled", "solar_forecast_string2_kwp"),
+            ):
+                if not user_input.get(enabled_key):
+                    continue
+                try:
+                    if not 0 < float(user_input.get(kwp_key, 5.0)) <= 15:
+                        errors[kwp_key] = "invalid_kwp"
+                except (TypeError, ValueError):
+                    errors[kwp_key] = "invalid_kwp"
+            return errors
         if user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED):
             errors.update(self._validate_solar_string1(user_input))
         if user_input.get("solar_forecast_string2_enabled"):
@@ -1674,7 +1700,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         provider = defaults.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
 
-        schema_fields = {
+        schema_fields: Dict[vol.Marker, Any] = {
             vol.Optional(
                 CONF_SOLAR_FORECAST_PROVIDER,
                 default=provider,
@@ -1695,16 +1721,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
                 }
             ),
-            self._gps_marker(
-                CONF_SOLAR_FORECAST_LATITUDE,
-                defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
-                ha_latitude,
-            ): vol.Coerce(float),
-            self._gps_marker(
-                CONF_SOLAR_FORECAST_LONGITUDE,
-                defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
-                ha_longitude,
-            ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,
                 default=defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True),
@@ -1713,45 +1729,64 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         if provider == "forecast_solar":
             schema_fields[
+                self._gps_marker(
+                    CONF_SOLAR_FORECAST_LATITUDE,
+                    defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                    ha_latitude,
+                )
+            ] = vol.Coerce(float)
+            schema_fields[
+                self._gps_marker(
+                    CONF_SOLAR_FORECAST_LONGITUDE,
+                    defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                    ha_longitude,
+                )
+            ] = vol.Coerce(float)
+            schema_fields[
                 vol.Optional(
                     CONF_SOLAR_FORECAST_API_KEY,
-                    default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
+                    default="",
                 )
             ] = str
         else:
             schema_fields[
                 vol.Optional(
                     CONF_SOLCAST_API_KEY,
-                    default=defaults.get(CONF_SOLCAST_API_KEY, ""),
+                    default="",
                 )
             ] = str
             schema_fields[
                 vol.Optional(
                     CONF_SOLCAST_SITE_ID,
-                    default=defaults.get(CONF_SOLCAST_SITE_ID, ""),
+                    default="",
                 )
             ] = str
 
         # String 1 parametry - zobrazit jen když je povolen
         if defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True):
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_KWP,
-                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_DECLINATION,
-                        default=defaults.get(
-                            CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
-                        ),
-                    ): vol.Coerce(int),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
-                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0),
-                    ): vol.Coerce(int),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    CONF_SOLAR_FORECAST_STRING1_KWP,
+                    default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
+                )
+            ] = vol.Coerce(float)
+            if provider == "forecast_solar":
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            CONF_SOLAR_FORECAST_STRING1_DECLINATION,
+                            default=defaults.get(
+                                CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
+                            ),
+                        ): vol.Coerce(int),
+                        vol.Optional(
+                            CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+                            default=defaults.get(
+                                CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
+                            ),
+                        ): vol.Coerce(int),
+                    }
+                )
 
         # String 2 checkbox
         schema_fields[
@@ -1763,24 +1798,33 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         # String 2 parametry - zobrazit jen když je povolen
         if defaults.get("solar_forecast_string2_enabled", False):
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "solar_forecast_string2_kwp",
-                        default=defaults.get("solar_forecast_string2_kwp", 5.0),
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        "solar_forecast_string2_declination",
-                        default=defaults.get("solar_forecast_string2_declination", 35),
-                    ): vol.Coerce(int),
-                    vol.Optional(
-                        "solar_forecast_string2_azimuth",
-                        default=defaults.get("solar_forecast_string2_azimuth", 180),
-                    ): vol.Coerce(int),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    "solar_forecast_string2_kwp",
+                    default=defaults.get("solar_forecast_string2_kwp", 5.0),
+                )
+            ] = vol.Coerce(float)
+            if provider == "forecast_solar":
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            "solar_forecast_string2_declination",
+                            default=defaults.get(
+                                "solar_forecast_string2_declination", 35
+                            ),
+                        ): vol.Coerce(int),
+                        vol.Optional(
+                            "solar_forecast_string2_azimuth",
+                            default=defaults.get("solar_forecast_string2_azimuth", 180),
+                        ): vol.Coerce(int),
+                    }
+                )
 
-        for legacy_key in getattr(self, "_legacy_solar_azimuths", {}):
+        for legacy_key in (
+            getattr(self, "_legacy_solar_azimuths", {})
+            if provider == "forecast_solar"
+            else {}
+        ):
             string_enabled_key = (
                 CONF_SOLAR_FORECAST_STRING1_ENABLED
                 if legacy_key == CONF_SOLAR_FORECAST_STRING1_AZIMUTH
@@ -3211,6 +3255,22 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_summary")
 
+            # Stage selected-provider secrets privately. Public options carry
+            # only a short-lived opaque claim token until async_setup_entry.
+            options = self._build_options_payload(self._wizard_data)
+            provider = options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+            credentials = {
+                key: value
+                for key in SOLAR_PRIVATE_FIELDS
+                if isinstance((value := self._wizard_data.get(key)), str)
+                and value.strip()
+            }
+            token = await async_stage_initial_credentials(
+                self.hass, provider, credentials
+            )
+            if token:
+                options[INITIAL_CREDENTIALS_TOKEN_FIELD] = token
+
             # Vytvořit entry s nakonfigurovanými daty
             return self.async_create_entry(
                 title=DEFAULT_NAME,
@@ -3218,7 +3278,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     CONF_USERNAME: self._wizard_data[CONF_USERNAME],
                     CONF_PASSWORD: self._wizard_data[CONF_PASSWORD],
                 },
-                options=self._build_options_payload(self._wizard_data),
+                options=options,
             )
 
         # Vygenerovat detailní shrnutí konfigurace
@@ -3420,6 +3480,16 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_section_solar(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
+        entry = getattr(self, "_config_entry_cache", None)
+        if entry is not None:
+            provider = self._wizard_data.get(
+                CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
+            )
+            active = await SolarKeyStore(self.hass, entry.entry_id).async_get_active(
+                provider
+            )
+            self._active_solar_provider = provider
+            self._active_solar_credentials = active or {}
         return await self._enter_section("solar", "wizard_solar")
 
     async def async_step_section_battery(

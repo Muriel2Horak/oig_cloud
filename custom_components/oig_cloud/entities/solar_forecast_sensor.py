@@ -14,12 +14,13 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..config.solar_key_store import SolarKeyStore
+from ..config.solar_key_store import SolarKeyStore, get_solar_transaction_lock
 from ..config.solar_transaction import async_solar_dto_snapshot
 from ..config.solar_rules import legacy_azimuth_read_model
 from ..forecast.provider_contract import (
     build_forecast_solar_url,
     build_solcast_url,
+    safe_provider_diagnostic,
 )
 from .base_sensor import OigCloudSensor
 
@@ -688,15 +689,63 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 _LOGGER.debug("🌞 %s data received successfully", label)
                 return data, False
             if response.status == 422:
-                error_text = await response.text()
-                _LOGGER.warning("🌞 %s API error 422: %s", label, error_text)
+                await response.text()
+                _LOGGER.warning(
+                    "🌞 %s API request failed: %s",
+                    label,
+                    safe_provider_diagnostic("forecast_solar", "http_422"),
+                )
                 return None, fatal_on_error
             if response.status == 429:
                 _LOGGER.warning("🌞 %s rate limited", label)
                 return None, fatal_on_error
-            error_text = await response.text()
-            _LOGGER.error("🌞 %s API error %s: %s", label, response.status, error_text)
+            await response.text()
+            _LOGGER.error(
+                "🌞 %s API request failed: %s",
+                label,
+                safe_provider_diagnostic(
+                    "forecast_solar", f"http_{int(response.status)}"
+                ),
+            )
             return None, fatal_on_error
+
+    async def _async_commit_forecast_result(
+        self,
+        forecast_data: Dict[str, Any],
+        current_time: float,
+        revision: Optional[int],
+    ) -> bool:
+        """Commit only while the fetched provider snapshot is still current."""
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        lock = (
+            get_solar_transaction_lock(self.hass, entry_id)
+            if entry_id and revision is not None
+            else None
+        )
+
+        async def _commit() -> bool:
+            if entry_id and revision is not None:
+                current_revision = await SolarKeyStore(
+                    self.hass, entry_id
+                ).async_revision()
+                if current_revision != revision:
+                    _LOGGER.info(
+                        "Discarding stale solar provider result: %s",
+                        safe_provider_diagnostic("unknown", "revision_changed"),
+                    )
+                    return False
+            self._last_forecast_data = forecast_data
+            self._last_api_call = current_time
+            await self._save_persistent_data()
+            setattr(self.coordinator, "solar_forecast_data", forecast_data)
+            self.async_write_ha_state()
+            await self._broadcast_forecast_data()
+            return True
+
+        if lock is None:
+            return await _commit()
+        async with lock:
+            return await _commit()
 
     async def async_fetch_forecast_data(self) -> None:
         """Získání forecast dat z API pro oba stringy."""
@@ -710,10 +759,11 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
             entry_id = getattr(self._config_entry, "entry_id", None)
             if entry_id:
-                dto, _revision = await async_solar_dto_snapshot(
+                dto, revision = await async_solar_dto_snapshot(
                     self.hass, self._config_entry, {}
                 )
             else:
+                revision = None
                 provider_for_credentials = self._config_entry.options.get(
                     "solar_forecast_provider", "forecast_solar"
                 )
@@ -727,7 +777,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 )
             provider = dto["solar_forecast_provider"]
             if provider == "solcast":
-                await self._fetch_solcast_data(current_time, dto)
+                await self._fetch_solcast_data(current_time, dto, revision=revision)
                 return
 
             # Konfigurační parametry — Plan 4 Task 4 / P7: no implicit author GPS fallback.
@@ -763,31 +813,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 return
 
             # Zpracování dat
-            self._last_forecast_data = self._process_forecast_data(
-                data_string1, data_string2
-            )
-            self._last_api_call = current_time
-
-            # Uložení času posledního API volání a dat do persistentního úložiště
-            await self._save_persistent_data()
-
-            # Uložení dat do koordinátoru pro sdílení mezi senzory
-            if hasattr(self.coordinator, "solar_forecast_data"):
-                self.coordinator.solar_forecast_data = self._last_forecast_data
-            else:
-                setattr(
-                    self.coordinator, "solar_forecast_data", self._last_forecast_data
-                )
+            forecast_data = self._process_forecast_data(data_string1, data_string2)
+            if not await self._async_commit_forecast_result(
+                forecast_data, current_time, revision
+            ):
+                return
 
             _LOGGER.info(
                 f"🌞 Solar forecast data updated successfully - last API call: {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}"
             )
-
-            # Aktualizuj stav tohoto senzoru
-            self.async_write_ha_state()
-
-            # NOVÉ: Pošli signál ostatním solar forecast sensorům, že jsou dostupná nová data
-            await self._broadcast_forecast_data()
 
         except asyncio.TimeoutError:
             _LOGGER.warning(
@@ -801,9 +835,14 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 )
             # else: necháváme _last_forecast_data = None, ale to je OK - nemáme žádná data
 
-        except Exception as e:
+        except Exception as err:
             _LOGGER.error(
-                f"[{self.entity_id}] Error fetching solar forecast data: {e} - preserving cached data"
+                "[%s] Solar provider request failed: %s error_class=%s; preserving cached data",
+                self.entity_id,
+                safe_provider_diagnostic(
+                    str(locals().get("provider", "unknown")), "request_failed"
+                ),
+                type(err).__name__,
             )
             # DŮLEŽITÉ: Při chybě NEZAPISOVAT do _last_forecast_data!
             # Zachováváme stará platná data místo jejich přepsání chybovým objektem.
@@ -814,7 +853,11 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             # else: necháváme _last_forecast_data = None
 
     async def _fetch_solcast_data(
-        self, current_time: float, dto: Mapping[str, Any] | None = None
+        self,
+        current_time: float,
+        dto: Mapping[str, Any] | None = None,
+        *,
+        revision: Optional[int] = None,
     ) -> None:
         """Fetch forecast data from Solcast API and map to unified structure."""
         if dto is None:
@@ -870,9 +913,12 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     _LOGGER.warning("🌞 Solcast rate limited")
                     return
                 else:
-                    error_text = await response.text()
+                    await response.text()
                     _LOGGER.error(
-                        f"🌞 Solcast API error {response.status}: {error_text}"
+                        "🌞 Solcast API request failed: %s",
+                        safe_provider_diagnostic(
+                            "solcast", f"http_{int(response.status)}"
+                        ),
                     )
                     return
 
@@ -881,21 +927,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             _LOGGER.error("🌞 Solcast response has no forecasts")
             return
 
-        self._last_forecast_data = self._process_solcast_data(forecasts, kwp1, kwp2)
-        self._last_api_call = current_time
-
-        await self._save_persistent_data()
-
-        if hasattr(self.coordinator, "solar_forecast_data"):
-            self.coordinator.solar_forecast_data = self._last_forecast_data
-        else:
-            setattr(self.coordinator, "solar_forecast_data", self._last_forecast_data)
+        forecast_data = self._process_solcast_data(forecasts, kwp1, kwp2)
+        if not await self._async_commit_forecast_result(
+            forecast_data, current_time, revision
+        ):
+            return
 
         _LOGGER.info(
             f"🌞 Solcast forecast data updated - last API call: {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}"
         )
-        self.async_write_ha_state()
-        await self._broadcast_forecast_data()
 
     def _parse_forecast_entry(
         self, entry: Dict[str, Any], total_kwp: float

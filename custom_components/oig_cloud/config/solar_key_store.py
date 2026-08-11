@@ -30,6 +30,8 @@ _PROVIDER_FIELDS = {
 _TRANSACTION_DATA_KEY = "_oig_cloud_solar_transactions"
 _PROOF_DATA_KEY = "_oig_cloud_solar_proofs"
 _PROOF_TTL_SECONDS = 300.0
+INITIAL_CREDENTIALS_TOKEN_FIELD = "_solar_credentials_setup_token"
+_INITIAL_CREDENTIALS_STORE_PREFIX = "oig_cloud.solar_initial_"
 
 
 def _redact(raw: Optional[str]) -> str:
@@ -246,6 +248,58 @@ def get_solar_transaction_lock(hass: Any, entry_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         locks[entry_id] = lock
     return lock
+
+
+async def async_stage_initial_credentials(
+    hass: Any, provider: str, credentials: Mapping[str, Any]
+) -> Optional[str]:
+    """Stage first-entry credentials privately behind an opaque setup token."""
+    cleaned = _clean_credentials(provider, credentials)
+    required = _PROVIDER_FIELDS.get(provider, ())
+    if not required or any(key not in cleaned for key in required):
+        return None
+    token = secrets.token_urlsafe(32)
+    pending: Store = Store(
+        hass,
+        STORAGE_VERSION,
+        f"{_INITIAL_CREDENTIALS_STORE_PREFIX}{token}",
+        private=True,
+    )
+    await pending.async_save({"provider": provider, "credentials": cleaned})
+    return token
+
+
+async def async_activate_initial_credentials(hass: Any, entry: Any) -> bool:
+    """Claim staged first-entry credentials and remove the public opaque token."""
+    token = entry.options.get(INITIAL_CREDENTIALS_TOKEN_FIELD)
+    if not isinstance(token, str) or not token:
+        return False
+    pending: Store = Store(
+        hass,
+        STORAGE_VERSION,
+        f"{_INITIAL_CREDENTIALS_STORE_PREFIX}{token}",
+        private=True,
+    )
+    async with get_solar_transaction_lock(hass, entry.entry_id):
+        staged = await pending.async_load()
+        if not isinstance(staged, dict):
+            return False
+        provider = staged.get("provider")
+        credentials = staged.get("credentials")
+        if not isinstance(provider, str) or not isinstance(credentials, dict):
+            return False
+        store = SolarKeyStore(hass, entry.entry_id)
+        snapshot = await store.async_snapshot()
+        try:
+            await store.async_activate(provider, credentials, verified_at=None)
+            options = dict(entry.options)
+            options.pop(INITIAL_CREDENTIALS_TOKEN_FIELD, None)
+            hass.config_entries.async_update_entry(entry, options=options)
+            await pending.async_remove()
+        except Exception:
+            await store.async_restore_snapshot(snapshot)
+            raise
+    return True
 
 
 class SolarProofStore:

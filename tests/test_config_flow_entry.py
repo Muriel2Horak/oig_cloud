@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.config import solar_key_store as solar_key_store_module
 from custom_components.oig_cloud.config import steps as steps_module
 from custom_components.oig_cloud.const import CONF_AUTO_MODE_SWITCH
 
@@ -174,6 +175,73 @@ async def test_wizard_summary_creates_entry():
 
 
 @pytest.mark.asyncio
+async def test_initial_wizard_credentials_activate_privately_after_entry_creation(
+    monkeypatch,
+):
+    class _MemStore:
+        bucket = {}
+
+        def __init__(self, _hass, _version, key, **_kwargs):
+            self.key = key
+
+        async def async_load(self):
+            return self.bucket.get(self.key)
+
+        async def async_save(self, data):
+            self.bucket[self.key] = data
+
+        async def async_remove(self):
+            self.bucket.pop(self.key, None)
+
+    monkeypatch.setattr(solar_key_store_module, "Store", _MemStore)
+    hass = SimpleNamespace(
+        data={},
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, options: setattr(entry, "options", options)
+        ),
+    )
+    flow = DummyConfigFlow()
+    flow.hass = hass
+    flow._wizard_data = {
+        "username": "demo",
+        "password": "pass",
+        "enable_solar_forecast": True,
+        "solar_forecast_provider": "solcast",
+        "solar_forecast_mode": "hourly",
+        "solcast_api_key": "initial-solcast-secret",
+        "solcast_site_id": "initial-rooftop-id",
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 4.2,
+        "solar_forecast_string2_enabled": False,
+    }
+
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "create_entry"
+    assert "initial-solcast-secret" not in repr(result["options"])
+    assert "initial-rooftop-id" not in repr(result["options"])
+    assert "solcast_api_key" not in result["options"]
+    assert "solcast_site_id" not in result["options"]
+    assert result["options"].get("_solar_credentials_setup_token")
+
+    entry = SimpleNamespace(entry_id="created-entry", options=result["options"])
+    activate = getattr(
+        solar_key_store_module, "async_activate_initial_credentials", None
+    )
+    assert activate is not None
+    assert await activate(hass, entry) is True
+    assert "_solar_credentials_setup_token" not in entry.options
+    assert await activate(hass, entry) is False
+    store = solar_key_store_module.SolarKeyStore(hass, entry.entry_id)
+    assert await store.async_get_active("solcast") == {
+        "solcast_api_key": "initial-solcast-secret",
+        "solcast_site_id": "initial-rooftop-id",
+    }
+    state = await store.async_api_state()
+    assert state["verified"] is False
+    assert state["revision"] == 1
+
+
+@pytest.mark.asyncio
 async def test_wizard_summary_sanitizes_data_source_mode():
     flow = DummyConfigFlow()
     flow._wizard_data = {
@@ -206,7 +274,6 @@ async def test_wizard_summary_full_option_mapping():
         "enable_dashboard": True,
         "solar_forecast_provider": "forecast_solar",
         "solar_forecast_mode": "hourly",
-        "solar_forecast_api_key": "key",
         "solcast_api_key": "",
         "solar_forecast_latitude": 50.5,
         "solar_forecast_longitude": 14.5,

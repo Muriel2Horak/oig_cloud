@@ -493,6 +493,94 @@ async def test_native_solar_save_activates_new_credentials_as_unverified(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "credentials", "submitted"),
+    [
+        (
+            "forecast_solar",
+            {"solar_forecast_api_key": "forecast-private-secret"},
+            _solar_values(
+                solar_forecast_mode="hourly",
+                solar_forecast_api_key="",
+            ),
+        ),
+        (
+            "solcast",
+            {
+                "solcast_api_key": "solcast-private-secret",
+                "solcast_site_id": "private-rooftop-id",
+            },
+            _solar_values(
+                solar_forecast_provider="solcast",
+                solar_forecast_mode="hourly",
+                solcast_api_key="",
+                solcast_site_id="",
+            ),
+        ),
+    ],
+)
+async def test_options_flow_blank_solar_secrets_retain_active_private_credentials(
+    mem_solar_store,
+    provider,
+    credentials,
+    submitted,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(
+            solar_forecast_provider=provider,
+            solar_forecast_mode="hourly",
+        ),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(provider, credentials, verified_at=None)
+
+    await flow.async_step_section_solar()
+    result = await flow.async_step_wizard_solar(submitted)
+
+    assert result["step_id"] == "wizard_summary"
+    assert await store.async_get_active(provider) == credentials
+
+
+@pytest.mark.asyncio
+async def test_native_solcast_schema_owns_geometry_and_validation_ignores_it():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_provider="solcast"),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    schema = flow._get_solar_schema(_solar_values(solar_forecast_provider="solcast"))
+    keys = {marker.schema for marker in schema.schema}
+
+    assert "solar_forecast_string1_kwp" in keys
+    assert {
+        "solar_forecast_latitude",
+        "solar_forecast_longitude",
+        "solar_forecast_string1_declination",
+        "solar_forecast_string1_azimuth",
+    }.isdisjoint(keys)
+
+    submitted = _solar_values(
+        solar_forecast_provider="solcast",
+        solar_forecast_mode="daily",
+        solcast_api_key="solcast-secret",
+        solcast_site_id="roof-id",
+        solar_forecast_latitude="not-a-coordinate",
+        solar_forecast_longitude=999,
+        solar_forecast_string1_declination=999,
+        solar_forecast_string1_azimuth=999,
+    )
+    flow._wizard_data.update(submitted)
+    result = await flow.async_step_wizard_solar(submitted)
+    assert result["step_id"] == "wizard_summary"
+
+
+@pytest.mark.asyncio
 async def test_options_flow_summary_auto_balancing_solar_string2():
     entry = SimpleNamespace(
         entry_id="entry1",

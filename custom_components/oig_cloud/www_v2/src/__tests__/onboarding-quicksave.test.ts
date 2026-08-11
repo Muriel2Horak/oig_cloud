@@ -361,6 +361,23 @@ describe('quick-save bar (fe/fix defect #2)', () => {
     expect(fetchOIGAPITyped).not.toHaveBeenCalled();
     expect(reloadPanelSpy).not.toHaveBeenCalled();
   });
+
+  it('a failed section save without field errors stops finish and surfaces a generic error', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
+    saveModuleConfigMock.mockResolvedValue({ ok: false });
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.modulesDraft = { ...w.modulesDraft, enable_chmu_warnings: false };
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="quicksave-save"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-error"]')).toBeTruthy();
+    expect(fetchOIGAPITyped).not.toHaveBeenCalled();
+    expect(waitForModuleConfigAfterReloadMock).not.toHaveBeenCalled();
+    expect(reloadPanelSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('post-save reload (fe/fix defect #1)', () => {

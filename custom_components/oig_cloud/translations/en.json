@@ -239,7 +239,7 @@
           "enable_dashboard": "Web interface with charts accessible in HA",
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_pricing": "Recommended - OTE spot prices + cost calculation",
-          "enable_solar_forecast": "Requires API key from Forecast.Solar",
+          "enable_solar_forecast": "Requires credentials for Forecast.Solar or Solcast",
           "enable_statistics": "Recommended - consumption median, predictions",
           "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
@@ -355,7 +355,7 @@
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
           "solar_forecast_string2_kwp": "Total String 2 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast."
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides forecast of electricity production from photovoltaic panels for the next 24-72 hours. Uses Forecast.Solar service with accurate meteorological data.\n\n🔧 **What is needed:**\n• Free or paid API key from Forecast.Solar\n• GPS coordinates of PV installation\n• Panel parameters (tilt, azimuth, power)\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)\n\n🔑 Get API key by registering at Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides a photovoltaic production forecast for the next 24-72 hours. You can choose Forecast.Solar or Solcast.\n\n🔧 **What is needed:**\n• Credentials for the selected provider\n• Forecast.Solar: GPS coordinates and panel parameters (tilt, azimuth, power)\n• Solcast: a configured Rooftop Site; its geometry is used instead of local GPS, tilt, and azimuth\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)",
         "title": "☀️ Solar Forecast Configuration"
       },
       "wizard_summary": {
@@ -748,7 +748,7 @@
           "enable_dashboard": "Web interface with charts accessible in HA",
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_pricing": "Recommended - spot prices from OTE + cost calculations",
-          "enable_solar_forecast": "Requires API key from Forecast.Solar",
+          "enable_solar_forecast": "Requires credentials for Forecast.Solar or Solcast",
           "enable_statistics": "Recommended - consumption median, predictions",
           "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
@@ -864,7 +864,7 @@
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
           "solar_forecast_string2_kwp": "Total String 2 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast."
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides forecast of electricity production from photovoltaic panels for the next 24-72 hours. Uses Forecast.Solar service with accurate meteorological data.\n\n🔧 **What is needed:**\n• Free or paid API key from Forecast.Solar\n• GPS coordinates of PV installation\n• Panel parameters (tilt, azimuth, power)\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)\n\n🔑 Get API key by registering at Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides a photovoltaic production forecast for the next 24-72 hours. You can choose Forecast.Solar or Solcast.\n\n🔧 **What is needed:**\n• Credentials for the selected provider\n• Forecast.Solar: GPS coordinates and panel parameters (tilt, azimuth, power)\n• Solcast: a configured Rooftop Site; its geometry is used instead of local GPS, tilt, and azimuth\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)",
         "title": "☀️ Solar Forecast Configuration"
       },
       "wizard_summary": {

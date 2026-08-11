@@ -239,7 +239,7 @@
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
-          "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
+          "enable_solar_forecast": "Vyžaduje přístupové údaje pro Forecast.Solar nebo Solcast",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
           "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
@@ -355,7 +355,7 @@
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
           "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá."
         },
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Můžete zvolit Forecast.Solar nebo Solcast.\n\n🔧 **Co je potřeba:**\n• Přístupové údaje vybraného poskytovatele\n• Forecast.Solar: GPS souřadnice a parametry panelů (sklon, azimut, výkon)\n• Solcast: nakonfigurovaný Rooftop Site; jeho geometrie se použije místo místních GPS, sklonu a azimutu\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)",
         "title": "☀️ Konfigurace solární předpovědi"
       },
       "wizard_summary": {
@@ -626,7 +626,7 @@
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
-          "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
+          "enable_solar_forecast": "Vyžaduje přístupové údaje pro Forecast.Solar nebo Solcast",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
           "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
@@ -742,7 +742,7 @@
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
           "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá."
         },
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Můžete zvolit Forecast.Solar nebo Solcast.\n\n🔧 **Co je potřeba:**\n• Přístupové údaje vybraného poskytovatele\n• Forecast.Solar: GPS souřadnice a parametry panelů (sklon, azimut, výkon)\n• Solcast: nakonfigurovaný Rooftop Site; jeho geometrie se použije místo místních GPS, sklonu a azimutu\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)",
         "title": "☀️ Konfigurace solární předpovědi"
       },
       "wizard_summary": {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -22,8 +24,9 @@ class DummyCoordinator:
 
 
 class DummyConfigEntry:
-    def __init__(self, options):
+    def __init__(self, options, entry_id=None):
         self.options = options
+        self.entry_id = entry_id
 
 
 def _make_sensor(options):
@@ -337,6 +340,205 @@ async def test_async_fetch_forecast_data_string1_only(monkeypatch):
 
     assert sensor._last_forecast_data == {"ok": True}
     assert sensor.coordinator.solar_forecast_data == {"ok": True}
+
+
+class _RuntimeMemStore:
+    bucket = {}
+
+    def __init__(self, _hass, _version, key, **_kwargs):
+        self.key = key
+
+    async def async_load(self):
+        return self.bucket.get(self.key)
+
+    async def async_save(self, data):
+        self.bucket[self.key] = data
+
+    async def async_remove(self):
+        self.bucket.pop(self.key, None)
+
+
+def _runtime_options(**overrides):
+    options = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "hourly",
+        "solar_forecast_latitude": 50.0,
+        "solar_forecast_longitude": 14.0,
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.0,
+        "solar_forecast_string1_declination": 35,
+        "solar_forecast_string1_azimuth": 180,
+        "solar_forecast_string2_enabled": False,
+    }
+    options.update(overrides)
+    return options
+
+
+@pytest.mark.asyncio
+async def test_stale_provider_revision_result_cannot_commit(monkeypatch):
+    from custom_components.oig_cloud.config import solar_key_store as store_module
+
+    _RuntimeMemStore.bucket = {}
+    monkeypatch.setattr(store_module, "Store", _RuntimeMemStore)
+    sensor = OigCloudSolarForecastSensor(
+        DummyCoordinator(),
+        "solar_forecast",
+        DummyConfigEntry(_runtime_options(), entry_id="entry-1"),
+        {},
+    )
+    sensor.hass = SimpleNamespace(data={})
+    sensor._min_api_interval = 0
+    store = store_module.SolarKeyStore(sensor.hass, "entry-1")
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "old-private-key"},
+        verified_at=None,
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocked_fetch(**_kwargs):
+        started.set()
+        await release.wait()
+        return {"result": "old"}, None
+
+    writes = []
+    monkeypatch.setattr(sensor, "_fetch_forecast_solar_strings", _blocked_fetch)
+    monkeypatch.setattr(sensor, "_process_forecast_data", lambda *_a: {"result": "old"})
+    monkeypatch.setattr(
+        sensor, "_save_persistent_data", lambda: _record_async(writes, "save")
+    )
+    monkeypatch.setattr(
+        sensor, "_broadcast_forecast_data", lambda: _record_async(writes, "broadcast")
+    )
+    monkeypatch.setattr(sensor, "async_write_ha_state", lambda: writes.append("state"))
+
+    task = asyncio.create_task(sensor.async_fetch_forecast_data())
+    await started.wait()
+    sensor._config_entry.options = _runtime_options(solar_forecast_provider="solcast")
+    await store.async_activate(
+        "solcast",
+        {"solcast_api_key": "new-private-key", "solcast_site_id": "new-site"},
+        verified_at=None,
+    )
+    release.set()
+    await task
+
+    assert sensor._last_forecast_data is None
+    assert not hasattr(sensor.coordinator, "solar_forecast_data")
+    assert writes == []
+
+
+async def _record_async(records, value):
+    records.append(value)
+
+
+@pytest.mark.asyncio
+async def test_current_provider_revision_result_commits(monkeypatch):
+    from custom_components.oig_cloud.config import solar_key_store as store_module
+
+    _RuntimeMemStore.bucket = {}
+    monkeypatch.setattr(store_module, "Store", _RuntimeMemStore)
+    sensor = OigCloudSolarForecastSensor(
+        DummyCoordinator(),
+        "solar_forecast",
+        DummyConfigEntry(_runtime_options(), entry_id="entry-current"),
+        {},
+    )
+    sensor.hass = SimpleNamespace(data={})
+    sensor._min_api_interval = 0
+    store = store_module.SolarKeyStore(sensor.hass, "entry-current")
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "current-private-key"},
+        verified_at=None,
+    )
+    writes = []
+    monkeypatch.setattr(
+        sensor,
+        "_fetch_forecast_solar_strings",
+        lambda **_kwargs: _return_async(({"result": "current"}, None)),
+    )
+    monkeypatch.setattr(
+        sensor, "_process_forecast_data", lambda *_a: {"result": "current"}
+    )
+    monkeypatch.setattr(
+        sensor, "_save_persistent_data", lambda: _record_async(writes, "save")
+    )
+    monkeypatch.setattr(
+        sensor, "_broadcast_forecast_data", lambda: _record_async(writes, "broadcast")
+    )
+    monkeypatch.setattr(sensor, "async_write_ha_state", lambda: writes.append("state"))
+
+    await sensor.async_fetch_forecast_data()
+
+    assert sensor._last_forecast_data == {"result": "current"}
+    assert sensor.coordinator.solar_forecast_data == {"result": "current"}
+    assert writes == ["save", "state", "broadcast"]
+
+
+async def _return_async(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_provider_error_body_and_exception_are_redacted(monkeypatch, caplog):
+    body_secret = "BODY-SENTINEL-PRIVATE-KEY"
+    exception_secret = "EXCEPTION-SENTINEL-PRIVATE-KEY"
+    sensor = OigCloudSolarForecastSensor(
+        DummyCoordinator(),
+        "solar_forecast",
+        DummyConfigEntry(_runtime_options(), entry_id="entry-log"),
+        {},
+    )
+    sensor.hass = SimpleNamespace(data={})
+    sensor._min_api_interval = 0
+
+    class _Response:
+        status = 422
+
+        async def text(self):
+            return body_secret
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            return _Response()
+
+    with caplog.at_level(logging.DEBUG, logger=sensor_module.__name__):
+        await sensor._fetch_forecast_string(
+            session=_Session(),
+            label="string 1",
+            lat=50.0,
+            lon=14.0,
+            api_key="url-private-key",
+            declination=35,
+            compass_azimuth=180,
+            kwp=5.0,
+            legacy_provider_value=False,
+            fatal_on_error=True,
+        )
+
+        async def _snapshot(*_args, **_kwargs):
+            dto = _runtime_options(solar_forecast_api_key="url-private-key")
+            return dto, 1
+
+        async def _explode(**_kwargs):
+            raise RuntimeError(exception_secret)
+
+        monkeypatch.setattr(sensor_module, "async_solar_dto_snapshot", _snapshot)
+        monkeypatch.setattr(sensor, "_fetch_forecast_solar_strings", _explode)
+        await sensor.async_fetch_forecast_data()
+
+    assert body_secret not in caplog.text
+    assert exception_secret not in caplog.text
+    assert "url-private-key" not in caplog.text
+    assert "forecast_solar" in caplog.text
 
 
 @pytest.mark.asyncio

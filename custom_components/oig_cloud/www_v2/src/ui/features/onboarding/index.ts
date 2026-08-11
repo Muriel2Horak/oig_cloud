@@ -956,6 +956,7 @@ export class OigOnboardingWizard extends LitElement {
   private _registryLoaded = false;
   @state() private solarDraft: Record<string, unknown> = {};
   @state() private legacySolarFields: LegacySolarFields = {};
+  @state() private touchedLegacySolarFields: ReadonlySet<string> = new Set();
 
   /** Battery step (Task 18): draft form values, seeded alongside `solarDraft`
    * from the same shared `_registry` fetch — the registry is not fetched a
@@ -1877,6 +1878,12 @@ export class OigOnboardingWizard extends LitElement {
     };
 
     collectChanged('solar', this.solarDraft);
+    for (const key of this.touchedLegacySolarFields) {
+      if (this.legacySolarFields[key]?.requires_adoption !== true) continue;
+      const changed = changedBySection.get('solar') ?? {};
+      changed[key] = this.solarDraft[key];
+      changedBySection.set('solar', changed);
+    }
     collectChanged('pricing', this.pricingDraft);
     if (this._registry?.sections.includes('modules')) {
       collectChanged('modules', this.modulesDraft);
@@ -1904,10 +1911,24 @@ export class OigOnboardingWizard extends LitElement {
           ? await saveModuleConfig(section, changed, adoptions)
           : await saveModuleConfig(section, changed);
       if (section === 'solar' && res.ok) this.solarTestProof = null;
-      if (!res.ok && res.fields) {
-        for (const [key, message] of Object.entries(res.fields)) {
-          errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
+      if (section === 'solar' && res.ok && adoptions.length > 0) {
+        const remaining = new Set(this.touchedLegacySolarFields);
+        for (const key of adoptions) remaining.delete(key);
+        this.touchedLegacySolarFields = remaining;
+      }
+      if (!res.ok) {
+        if (res.fields && Object.keys(res.fields).length > 0) {
+          for (const [key, message] of Object.entries(res.fields)) {
+            errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
+          }
+        } else {
+          errors.push({
+            step: this.currentStep,
+            key: section,
+            message: this.finishErrorMessage('finish_save_failed'),
+          });
         }
+        break;
       }
     }
     return errors;
@@ -2211,6 +2232,7 @@ export class OigOnboardingWizard extends LitElement {
     this.boilerDraft = {};
     this.tariffMatrixOverride = {};
     this.tariffMatrixError = {};
+    this.touchedLegacySolarFields = new Set();
   }
 
   private requestDiscardDrafts(): void {
@@ -2318,6 +2340,7 @@ export class OigOnboardingWizard extends LitElement {
     this.aiState = null;
     this.aiValidation = { kind: 'idle' };
     this.originalValues = {};
+    this.touchedLegacySolarFields = new Set();
     this.pricing = null;
     this.pricingLoadFailed = false;
     this._pendingPrereqOff = null;
@@ -2440,6 +2463,11 @@ export class OigOnboardingWizard extends LitElement {
     body.solar_forecast_mode = this.solarDraft.solar_forecast_mode;
     const visible = STEP_SOLAR.visibleFields(this._registry, this.solarDraft);
     for (const f of visible) {
+      const legacy = this.legacySolarFields[f.key];
+      if (
+        legacy?.requires_adoption === true &&
+        !this.touchedLegacySolarFields.has(f.key)
+      ) continue;
       const wireKey = SOLAR_TEST_WIRE_RENAME[f.key] ?? f.key;
       if (!SOLAR_TEST_ALLOWED_WIRE_KEYS.has(wireKey)) continue;
       body[wireKey] = this.solarDraft[f.key];
@@ -2671,6 +2699,15 @@ export class OigOnboardingWizard extends LitElement {
     const rows = Object.entries(all)
       .filter(([key, value]) => !scheduleKeys.has(key) && String(this.originalValues[key]) !== String(value))
       .map(([key, value]) => ({ key, oldValue: this.originalValues[key], newValue: value }));
+
+    for (const key of this.touchedLegacySolarFields) {
+      if (rows.some((row) => row.key === key)) continue;
+      rows.push({
+        key,
+        oldValue: this.legacySolarFields[key]?.stored_value ?? this.originalValues[key],
+        newValue: all[key],
+      });
+    }
 
     for (const group of ['weekday', 'weekend'] as const) {
       const vtKey = `tariff_vt_start_${group}`;
@@ -3125,6 +3162,11 @@ export class OigOnboardingWizard extends LitElement {
                 secretRevealed: this.revealedSecretKeys.has(f.key),
                 onRevealSecret: () => this.revealSecret(f.key),
                 onChange: (v: unknown) => {
+                  if (this.legacySolarFields[f.key]?.requires_adoption === true) {
+                    this.touchedLegacySolarFields = new Set(
+                      this.touchedLegacySolarFields,
+                    ).add(f.key);
+                  }
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
                   this.solarTestMatchesDraft = false;
                   this.solarTestProof = null;
@@ -3132,7 +3174,12 @@ export class OigOnboardingWizard extends LitElement {
                 entityCatalog: [],
               });
               const legacy = this.legacySolarFields[f.key];
-              const warning = legacy?.requires_adoption
+              const warning = legacy?.invalid_legacy_value
+                ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+                    Uložená hodnota ${String(legacy.stored_value)} není platný celočíselný
+                    azimut v rozsahu −180° až 360°. Opravte ji před uložením.
+                  </p>`
+                : legacy?.requires_adoption
                 ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
                     Starší hodnota ${String(legacy.stored_value)} je zobrazena jako
                     kompasová hodnota ${String(legacy.display_value)}. Kompas: sever 0°/360°,

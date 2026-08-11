@@ -12,7 +12,9 @@ import {
   EMPTY_SOLAR_REGISTRY,
 } from './fixtures/solar-registry-fixture';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() =>
+  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>(),
+);
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
 const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
@@ -415,6 +417,79 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
     expect(warning).toBeTruthy();
     expect(warning?.textContent).toContain('-90');
     expect(warning?.textContent).toContain('90');
+  });
+
+  it.each([361, 720, 90.5])(
+    'renders a corrupt legacy azimuth warning for %s',
+    async (storedValue) => {
+      const wizard = await openWizardOnSolarStep();
+      wizard.legacySolarFields = {
+        solar_forecast_string1_azimuth: {
+          stored_value: storedValue,
+          display_value: null,
+          legacy_provider_value: false,
+          requires_adoption: false,
+          invalid_legacy_value: true,
+        },
+      };
+      await wizard.updateComplete;
+      const warning = wizard.shadowRoot!.querySelector(
+        '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+      );
+      expect(warning).toBeTruthy();
+      expect(warning?.textContent).toContain(String(storedValue));
+    },
+  );
+
+  it('keeps an untouched legacy azimuth out of the candidate DTO, then adopts a same-number touch once', async () => {
+    const wizard = await openWizardOnSolarStep();
+    wizard.originalValues = {
+      ...wizard.originalValues,
+      solar_forecast_string1_azimuth: 90,
+      unrelated_price: 'old',
+    };
+    wizard.solarDraft = {
+      ...wizard.solarDraft,
+      solar_forecast_string1_azimuth: 90,
+    };
+    wizard.legacySolarFields = {
+      solar_forecast_string1_azimuth: {
+        stored_value: -90,
+        display_value: 90,
+        legacy_provider_value: true,
+        requires_adoption: true,
+      },
+    };
+    await wizard.updateComplete;
+
+    expect(wizard.buildSolarTestBody()).not.toHaveProperty(
+      'solar_forecast_string1_azimuth',
+    );
+
+    const azimuthRow = Array.from(wizard.shadowRoot!.querySelectorAll('.row'))
+      .find((row) => row.textContent?.includes('String 1 azimut'));
+    const input = azimuthRow?.querySelector('input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = '90';
+    input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await wizard.updateComplete;
+
+    expect(wizard.buildSolarTestBody().solar_forecast_string1_azimuth).toBe(90);
+    wizard.solarTestProof = 'proof-for-touched-legacy-dto';
+    wizard.pricingDraft = { unrelated_price: 'new' };
+    fetchOIGAPI.mockClear();
+    await wizard.saveAllChangedSections();
+
+    const saveBodies = fetchOIGAPI.mock.calls
+      .filter((call) => call[1]?.method === 'POST')
+      .map((call) => JSON.parse(call[1]!.body as string));
+    expect(saveBodies[0]).toMatchObject({
+      section: 'solar',
+      values: { solar_forecast_string1_azimuth: 90 },
+      adopt_legacy_fields: ['solar_forecast_string1_azimuth'],
+      solar_test_proof: 'proof-for-touched-legacy-dto',
+    });
+    expect(saveBodies.filter((body) => body.section === 'solar')).toHaveLength(1);
   });
 
   it('click posts the Q1 wire-schema body to /{sn}/solar_test — no extra keys', async () => {

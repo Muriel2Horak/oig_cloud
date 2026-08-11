@@ -139,3 +139,74 @@
 - Exact release frontend toolchain remains unverified locally: this slice used Node `24.3.0` and npm `11.4.2`; Task 6 requires Node `22.17.0` and npm `10.9.2`.
 - Ubuntu PEP 517/wheelhouse and live HP/natural-refresh gates remain quality-plan Task 6/final-release scope.
 - No push, PR, deploy, HP access, or remote mutation occurred.
+
+## Critic remediation follow-up
+
+### Scope and preserved decisions
+
+- Reviewed base: `9bc57881a81db2e3b555448f016e05a9598f636e`.
+- Preserve the no-migration policy, `ConfigFlow.VERSION == 1`, and stored non-negative azimuth bytes. Stored `138` remains `138`; Forecast.Solar receives `-42` only at the outbound boundary.
+- Preserve Solcast-owned geometry and local-only enabled-string kWp metadata.
+- Keep authentication and authorization boundaries unchanged.
+
+### Mandatory RED evidence
+
+- Native credentials/schema: `4 failed`; blank active private credentials were lost, initial-flow credentials were not activated privately, and native Solcast still exposed local geometry.
+- Runtime transaction/log safety: `2 failed, 1 passed`; stale results committed and attacker-controlled response/exception sentinels reached logs, while the current-revision control already passed.
+- Wizard legacy/proof/save: `8 failed, 48 passed`; untouched legacy adoption, proof forwarding after another-field edits, failed non-field saves, and corrupt-metadata warnings reproduced.
+- Copy parity: `1 failed`; native descriptions still expressed Forecast.Solar-only requirements.
+- Playwright realism: `2 failed`; the fake backend did not persist/reload provider state and accepted a mismatched proof.
+- Setup/import failures were not counted as behavioral RED.
+
+### Implemented remediation
+
+- Stage complete initial-flow credentials privately under an opaque pending token, activate them under the per-entry lock after entry creation, roll back on failure, and remove the token and all credentials from public options.
+- Reopen native OptionsFlow from active private Forecast.Solar or Solcast credentials. Blank secret inputs retain active private values for validation without exposing defaults.
+- Exclude latitude, longitude, tilt, and azimuth from native Solcast schema and provider validation; retain local kWp as OIG metadata only.
+- Bind provider result commits to the current entry, revision, and provider under the shared lock. Stale completions cannot write cache, coordinator, sensor state, or broadcasts.
+- Consume provider bodies without logging them and emit only provider-safe diagnostics plus exception class names.
+- Preserve untouched legacy azimuth candidates, display `-90` as compass `90`, adopt an explicitly touched equal numeric value once, and forward the proof when another field changes before save.
+- Stop the wizard on every unsuccessful section save, including non-2xx responses without `fields`; render corrupt legacy metadata warnings in Settings and Wizard.
+- Use provider-neutral native English/Czech descriptions and extend catalog parity coverage.
+- Make the Playwright backend persist public/private provider state across reload, model production secret schema, enforce proof mismatch/replay rejection, clean inactive credentials, preserve geometry, and drive user-facing save/finish controls.
+
+### Focused GREEN evidence
+
+- Native credentials/schema: `4 passed`.
+- Runtime stale/current/log safety: `3 passed`; rollback and concurrency paths execute.
+- Wizard legacy/proof/save selection: `56 passed`.
+- Native/copy parity: `4 passed`.
+- Realistic Playwright provider contract: `2 passed`.
+- Final focused onboarding i18n/steps/quicksave selection: `56 passed`.
+- Initial onboarding i18n full-suite regression was isolated to an existing fixture returning `null` for the prerequisite module save. The fixture now returns a successful module-save body; focused and full reruns pass without weakening production error handling.
+
+### Regression and full-gate evidence
+
+- Affected Python selection with the Home Assistant plugin disabled for the Python 3.14 loop-order issue: `468 passed`.
+- Native provider E2E: `8 passed, 3 skipped`.
+- Full v2 unit suite under `TZ=UTC`: `102 files, 2,038 passed`.
+- Full v2 coverage under `TZ=UTC`: `102 files, 2,038 passed`; aggregate statements `73.22%`.
+- Flake8: pass.
+- Canonical Mypy: `Success: no issues found in 200 source files`.
+- Pylint `4.0.7`: score `9.52/10`; all production paths have `E=0`, `F=0` after the inherited release-gate repair below.
+- ESLint errors-only and TypeScript typecheck: pass.
+- Production build and read-only `build:verify`: pass; tracked distribution rebuilt.
+- Translation JSON parse and parity: `4 passed`; `git diff --check`: pass.
+- Final pre-commit: two consecutive `pre-commit run --all-files` executions passed all nine hooks without rewrites after the inherited Pylint repair.
+- Gitleaks diff scan: two generated-source-map `sourceKey` metadata false positives; no credential finding.
+- Bounded Trivy secret scan: zero secrets.
+- Codex Security diff scan `f44ef2ec-146c-4297-997d-076224d66cc3`: complete and sealed, `14/14` receipts, complete coverage, zero reportable findings. Scan goal usage: `195,203` tokens over `11m31s`.
+- Security report: `/private/var/folders/vj/680smcyn26b89dfkt2hsp96m0000gn/T/codex-security-scans-w4gF6A/wizard-v2-auth-fix/9bc57881a81db2e3b555448f016e05a9598f636e_20260811T030244Z_1nrps8xc/report.md`.
+
+### Systematic regression isolation
+
+- `tests/test_entities_solar_forecast_sensor.py` no-entry control lacks required DTO geometry at both reviewed base and current tree under identical `TZ=UTC`; it is inherited fixture drift.
+- `tests/test_solar_key_store.py` closes the default event loop through its first `asyncio.run` on Python 3.14 and causes later Home Assistant plugin setup errors at both reviewed base and current tree in identical order. Plugin-disabled isolated behavior is green.
+- Full-repository Pylint RED reproduced inherited `E1136` at `adaptive_load_profiles_sensor.py:77`. The operator explicitly brought this release-gate failure into scope. The smallest behavior-preserving repair validates the recorder value as a non-empty list and reads its first row through iteration; focused earliest-statistics behavior is `9 passed` and canonical Pylint is exit `0`, score `9.52/10`, `E=0`, `F=0`.
+- No unrelated boiler production file was edited to mask inherited timezone, event-loop, or fixture behavior.
+
+### Residual release blockers after remediation
+
+- Aggregate v2 statement coverage is `73.22%`, below the operator's `>80%` release criterion. No threshold or exclusion was weakened; global coverage uplift remains outside this provider remediation slice.
+- Previously documented inherited dependency High/Critical findings, exact release Node/npm toolchain, Ubuntu PEP 517/wheelhouse, and live HP/natural-refresh gates remain unresolved external release obligations.
+- No push, PR, deploy, HP access, or remote mutation occurred.

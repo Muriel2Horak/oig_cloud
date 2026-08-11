@@ -58,3 +58,27 @@ def test_wizard_translation_key_parity_and_json_parse() -> None:
             for catalog in catalogs
         ]
         assert key_sets[0] == key_sets[1] == key_sets[2]
+
+
+def test_native_solar_descriptions_are_provider_neutral_and_catalogs_match() -> None:
+    catalogs = (
+        (_load("strings.json"), "Forecast.Solar nebo Solcast", "Rooftop Site"),
+        (_load("translations/cs.json"), "Forecast.Solar nebo Solcast", "Rooftop Site"),
+        (_load("translations/en.json"), "Forecast.Solar or Solcast", "Rooftop Site"),
+    )
+    for catalog, provider_choice, rooftop in catalogs:
+        for flow in ("config", "options"):
+            step = catalog[flow]["step"]["wizard_solar"]
+            assert provider_choice in step["description"]
+            assert rooftop in step["description"]
+            module_hint = catalog[flow]["step"]["wizard_modules"][
+                "data_description"
+            ]["enable_solar_forecast"]
+            assert provider_choice in module_hint
+
+    for flow in ("config", "options"):
+        descriptions = [
+            catalog[flow]["step"]["wizard_solar"]["description"]
+            for catalog, _choice, _rooftop in catalogs
+        ]
+        assert all("Solcast" in description for description in descriptions)
