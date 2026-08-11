@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -255,14 +255,26 @@ def assert_old_observable_state(sensor) -> None:
     assert sensor.writes == []
 
 
+async def contextual_candidate(sensor, data, *, request_id, sequence=1):
+    context = await sensor._async_capture_candidate_context(
+        request_id=request_id,
+        occurrence_id=sensor._current_occurrence_id,
+        occurrence_generation=sensor._occurrence_generation,
+        lifecycle_generation=sensor._lifecycle_generation,
+        request_sequence=sequence,
+    )
+    return SolarFetchResult.accept(data).with_context(context).candidate
+
+
 @pytest.mark.asyncio
 async def test_storage_failure_keeps_every_observable_state_unchanged(monkeypatch):
     sensor = make_commit_sensor(monkeypatch)
     MemoryStore.failure = OSError("disk-secret")
 
-    committed = await sensor.async_commit_candidate(
-        valid_candidate(), generation=0, occurrence_id="manual-1"
+    candidate = await contextual_candidate(
+        sensor, valid_candidate(), request_id="manual-1"
     )
+    committed = await sensor.async_commit_candidate(candidate)
 
     assert committed is False
     assert_old_observable_state(sensor)
@@ -276,11 +288,10 @@ async def test_lifecycle_change_between_save_and_publish_keeps_old_observable_st
     sensor = make_commit_sensor(monkeypatch)
     MemoryStore.save_started = asyncio.Event()
     MemoryStore.save_release = asyncio.Event()
-    task = asyncio.create_task(
-        sensor.async_commit_candidate(
-            valid_candidate(), generation=0, occurrence_id="scheduled-1"
-        )
+    candidate = await contextual_candidate(
+        sensor, valid_candidate(), request_id="scheduled-1"
     )
+    task = asyncio.create_task(sensor.async_commit_candidate(candidate))
     await MemoryStore.save_started.wait()
     if invalidate == "generation":
         sensor._lifecycle_generation += 1
@@ -296,27 +307,30 @@ async def test_lifecycle_change_between_save_and_publish_keeps_old_observable_st
 async def test_accepted_candidate_persists_then_publishes_once(monkeypatch):
     sensor = make_commit_sensor(monkeypatch)
 
-    committed = await sensor.async_commit_candidate(
-        valid_candidate(), generation=0, occurrence_id="scheduled-2"
+    candidate = await contextual_candidate(
+        sensor, valid_candidate(), request_id="scheduled-2"
     )
+    committed = await sensor.async_commit_candidate(candidate)
 
     assert committed is True
     assert sensor._last_forecast_data["total_daily"] == {TODAY: 2.0, TOMORROW: 3.0}
     assert sensor.coordinator.solar_forecast_data is sensor._last_forecast_data
     assert sensor.writes == ["state", "broadcast"]
-    assert MemoryStore.bucket[sensor._storage_key]["forecast_data"]["response_time"] == NOW.isoformat()
+    assert (
+        MemoryStore.bucket[sensor._storage_key]["forecast_data"]["response_time"]
+        == NOW.isoformat()
+    )
 
 
 @pytest.mark.asyncio
 async def test_duplicate_occurrence_commits_and_broadcasts_once(monkeypatch):
     sensor = make_commit_sensor(monkeypatch)
 
-    first = await sensor.async_commit_candidate(
-        valid_candidate(), generation=0, occurrence_id="scheduled-duplicate"
+    candidate = await contextual_candidate(
+        sensor, valid_candidate(), request_id="scheduled-duplicate"
     )
-    second = await sensor.async_commit_candidate(
-        valid_candidate(), generation=0, occurrence_id="scheduled-duplicate"
-    )
+    first = await sensor.async_commit_candidate(candidate)
+    second = await sensor.async_commit_candidate(candidate)
 
     assert first is True
     assert second is False
@@ -328,11 +342,10 @@ async def test_caller_cancellation_waits_for_durable_save_reconciliation(monkeyp
     sensor = make_commit_sensor(monkeypatch)
     MemoryStore.save_started = asyncio.Event()
     MemoryStore.save_release = asyncio.Event()
-    task = asyncio.create_task(
-        sensor.async_commit_candidate(
-            valid_candidate(), generation=0, occurrence_id="scheduled-cancel"
-        )
+    candidate = await contextual_candidate(
+        sensor, valid_candidate(), request_id="scheduled-cancel"
     )
+    task = asyncio.create_task(sensor.async_commit_candidate(candidate))
     await MemoryStore.save_started.wait()
     task.cancel()
     await asyncio.sleep(0)
@@ -342,7 +355,10 @@ async def test_caller_cancellation_waits_for_durable_save_reconciliation(monkeyp
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert MemoryStore.bucket[sensor._storage_key]["forecast_data"]["response_time"] == NOW.isoformat()
+    assert (
+        MemoryStore.bucket[sensor._storage_key]["forecast_data"]["response_time"]
+        == NOW.isoformat()
+    )
     assert sensor.writes == ["state", "broadcast"]
     assert not sensor._durable_write_tasks
 
@@ -354,9 +370,10 @@ async def test_store_internal_cancellation_leaves_old_envelope(monkeypatch):
     MemoryStore.failure = asyncio.CancelledError()
 
     with pytest.raises(asyncio.CancelledError):
-        await sensor.async_commit_candidate(
-            valid_candidate(), generation=0, occurrence_id="scheduled-store-cancel"
+        candidate = await contextual_candidate(
+            sensor, valid_candidate(), request_id="scheduled-store-cancel"
         )
+        await sensor.async_commit_candidate(candidate)
 
     assert MemoryStore.bucket == before
     assert_old_observable_state(sensor)
@@ -366,7 +383,7 @@ async def test_store_internal_cancellation_leaves_old_envelope(monkeypatch):
 async def test_manual_refresh_is_true_only_after_candidate_commit(monkeypatch):
     sensor = make_commit_sensor(monkeypatch)
 
-    async def fetch():
+    async def fetch(**_request_context):
         return SolarFetchResult.accept(valid_candidate())
 
     sensor.async_fetch_forecast_data = fetch
@@ -382,7 +399,7 @@ async def test_manual_refresh_rejects_invalid_accepted_candidate(monkeypatch):
     invalid = valid_candidate()
     invalid["total_daily"] = {TODAY: 2.0}
 
-    async def fetch():
+    async def fetch(**_request_context):
         return SolarFetchResult.accept(invalid)
 
     sensor.async_fetch_forecast_data = fetch

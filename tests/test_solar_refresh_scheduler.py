@@ -62,9 +62,7 @@ def accepted_candidate() -> dict:
 
 
 def make_sensor(monkeypatch, outcomes):
-    sensor = OigCloudSolarForecastSensor(
-        Coordinator(), "solar_forecast", Entry(), {}
-    )
+    sensor = OigCloudSolarForecastSensor(Coordinator(), "solar_forecast", Entry(), {})
     sensor.hass = SimpleNamespace(data={})
     sensor._min_api_interval = 0
     calls = []
@@ -74,12 +72,19 @@ def make_sensor(monkeypatch, outcomes):
     unsubscribed = []
     queue = list(outcomes)
 
-    async def fetch():
+    async def fetch(**_kwargs):
         calls.append(len(calls))
         return queue.pop(0)
 
-    async def commit(candidate, *, generation, occurrence_id):
-        commits.append((candidate, generation, occurrence_id))
+    async def commit(candidate):
+        commits.append(
+            (
+                candidate,
+                candidate.context.lifecycle_generation,
+                candidate.context.request_id,
+            )
+        )
+        sensor._retry_state = None
         return True
 
     async def persist(state):
@@ -115,7 +120,9 @@ async def fire(timer):
 
 
 @pytest.mark.asyncio
-async def test_occurrence_retries_exactly_at_plus_15_and_plus_45_then_stops(monkeypatch):
+async def test_occurrence_retries_exactly_at_plus_15_and_plus_45_then_stops(
+    monkeypatch,
+):
     sensor, calls, commits, persisted, timers, _unsubscribed = make_sensor(
         monkeypatch,
         [
@@ -126,15 +133,20 @@ async def test_occurrence_retries_exactly_at_plus_15_and_plus_45_then_stops(monk
     )
 
     await sensor._wall_clock_update(SCHEDULED)
-    assert timers[0]["when"] == (SCHEDULED + timedelta(minutes=15)).astimezone(timezone.utc)
+    assert timers[0]["when"] == (SCHEDULED + timedelta(minutes=15)).astimezone(
+        timezone.utc
+    )
     await fire(timers[0])
-    assert timers[1]["when"] == (SCHEDULED + timedelta(minutes=45)).astimezone(timezone.utc)
+    assert timers[1]["when"] == (SCHEDULED + timedelta(minutes=45)).astimezone(
+        timezone.utc
+    )
     await fire(timers[1])
 
     assert len(calls) == 3
     assert commits == []
     assert len(timers) == 2
     assert persisted[-1] is None
+    assert sensor._retry_state is None
 
 
 @pytest.mark.asyncio
@@ -149,7 +161,9 @@ async def test_retry_success_commits_once_and_cancels_remaining_work(monkeypatch
 
     assert len(calls) == 2
     assert len(commits) == 1
-    assert persisted[-1] is None
+    assert len(persisted) == 1
+    assert persisted[0] is not None
+    assert sensor._retry_state is None
     assert len(timers) == 1
 
 
@@ -164,8 +178,7 @@ async def test_retry_candidate_rejected_by_commit_clears_durable_recovery(monkey
     )
     await sensor._wall_clock_update(SCHEDULED)
 
-    async def reject_commit(_candidate, *, generation, occurrence_id):
-        del generation, occurrence_id
+    async def reject_commit(_candidate):
         return False
 
     sensor.async_commit_candidate = reject_commit
@@ -190,7 +203,9 @@ async def test_terminal_failure_schedules_no_retry(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_newer_occurrence_cancels_older_retry_and_old_callback_is_inert(monkeypatch):
+async def test_newer_occurrence_cancels_older_retry_and_old_callback_is_inert(
+    monkeypatch,
+):
     sensor, calls, _commits, _persisted, timers, unsubscribed = make_sensor(
         monkeypatch,
         [
@@ -212,7 +227,9 @@ async def test_newer_occurrence_cancels_older_retry_and_old_callback_is_inert(mo
 
 
 @pytest.mark.asyncio
-async def test_duplicate_scheduled_callbacks_claim_before_provider_dispatch(monkeypatch):
+async def test_duplicate_scheduled_callbacks_claim_before_provider_dispatch(
+    monkeypatch,
+):
     sensor, calls, commits, _persisted, _timers, _unsubscribed = make_sensor(
         monkeypatch,
         [SolarFetchResult.accept(accepted_candidate())],
@@ -255,7 +272,7 @@ async def test_manual_and_scheduled_requests_serialize_without_overlap(monkeypat
     release = asyncio.Event()
     dispatches = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         nonlocal active, maximum
         active += 1
         maximum = max(maximum, active)
@@ -276,7 +293,9 @@ async def test_manual_and_scheduled_requests_serialize_without_overlap(monkeypat
     sensor.async_fetch_forecast_data = fetch
     sensor._async_persist_retry_state = persist
     sensor._async_current_cache_provenance = provenance
-    monkeypatch.setattr(module, "async_track_point_in_utc_time", lambda *_a: lambda: None)
+    monkeypatch.setattr(
+        module, "async_track_point_in_utc_time", lambda *_a: lambda: None
+    )
 
     scheduled = asyncio.create_task(sensor._wall_clock_update(SCHEDULED))
     await entered.wait()
@@ -297,7 +316,7 @@ async def test_two_manual_requests_are_distinct_and_serialized(monkeypatch):
     maximum = 0
     calls = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         nonlocal active, maximum
         active += 1
         maximum = max(maximum, active)
@@ -306,9 +325,15 @@ async def test_two_manual_requests_are_distinct_and_serialized(monkeypatch):
         active -= 1
         return SolarFetchResult.terminal("auth")
 
-    sensor.async_fetch_forecast_data = fetch
+    async def provenance():
+        return build_cache_provenance("entry-scheduler", Entry.options, 0)
 
-    assert await asyncio.gather(sensor.async_manual_update(), sensor.async_manual_update()) == [False, False]
+    sensor.async_fetch_forecast_data = fetch
+    sensor._async_current_cache_provenance = provenance
+
+    assert await asyncio.gather(
+        sensor.async_manual_update(), sensor.async_manual_update()
+    ) == [False, False]
     assert len(calls) == 2
     assert maximum == 1
 
@@ -319,7 +344,7 @@ async def test_total_attempt_deadline_covers_provider_and_releases_lock(monkeypa
     sensor.hass = SimpleNamespace(data={})
     calls = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         calls.append(len(calls))
         if len(calls) == 1:
             await asyncio.Event().wait()
@@ -336,7 +361,9 @@ async def test_total_attempt_deadline_covers_provider_and_releases_lock(monkeypa
     sensor._async_persist_retry_state = persist
     sensor._async_current_cache_provenance = provenance
     monkeypatch.setattr(module, "ATTEMPT_TIMEOUT_SECONDS", 0.01)
-    monkeypatch.setattr(module, "async_track_point_in_utc_time", lambda *_a: lambda: None)
+    monkeypatch.setattr(
+        module, "async_track_point_in_utc_time", lambda *_a: lambda: None
+    )
 
     await sensor._wall_clock_update(SCHEDULED)
     assert await sensor.async_manual_update() is False
@@ -434,5 +461,6 @@ async def test_restart_runs_one_overdue_retry_inside_horizon(monkeypatch):
     assert restored is True
     assert len(calls) == 1
     assert len(commits) == 1
-    assert persisted[-1] is None
+    assert persisted == []
+    assert sensor._retry_state is None
     assert timers == []

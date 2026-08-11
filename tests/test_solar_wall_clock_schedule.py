@@ -10,6 +10,7 @@ from custom_components.oig_cloud.entities import solar_forecast_sensor as module
 from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
+from custom_components.oig_cloud.forecast.cache_contract import build_cache_provenance
 from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 
 
@@ -34,10 +35,13 @@ class Entry:
 
 
 def make_sensor(mode="daily_optimized", sensor_type="solar_forecast"):
-    sensor = OigCloudSolarForecastSensor(
-        Coordinator(), sensor_type, Entry(mode), {}
-    )
-    sensor.hass = SimpleNamespace()
+    sensor = OigCloudSolarForecastSensor(Coordinator(), sensor_type, Entry(mode), {})
+    sensor.hass = SimpleNamespace(data={})
+
+    async def provenance():
+        return build_cache_provenance("entry-schedule", sensor._config_entry.options, 0)
+
+    sensor._async_current_cache_provenance = provenance
     return sensor
 
 
@@ -64,7 +68,7 @@ async def test_setup_at_1042_dispatches_once_at_local_noon(monkeypatch):
     wall_clock, intervals = capture_schedules(monkeypatch)
     dispatched = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         dispatched.append(datetime.now())
         return SolarFetchResult.terminal("invalid_response")
 
@@ -90,9 +94,7 @@ async def test_setup_at_1042_dispatches_once_at_local_noon(monkeypatch):
         ("daily", [6]),
     ],
 )
-def test_daily_modes_register_home_assistant_local_wall_clock(
-    monkeypatch, mode, hours
-):
+def test_daily_modes_register_home_assistant_local_wall_clock(monkeypatch, mode, hours):
     sensor = make_sensor(mode)
     wall_clock, intervals = capture_schedules(monkeypatch)
 
@@ -122,7 +124,9 @@ def test_manual_and_secondary_sensors_register_no_schedule(monkeypatch):
     wall_clock, intervals = capture_schedules(monkeypatch)
 
     make_sensor("manual")._register_refresh_schedule()
-    make_sensor("daily_optimized", "solar_forecast_string1")._register_refresh_schedule()
+    make_sensor(
+        "daily_optimized", "solar_forecast_string1"
+    )._register_refresh_schedule()
     make_sensor("hourly", "solar_forecast_string2")._register_refresh_schedule()
 
     assert wall_clock == []
@@ -146,7 +150,7 @@ async def test_prague_dst_transition_targets_dispatch_once(monkeypatch, target):
     wall_clock, _intervals = capture_schedules(monkeypatch)
     dispatched = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         dispatched.append(target.isoformat())
         return SolarFetchResult.terminal("invalid_response")
 

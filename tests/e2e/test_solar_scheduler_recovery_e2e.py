@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import copy
-from datetime import timedelta
+from datetime import timedelta, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -12,6 +14,7 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
 from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
+from custom_components.oig_cloud.services import _update_solar_forecast_for_entry
 
 
 class Coordinator:
@@ -78,8 +81,9 @@ def forecast_candidate() -> dict:
     }
 
 
-def make_sensor(monkeypatch, outcomes):
-    MemoryStore.bucket = {}
+def make_sensor(monkeypatch, outcomes, *, reset=True):
+    if reset:
+        MemoryStore.bucket = {}
     monkeypatch.setattr(module, "Store", MemoryStore)
     monkeypatch.setattr(solar_key_store, "Store", MemoryStore)
     timers = []
@@ -100,7 +104,7 @@ def make_sensor(monkeypatch, outcomes):
     sensor._broadcast_forecast_data = broadcast
     queue = list(outcomes)
 
-    async def fetch():
+    async def fetch(**_request_context):
         outcome = queue.pop(0)
         return outcome() if callable(outcome) else outcome
 
@@ -126,7 +130,12 @@ async def test_two_day_stale_snapshot_recovers_at_next_local_occurrence(
 
     freezer.move_to("2026-08-13 10:00:00+00:00")
     assert sensor._build_main_attrs()["forecast_stale"] is True
-    await sensor._wall_clock_update(module.dt_util.now().replace(minute=0, second=0))
+    delivered_local = (
+        module.dt_util.now()
+        .astimezone(ZoneInfo("Europe/Prague"))
+        .replace(minute=0, second=0)
+    )
+    await sensor._wall_clock_update(delivered_local)
 
     attrs = sensor._build_main_attrs()
     assert sensor._last_forecast_data["response_time"] != first_response
@@ -184,3 +193,121 @@ async def test_terminal_auth_failure_preserves_card_and_manual_reports_false(
 
     assert sensor._last_forecast_data == old
     assert timers == []
+
+
+@pytest.mark.asyncio
+async def test_restart_between_attempts_restores_exact_plus_45_without_duplicate_dispatch(
+    monkeypatch, freezer
+):
+    freezer.move_to("2026-08-11 10:00:00+00:00")
+    scheduled = module.dt_util.now().replace(hour=12, minute=0, second=0)
+    first, first_timers = make_sensor(
+        monkeypatch,
+        [SolarFetchResult.retry("timeout"), SolarFetchResult.retry("rate_limited")],
+    )
+    await first._wall_clock_update(scheduled)
+    freezer.move_to("2026-08-11 10:15:00+00:00")
+    await first_timers[0][0](first_timers[0][1])
+    await first.async_will_remove_from_hass()
+
+    dispatches = []
+
+    def accepted_after_restart():
+        dispatches.append("provider")
+        return SolarFetchResult.accept(forecast_candidate())
+
+    restarted, restored_timers = make_sensor(
+        monkeypatch, [accepted_after_restart], reset=False
+    )
+    await restarted._load_persistent_data()
+    freezer.move_to("2026-08-11 10:20:00+00:00")
+
+    assert await restarted._async_restore_retry_recovery(module.dt_util.now()) is True
+    assert dispatches == []
+    assert len(restored_timers) == 1
+    assert restored_timers[0][1] == (scheduled + timedelta(minutes=45)).astimezone(
+        timezone.utc
+    )
+
+    await restarted._wall_clock_update(scheduled)
+    assert dispatches == []
+    freezer.move_to("2026-08-11 10:45:00+00:00")
+    await restored_timers[0][0](restored_timers[0][1])
+    assert dispatches == ["provider"]
+    assert restarted._retry_state is None
+
+
+@pytest.mark.asyncio
+async def test_restart_after_pre_unload_durable_save_publishes_snapshot_once(
+    monkeypatch, freezer
+):
+    freezer.move_to("2026-08-11 10:00:00+00:00")
+    first, _timers = make_sensor(
+        monkeypatch, [lambda: SolarFetchResult.accept(forecast_candidate())]
+    )
+    publish_entered = asyncio.Event()
+    publish_release = asyncio.Event()
+
+    async def blocked_publish():
+        publish_entered.set()
+        await publish_release.wait()
+
+    first._broadcast_forecast_data = blocked_publish
+    refresh = asyncio.create_task(first.async_manual_update())
+    await publish_entered.wait()
+    unload = asyncio.create_task(first.async_will_remove_from_hass())
+    await unload
+    assert refresh.cancelled()
+
+    class CountingCoordinator(Coordinator):
+        def __init__(self):
+            self.published = []
+            self._solar_forecast_data = None
+
+        @property
+        def solar_forecast_data(self):
+            return self._solar_forecast_data
+
+        @solar_forecast_data.setter
+        def solar_forecast_data(self, value):
+            self._solar_forecast_data = value
+            self.published.append(copy.deepcopy(value))
+
+    coordinator = CountingCoordinator()
+    restarted = OigCloudSolarForecastSensor(coordinator, "solar_forecast", Entry(), {})
+    restarted.hass = SimpleNamespace(data={})
+    restarted._register_refresh_schedule = lambda: None
+    restarted._should_fetch_data = lambda: False
+    restarted.async_write_ha_state = lambda: None
+    await restarted._async_initialize_after_add_impl()
+
+    assert len(coordinator.published) == 1
+    assert coordinator.published[0]["total_today_kwh"] == 2.0
+    assert restarted._active_refresh_tasks == set()
+    publish_release.set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outcome",
+    [SolarFetchResult.retry("timeout"), SolarFetchResult.terminal("auth")],
+)
+async def test_service_manual_transient_and_terminal_failures_are_truthful_and_clean(
+    monkeypatch, outcome
+):
+    sensor, timers = make_sensor(monkeypatch, [outcome])
+    sensor.entity_id = "sensor.oig_entry_e2e_solar_forecast"
+
+    result = await _update_solar_forecast_for_entry(
+        "entry-e2e", {"solar_forecast_sensors": [sensor]}
+    )
+    await sensor.async_will_remove_from_hass()
+
+    assert result == {
+        "entry_id": "entry-e2e",
+        "status": "error",
+        "error": "manual_update_failed",
+    }
+    assert timers == []
+    assert sensor._active_refresh_tasks == set()
+    assert sensor._durable_write_tasks == set()

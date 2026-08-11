@@ -6,9 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.entities import solar_forecast_sensor as module
+from custom_components.oig_cloud.entities.base_sensor import OigCloudSensor
 from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
+from custom_components.oig_cloud.forecast.cache_contract import build_cache_provenance
 from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 
 
@@ -59,6 +62,11 @@ def make_sensor():
     sensor = OigCloudSolarForecastSensor(Coordinator(), "solar_forecast", Entry(), {})
     sensor.hass = SimpleNamespace(data={})
     sensor._min_api_interval = 0
+
+    async def provenance():
+        return build_cache_provenance("entry-unload", Entry.options, 0)
+
+    sensor._async_current_cache_provenance = provenance
     return sensor
 
 
@@ -68,7 +76,7 @@ async def test_unload_cancels_and_awaits_active_provider_request():
     entered = asyncio.Event()
     cancelled = asyncio.Event()
 
-    async def fetch():
+    async def fetch(**_kwargs):
         entered.set()
         try:
             await asyncio.Event().wait()
@@ -110,10 +118,10 @@ async def test_unload_waits_for_shielded_durable_save_without_post_remove_publis
     durable = []
     writes = []
 
-    async def fetch():
+    async def fetch(**_kwargs):
         return SolarFetchResult.accept(candidate())
 
-    async def save(_candidate, _commit_time):
+    async def save(_candidate, _commit_time, _context):
         save_started.set()
         await save_release.wait()
         durable.append("saved")
@@ -181,3 +189,107 @@ async def test_unload_cancels_setup_before_it_can_register_new_work():
         if not setup.done():
             setup.cancel()
             await asyncio.gather(setup, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_service_tasks_are_cancelled_and_awaited_on_unload(
+    monkeypatch,
+):
+    sensor = make_sensor()
+    service_entered = asyncio.Event()
+    service_cancelled = asyncio.Event()
+    service_finished = []
+    created_tasks = []
+
+    class Services:
+        async def async_call(self, *_args, **_kwargs):
+            service_entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                service_cancelled.set()
+                raise
+            service_finished.append("after-remove")
+
+    class States:
+        @staticmethod
+        def get(_entity_id):
+            return object()
+
+    class Hass:
+        data = {}
+        states = States()
+        services = Services()
+
+        @staticmethod
+        def async_create_task(coroutine):
+            task = asyncio.create_task(coroutine)
+            created_tasks.append(task)
+            return task
+
+    entity_registry = SimpleNamespace(
+        async_get=lambda _entity_id: SimpleNamespace(device_id="device-1")
+    )
+    monkeypatch.setattr(module.dr, "async_get", lambda _hass: object())
+    monkeypatch.setattr(module.er, "async_get", lambda _hass: entity_registry)
+    monkeypatch.setattr(
+        module.er,
+        "async_entries_for_device",
+        lambda _registry, _device_id: [
+            SimpleNamespace(entity_id="sensor.box_solar_forecast_string1")
+        ],
+    )
+    sensor.hass = Hass()
+
+    try:
+        await sensor._broadcast_forecast_data()
+        await service_entered.wait()
+        await sensor.async_will_remove_from_hass()
+
+        assert service_cancelled.is_set()
+        assert service_finished == []
+        assert all(task.done() for task in created_tasks)
+        assert sensor._active_refresh_tasks == set()
+    finally:
+        for task in created_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*created_tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_removals_share_one_teardown_and_super_call(monkeypatch):
+    sensor = make_sensor()
+    super_entered = asyncio.Event()
+    super_release = asyncio.Event()
+    calls = []
+    unsubscribed = []
+    sensor._update_interval_remover = lambda: unsubscribed.append("schedule")
+    sensor._retry_unsubscribe = lambda: unsubscribed.append("retry")
+
+    async def blocked_super(_sensor):
+        calls.append("super")
+        super_entered.set()
+        await super_release.wait()
+
+    monkeypatch.setattr(
+        OigCloudSensor,
+        "async_will_remove_from_hass",
+        blocked_super,
+    )
+    first = asyncio.create_task(sensor.async_will_remove_from_hass())
+    await super_entered.wait()
+    second = asyncio.create_task(sensor.async_will_remove_from_hass())
+    await asyncio.sleep(0)
+
+    try:
+        assert calls == ["super"]
+        assert second.done() is False
+        super_release.set()
+        await asyncio.gather(first, second)
+        assert calls == ["super"]
+        assert unsubscribed == ["schedule", "retry"]
+        assert sensor._removal_complete is True
+    finally:
+        super_release.set()
+        await asyncio.gather(first, second, return_exceptions=True)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +11,7 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
 from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
+from custom_components.oig_cloud.forecast.cache_contract import build_cache_provenance
 
 
 class DummyCoordinator:
@@ -60,6 +61,12 @@ def _make_sensor(options, sensor_type="solar_forecast"):
     entry = DummyConfigEntry(options)
     sensor = OigCloudSolarForecastSensor(coordinator, sensor_type, entry, {})
     sensor.async_write_ha_state = lambda: None
+
+    async def _provenance():
+        entry_id = getattr(entry, "entry_id", None) or f"legacy:{sensor._storage_key}"
+        return build_cache_provenance(entry_id, entry.options, 0)
+
+    sensor._async_current_cache_provenance = _provenance
     return sensor
 
 
@@ -131,7 +138,7 @@ async def test_periodic_update_modes(monkeypatch):
 
     called = {"count": 0}
 
-    async def _fetch():
+    async def _fetch(**_request_context):
         called["count"] += 1
         return SolarFetchResult.terminal("auth")
 

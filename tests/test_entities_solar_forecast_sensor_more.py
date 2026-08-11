@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from types import SimpleNamespace
-
 import pytest
 
 from custom_components.oig_cloud.entities import solar_forecast_sensor as module
@@ -11,6 +9,7 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     _parse_forecast_hour,
 )
 from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
+from custom_components.oig_cloud.forecast.cache_contract import build_cache_provenance
 
 
 class DummyCoordinator:
@@ -31,6 +30,12 @@ def _make_sensor(options, sensor_type="solar_forecast"):
     entry = DummyConfigEntry(options)
     sensor = OigCloudSolarForecastSensor(coordinator, sensor_type, entry, {})
     sensor.async_write_ha_state = lambda: None
+
+    async def _provenance():
+        entry_id = getattr(entry, "entry_id", None) or f"legacy:{sensor._storage_key}"
+        return build_cache_provenance(entry_id, entry.options, 0)
+
+    sensor._async_current_cache_provenance = _provenance
     return sensor
 
 
@@ -114,7 +119,7 @@ async def test_daily_wall_clock_callback_dispatches_at_registered_six(monkeypatc
 
     called = {"count": 0}
 
-    async def _fetch():
+    async def _fetch(**_request_context):
         called["count"] += 1
         return SolarFetchResult.terminal("auth")
 
@@ -222,7 +227,9 @@ def test_convert_to_hourly_invalid_timestamp():
 
 
 def test_extra_state_attributes_string1_and_string2():
-    sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast_string1")
+    sensor = _make_sensor(
+        {"enable_solar_forecast": True}, sensor_type="solar_forecast_string1"
+    )
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     hour_key = now.isoformat()
     today_date = now.date().isoformat()
@@ -236,7 +243,9 @@ def test_extra_state_attributes_string1_and_string2():
     assert attrs["today_kwh"] == 2.5
     assert attrs["current_hour_kw"] == 0.5
 
-    sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast_string2")
+    sensor = _make_sensor(
+        {"enable_solar_forecast": True}, sensor_type="solar_forecast_string2"
+    )
     sensor._last_forecast_data = {
         "response_time": now.isoformat(),
         "string2_today_kwh": 3.0,

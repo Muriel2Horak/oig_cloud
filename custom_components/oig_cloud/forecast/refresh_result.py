@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 import aiohttp
 
-RETRYABLE_CODES = frozenset(
-    {"timeout", "connection", "rate_limited", "server_error"}
-)
+RETRYABLE_CODES = frozenset({"timeout", "connection", "rate_limited", "server_error"})
 TERMINAL_CODES = frozenset(
     {
         "auth",
@@ -25,6 +24,54 @@ TERMINAL_CODES = frozenset(
         "removed",
     }
 )
+
+
+@dataclass(frozen=True)
+class SolarCandidateContext:
+    """Immutable identity captured before provider I/O."""
+
+    entry_id: str
+    provider: str
+    config_fingerprint: str
+    credential_revision: int
+    request_id: str
+    occurrence_id: str | None
+    occurrence_generation: int
+    lifecycle_generation: int
+    request_sequence: int
+
+    def provenance(self) -> dict[str, Any]:
+        """Return the non-secret cache provenance captured for this request."""
+        return {
+            "entry_id": self.entry_id,
+            "provider": self.provider,
+            "config_fingerprint": self.config_fingerprint,
+            "credential_revision": self.credential_revision,
+        }
+
+
+@dataclass(frozen=True)
+class SolarCandidate(Mapping[str, Any]):
+    """Provider snapshot bound to the immutable request that produced it."""
+
+    forecast_data: Mapping[str, Any]
+    context: SolarCandidateContext
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "forecast_data",
+            copy.deepcopy(dict(self.forecast_data)),
+        )
+
+    def __getitem__(self, key: str) -> Any:
+        return self.forecast_data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.forecast_data)
+
+    def __len__(self) -> int:
+        return len(self.forecast_data)
 
 
 @dataclass(frozen=True)
@@ -63,6 +110,14 @@ class SolarFetchResult:
     def terminal(cls, code: str) -> SolarFetchResult:
         """Return a terminal classified failure."""
         return cls(False, False, code)
+
+    def with_context(self, context: SolarCandidateContext) -> SolarFetchResult:
+        """Bind an accepted raw provider mapping to its pre-I/O identity."""
+        if not self.accepted or self.candidate is None:
+            return self
+        if isinstance(self.candidate, SolarCandidate):
+            return self
+        return SolarFetchResult.accept(SolarCandidate(self.candidate, context))
 
 
 def classify_http_status(status: int) -> SolarFetchResult:
