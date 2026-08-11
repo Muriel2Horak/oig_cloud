@@ -1,4 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import {
   BuildSecurityError,
   assertClosedParentEnvironment,
+  collectBuildInputs,
   createClosedBuildEnvironment,
   resolveBuildId,
 } from './build-security.mjs';
@@ -60,6 +68,35 @@ function describeEnvironment(details) {
   });
 }
 
+function collectOutputFiles(root, directory = root, output = []) {
+  if (!existsSync(directory)) throw new BuildSecurityError('dist_mismatch');
+  const stat = lstatSync(directory);
+  if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) {
+    throw new BuildSecurityError('dist_mismatch');
+  }
+  if (stat.isFile()) {
+    output.push(directory.slice(root.length + 1));
+    return output;
+  }
+  for (const name of readdirSync(directory).sort()) {
+    collectOutputFiles(root, join(directory, name), output);
+  }
+  return output;
+}
+
+function verifyOutputMatches(candidate, tracked) {
+  const candidateFiles = collectOutputFiles(candidate);
+  const trackedFiles = collectOutputFiles(tracked);
+  if (JSON.stringify(candidateFiles) !== JSON.stringify(trackedFiles)) {
+    throw new BuildSecurityError('dist_mismatch');
+  }
+  for (const path of candidateFiles) {
+    if (!readFileSync(join(candidate, path)).equals(readFileSync(join(tracked, path)))) {
+      throw new BuildSecurityError('dist_mismatch');
+    }
+  }
+}
+
 function main() {
   const argumentsList = process.argv.slice(2);
   const projectRoot = resolve(optionValue(argumentsList, '--root') ?? DEFAULT_PROJECT_ROOT);
@@ -67,6 +104,11 @@ function main() {
   if (argumentsList.includes('--print-build-id')) {
     assertClosedParentEnvironment(projectRoot, process.env);
     process.stdout.write(`${resolveBuildId(projectRoot, process.env)}\n`);
+    return;
+  }
+
+  if (argumentsList.includes('--print-inputs')) {
+    process.stdout.write(`${JSON.stringify(collectBuildInputs(projectRoot))}\n`);
     return;
   }
 
@@ -109,20 +151,33 @@ function main() {
       code: 'typecheck_failed',
     });
 
+    const verifyDist = argumentsList.includes('--verify-dist');
+    const requestedOutputDirectory = optionValue(argumentsList, '--out-dir');
+    if (verifyDist && requestedOutputDirectory) {
+      throw new BuildSecurityError('conflicting_output_mode');
+    }
+    const candidateDirectory = join(environmentDirectory, 'candidate-dist');
+    if (verifyDist) rmSync(candidateDirectory, { recursive: true, force: true });
+
     const viteArguments = [
       join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
       'build',
       '--mode',
       'production',
     ];
-    const outputDirectory = optionValue(argumentsList, '--out-dir');
+    const outputDirectory = verifyDist ? candidateDirectory : requestedOutputDirectory;
     if (outputDirectory) viteArguments.push('--outDir', resolve(outputDirectory));
+    if (verifyDist) viteArguments.push('--emptyOutDir');
     run(process.execPath, viteArguments, {
       cwd: projectRoot,
       environment,
       capture: false,
       code: 'vite_build_failed',
     });
+    if (verifyDist) {
+      const trackedDist = resolve(optionValue(argumentsList, '--tracked-dist') ?? join(projectRoot, 'dist'));
+      verifyOutputMatches(candidateDirectory, trackedDist);
+    }
   } finally {
     if (removeEnvironment) rmSync(environmentDirectory, { recursive: true, force: true });
   }

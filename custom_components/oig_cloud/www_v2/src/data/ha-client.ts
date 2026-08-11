@@ -164,6 +164,15 @@ function hasUnsafePathSyntax(value: string): boolean {
   return hasTraversal(pathname);
 }
 
+function hasAuthorityLikeFirstSegment(pathname: string): boolean {
+  const firstSegment = pathname.split('/', 1)[0];
+  if (!firstSegment) return false;
+  if (firstSegment.includes('@') || firstSegment.startsWith('[')) return true;
+  if (firstSegment.toLowerCase() === 'localhost') return true;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(firstSegment)) return true;
+  return firstSegment.includes('.');
+}
+
 function publicEndpointPath(endpoint: string): string | null {
   if (!endpoint || endpoint.trim() !== endpoint) return null;
   if (endpoint.startsWith('//')) return null;
@@ -176,6 +185,7 @@ function publicEndpointPath(endpoint: string): string | null {
     if (!pathname || pathname.startsWith('/') || pathname.startsWith('api/oig_cloud')) {
       return null;
     }
+    if (hasAuthorityLikeFirstSegment(pathname)) return null;
     if (/^[a-z][a-z\d+.-]*:/iu.test(pathname) || pathname.includes(':')) return null;
   }
 
@@ -304,6 +314,7 @@ export class HaClient {
     };
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      if (init.signal?.aborted) return ABORT_FAILURE;
       let response: Response;
       try {
         response = await hass.fetchWithAuth(canonicalPath, {
@@ -320,13 +331,14 @@ export class HaClient {
           });
           return AUTH_FAILURE;
         }
-        if (mayRetry && attempt < MAX_ATTEMPTS) {
+        if (error instanceof TypeError && mayRetry && attempt < MAX_ATTEMPTS) {
           oigLog.warn('OIG API request retry', {
             wrapper: policy.kind,
             method,
             code: PROVIDER_FAILURE.code,
           });
           await this.delay(RETRY_DELAY);
+          if (init.signal?.aborted) return ABORT_FAILURE;
           continue;
         }
         oigLog.warn('OIG API request failed', {
@@ -357,6 +369,7 @@ export class HaClient {
           code: 'provider_http',
         });
         await this.delay(RETRY_DELAY);
+        if (init.signal?.aborted) return ABORT_FAILURE;
         continue;
       }
 

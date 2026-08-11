@@ -1,9 +1,22 @@
 import { defineConfig } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { accessSync, constants, existsSync, statSync } from 'node:fs';
 
-const localChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
-  ?? (existsSync(localChrome) ? localChrome : undefined);
+function chromiumExecutableOverride(): string | undefined {
+  const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  if (executablePath === undefined) return undefined;
+  if (!existsSync(executablePath)) {
+    throw new Error('PLAYWRIGHT_CHROMIUM_EXECUTABLE does not exist');
+  }
+  try {
+    if (!statSync(executablePath).isFile()) throw new Error('not a file');
+    accessSync(executablePath, constants.X_OK);
+  } catch {
+    throw new Error('PLAYWRIGHT_CHROMIUM_EXECUTABLE must be a regular executable file');
+  }
+  return executablePath;
+}
+
+const executablePath = chromiumExecutableOverride();
 
 export default defineConfig({
   testDir: './playwright',

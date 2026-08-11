@@ -17,6 +17,9 @@ const REQUIRED_INPUTS = [
   'package-lock.json',
 ];
 
+const EXCLUDED_DIRECTORY_NAMES = new Set(['__tests__', 'test', 'tests', 'playwright', 'coverage']);
+const TEST_FILE_PATTERN = /\.(?:spec|test)\.[^/]+$/u;
+
 export class BuildSecurityError extends Error {
   constructor(code) {
     super(code);
@@ -34,13 +37,16 @@ function collectDirectoryFiles(root, directory, output) {
   if (!existsSync(absoluteDirectory)) return;
 
   for (const name of readdirSync(absoluteDirectory).sort()) {
+    if (EXCLUDED_DIRECTORY_NAMES.has(name)) continue;
     const absolute = join(absoluteDirectory, name);
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) throw new BuildSecurityError('input_symlink');
     if (stat.isDirectory()) {
       collectDirectoryFiles(root, portablePath(relative(root, absolute)), output);
     } else if (stat.isFile()) {
-      output.push(portablePath(relative(root, absolute)));
+      if (!TEST_FILE_PATTERN.test(name)) {
+        output.push(portablePath(relative(root, absolute)));
+      }
     } else {
       throw new BuildSecurityError('input_type');
     }
@@ -51,9 +57,11 @@ export function collectBuildInputs(projectRoot) {
   const root = resolve(projectRoot);
   const inputs = [];
   for (const input of REQUIRED_INPUTS) {
-    if (!existsSync(join(root, input)) || !lstatSync(join(root, input)).isFile()) {
-      throw new BuildSecurityError('missing_input');
-    }
+    const absolute = join(root, input);
+    if (!existsSync(absolute)) throw new BuildSecurityError('missing_input');
+    const stat = lstatSync(absolute);
+    if (stat.isSymbolicLink()) throw new BuildSecurityError('input_symlink');
+    if (!stat.isFile()) throw new BuildSecurityError('input_type');
     inputs.push(input);
   }
 
@@ -61,6 +69,11 @@ export function collectBuildInputs(projectRoot) {
     .filter((name) => /^tsconfig(?:\.[^.]+)?\.json$/u.test(name))
     .sort();
   if (typescriptConfigs.length === 0) throw new BuildSecurityError('missing_typescript_config');
+  for (const input of typescriptConfigs) {
+    const stat = lstatSync(join(root, input));
+    if (stat.isSymbolicLink()) throw new BuildSecurityError('input_symlink');
+    if (!stat.isFile()) throw new BuildSecurityError('input_type');
+  }
   inputs.push(...typescriptConfigs);
   collectDirectoryFiles(root, 'src', inputs);
   collectDirectoryFiles(root, 'public', inputs);

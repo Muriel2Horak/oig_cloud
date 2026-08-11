@@ -228,7 +228,22 @@ describe('HaClient authenticated Home Assistant transport', () => {
       '//evil.example/path',
       'http://evil.example/path',
       'https://evil.example/path',
+      'evil.example/path',
+      'localhost/path',
+      '127.0.0.1/path',
+      '[::1]/path',
+      'user@evil.example/path',
+      'user@localhost/path',
+      'user@evil.example:443/path',
+      'user@localhost:8123/path',
+      'user@127.0.0.1:8123/path',
+      'user@[::1]:8123/path',
       'user:pass@evil.example/path',
+      'user:pass@localhost/path',
+      'user:pass@evil.example:443/path',
+      'user:pass@localhost:8123/path',
+      'user:pass@127.0.0.1:8123/path',
+      'user:pass@[::1]:8123/path',
       'localhost:8123/path',
       '127.0.0.1:8123/path',
       '[::1]:8123/path',
@@ -420,6 +435,82 @@ describe('HaClient authenticated Home Assistant transport', () => {
       await settleTimers(pending);
 
       expect(fake.dispatch).toHaveBeenCalledTimes(4);
+    });
+
+    it.each(['GET', 'HEAD'])(
+      'stops %s TypeError retry during backoff when the caller aborts',
+      async (method) => {
+        vi.useFakeTimers();
+        const fake = createHaFake();
+        fake.dispatch
+          .mockRejectedValueOnce(new TypeError('network failure'))
+          .mockResolvedValueOnce(response(200, { shouldNotDispatch: true }));
+        setHass(client, fake.hass);
+        const controller = new AbortController();
+
+        const pending = client.fetchOIGAPI('/battery/x', {
+          method,
+          signal: controller.signal,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(fake.transport).toHaveBeenCalledTimes(1);
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(1000);
+
+        await expect(pending).resolves.toBeNull();
+        expect(fake.transport).toHaveBeenCalledTimes(1);
+        expect(fake.dispatch).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([
+      ['GET', 502],
+      ['GET', 503],
+      ['GET', 504],
+      ['HEAD', 502],
+      ['HEAD', 503],
+      ['HEAD', 504],
+    ])('stops %s HTTP %s retry during backoff when the caller aborts', async (method, status) => {
+      vi.useFakeTimers();
+      const fake = createHaFake();
+      fake.dispatch
+        .mockResolvedValueOnce(response(status))
+        .mockResolvedValueOnce(response(200, { shouldNotDispatch: true }));
+      setHass(client, fake.hass);
+      const controller = new AbortController();
+
+      const pending = client.fetchOIGAPI('/battery/x', {
+        method,
+        signal: controller.signal,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fake.transport).toHaveBeenCalledTimes(1);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      await expect(pending).resolves.toBeNull();
+      expect(fake.transport).toHaveBeenCalledTimes(1);
+      expect(fake.dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['GET', new Error('unexpected error')],
+      ['GET', new RangeError('unexpected range')],
+      ['GET', new DOMException('unexpected DOM failure', 'InvalidStateError')],
+      ['HEAD', new Error('unexpected error')],
+      ['HEAD', new RangeError('unexpected range')],
+      ['HEAD', new DOMException('unexpected DOM failure', 'InvalidStateError')],
+    ])('does not retry %s when HA throws %s', async (method, thrown) => {
+      vi.useFakeTimers();
+      const fake = createHaFake();
+      fake.dispatch.mockRejectedValue(thrown);
+      setHass(client, fake.hass);
+
+      const pending = client.fetchOIGAPI('/battery/x', { method });
+      await settleTimers(pending);
+
+      expect(fake.transport).toHaveBeenCalledTimes(1);
+      expect(fake.dispatch).toHaveBeenCalledTimes(1);
     });
 
     it.each([

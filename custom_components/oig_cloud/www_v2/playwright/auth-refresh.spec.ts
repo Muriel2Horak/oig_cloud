@@ -47,15 +47,45 @@ async function installHaFake(page: Parameters<typeof test>[0]['page'], rejectRef
           if (headers.authorization.includes(staleToken)) state.invalidAuthRequests += 1;
           if (method !== 'GET' && method !== 'HEAD') state.mutationDispatches += 1;
           state.requests.push({ path, method, bearer: headers.authorization });
-          return new Response(JSON.stringify({ ok: true, method }), {
+          let body: unknown = { ok: true, method };
+          if (method === 'GET' && path.endsWith('/module_config')) {
+            body = {
+              basic: {},
+              modules: {
+                enable_pricing: true,
+                enable_boiler: true,
+                enable_statistics: true,
+                enable_battery_prediction: true,
+              },
+              battery: {},
+              solar: {},
+              boiler: {},
+              pricing: {},
+              pricing_supplier: {},
+              ai: { ai_provider: 'ai_task' },
+            };
+          } else if (method === 'GET' && path.endsWith('/config_registry')) {
+            body = { fields: {}, sections: [] };
+          } else if (method === 'GET' && path.endsWith('/ai')) {
+            body = { provider: 'ai_task', status: 'verified' };
+          } else if (method === 'POST' && path.endsWith('/ai/validate_config')) {
+            body = { ok: true, findings: [] };
+          } else if (method === 'GET' && path.endsWith('/onboarding')) {
+            body = { steps: {}, completed: false };
+          }
+          return new Response(JSON.stringify(body), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         },
         states: {},
+        language: 'en',
+        connection: {
+          subscribeEvents: async () => () => undefined,
+        },
         callService: async () => undefined,
         callApi: async () => ({}),
-        callWS: async () => ({}),
+        callWS: async () => null,
       };
       Object.assign(window, {
         hass,
@@ -69,6 +99,17 @@ async function installHaFake(page: Parameters<typeof test>[0]['page'], rejectRef
       reject: rejectRefresh,
     },
   );
+}
+
+async function openMountedSettings(page: Parameters<typeof test>[0]['page']) {
+  await page.goto('./?sn=browser-e2e');
+  await expect(page.locator('oig-app')).toHaveCount(1);
+  const settingsTab = page
+    .locator('oig-app oig-tabs')
+    .getByRole('button', { name: 'Nastavení' });
+  await expect(settingsTab).toBeVisible();
+  await settingsTab.click();
+  await expect(page.getByTestId('launch-onboarding')).toBeVisible();
 }
 
 test('expired HA auth refreshes before one read and one mutation dispatch', async ({ page }) => {
@@ -129,4 +170,49 @@ test('refresh rejection dispatches nothing and exposes only the fixed safe UI er
   expect(pageText).toContain('Home Assistant authentication unavailable');
   expect(`${pageText}\n${consoleMessages.join('\n')}`).not.toContain(REJECTION_SENTINEL);
   expect(`${pageText}\n${consoleMessages.join('\n')}`).not.toContain(STALE_TOKEN);
+});
+
+test('mounted oig-app performs a real read and Settings validation POST with fresh HA auth', async ({ page }) => {
+  await installHaFake(page, false);
+
+  await openMountedSettings(page);
+  const validate = page.getByTestId('validate-ai-config-button');
+  await expect(validate).toBeVisible();
+  await validate.click();
+  await expect(page.getByTestId('validate-ai-config-findings')).toBeVisible();
+
+  const state = await page.evaluate(() => (window as any).__authHarnessState as HarnessState);
+  expect(state.refreshCount).toBeGreaterThanOrEqual(1);
+  expect(state.oigRefreshCalls).toBe(0);
+  expect(state.invalidAuthRequests).toBe(0);
+  expect(state.mutationDispatches).toBe(1);
+  expect(state.requests).toContainEqual({
+    path: '/api/oig_cloud/browser-e2e/module_config',
+    method: 'GET',
+    bearer: `Bearer ${FRESH_TOKEN}`,
+  });
+  expect(state.requests).toContainEqual({
+    path: '/api/oig_cloud/browser-e2e/ai/validate_config',
+    method: 'POST',
+    bearer: `Bearer ${FRESH_TOKEN}`,
+  });
+  expect(state.requests.every((request) => request.bearer === `Bearer ${FRESH_TOKEN}`)).toBe(true);
+});
+
+test('mounted oig-app exposes only safe UI and console text when HA refresh rejects', async ({ page }) => {
+  const consoleMessages: string[] = [];
+  page.on('console', (message) => consoleMessages.push(message.text()));
+  await installHaFake(page, true);
+
+  await openMountedSettings(page);
+  await expect(page.getByText('Nastavení se nepodařilo načíst', { exact: false })).toBeVisible();
+
+  const state = await page.evaluate(() => (window as any).__authHarnessState as HarnessState);
+  const observable = `${await page.locator('body').innerText()}\n${consoleMessages.join('\n')}`;
+  expect(state.refreshCount).toBeGreaterThanOrEqual(1);
+  expect(state.requests).toEqual([]);
+  expect(state.mutationDispatches).toBe(0);
+  expect(state.invalidAuthRequests).toBe(0);
+  expect(observable).not.toContain(REJECTION_SENTINEL);
+  expect(observable).not.toContain(STALE_TOKEN);
 });
