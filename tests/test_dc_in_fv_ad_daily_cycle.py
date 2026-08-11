@@ -193,7 +193,7 @@ async def test_last_reset_follows_home_assistant_timezone(hass, freezer):
     ],
 )
 async def test_recorder_keeps_completed_day_and_starts_new_one(
-    recorder_mock, hass, freezer, caplog, restart_before_index
+    recorder_mock_compat, hass, freezer, caplog, restart_before_index
 ):
     """Execute HA's own sensor-recorder statistics over the midnight boundary.
 
