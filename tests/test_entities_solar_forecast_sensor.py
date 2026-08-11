@@ -13,6 +13,7 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
     _parse_forecast_hour,
 )
+from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 
 
 class DummyCoordinator:
@@ -184,66 +185,69 @@ def test_process_forecast_data_combines_strings():
 
 
 @pytest.mark.asyncio
-async def test_periodic_update_daily_optimized_triggers(monkeypatch):
+async def test_wall_clock_update_daily_optimized_triggers(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily_optimized"})
+    sensor._config_entry.entry_id = "entry-schedule"
     sensor._last_api_call = 0
     sensor._min_api_interval = 0
 
     async def _fetch():
         sensor._called = True
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state):
+        return True
 
     sensor._called = False
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
-        lambda: 20000.0,
-    )
-
+    monkeypatch.setattr(sensor, "_async_persist_retry_state", _persist)
     now = datetime(2025, 1, 1, 6, 0)
-    await sensor._periodic_update(now)
+    await sensor._wall_clock_update(now)
 
     assert sensor._called is True
 
 
 @pytest.mark.asyncio
-async def test_periodic_update_daily_optimized_skips_recent(monkeypatch):
+async def test_wall_clock_occurrence_is_not_suppressed_by_startup_phase(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily_optimized"})
+    sensor._config_entry.entry_id = "entry-schedule"
     sensor._last_api_call = 1000.0
     sensor._min_api_interval = 0
     sensor._called = False
 
     async def _fetch():
         sensor._called = True
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state):
+        return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
-        lambda: 1000.0 + 3600.0,
-    )
-
+    monkeypatch.setattr(sensor, "_async_persist_retry_state", _persist)
     now = datetime(2025, 1, 1, 6, 0)
-    await sensor._periodic_update(now)
+    await sensor._wall_clock_update(now)
 
-    assert sensor._called is False
+    assert sensor._called is True
 
 
 @pytest.mark.asyncio
-async def test_periodic_update_daily_calls(monkeypatch):
+async def test_wall_clock_update_daily_calls(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily"})
+    sensor._config_entry.entry_id = "entry-schedule"
     sensor._min_api_interval = 0
     sensor._called = False
 
     async def _fetch():
         sensor._called = True
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state):
+        return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
-        lambda: 20000.0,
-    )
-
+    monkeypatch.setattr(sensor, "_async_persist_retry_state", _persist)
     now = datetime(2025, 1, 1, 6, 0)
-    await sensor._periodic_update(now)
+    await sensor._wall_clock_update(now)
 
     assert sensor._called is True
 
@@ -314,7 +318,12 @@ async def test_async_fetch_forecast_data_string1_only(monkeypatch):
         def get(self, *_args, **_kwargs):
             return self._response
 
-    dummy_payload = {"result": {"watts": {}, "watt_hours_day": {}}}
+    dummy_payload = {
+        "result": {
+            "watts": {"2026-08-11T10:00:00+00:00": 500.0},
+            "watt_hours_day": {"2026-08-11": 1500.0},
+        }
+    }
     monkeypatch.setattr(
         sensor_module.aiohttp,
         "ClientSession",
@@ -329,17 +338,26 @@ async def test_async_fetch_forecast_data_string1_only(monkeypatch):
 
     monkeypatch.setattr(sensor, "_save_persistent_data", _save)
     monkeypatch.setattr(sensor, "_broadcast_forecast_data", _broadcast)
-    monkeypatch.setattr(sensor, "_process_forecast_data", lambda *_a: {"ok": True})
+    monkeypatch.setattr(
+        sensor,
+        "_process_forecast_data",
+        lambda *_a: {"ok": True, "total_daily": {"2026-08-11": 1.5}},
+    )
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
         lambda: 20000.0,
     )
     sensor.async_write_ha_state = lambda: None
 
-    await sensor.async_fetch_forecast_data()
+    result = await sensor.async_fetch_forecast_data()
 
-    assert sensor._last_forecast_data == {"ok": True}
-    assert sensor.coordinator.solar_forecast_data == {"ok": True}
+    assert result.accepted is True
+    assert result.candidate == {
+        "ok": True,
+        "total_daily": {"2026-08-11": 1.5},
+    }
+    assert sensor._last_forecast_data is None
+    assert not hasattr(sensor.coordinator, "solar_forecast_data")
 
 
 class _RuntimeMemStore:
@@ -434,7 +452,7 @@ async def _record_async(records, value):
 
 
 @pytest.mark.asyncio
-async def test_current_provider_revision_result_commits(monkeypatch):
+async def test_current_provider_revision_result_remains_candidate_before_commit(monkeypatch):
     from custom_components.oig_cloud.config import solar_key_store as store_module
 
     _RuntimeMemStore.bucket = {}
@@ -457,10 +475,18 @@ async def test_current_provider_revision_result_commits(monkeypatch):
     monkeypatch.setattr(
         sensor,
         "_fetch_forecast_solar_strings",
-        lambda **_kwargs: _return_async(({"result": "current"}, None)),
-    )
-    monkeypatch.setattr(
-        sensor, "_process_forecast_data", lambda *_a: {"result": "current"}
+        lambda **_kwargs: _return_async(
+            SolarFetchResult.accept(
+                {
+                    "result": "current",
+                    "response_time": "2026-08-11T06:00:00",
+                    "total_daily": {
+                        "2026-08-11": 1.0,
+                        "2026-08-12": 2.0,
+                    },
+                }
+            )
+        ),
     )
     monkeypatch.setattr(
         sensor, "_save_persistent_data", lambda: _record_async(writes, "save")
@@ -470,11 +496,13 @@ async def test_current_provider_revision_result_commits(monkeypatch):
     )
     monkeypatch.setattr(sensor, "async_write_ha_state", lambda: writes.append("state"))
 
-    await sensor.async_fetch_forecast_data()
+    result = await sensor.async_fetch_forecast_data()
 
-    assert sensor._last_forecast_data == {"result": "current"}
-    assert sensor.coordinator.solar_forecast_data == {"result": "current"}
-    assert writes == ["save", "state", "broadcast"]
+    assert result.accepted is True
+    assert result.candidate["result"] == "current"
+    assert sensor._last_forecast_data is None
+    assert not hasattr(sensor.coordinator, "solar_forecast_data")
+    assert writes == []
 
 
 async def _return_async(value):
@@ -521,7 +549,6 @@ async def test_provider_error_body_and_exception_are_redacted(monkeypatch, caplo
             compass_azimuth=180,
             kwp=5.0,
             legacy_provider_value=False,
-            fatal_on_error=True,
         )
 
         async def _snapshot(*_args, **_kwargs):
@@ -606,7 +633,7 @@ async def test_async_added_to_hass_schedules_fetch(monkeypatch):
     monkeypatch.setattr(sensor, "_delayed_initial_fetch", _delayed)
     monkeypatch.setattr(
         sensor_module,
-        "async_track_time_interval",
+        "async_track_time_change",
         lambda *_args, **_kwargs: "remover",
     )
 
@@ -769,14 +796,20 @@ def test_state_and_attributes_all_sensors(monkeypatch):
 @pytest.mark.asyncio
 async def test_periodic_update_every_4h_and_hourly(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "every_4h"})
+    sensor._config_entry.entry_id = "entry-every-4h"
     sensor._min_api_interval = 0
     sensor._last_api_call = 1000.0
     sensor._called = False
 
     async def _fetch():
         sensor._called = True
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state):
+        return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
+    monkeypatch.setattr(sensor, "_async_persist_retry_state", _persist)
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
         lambda: 1000.0 + 15000.0,
@@ -786,14 +819,17 @@ async def test_periodic_update_every_4h_and_hourly(monkeypatch):
     assert sensor._called is True
 
     sensor = _make_sensor({"solar_forecast_mode": "hourly"})
+    sensor._config_entry.entry_id = "entry-hourly"
     sensor._min_api_interval = 0
     sensor._last_api_call = 1000.0
     sensor._called = False
 
     async def _fetch_hourly():
         sensor._called = True
+        return SolarFetchResult.terminal("auth")
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch_hourly)
+    monkeypatch.setattr(sensor, "_async_persist_retry_state", _persist)
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.solar_forecast_sensor.time.time",
         lambda: 1000.0 + 4000.0,

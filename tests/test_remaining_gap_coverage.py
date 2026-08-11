@@ -132,7 +132,9 @@ async def test_solar_sensor_normalization_and_solcast_error_paths(monkeypatch):
     monkeypatch.setattr(solar_sensor_module, "Store", lambda *_a, **_k: DummyStore())
     monkeypatch.setattr(sensor, "_save_persistent_data", _save)
     await sensor._load_persistent_data()
-    assert saved["called"] is True
+    # Legacy box-only storage remains read-only for rollback compatibility.
+    assert saved["called"] is False
+    assert "2025-01-01T10:15:00+00:00" in sensor._last_forecast_data["total_hourly"]
 
     # solcast missing site_id branch (line 626-627)
     sensor._config_entry.options.update(

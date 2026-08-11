@@ -10,6 +10,7 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
 from custom_components.oig_cloud.forecast import candidate_test, provider_contract
+from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 
 
 class DummyCoordinator:
@@ -153,14 +154,17 @@ async def test_periodic_update_hourly_skip(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_manual_update_success(monkeypatch):
+async def test_manual_update_without_accepted_candidate_is_false(monkeypatch):
     sensor = _make_sensor({"enable_solar_forecast": True})
+    previous_response_time = 1234.0
+    sensor._last_api_call = previous_response_time
 
     async def _fetch():
-        return None
+        return SolarFetchResult.terminal("invalid_response")
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
-    assert await sensor.async_manual_update() is True
+    assert await sensor.async_manual_update() is False
+    assert sensor._last_api_call == previous_response_time
 
 
 @pytest.mark.asyncio
@@ -218,8 +222,10 @@ async def test_async_fetch_string2_success_with_key(monkeypatch):
     sensor._save_persistent_data = _save
     sensor._broadcast_forecast_data = _broadcast
 
-    await sensor.async_fetch_forecast_data()
-    assert sensor._last_forecast_data is not None
+    result = await sensor.async_fetch_forecast_data()
+    assert result.accepted is True
+    assert result.candidate is not None
+    assert sensor._last_forecast_data is None
 
 
 @pytest.mark.asyncio
@@ -388,9 +394,11 @@ async def test_fetch_solcast_success(monkeypatch):
     sensor.hass.data = {}
     sensor.coordinator.solar_forecast_data = {}
 
-    await sensor._fetch_solcast_data(1000.0)
-    assert sensor._last_forecast_data is not None
-    assert sensor.coordinator.solar_forecast_data is sensor._last_forecast_data
+    result = await sensor._fetch_solcast_data(1000.0)
+    assert result.accepted is True
+    assert result.candidate is not None
+    assert sensor._last_forecast_data is None
+    assert sensor.coordinator.solar_forecast_data == {}
 
 
 @pytest.mark.asyncio
@@ -423,8 +431,10 @@ async def test_fetch_solcast_success_sets_attr(monkeypatch):
     sensor.async_write_ha_state = lambda *args, **kwargs: None
     sensor.hass.data = {}
 
-    await sensor._fetch_solcast_data(1000.0)
-    assert hasattr(sensor.coordinator, "solar_forecast_data")
+    result = await sensor._fetch_solcast_data(1000.0)
+    assert result.accepted is True
+    assert result.candidate is not None
+    assert not hasattr(sensor.coordinator, "solar_forecast_data")
 
 
 def test_process_solcast_data_skips_invalid_entries():

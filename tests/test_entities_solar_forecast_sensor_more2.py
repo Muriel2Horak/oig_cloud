@@ -10,6 +10,7 @@ from custom_components.oig_cloud.entities import solar_forecast_sensor as module
 from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
 )
+from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 
 
 class DummyCoordinator:
@@ -125,20 +126,26 @@ async def test_async_added_to_hass_uses_cached(monkeypatch):
 async def test_periodic_update_modes(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily_optimized"})
     sensor._sensor_type = "solar_forecast"
+    sensor._config_entry.entry_id = "entry-schedule"
     sensor._last_api_call = 0
 
     called = {"count": 0}
 
     async def _fetch():
         called["count"] += 1
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state):
+        return True
 
     sensor.async_fetch_forecast_data = _fetch
-    await sensor._periodic_update(datetime(2025, 1, 1, 6, 1, 0))
+    sensor._async_persist_retry_state = _persist
+    await sensor._wall_clock_update(datetime(2025, 1, 1, 6, 0, 0))
     assert called["count"] == 1
 
-    sensor._config_entry.options["solar_forecast_mode"] = "daily"
+    # A duplicate callback for the same wall-clock occurrence is claimed once.
     sensor._last_api_call = datetime(2025, 1, 1, 6, 0, 0).timestamp()
-    await sensor._periodic_update(datetime(2025, 1, 1, 6, 1, 0))
+    await sensor._wall_clock_update(datetime(2025, 1, 1, 6, 0, 0))
     assert called["count"] == 1
 
     sensor._config_entry.options["solar_forecast_mode"] = "every_4h"
