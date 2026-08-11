@@ -210,13 +210,54 @@ async function installSolarFake(page: Page) {
             confirmed_distribution_unit: '', stale_warning: false, valid_from: null, year: null,
           };
         } else if (method === 'POST' && path.endsWith('/solar_test')) {
-          const proof = `opaque-browser-proof-${++persisted.proofCounter}`;
-          persisted.proofs[proof] = effectiveSolar(body ?? {});
-          response = {
-            tomorrow_total_kwh: 7.5,
-            forecast_covers_tomorrow: true,
-            proof,
-          };
+          const candidate = body ?? {};
+          const provider = candidate.provider;
+          const forecastOnly = [
+            'solar_forecast_api_key',
+            'solar_forecast_latitude',
+            'solar_forecast_longitude',
+            'solar_forecast_string1_declination',
+            'solar_forecast_string1_azimuth',
+            'solar_forecast_string2_declination',
+            'solar_forecast_string2_azimuth',
+          ];
+          const unexpected = provider === 'solcast'
+            ? forecastOnly.filter((key) => key in candidate).sort()
+            : [];
+          const inactiveFields: string[] = [];
+          if (unexpected.length === 0) {
+            for (const number of [1, 2]) {
+              const enabledKey = `solar_forecast_string${number}_enabled`;
+              const enabled = candidate[enabledKey] ?? persisted.moduleConfig.solar[enabledKey];
+              if (enabled !== false) continue;
+              const localFields = [`solar_forecast_string${number}_kwp`];
+              if (provider === 'forecast_solar') {
+                localFields.push(
+                  `solar_forecast_string${number}_declination`,
+                  `solar_forecast_string${number}_azimuth`,
+                );
+              }
+              inactiveFields.push(...localFields.filter((key) => key in candidate));
+            }
+          }
+          if (unexpected.length > 0) {
+            status = 400;
+            response = { error: 'unexpected provider field', fields: unexpected };
+          } else if (inactiveFields.length > 0) {
+            status = 400;
+            response = {
+              error: 'inactive string fields must be omitted',
+              fields: inactiveFields,
+            };
+          } else {
+            const proof = `opaque-browser-proof-${++persisted.proofCounter}`;
+            persisted.proofs[proof] = effectiveSolar(candidate);
+            response = {
+              tomorrow_total_kwh: 7.5,
+              forecast_covers_tomorrow: true,
+              proof,
+            };
+          }
         } else if (method === 'POST' && path.endsWith('/module_config')) {
           const proofToken = typeof body?.solar_test_proof === 'string'
             ? body.solar_test_proof
@@ -366,30 +407,39 @@ test('Solcast hides local geometry, retains kWp, and forwards proof only on save
   await expect(fieldRow(finalWizard, 'Solcast site ID').locator('input')).toHaveValue('');
 });
 
-test('fake proof DTO applies production Solcast discrimination and disabled-string omission', async ({ page }) => {
+test('fake rejects invalid Solcast candidates but ignores their save-only fields for proof binding', async ({ page }) => {
   await installSolarFake(page);
   await page.goto('./?sn=browser-e2e');
 
   const result = await page.evaluate(async () => {
     const hass = (window as any).hass;
-    const tested = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+    const validCandidate = {
+      provider: 'solcast',
+      solar_forecast_mode: 'daily',
+      solcast_api_key: 'solcast-proof-key',
+      solcast_site_id: 'roof-proof-site',
+      solar_forecast_string1_enabled: true,
+      solar_forecast_string1_kwp: 5.5,
+      solar_forecast_string2_enabled: false,
+    };
+    const invalidGeometry = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
       method: 'POST',
       body: JSON.stringify({
-        provider: 'solcast',
-        solar_forecast_mode: 'daily',
-        solcast_api_key: 'solcast-proof-key',
-        solcast_site_id: 'roof-proof-site',
+        ...validCandidate,
         solar_forecast_latitude: 1,
-        solar_forecast_longitude: 2,
-        solar_forecast_string1_enabled: true,
-        solar_forecast_string1_kwp: 5.5,
-        solar_forecast_string1_declination: 3,
         solar_forecast_string1_azimuth: 4,
-        solar_forecast_string2_enabled: false,
-        solar_forecast_string2_kwp: 49,
-        solar_forecast_string2_declination: 89,
-        solar_forecast_string2_azimuth: 359,
       }),
+    });
+    const invalidDisabledString = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...validCandidate,
+        solar_forecast_string2_kwp: 49,
+      }),
+    });
+    const tested = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+      method: 'POST',
+      body: JSON.stringify(validCandidate),
     });
     const { proof } = await tested.json();
     const saved = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
@@ -415,11 +465,50 @@ test('fake proof DTO applies production Solcast discrimination and disabled-stri
         solar_test_proof: proof,
       }),
     });
-    return { status: saved.status, body: await saved.json() };
+    const persisted = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config');
+    return {
+      invalidGeometry: {
+        status: invalidGeometry.status,
+        body: await invalidGeometry.json(),
+      },
+      invalidDisabledString: {
+        status: invalidDisabledString.status,
+        body: await invalidDisabledString.json(),
+      },
+      save: { status: saved.status, body: await saved.json() },
+      persisted: await persisted.json(),
+    };
   });
 
-  expect(result.status).toBe(200);
-  expect(result.body.verified).toBe(true);
+  expect(result.invalidGeometry).toEqual({
+    status: 400,
+    body: {
+      error: 'unexpected provider field',
+      fields: ['solar_forecast_latitude', 'solar_forecast_string1_azimuth'],
+    },
+  });
+  expect(result.invalidDisabledString).toEqual({
+    status: 400,
+    body: {
+      error: 'inactive string fields must be omitted',
+      fields: ['solar_forecast_string2_kwp'],
+    },
+  });
+  expect(result.save.status).toBe(200);
+  expect(result.save.body.verified).toBe(true);
+  expect(result.persisted.solar).toMatchObject({
+    solar_forecast_provider: 'solcast',
+    solar_forecast_latitude: 80,
+    solar_forecast_longitude: 170,
+    solar_forecast_string1_declination: 70,
+    solar_forecast_string1_azimuth: 270,
+    solar_forecast_string2_enabled: false,
+    solar_forecast_string2_kwp: 0.1,
+    solar_forecast_string2_declination: 0,
+    solar_forecast_string2_azimuth: 0,
+  });
+  expect(result.persisted.solar).not.toHaveProperty('solcast_api_key');
+  expect(result.persisted.solar).not.toHaveProperty('solcast_site_id');
 });
 
 test('fake backend binds a real proof to the complete effective DTO, including persisted fields omitted from the draft', async ({ page }) => {

@@ -113,11 +113,11 @@
 - Translation JSON parsing and cross-catalog parity: pass.
 - `git diff --check`: pass before final pre-commit.
 - Pre-commit: two consecutive all-files runs passed all nine hooks without rewrites.
-- Tracked distribution: nine files; sorted hash manifest `f46dda8789e00420204eb7eb4aa8fb14945df3347bdd50708477a5c145b324a1`.
-- Build ID: `816b9c44b4ee0374cb44d3c3961c3945c52df7640e4af6d8c9c965c8b1ba1d8c`.
-- `dist/index.html`: `b77f9d8a5f275e7579afe7cc168e94a6f05b512cd1a69c4950f8281a858fdf1e`.
-- `dist/assets/index.js`: `256e8d586a8f9fa707a964624bb3258c6f63f89706280400494cef29aabfc91b`.
-- `dist/assets/index.js.map`: `b3aa2c708f78e44e41ef98b776b5bc839eb8616a8257f72df24be1907b9ee5c4`.
+- Current tracked distribution: nine files; sorted SHA-256 manifest `850c7060b065ff5d14083e1377cba4197717547e299743bee0819e8e1fc9e472`.
+- Current build ID: `a3cb6d49ec0df82d991739ed78059e84ecd9cacd37c45ad692a426451f5e13d9`.
+- Current `dist/index.html` SHA-256: `54c03505a4bede8ea8836615954fa8d2097c70d27480961b737b870b41f2beee`.
+- Current `dist/assets/index.js` SHA-256: `c84a26cd7fde34bf5211eb0ace38139ee7c00a140a23e43d39262aa7eed6a358`.
+- Current `dist/assets/index.js.map` SHA-256: `a056205e3c5517e85477a2d54ddece498d437c656a6dd52290ac6ddeec846cba`.
 - Bundle/map inspection found no synthetic secret/proof sentinels and only expected changed sources.
 
 ### Security
@@ -347,4 +347,29 @@
 - Confirmed scheduler release blocker remains a separate slice: a startup phase of 10:42 produces zero accepted wall-clock refresh hits over 96 hours because interval callbacks never enter the required minute/hour windows. No scheduler production change is included here.
 - Aggregate v2 statement coverage is `73.23%`, below the operator's `>80%` release criterion. No threshold or exclusion was weakened; global coverage uplift remains outside this provider remediation.
 - Previously documented dependency High/Critical findings, exact release Node/npm toolchain, Ubuntu PEP 517/wheelhouse, and live HP/natural-refresh gates remain unresolved external release obligations.
+- No push, PR, deploy, HP access, or remote mutation occurred.
+
+## Final evidence-only review fix
+
+### Scope and TDD evidence
+
+- Reviewed base: `76b42b36ee584dc8de934384ca63e4cf58ebf11b`.
+- Changed only the realistic Playwright provider fake/assertions and this durable report. Production source and tracked distribution remain byte-identical to the reviewed base.
+- Valid RED: focused Playwright returned `200` and issued `opaque-browser-proof-1` for a Solcast candidate containing Forecast.Solar geometry; the production-compatible expectation was `400 unexpected provider field`.
+- Root cause: the fake canonicalized `/solar_test` input directly and silently omitted forbidden provider fields instead of applying the REST parser's pre-DTO discrimination.
+- Test-only fix: reject Forecast-only Solcast candidate fields first, then reject local fields supplied for a disabled string, and issue proof only after both checks pass.
+- The proof is now obtained from a valid Solcast candidate. Forecast geometry and disabled-string fields appear only in the explicit save patch, where they are ignored for proof binding but retained as non-secret local configuration metadata, matching production behavior.
+- Existing full effective-DTO mismatch, consumed replay, proofless-unverified save, provider-switch/reload, and mounted user-facing UI assertions remain in the same focused suite.
+
+### Verification evidence
+
+- Focused new RED-to-GREEN case: `1 passed` after the valid `1 failed` RED.
+- Full realistic provider Playwright suite: `5 passed`.
+- TypeScript typecheck: pass.
+- ESLint: exit `0`, `0` errors and `582` inherited warnings.
+- Read-only `build:verify`: pass; no distribution rewrite.
+- Direct SHA-256 recomputation matches the current values recorded above for `index.html`, `index.js`, and `index.js.map`.
+- Gitleaks diff scan: no leaks. Generated distribution contains none of the Playwright secret/proof sentinels.
+- `git diff --check`: pass before final all-files hooks.
+- Coverage was not rerun or increased by this test/report-only slice. The latest full v2 evidence remains `73.24%` statements/lines, `77.76%` branches, and `72.47%` functions; the `>80%` release requirement remains blocked without waiver.
 - No push, PR, deploy, HP access, or remote mutation occurred.
