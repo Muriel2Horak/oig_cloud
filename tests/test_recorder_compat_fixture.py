@@ -19,13 +19,23 @@ attribute was absent. These tests pin all three halves of that contract:
 binding happens *before* the plugin fixture is resolved, the namespaces are
 restored after teardown, and a test that does not ask for the seam never sees
 the injected attributes.
+
+The *defect mechanism* itself -- ``NameError`` before the seam, resolution
+under it -- is proven in a fresh interpreter subprocess rather than in this
+process. In-process it is order-dependent: a real recorder test that ran
+earlier in the same session has already resolved the very same deferred
+annotations under the seam, and CPython 3.14 may keep that successful
+evaluation cached internally, so the pre-seam ``NameError`` no longer raises.
+A child interpreter has no such history, whatever order pytest chose.
 """
 
 from __future__ import annotations
 
 import importlib
+import os
+import pathlib
+import subprocess
 import sys
-import typing
 
 import pytest
 
@@ -100,83 +110,199 @@ def test_context_manager_restores_exact_prior_state_including_absence():
             )
 
 
-@pytest.mark.skipif(
-    PRISTINE["Recorder"] is not ABSENT or PRISTINE["Session"] is not ABSENT,
-    reason="Home Assistant now binds these names at runtime; the seam is moot",
-)
-def test_deferred_annotations_resolve_only_under_the_seam():
-    """Reproduce the defect mechanism against the real Home Assistant callables.
+#: Exit code the child uses for "Home Assistant now binds these names at
+#: runtime, so the seam -- and this evidence -- is moot".
+_MOOT_EXIT_CODE = 3
 
-    ``typing.get_type_hints`` performs the same module-global lookup that a
-    PEP 649 ``__annotate__`` call performs, and that ``unittest.mock`` triggers
-    while building an ``autospec=True`` mock. ``helpers.recorder.session_scope``
-    is exactly the callable the Home Assistant plugin autospecs as
-    ``patch_recorder.real_session_scope``, and
-    ``migration._find_schema_errors`` is exactly the callable the plugin's
-    ``recorder_mock`` fixture autospecs on the ``migration`` side -- not
-    ``migration.validate_db_schema``, which the fixture never patches.
+#: Wall-clock ceiling for the child. It only imports Home Assistant and calls
+#: ``typing.get_type_hints`` twice; a cold import here costs a few seconds.
+_CHILD_TIMEOUT_SECONDS = 300
 
-    The post-seam proof is namespace restoration, not a repeated
-    ``NameError``. Once CPython 3.14's PEP 649 machinery has successfully
-    evaluated a deferred annotation, it may keep that successful evaluation
-    cached internally -- so a second ``get_type_hints`` call can keep
-    succeeding even after the seam has removed ``Recorder``/``Session`` from
-    the module namespaces again. That cache is not a namespace leak: the
-    attributes themselves, which is what the seam contracts to restore, are
-    proven absent (or restored to their exact prior value) below without
-    touching any private annotation cache.
-    """
-    # NOT ``MIGRATION.validate_db_schema``: both declare an identical
-    # ``instance: Recorder`` parameter, but the plugin's ``recorder_mock``
-    # fixture only ever autospecs ``migration._find_schema_errors`` (see
-    # ``pytest_homeassistant_custom_component.plugins``, the
-    # ``patch("homeassistant.components.recorder.migration._find_schema_errors",
-    # autospec=True)`` inside ``recorder_mock``). That is the callable whose
-    # autospec walk raised in the canonical traceback.
-    migration_callable = MIGRATION._find_schema_errors
-    # NOT ``HELPERS_RECORDER.session_scope``: the plugin has already replaced
-    # that attribute with its own wrapper, whose globals do carry ``Session``.
-    # The callable the plugin autospecs is the untouched original it kept as
-    # ``real_session_scope`` -- and that one resolves against
-    # ``homeassistant.helpers.recorder``.
-    patch_recorder = sys.modules.get(
+#: How much child output a failure message carries, per stream.
+_CHILD_OUTPUT_TAIL = 4000
+
+# The evidence itself, run by a *fresh* interpreter. ``sys.argv[1]`` is the
+# repository root; the parent launches this with ``-I`` (no environment-driven
+# path, no user site, no cwd on ``sys.path``) and an explicit minimal
+# environment, so nothing but that one argument crosses the process boundary.
+_EVIDENCE_SCRIPT = """
+import importlib
+import sys
+import typing
+
+MOOT_EXIT_CODE = 3
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def main():
+    sys.path.insert(0, sys.argv[1])
+
+    # Strictly before any Home Assistant recorder module: the plugin's patch
+    # module asserts at import time that it got there first.
+    patch_recorder = importlib.import_module(
         "pytest_homeassistant_custom_component.patch_recorder"
     )
-    if patch_recorder is None:  # pragma: no cover - plugin always loaded here
-        pytest.skip("Home Assistant recorder patch module not loaded")
-    session_scope = patch_recorder.real_session_scope
 
-    before = _current()
+    from tests.conftest import ABSENT, bound_deferred_recorder_annotations
 
-    with pytest.raises(NameError, match="Recorder"):
-        typing.get_type_hints(migration_callable)
-    with pytest.raises(NameError, match="Session"):
-        typing.get_type_hints(session_scope)
+    migration = importlib.import_module(
+        "homeassistant.components.recorder.migration"
+    )
+    helpers_recorder = importlib.import_module("homeassistant.helpers.recorder")
 
-    with bound_deferred_recorder_annotations():
-        typing.get_type_hints(migration_callable)
-        typing.get_type_hints(session_scope)
+    def current():
+        return {
+            "Recorder": migration.__dict__.get("Recorder", ABSENT),
+            "Session": helpers_recorder.__dict__.get("Session", ABSENT),
+        }
 
-    # Post-seam: prove the module namespaces -- the thing the seam actually
-    # contracts to restore -- are back to their exact pre-seam state. Do NOT
-    # assert that ``get_type_hints`` raises again: CPython 3.14 may keep the
-    # now-successful deferred-annotation evaluation cached internally even
-    # after ``Recorder``/``Session`` are gone from the namespace again, so a
-    # repeated-``NameError`` assertion is invalid and this test must not
-    # depend on that private cache either way.
-    after = _current()
-    for name, previous in before.items():
-        namespace = MIGRATION if name == "Recorder" else HELPERS_RECORDER
-        if previous is ABSENT:
-            assert name not in namespace.__dict__, (
-                f"{namespace.__name__}.{name} was absent before the seam and "
-                "must be absent again"
-            )
+    before = current()
+    if before["Recorder"] is not ABSENT or before["Session"] is not ABSENT:
+        print("Home Assistant now binds these names at runtime; the seam is moot")
+        raise SystemExit(MOOT_EXIT_CODE)
+
+    # The exact callables the plugin autospecs. NOT
+    # ``migration.validate_db_schema``, which declares the same
+    # ``instance: Recorder`` parameter but is never patched by the
+    # ``recorder_mock`` fixture, and NOT ``helpers.recorder.session_scope``,
+    # which the plugin has already replaced with a wrapper whose globals do
+    # carry ``Session`` -- ``real_session_scope`` is the untouched original.
+    targets = (
+        ("Recorder", "migration._find_schema_errors", migration._find_schema_errors),
+        (
+            "Session",
+            "patch_recorder.real_session_scope",
+            patch_recorder.real_session_scope,
+        ),
+    )
+
+    # Pre-seam: the module-global lookup a PEP 649 ``__annotate__`` call
+    # performs -- the one ``unittest.mock`` triggers while building an
+    # ``autospec=True`` mock -- must blow up on the deferred name.
+    for name, label, target in targets:
+        try:
+            typing.get_type_hints(target)
+        except NameError as exc:
+            if name not in str(exc):
+                fail("%s: expected NameError naming %s, got %r" % (label, name, exc))
         else:
-            assert after[name] is previous, (
-                f"{namespace.__name__}.{name} was not restored to its exact "
-                "prior value"
+            fail("%s: %s resolved without the seam" % (label, name))
+
+    # In-seam: both resolve.
+    with bound_deferred_recorder_annotations():
+        for name, label, target in targets:
+            try:
+                typing.get_type_hints(target)
+            except NameError as exc:
+                fail("%s: %s did not resolve under the seam: %r" % (label, name, exc))
+
+    # Post-seam: both namespaces are back to their exact prior state. This
+    # reads the namespaces only -- no CPython private annotation cache is
+    # inspected or cleared.
+    after = current()
+    for name, previous in before.items():
+        namespace = migration if name == "Recorder" else helpers_recorder
+        if previous is ABSENT:
+            if name in namespace.__dict__:
+                fail(
+                    "%s.%s was absent before the seam and must be absent again"
+                    % (namespace.__name__, name)
+                )
+        elif after[name] is not previous:
+            fail(
+                "%s.%s was not restored to its exact prior value"
+                % (namespace.__name__, name)
             )
+
+    print("recorder deferred-annotation evidence proven")
+
+
+main()
+"""
+
+
+def _decode(stream: object) -> str:
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", "replace")
+    return str(stream)
+
+
+def _child_context(stdout: object, stderr: object) -> str:
+    """Failure diagnostics: the child's own output, nothing else.
+
+    Only what the script above printed is reproduced -- never the parent
+    environment, which is not passed to the child in the first place.
+    """
+    return (
+        "--- child stdout ---\n"
+        f"{_decode(stdout)[-_CHILD_OUTPUT_TAIL:]}\n"
+        "--- child stderr ---\n"
+        f"{_decode(stderr)[-_CHILD_OUTPUT_TAIL:]}"
+    )
+
+
+def test_deferred_annotations_resolve_only_under_the_seam():
+    """Reproduce the defect mechanism in a fresh interpreter.
+
+    ``typing.get_type_hints`` performs the same module-global lookup that a
+    PEP 649 ``__annotate__`` call performs, and that ``unittest.mock``
+    triggers while building an ``autospec=True`` mock.
+    ``patch_recorder.real_session_scope`` is exactly the callable the Home
+    Assistant plugin autospecs on the session side, and
+    ``migration._find_schema_errors`` is exactly the one its ``recorder_mock``
+    fixture autospecs on the migration side.
+
+    Why a subprocess: in this process the evidence is order-dependent. Any
+    real recorder test that ran earlier in the session already resolved these
+    same deferred annotations under the seam, and CPython 3.14 may keep that
+    successful evaluation cached internally -- so the pre-seam ``NameError``
+    stops raising, and whether this test passes comes down to which test file
+    pytest happened to run first. The child starts from nothing, so the
+    evidence holds in any order, and no private annotation cache is touched.
+    """
+    repo_root = str(pathlib.Path(__file__).resolve().parents[1])
+    command = [sys.executable, "-I", "-c", _EVIDENCE_SCRIPT, repo_root]
+    # Deliberately not ``os.environ``: the child needs nothing from it, and an
+    # inherited environment is how secrets leak into captured output.
+    child_env = {"PATH": os.defpath}
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=_CHILD_TIMEOUT_SECONDS,
+            cwd=repo_root,
+            env=child_env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(
+            "recorder deferred-annotation evidence subprocess exceeded "
+            f"{_CHILD_TIMEOUT_SECONDS}s\n{_child_context(exc.stdout, exc.stderr)}"
+        )
+
+    if completed.returncode == _MOOT_EXIT_CODE:
+        pytest.skip(
+            completed.stdout.strip()
+            or "Home Assistant now binds these names at runtime; the seam is moot"
+        )
+
+    assert completed.returncode == 0, (
+        "recorder deferred-annotation evidence failed in a fresh interpreter "
+        f"(exit {completed.returncode})\n"
+        f"{_child_context(completed.stdout, completed.stderr)}"
+    )
+    assert "recorder deferred-annotation evidence proven" in completed.stdout, (
+        "recorder deferred-annotation evidence subprocess exited 0 without "
+        f"proving anything\n{_child_context(completed.stdout, completed.stderr)}"
+    )
 
 
 def test_context_manager_restores_after_an_exception():
