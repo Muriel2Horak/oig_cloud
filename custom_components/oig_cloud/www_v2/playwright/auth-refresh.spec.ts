@@ -206,6 +206,8 @@ test('mounted oig-app exposes only safe UI and console text when HA refresh reje
 
   await openMountedSettings(page);
   await expect(page.getByText('Nastavení se nepodařilo načíst', { exact: false })).toBeVisible();
+  await expect(page.getByText(REJECTION_SENTINEL, { exact: false })).toHaveCount(0);
+  await expect(page.getByText(STALE_TOKEN, { exact: false })).toHaveCount(0);
 
   const state = await page.evaluate(() => (window as any).__authHarnessState as HarnessState);
   const observable = `${await page.locator('body').innerText()}\n${consoleMessages.join('\n')}`;

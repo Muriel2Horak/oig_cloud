@@ -121,7 +121,7 @@
   - `custom_components/oig_cloud/www_v2/dist/assets/index.js.map`: one generated `sourceKey` identifier match; not a credential.
 - No Python, dependency, lockfile, or shared workflow/config source changed; dependency/toolchain findings remain quality-plan Task 6 scope.
 
-## Verification
+## Initial commit verification (`96c945b2`)
 
 - Frontend unit: `99` files, `1,979 passed`.
 - Focused auth/build: `3` files, `130 passed`.
@@ -149,7 +149,7 @@
 - Pre-commit: two consecutive all-files runs passed all nine hooks; no rewrites.
 - `git diff --check`: exit 0.
 
-## Coverage
+## Initial commit coverage (`96c945b2`)
 
 - Frontend full suite: statements `73.18%`, branches `77.51%`, functions `72.32%`, lines `73.18%`.
 - `src/data/ha-client.ts`: statements/lines `75.07%`, branches `86.92%`, functions `45.94%`.
