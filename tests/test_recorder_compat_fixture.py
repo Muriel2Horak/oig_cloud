@@ -111,9 +111,19 @@ def test_deferred_annotations_resolve_only_under_the_seam():
     PEP 649 ``__annotate__`` call performs, and that ``unittest.mock`` triggers
     while building an ``autospec=True`` mock. ``helpers.recorder.session_scope``
     is exactly the callable the Home Assistant plugin autospecs as
-    ``patch_recorder.real_session_scope``.
+    ``patch_recorder.real_session_scope``, and
+    ``migration._find_schema_errors`` is exactly the callable the plugin's
+    ``recorder_mock`` fixture autospecs on the ``migration`` side -- not
+    ``migration.validate_db_schema``, which the fixture never patches.
     """
-    migration_callable = MIGRATION.validate_db_schema
+    # NOT ``MIGRATION.validate_db_schema``: both declare an identical
+    # ``instance: Recorder`` parameter, but the plugin's ``recorder_mock``
+    # fixture only ever autospecs ``migration._find_schema_errors`` (see
+    # ``pytest_homeassistant_custom_component.plugins``, the
+    # ``patch("homeassistant.components.recorder.migration._find_schema_errors",
+    # autospec=True)`` inside ``recorder_mock``). That is the callable whose
+    # autospec walk raised in the canonical traceback.
+    migration_callable = MIGRATION._find_schema_errors
     # NOT ``HELPERS_RECORDER.session_scope``: the plugin has already replaced
     # that attribute with its own wrapper, whose globals do carry ``Session``.
     # The callable the plugin autospecs is the untouched original it kept as
