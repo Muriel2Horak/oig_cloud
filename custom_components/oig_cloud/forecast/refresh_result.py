@@ -82,6 +82,7 @@ class SolarFetchResult:
     retryable: bool
     code: str
     candidate: Mapping[str, Any] | None = None
+    context: SolarCandidateContext | None = None
 
     def __post_init__(self) -> None:
         if self.accepted:
@@ -89,6 +90,11 @@ class SolarFetchResult:
                 raise ValueError("accepted result has inconsistent classification")
             if not isinstance(self.candidate, Mapping) or not self.candidate:
                 raise TypeError("accepted result requires a complete candidate mapping")
+            if isinstance(self.candidate, SolarCandidate):
+                candidate_context = self.candidate.context
+                if self.context is not None and self.context != candidate_context:
+                    raise ValueError("candidate and result contexts differ")
+                object.__setattr__(self, "context", candidate_context)
             return
         if self.candidate is not None:
             raise ValueError("failed result cannot carry a candidate")
@@ -112,12 +118,18 @@ class SolarFetchResult:
         return cls(False, False, code)
 
     def with_context(self, context: SolarCandidateContext) -> SolarFetchResult:
-        """Bind an accepted raw provider mapping to its pre-I/O identity."""
-        if not self.accepted or self.candidate is None:
+        """Bind a classified result to its immutable pre-I/O identity."""
+        if self.context is not None:
             return self
-        if isinstance(self.candidate, SolarCandidate):
-            return self
-        return SolarFetchResult.accept(SolarCandidate(self.candidate, context))
+        if self.accepted and self.candidate is not None:
+            return SolarFetchResult.accept(SolarCandidate(self.candidate, context))
+        return SolarFetchResult(
+            self.accepted,
+            self.retryable,
+            self.code,
+            self.candidate,
+            context,
+        )
 
 
 def classify_http_status(status: int) -> SolarFetchResult:

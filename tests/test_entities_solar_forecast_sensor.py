@@ -203,7 +203,7 @@ async def test_wall_clock_update_daily_optimized_triggers(monkeypatch):
         sensor._called = True
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     sensor._called = False
@@ -227,7 +227,7 @@ async def test_wall_clock_occurrence_is_not_suppressed_by_startup_phase(monkeypa
         sensor._called = True
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
@@ -249,7 +249,7 @@ async def test_wall_clock_update_daily_calls(monkeypatch):
         sensor._called = True
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)
@@ -585,12 +585,12 @@ async def test_provider_error_body_and_exception_are_redacted(monkeypatch, caplo
 
         async def _snapshot(*_args, **_kwargs):
             dto = _runtime_options(solar_forecast_api_key="url-private-key")
-            return dto, 1
+            return dto, dto, 1
 
         async def _explode(**_kwargs):
             raise RuntimeError(exception_secret)
 
-        monkeypatch.setattr(sensor_module, "async_solar_dto_snapshot", _snapshot)
+        monkeypatch.setattr(sensor_module, "async_solar_request_snapshot", _snapshot)
         monkeypatch.setattr(sensor, "_fetch_forecast_solar_strings", _explode)
         await sensor.async_fetch_forecast_data()
 
@@ -857,7 +857,7 @@ async def test_periodic_update_every_4h_and_hourly(monkeypatch):
         sensor._called = True
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     monkeypatch.setattr(sensor, "async_fetch_forecast_data", _fetch)

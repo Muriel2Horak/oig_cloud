@@ -20,7 +20,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..config.solar_key_store import SolarKeyStore, get_solar_transaction_lock
-from ..config.solar_transaction import async_solar_dto_snapshot
+from ..config.solar_transaction import async_solar_request_snapshot
 from ..config.solar_rules import legacy_azimuth_read_model
 from ..forecast.provider_contract import (
     build_forecast_solar_url,
@@ -238,6 +238,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         self._manual_request_counter = 0
         self._request_sequence_counter = 0
         self._latest_committed_request_sequence = -1
+        self._latest_retry_request_sequence = -1
         self._refresh_lock = asyncio.Lock()
         self._candidate_commit_lock = asyncio.Lock()
         self._current_occurrence_id: Optional[str] = None
@@ -638,23 +639,28 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             if occurrence_generation is None
             else occurrence_generation
         )
+        fallback_context: Optional[SolarCandidateContext] = None
         try:
             async with asyncio.timeout(ATTEMPT_TIMEOUT_SECONDS):
+                fallback_context = await self._async_capture_candidate_context(
+                    request_id=resolved_request_id,
+                    occurrence_id=self._current_occurrence_id,
+                    occurrence_generation=resolved_occurrence_generation,
+                    lifecycle_generation=self._lifecycle_generation,
+                    request_sequence=request_sequence,
+                )
                 async with self._refresh_lock:
                     if self._removed:
-                        return SolarFetchResult.terminal("removed")
+                        return SolarFetchResult.terminal("removed").with_context(
+                            fallback_context
+                        )
                     if occurrence_id is not None and (
                         occurrence_id != self._current_occurrence_id
                         or occurrence_generation != self._occurrence_generation
                     ):
-                        return SolarFetchResult.terminal("superseded")
-                    fallback_context = await self._async_capture_candidate_context(
-                        request_id=resolved_request_id,
-                        occurrence_id=self._current_occurrence_id,
-                        occurrence_generation=resolved_occurrence_generation,
-                        lifecycle_generation=self._lifecycle_generation,
-                        request_sequence=request_sequence,
-                    )
+                        return SolarFetchResult.terminal("superseded").with_context(
+                            fallback_context
+                        )
                     result = await self.async_fetch_forecast_data(
                         request_id=resolved_request_id,
                         occurrence_id=self._current_occurrence_id,
@@ -664,7 +670,12 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     )
                     return result.with_context(fallback_context)
         except TimeoutError:
-            return SolarFetchResult.retry("timeout")
+            result = SolarFetchResult.retry("timeout")
+            return (
+                result.with_context(fallback_context)
+                if fallback_context is not None
+                else result
+            )
 
     async def _async_capture_candidate_context(
         self,
@@ -770,12 +781,21 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 return
             if had_retry_recovery:
                 self._cancel_retry_timer()
-                await self._async_persist_retry_state(None)
+                await self._async_persist_retry_state(
+                    None,
+                    source_context=result.context,
+                )
+            return
+
+        if result.context is None:
             return
 
         if not result.retryable or attempt_index >= 2:
             self._cancel_retry_timer()
-            await self._async_persist_retry_state(None)
+            await self._async_persist_retry_state(
+                None,
+                source_context=result.context,
+            )
             return
 
         next_at = scheduled_local + timedelta(minutes=15 if attempt_index == 0 else 45)
@@ -788,7 +808,10 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             code=result.code,
             provenance=provenance,
         )
-        if not await self._async_persist_retry_state(state):
+        if not await self._async_persist_retry_state(
+            state,
+            source_context=result.context,
+        ):
             return
         self._arm_retry_timer(state, occurrence_generation)
 
@@ -858,40 +881,87 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             self._active_refresh_tasks.discard(task)
 
     async def _async_persist_retry_state(
-        self, state: Optional[Mapping[str, Any]]
+        self,
+        state: Optional[Mapping[str, Any]],
+        *,
+        source_context: Optional[SolarCandidateContext] = None,
     ) -> bool:
         """Persist retry recovery before arming work; never arm after failure."""
-        try:
-            if self._durable_cache_envelope is not None:
-                envelope = copy.deepcopy(self._durable_cache_envelope)
-            else:
-                candidate = self._last_forecast_data or {}
-                accepted_at = self._parse_cache_time(candidate.get("response_time"))
-                envelope = build_cache_envelope(
-                    provenance={},
-                    forecast_data=candidate,
-                    last_accepted_time=accepted_at,
-                    saved_at=dt_util.now(),
+        async def _ordered_retry_write() -> bool:
+            if source_context is not None and (
+                source_context.request_sequence
+                <= max(
+                    self._latest_committed_request_sequence,
+                    self._latest_retry_request_sequence,
                 )
-            if state is None:
-                envelope.pop("retry_state", None)
-            else:
-                envelope["retry_state"] = copy.deepcopy(dict(state))
+                or source_context.request_id in self._committed_occurrences
+                or source_context.request_id in self._committing_occurrences
+                or not await self._async_candidate_context_is_current(source_context)
+            ):
+                return False
+
             store: Store[Dict[str, Any]] = Store(
                 self.hass,
                 version=SCHEMA_VERSION,
                 key=self._storage_key,
             )
-            await store.async_save(envelope)
-        except Exception as err:
-            _LOGGER.warning(
-                "Solar retry persistence failed: code=storage_failed error_class=%s",
-                type(err).__name__,
-            )
-            return False
-        self._durable_cache_envelope = envelope
-        self._retry_state = dict(state) if state is not None else None
-        return True
+            try:
+                durable = await store.async_load()
+                if isinstance(durable, Mapping) and durable.get("schema") == SCHEMA_VERSION:
+                    envelope = copy.deepcopy(dict(durable))
+                else:
+                    candidate = self._last_forecast_data or {}
+                    accepted_at = self._parse_cache_time(candidate.get("response_time"))
+                    envelope = build_cache_envelope(
+                        provenance={},
+                        forecast_data=candidate,
+                        last_accepted_time=accepted_at,
+                        saved_at=dt_util.now(),
+                    )
+                if state is None:
+                    envelope.pop("retry_state", None)
+                else:
+                    envelope["retry_state"] = copy.deepcopy(dict(state))
+
+                save_task = asyncio.create_task(store.async_save(envelope))
+                self._durable_write_tasks.add(save_task)
+                caller_cancelled = False
+                try:
+                    try:
+                        await asyncio.shield(save_task)
+                    except asyncio.CancelledError:
+                        if save_task.cancelled():
+                            raise
+                        caller_cancelled = True
+                        current_task = asyncio.current_task()
+                        if current_task is not None:
+                            current_task.uncancel()
+                        await asyncio.shield(save_task)
+                finally:
+                    self._durable_write_tasks.discard(save_task)
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                _LOGGER.warning(
+                    "Solar retry persistence failed: code=storage_failed error_class=%s",
+                    type(err).__name__,
+                )
+                return False
+
+            self._durable_cache_envelope = envelope
+            self._retry_state = dict(state) if state is not None else None
+            if source_context is not None:
+                self._latest_retry_request_sequence = source_context.request_sequence
+            if caller_cancelled:
+                raise asyncio.CancelledError
+            return True
+
+        async with self._candidate_commit_lock:
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            if isinstance(entry_id, str) and entry_id:
+                async with get_solar_transaction_lock(self.hass, entry_id):
+                    return await _ordered_retry_write()
+            return await _ordered_retry_write()
 
     async def _async_restore_retry_recovery(self, now: datetime) -> bool:
         """Restore one matching future or overdue scheduled retry after restart."""
@@ -1360,7 +1430,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         candidate: Mapping[str, Any],
         commit_time: float,
         context: SolarCandidateContext,
-    ) -> None:
+    ) -> Dict[str, Any]:
         """Persist one candidate without mutating sensor memory."""
         accepted_at = self._parse_cache_time(candidate.get("response_time"))
         if accepted_at is None:
@@ -1378,7 +1448,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             saved_at=dt_util.now(),
         )
         await store.async_save(envelope)
-        self._durable_cache_envelope = envelope
+        return envelope
 
     async def _async_candidate_context_is_current(
         self, context: SolarCandidateContext
@@ -1413,7 +1483,11 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
         async def _ordered_commit() -> bool:
             if (
-                context.request_sequence <= self._latest_committed_request_sequence
+                context.request_sequence
+                <= max(
+                    self._latest_committed_request_sequence,
+                    self._latest_retry_request_sequence,
+                )
                 or context.request_id in self._committed_occurrences
                 or context.request_id in self._committing_occurrences
                 or not await self._async_candidate_context_is_current(context)
@@ -1454,10 +1528,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 self._durable_write_tasks.discard(save_task)
                 self._committing_occurrences.discard(context.request_id)
 
+            saved_envelope = save_task.result()
             self._latest_committed_request_sequence = context.request_sequence
             self._committed_occurrences.add(context.request_id)
             lifecycle_current = await self._async_candidate_context_is_current(context)
             if lifecycle_current:
+                if isinstance(saved_envelope, Mapping):
+                    self._durable_cache_envelope = copy.deepcopy(
+                        dict(saved_envelope)
+                    )
                 self._last_forecast_data = snapshot
                 self._last_api_call = commit_time
                 setattr(self.coordinator, "solar_forecast_data", snapshot)
@@ -1497,9 +1576,10 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             if self._is_rate_limited(current_time):
                 return SolarFetchResult.terminal("superseded")
 
+            provenance_options: Mapping[str, Any]
             entry_id = getattr(self._config_entry, "entry_id", None)
             if entry_id:
-                dto, revision = await async_solar_dto_snapshot(
+                dto, provenance_options, revision = await async_solar_request_snapshot(
                     self.hass, self._config_entry, {}
                 )
             else:
@@ -1515,6 +1595,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     active,
                     {},
                 )
+                provenance_options = self._config_entry.options
             if request_sequence is None:
                 self._request_sequence_counter += 1
                 request_sequence = self._request_sequence_counter
@@ -1537,7 +1618,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                     else lifecycle_generation
                 ),
                 request_sequence=request_sequence,
-                options=dto,
+                options=provenance_options,
                 credential_revision=int(revision or 0),
             )
             provider = dto["solar_forecast_provider"]
@@ -1584,6 +1665,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 ),
                 type(err).__name__,
             )
+            captured_context = locals().get("context")
+            if isinstance(captured_context, SolarCandidateContext):
+                return result.with_context(captured_context)
             return result
 
     async def _fetch_solcast_data(

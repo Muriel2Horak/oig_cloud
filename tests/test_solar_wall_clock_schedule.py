@@ -41,7 +41,12 @@ def make_sensor(mode="daily_optimized", sensor_type="solar_forecast"):
     async def provenance():
         return build_cache_provenance("entry-schedule", sensor._config_entry.options, 0)
 
+    async def persist(state, **_kwargs):
+        sensor._retry_state = state
+        return True
+
     sensor._async_current_cache_provenance = provenance
+    sensor._async_persist_retry_state = persist
     return sensor
 
 

@@ -87,7 +87,7 @@ def make_sensor(monkeypatch, outcomes):
         sensor._retry_state = None
         return True
 
-    async def persist(state):
+    async def persist(state, **_kwargs):
         persisted.append(state)
         sensor._retry_state = state
         return True
@@ -283,7 +283,7 @@ async def test_manual_and_scheduled_requests_serialize_without_overlap(monkeypat
         active -= 1
         return SolarFetchResult.terminal("auth")
 
-    async def persist(state):
+    async def persist(state, **_kwargs):
         sensor._retry_state = state
         return True
 
@@ -350,7 +350,7 @@ async def test_total_attempt_deadline_covers_provider_and_releases_lock(monkeypa
             await asyncio.Event().wait()
         return SolarFetchResult.terminal("auth")
 
-    async def persist(state):
+    async def persist(state, **_kwargs):
         sensor._retry_state = state
         return True
 
@@ -373,12 +373,33 @@ async def test_total_attempt_deadline_covers_provider_and_releases_lock(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_total_attempt_deadline_includes_request_context_capture(monkeypatch):
+    sensor = OigCloudSolarForecastSensor(Coordinator(), "solar_forecast", Entry(), {})
+    sensor.hass = SimpleNamespace(data={})
+
+    async def blocked_context(**_kwargs):
+        await asyncio.Event().wait()
+
+    sensor._async_capture_candidate_context = blocked_context
+    monkeypatch.setattr(module, "ATTEMPT_TIMEOUT_SECONDS", 0.01)
+
+    result = await asyncio.wait_for(
+        sensor._async_execute_provider_attempt(request_id="deadline-context"),
+        timeout=0.1,
+    )
+
+    assert result.retryable is True
+    assert result.code == "timeout"
+    assert result.context is None
+
+
+@pytest.mark.asyncio
 async def test_retry_persistence_failure_arms_no_timer(monkeypatch):
     sensor, calls, _commits, _persisted, timers, _unsubscribed = make_sensor(
         monkeypatch, [SolarFetchResult.retry("timeout")]
     )
 
-    async def fail_persist(_state):
+    async def fail_persist(_state, **_kwargs):
         return False
 
     sensor._async_persist_retry_state = fail_persist

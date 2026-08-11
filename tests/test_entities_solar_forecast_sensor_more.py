@@ -123,7 +123,7 @@ async def test_daily_wall_clock_callback_dispatches_at_registered_six(monkeypatc
         called["count"] += 1
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     sensor.async_fetch_forecast_data = _fetch

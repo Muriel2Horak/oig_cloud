@@ -65,6 +65,20 @@ async def async_solar_dto_snapshot(
     incoming_patch: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Capture one immutable effective DTO and credential revision under the lock."""
+    dto, _provenance_options, revision = await async_solar_request_snapshot(
+        hass,
+        entry,
+        incoming_patch,
+    )
+    return dto, revision
+
+
+async def async_solar_request_snapshot(
+    hass: Any,
+    entry: Any,
+    incoming_patch: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Capture provider DTO and secret-free full provenance from one transaction."""
     async with get_solar_transaction_lock(hass, entry.entry_id):
         stored = deepcopy(dict(entry.options))
         provider = _selected_provider(stored, incoming_patch)
@@ -75,7 +89,19 @@ async def async_solar_dto_snapshot(
             await store.async_get_active(provider) or {},
         )
         dto = build_effective_solar_dto(stored, active, incoming_patch)
-        return deepcopy(dto), await store.async_revision()
+        provenance_options = {
+            key: deepcopy(value)
+            for key, value in stored.items()
+            if key not in SOLAR_PRIVATE_FIELDS
+        }
+        provenance_options.update(
+            {
+                key: deepcopy(value)
+                for key, value in incoming_patch.items()
+                if key not in SOLAR_PRIVATE_FIELDS
+            }
+        )
+        return deepcopy(dto), provenance_options, await store.async_revision()
 
 
 def _merged_options(

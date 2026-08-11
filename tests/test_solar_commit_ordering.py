@@ -39,12 +39,12 @@ def options(**overrides):
     return values
 
 
-def candidate(marker: float) -> dict:
+def candidate(marker: float, *, provider: str = "forecast_solar") -> dict:
     today = NOW.date().isoformat()
     tomorrow = (NOW.date() + timedelta(days=1)).isoformat()
     return {
         "response_time": NOW.isoformat(),
-        "provider": "forecast_solar",
+        "provider": provider,
         "string1_hourly": {f"{today}T10:00:00": marker * 1000},
         "string1_daily": {today: marker, tomorrow: marker + 1},
         "string1_today_kwh": marker,
@@ -71,8 +71,8 @@ class Coordinator:
 class Entry:
     entry_id = "entry-ordering"
 
-    def __init__(self):
-        self.options = options()
+    def __init__(self, values=None):
+        self.options = values or options()
 
 
 class MemoryStore:
@@ -95,12 +95,14 @@ class MemoryStore:
         self.bucket.pop(self.key, None)
 
 
-def make_sensor(monkeypatch):
+def make_sensor(monkeypatch, values=None):
     MemoryStore.bucket = {}
     MemoryStore.saves = []
     monkeypatch.setattr(module, "Store", MemoryStore)
     monkeypatch.setattr(solar_key_store, "Store", MemoryStore)
-    sensor = OigCloudSolarForecastSensor(Coordinator(), "solar_forecast", Entry(), {})
+    sensor = OigCloudSolarForecastSensor(
+        Coordinator(), "solar_forecast", Entry(values), {}
+    )
     sensor.hass = SimpleNamespace(data={})
     sensor._min_api_interval = 0
     sensor.async_write_ha_state = lambda: None
@@ -115,11 +117,17 @@ def make_sensor(monkeypatch):
     return sensor
 
 
-async def classified_candidate(sensor, value: dict):
-    async def fetch(**_kwargs):
+async def classified_candidate(monkeypatch, sensor, value: dict):
+    async def fetch_forecast_solar(**_kwargs):
         return SolarFetchResult.accept(value)
 
-    sensor.async_fetch_forecast_data = fetch
+    async def fetch_solcast(*_args, **_kwargs):
+        return SolarFetchResult.accept(value)
+
+    monkeypatch.setattr(
+        sensor, "_fetch_forecast_solar_strings", fetch_forecast_solar
+    )
+    monkeypatch.setattr(sensor, "_fetch_solcast_data", fetch_solcast)
     return await sensor._async_execute_provider_attempt(
         occurrence_id="scheduled:current",
         occurrence_generation=7,
@@ -137,7 +145,7 @@ async def test_accepted_candidate_carries_immutable_pre_io_context(monkeypatch):
         await release.wait()
         return SolarFetchResult.accept(candidate(1.0))
 
-    sensor.async_fetch_forecast_data = fetch
+    monkeypatch.setattr(sensor, "_fetch_forecast_solar_strings", fetch)
     task = asyncio.create_task(
         sensor._async_execute_provider_attempt(
             occurrence_id="scheduled:current",
@@ -167,8 +175,8 @@ async def test_newer_candidate_commits_before_older_candidate_without_regression
     monkeypatch,
 ):
     sensor = make_sensor(monkeypatch)
-    older = await classified_candidate(sensor, candidate(1.0))
-    newer = await classified_candidate(sensor, candidate(9.0))
+    older = await classified_candidate(monkeypatch, sensor, candidate(1.0))
+    newer = await classified_candidate(monkeypatch, sensor, candidate(9.0))
 
     assert (
         newer.candidate.context.request_sequence
@@ -187,7 +195,7 @@ async def test_newer_candidate_commits_before_older_candidate_without_regression
 @pytest.mark.asyncio
 async def test_current_candidate_context_commits_as_negative_control(monkeypatch):
     sensor = make_sensor(monkeypatch)
-    result = await classified_candidate(sensor, candidate(4.0))
+    result = await classified_candidate(monkeypatch, sensor, candidate(4.0))
 
     assert await sensor.async_commit_candidate(result.candidate) is True
     persisted = MemoryStore.bucket[sensor._storage_key]
@@ -215,7 +223,7 @@ async def test_candidate_captured_before_io_cannot_commit_after_context_change(
     monkeypatch, invalidate
 ):
     sensor = make_sensor(monkeypatch)
-    result = await classified_candidate(sensor, candidate(3.0))
+    result = await classified_candidate(monkeypatch, sensor, candidate(3.0))
 
     if invalidate == "provider":
         sensor._config_entry.options["solar_forecast_provider"] = "solcast"
@@ -247,3 +255,56 @@ async def test_candidate_captured_before_io_cannot_commit_after_context_change(
     assert all("forecast_data" not in saved for saved in MemoryStore.saves)
     assert sensor._last_forecast_data is None
     assert sensor.coordinator.solar_forecast_data is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["forecast_solar", "solcast"])
+async def test_real_provider_path_uses_full_standard_wizard_context(
+    monkeypatch, provider
+):
+    values = options(solar_forecast_provider=provider)
+    if provider == "solcast":
+        values.update(
+            {
+                "solcast_api_key": "private-solcast-key",
+                "solcast_site_id": "private-site-id",
+            }
+        )
+    sensor = make_sensor(monkeypatch, values)
+    result = await classified_candidate(
+        monkeypatch,
+        sensor,
+        candidate(5.0, provider=provider),
+    )
+
+    assert result.accepted is True
+    assert result.candidate.context.provider == provider
+    assert "private-solcast-key" not in repr(result.candidate.context)
+    assert "private-site-id" not in repr(result.candidate.context)
+    assert await sensor.async_commit_candidate(result.candidate) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["forecast_solar", "solcast"])
+async def test_disabled_string_defaults_remain_provenance_relevant(
+    monkeypatch, provider
+):
+    values = options(solar_forecast_provider=provider)
+    if provider == "solcast":
+        values.update(
+            {
+                "solcast_api_key": "private-solcast-key",
+                "solcast_site_id": "private-site-id",
+            }
+        )
+    sensor = make_sensor(monkeypatch, values)
+    result = await classified_candidate(
+        monkeypatch,
+        sensor,
+        candidate(6.0, provider=provider),
+    )
+
+    sensor._config_entry.options["solar_forecast_string2_kwp"] = 3.0
+
+    assert await sensor.async_commit_candidate(result.candidate) is False
+    assert MemoryStore.saves == []

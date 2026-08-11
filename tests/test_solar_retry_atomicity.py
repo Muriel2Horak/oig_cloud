@@ -19,7 +19,11 @@ from custom_components.oig_cloud.forecast.cache_contract import (
     build_retry_state,
     cache_provenance_matches,
 )
-from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
+from custom_components.oig_cloud.forecast.refresh_result import (
+    SolarCandidate,
+    SolarCandidateContext,
+    SolarFetchResult,
+)
 
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
@@ -83,6 +87,9 @@ class Entry:
 class MemoryStore:
     bucket = {}
     saves = []
+    block_next_cache_save = False
+    blocked_save_started = None
+    blocked_save_release = None
 
     def __init__(self, _hass, version, key, **_kwargs):
         self.version = version
@@ -94,6 +101,13 @@ class MemoryStore:
     async def async_save(self, value):
         snapshot = copy.deepcopy(value)
         self.saves.append((self.key, snapshot))
+        if (
+            self.key == "oig_solar_forecast_entry-retry-atomic"
+            and self.block_next_cache_save
+        ):
+            self.block_next_cache_save = False
+            self.blocked_save_started.set()
+            await self.blocked_save_release.wait()
         self.bucket[self.key] = snapshot
 
     async def async_remove(self):
@@ -104,6 +118,9 @@ def make_sensor(monkeypatch, values=None, *, reset=False):
     if reset:
         MemoryStore.bucket = {}
         MemoryStore.saves = []
+        MemoryStore.block_next_cache_save = False
+        MemoryStore.blocked_save_started = None
+        MemoryStore.blocked_save_release = None
     monkeypatch.setattr(module, "Store", MemoryStore)
     monkeypatch.setattr(solar_key_store, "Store", MemoryStore)
     sensor = OigCloudSolarForecastSensor(
@@ -133,6 +150,38 @@ def retry_state(provenance, *, completed=0):
         code="timeout",
         provenance=provenance,
     )
+
+
+async def request_context(
+    sensor,
+    *,
+    request_id: str,
+    request_sequence: int,
+    occurrence_id: str,
+) -> SolarCandidateContext:
+    return await sensor._async_capture_candidate_context(
+        request_id=request_id,
+        occurrence_id=occurrence_id,
+        occurrence_generation=sensor._occurrence_generation,
+        lifecycle_generation=sensor._lifecycle_generation,
+        request_sequence=request_sequence,
+    )
+
+
+async def seed_current_cache(sensor, *, with_retry=False):
+    provenance = build_cache_provenance(
+        "entry-retry-atomic", sensor._config_entry.options, 0
+    )
+    state = retry_state(provenance) if with_retry else None
+    MemoryStore.bucket[sensor._storage_key] = build_cache_envelope(
+        provenance=provenance,
+        forecast_data=candidate(1.0),
+        last_accepted_time=NOW,
+        saved_at=NOW,
+        retry_state=state,
+    )
+    await sensor._load_persistent_data()
+    return provenance, state
 
 
 @pytest.mark.asyncio
@@ -321,3 +370,211 @@ async def test_restart_cannot_replay_retry_after_durable_success_before_publish(
 
     publish_release.set()
     await attempt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["set", "clear"])
+async def test_retry_write_and_accepted_commit_share_one_cache_transaction(
+    monkeypatch, operation
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, stored_retry = await seed_current_cache(
+        sensor, with_retry=operation == "clear"
+    )
+    occurrence_id = retry_state(provenance)["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    old_update = retry_state(provenance) if operation == "set" else None
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+
+    old_write = asyncio.create_task(sensor._async_persist_retry_state(old_update))
+    await MemoryStore.blocked_save_started.wait()
+    newer_context = await request_context(
+        sensor,
+        request_id="request:newer",
+        request_sequence=2,
+        occurrence_id=occurrence_id,
+    )
+    newer_commit = asyncio.create_task(
+        sensor.async_commit_candidate(SolarCandidate(candidate(9.0), newer_context))
+    )
+    await asyncio.sleep(0)
+
+    try:
+        assert newer_commit.done() is False
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(old_write, newer_commit, return_exceptions=True)
+
+    assert newer_commit.result() is True
+    assert MemoryStore.bucket[sensor._storage_key]["forecast_data"][
+        "total_today_kwh"
+    ] == 9.0
+    assert "retry_state" not in MemoryStore.bucket[sensor._storage_key]
+    if operation == "clear":
+        assert stored_retry is not None
+
+
+@pytest.mark.asyncio
+async def test_obsolete_retry_source_cannot_overwrite_newer_accepted_snapshot(
+    monkeypatch,
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    state = retry_state(provenance)
+    occurrence_id = state["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    old_context = await request_context(
+        sensor,
+        request_id="request:old-retry",
+        request_sequence=1,
+        occurrence_id=occurrence_id,
+    )
+    newer_context = await request_context(
+        sensor,
+        request_id="request:new-snapshot",
+        request_sequence=2,
+        occurrence_id=occurrence_id,
+    )
+
+    assert (
+        await sensor.async_commit_candidate(
+            SolarCandidate(candidate(10.0), newer_context)
+        )
+        is True
+    )
+    saves_before = len(MemoryStore.saves)
+
+    assert (
+        await sensor._async_persist_retry_state(
+            state,
+            source_context=old_context,
+        )
+        is False
+    )
+    assert len(MemoryStore.saves) == saves_before
+    assert MemoryStore.bucket[sensor._storage_key]["forecast_data"][
+        "total_today_kwh"
+    ] == 10.0
+    assert "retry_state" not in MemoryStore.bucket[sensor._storage_key]
+
+
+@pytest.mark.asyncio
+async def test_older_retry_sequence_cannot_replace_newer_retry_recovery(monkeypatch):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    old_state = retry_state(provenance)
+    newer_state = {**old_state, "code": "rate_limited"}
+    occurrence_id = old_state["occurrence_id"]
+    sensor._current_occurrence_id = occurrence_id
+    sensor._occurrence_generation = 1
+    old_context = await request_context(
+        sensor,
+        request_id="request:retry-old",
+        request_sequence=1,
+        occurrence_id=occurrence_id,
+    )
+    newer_context = await request_context(
+        sensor,
+        request_id="request:retry-new",
+        request_sequence=2,
+        occurrence_id=occurrence_id,
+    )
+
+    assert (
+        await sensor._async_persist_retry_state(
+            newer_state,
+            source_context=newer_context,
+        )
+        is True
+    )
+    saves_before = len(MemoryStore.saves)
+
+    assert (
+        await sensor._async_persist_retry_state(
+            old_state,
+            source_context=old_context,
+        )
+        is False
+    )
+    assert len(MemoryStore.saves) == saves_before
+    assert MemoryStore.bucket[sensor._storage_key]["retry_state"] == newer_state
+
+
+@pytest.mark.asyncio
+async def test_retry_store_write_is_shielded_and_reconciles_caller_cancellation(
+    monkeypatch,
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    provenance, _ = await seed_current_cache(sensor)
+    state = retry_state(provenance)
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    caller = asyncio.create_task(sensor._async_persist_retry_state(state))
+    await MemoryStore.blocked_save_started.wait()
+
+    caller.cancel()
+    await asyncio.sleep(0)
+
+    try:
+        assert caller.done() is False
+        MemoryStore.blocked_save_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(caller, return_exceptions=True)
+
+    assert MemoryStore.bucket[sensor._storage_key]["retry_state"] == state
+    assert sensor._durable_write_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_unload_during_retry_save_preserves_one_durable_recovery(
+    monkeypatch,
+):
+    sensor = make_sensor(monkeypatch, reset=True)
+    await seed_current_cache(sensor)
+    MemoryStore.block_next_cache_save = True
+    MemoryStore.blocked_save_started = asyncio.Event()
+    MemoryStore.blocked_save_release = asyncio.Event()
+    writes = []
+
+    async def retry_fetch(**_kwargs):
+        return SolarFetchResult.retry("timeout")
+
+    sensor.async_fetch_forecast_data = retry_fetch
+    sensor.async_write_ha_state = lambda: writes.append("state")
+
+    async def broadcast():
+        writes.append("broadcast")
+
+    sensor._broadcast_forecast_data = broadcast
+    refresh = asyncio.create_task(sensor._wall_clock_update(SCHEDULED))
+    await MemoryStore.blocked_save_started.wait()
+    unload = asyncio.create_task(sensor.async_will_remove_from_hass())
+    await asyncio.sleep(0)
+
+    try:
+        assert unload.done() is False
+        MemoryStore.blocked_save_release.set()
+        await unload
+    finally:
+        MemoryStore.blocked_save_release.set()
+        await asyncio.gather(refresh, unload, return_exceptions=True)
+
+    stored = MemoryStore.bucket[sensor._storage_key]
+    assert stored["retry_state"]["code"] == "timeout"
+    retry_saves = [
+        item
+        for key, item in MemoryStore.saves
+        if key == sensor._storage_key and "retry_state" in item
+    ]
+    assert len(retry_saves) == 1
+    assert writes == []
+    assert sensor._active_refresh_tasks == set()
+    assert sensor._durable_write_tasks == set()

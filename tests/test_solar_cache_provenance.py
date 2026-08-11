@@ -19,6 +19,7 @@ from custom_components.oig_cloud.forecast.cache_contract import (
     cache_provenance_matches,
     validate_retry_state,
 )
+from tests.fixtures.previous_solar_cache_reader import PreviousSolarCacheReader
 
 
 NOW = datetime(2026, 8, 11, 10, 42, tzinfo=timezone(timedelta(hours=2)))
@@ -356,6 +357,48 @@ async def test_legacy_box_cache_is_read_once_as_stale_without_rewrite(monkeypatc
     assert Store.saves == []
     assert Store.bucket["oig_solar_forecast_123456"] == legacy
     assert "oig_solar_forecast_entry-a" not in Store.bucket
+
+
+@pytest.mark.asyncio
+async def test_previous_release_reader_ignores_schema2_and_keeps_legacy_readable():
+    legacy_key = "oig_solar_forecast_123456"  # gitleaks:allow -- public fixture ID
+    schema2_key = "oig_solar_forecast_entry-a"
+    legacy = {
+        "last_api_call": NOW.timestamp(),
+        "forecast_data": candidate(),
+        "saved_at": NOW.isoformat(),
+    }
+    provenance = build_cache_provenance("entry-a", options(), 0)
+    schema2 = build_cache_envelope(
+        provenance=provenance,
+        forecast_data=candidate(),
+        last_accepted_time=NOW,
+        saved_at=NOW,
+    )
+    artifacts = {
+        legacy_key: copy.deepcopy(legacy),
+        schema2_key: copy.deepcopy(schema2),
+    }
+    reads = []
+
+    class PreviousStore:
+        def __init__(self, _hass, version, key, **_kwargs):
+            self.version = version
+            self.key = key
+
+        async def async_load(self):
+            reads.append((self.version, self.key))
+            return copy.deepcopy(artifacts.get(self.key))
+
+    reader = PreviousSolarCacheReader(object(), "123456", PreviousStore)
+    before = copy.deepcopy(artifacts)
+
+    await reader.async_load()
+
+    assert reads == [(1, legacy_key)]
+    assert reader.last_api_call == NOW.timestamp()
+    assert reader.forecast_data == legacy["forecast_data"]
+    assert artifacts == before
 
 
 @pytest.mark.asyncio

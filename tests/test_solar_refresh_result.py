@@ -6,6 +6,7 @@ import aiohttp
 import pytest
 
 from custom_components.oig_cloud.forecast.refresh_result import (
+    SolarCandidateContext,
     SolarFetchResult,
     classify_http_status,
     classify_provider_exception,
@@ -38,7 +39,33 @@ def test_result_factories_expose_only_classified_outcome(
     assert result.accepted is accepted
     assert result.retryable is retryable
     assert (result.candidate is not None) is has_candidate
-    assert set(vars(result)) == {"accepted", "retryable", "code", "candidate"}
+    assert set(vars(result)) == {
+        "accepted",
+        "retryable",
+        "code",
+        "candidate",
+        "context",
+    }
+
+
+def test_retryable_result_retains_immutable_request_context():
+    context = SolarCandidateContext(
+        entry_id="entry-a",
+        provider="forecast_solar",
+        config_fingerprint="a" * 64,
+        credential_revision=3,
+        request_id="request:7",
+        occurrence_id="occurrence-a",
+        occurrence_generation=4,
+        lifecycle_generation=2,
+        request_sequence=7,
+    )
+
+    result = SolarFetchResult.retry("timeout").with_context(context)
+
+    assert result.context is context
+    assert result.candidate is None
+    assert "secret" not in repr(result)
 
 
 @pytest.mark.parametrize(

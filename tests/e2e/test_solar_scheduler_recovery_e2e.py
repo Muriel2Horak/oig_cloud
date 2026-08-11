@@ -245,19 +245,48 @@ async def test_restart_after_pre_unload_durable_save_publishes_snapshot_once(
     first, _timers = make_sensor(
         monkeypatch, [lambda: SolarFetchResult.accept(forecast_candidate())]
     )
-    publish_entered = asyncio.Event()
-    publish_release = asyncio.Event()
+    pre_publish_entered = asyncio.Event()
+    pre_publish_release = asyncio.Event()
+    context_checks = 0
+    first_writes = []
+    original_context_check = first._async_candidate_context_is_current
 
-    async def blocked_publish():
-        publish_entered.set()
-        await publish_release.wait()
+    async def block_after_durable_save(context):
+        nonlocal context_checks
+        context_checks += 1
+        current = await original_context_check(context)
+        if context_checks == 2:
+            pre_publish_entered.set()
+            await pre_publish_release.wait()
+        return current
 
-    first._broadcast_forecast_data = blocked_publish
+    first._async_candidate_context_is_current = block_after_durable_save
+    first.async_write_ha_state = lambda: first_writes.append("state")
+
+    async def record_broadcast():
+        first_writes.append("broadcast")
+
+    first._broadcast_forecast_data = record_broadcast
     refresh = asyncio.create_task(first.async_manual_update())
-    await publish_entered.wait()
+    await pre_publish_entered.wait()
+    try:
+        assert MemoryStore.bucket[first._storage_key]["forecast_data"][
+            "total_today_kwh"
+        ] == 2.0
+        assert first._last_forecast_data is None
+        assert first._durable_cache_envelope is None
+        assert first.coordinator.solar_forecast_data is None
+        assert first_writes == []
+    except BaseException:
+        pre_publish_release.set()
+        refresh.cancel()
+        await asyncio.gather(refresh, return_exceptions=True)
+        raise
+
     unload = asyncio.create_task(first.async_will_remove_from_hass())
     await unload
     assert refresh.cancelled()
+    assert first_writes == []
 
     class CountingCoordinator(Coordinator):
         def __init__(self):
@@ -284,7 +313,8 @@ async def test_restart_after_pre_unload_durable_save_publishes_snapshot_once(
     assert len(coordinator.published) == 1
     assert coordinator.published[0]["total_today_kwh"] == 2.0
     assert restarted._active_refresh_tasks == set()
-    publish_release.set()
+    assert first._durable_write_tasks == set()
+    pre_publish_release.set()
 
 
 @pytest.mark.asyncio

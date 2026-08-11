@@ -142,7 +142,7 @@ async def test_periodic_update_modes(monkeypatch):
         called["count"] += 1
         return SolarFetchResult.terminal("auth")
 
-    async def _persist(_state):
+    async def _persist(_state, **_kwargs):
         return True
 
     sensor.async_fetch_forecast_data = _fetch
