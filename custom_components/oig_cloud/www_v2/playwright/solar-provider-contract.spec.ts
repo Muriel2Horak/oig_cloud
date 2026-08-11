@@ -139,17 +139,15 @@ async function installSolarFake(page: Page) {
         persisted.moduleConfig.solar.solar_forecast_provider,
       );
       delete patch.provider;
-      const effective: Record<string, unknown> = {
+      const merged: Record<string, unknown> = {
         ...persisted.moduleConfig.solar,
         ...patch,
         solar_forecast_provider: provider,
       };
-      for (const key of Object.keys(effective)) {
-        if (key.endsWith('_set')) delete effective[key];
-      }
-      for (const key of ['solar_forecast_api_key', 'solcast_api_key', 'solcast_site_id']) {
-        delete effective[key];
-      }
+      const effective: Record<string, unknown> = {
+        solar_forecast_provider: provider,
+        solar_forecast_mode: merged.solar_forecast_mode,
+      };
       const privateFields = provider === 'solcast'
         ? ['solcast_api_key', 'solcast_site_id']
         : ['solar_forecast_api_key'];
@@ -158,6 +156,24 @@ async function installSolarFake(page: Page) {
         const retained = persisted.privateCredentials[provider]?.[key];
         if (typeof supplied === 'string' && supplied) effective[key] = supplied;
         else if (retained) effective[key] = retained;
+      }
+      if (provider === 'forecast_solar') {
+        effective.solar_forecast_latitude = merged.solar_forecast_latitude;
+        effective.solar_forecast_longitude = merged.solar_forecast_longitude;
+      }
+      for (const number of [1, 2]) {
+        const enabledKey = `solar_forecast_string${number}_enabled`;
+        const enabled = merged[enabledKey];
+        effective[enabledKey] = enabled;
+        if (enabled !== true) continue;
+        effective[`solar_forecast_string${number}_kwp`] =
+          merged[`solar_forecast_string${number}_kwp`];
+        if (provider === 'forecast_solar') {
+          effective[`solar_forecast_string${number}_declination`] =
+            merged[`solar_forecast_string${number}_declination`];
+          effective[`solar_forecast_string${number}_azimuth`] =
+            merged[`solar_forecast_string${number}_azimuth`];
+        }
       }
       return effective;
     };
@@ -348,6 +364,62 @@ test('Solcast hides local geometry, retains kWp, and forwards proof only on save
   await expect(fieldRow(finalWizard, 'Solcast API klíč').getByTestId('secret-badge')).toHaveCount(0);
   await expect(fieldRow(finalWizard, 'Solcast API klíč').locator('input')).toHaveValue('');
   await expect(fieldRow(finalWizard, 'Solcast site ID').locator('input')).toHaveValue('');
+});
+
+test('fake proof DTO applies production Solcast discrimination and disabled-string omission', async ({ page }) => {
+  await installSolarFake(page);
+  await page.goto('./?sn=browser-e2e');
+
+  const result = await page.evaluate(async () => {
+    const hass = (window as any).hass;
+    const tested = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/solar_test', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'solcast',
+        solar_forecast_mode: 'daily',
+        solcast_api_key: 'solcast-proof-key',
+        solcast_site_id: 'roof-proof-site',
+        solar_forecast_latitude: 1,
+        solar_forecast_longitude: 2,
+        solar_forecast_string1_enabled: true,
+        solar_forecast_string1_kwp: 5.5,
+        solar_forecast_string1_declination: 3,
+        solar_forecast_string1_azimuth: 4,
+        solar_forecast_string2_enabled: false,
+        solar_forecast_string2_kwp: 49,
+        solar_forecast_string2_declination: 89,
+        solar_forecast_string2_azimuth: 359,
+      }),
+    });
+    const { proof } = await tested.json();
+    const saved = await hass.fetchWithAuth('/api/oig_cloud/browser-e2e/module_config', {
+      method: 'POST',
+      body: JSON.stringify({
+        section: 'solar',
+        values: {
+          solar_forecast_provider: 'solcast',
+          solar_forecast_mode: 'daily',
+          solcast_api_key: 'solcast-proof-key',
+          solcast_site_id: 'roof-proof-site',
+          solar_forecast_latitude: 80,
+          solar_forecast_longitude: 170,
+          solar_forecast_string1_enabled: true,
+          solar_forecast_string1_kwp: 5.5,
+          solar_forecast_string1_declination: 70,
+          solar_forecast_string1_azimuth: 270,
+          solar_forecast_string2_enabled: false,
+          solar_forecast_string2_kwp: 0.1,
+          solar_forecast_string2_declination: 0,
+          solar_forecast_string2_azimuth: 0,
+        },
+        solar_test_proof: proof,
+      }),
+    });
+    return { status: saved.status, body: await saved.json() };
+  });
+
+  expect(result.status).toBe(200);
+  expect(result.body.verified).toBe(true);
 });
 
 test('fake backend binds a real proof to the complete effective DTO, including persisted fields omitted from the draft', async ({ page }) => {

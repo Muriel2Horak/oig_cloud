@@ -968,6 +968,7 @@ export class OigOnboardingWizard extends LitElement {
   @state() private solarTestResult: SolarTestResult | null = null;
   @state() private solarTestError: { code: string; message: string } | null = null;
   private solarTestProof: string | null = null;
+  private solarTestEpoch = 0;
   /**
    * True only right after a successful test for the values currently in the
    * draft (Q2) — Task 8's `goNext` reads this to decide whether the solar
@@ -2117,6 +2118,7 @@ export class OigOnboardingWizard extends LitElement {
       const seeded = this.originalValues[f.key] ?? spec?.default;
       if (seeded !== undefined) draft[f.key] = seeded;
     }
+    this.clearSolarCandidateState();
     this.solarDraft = draft;
   }
 
@@ -2238,6 +2240,8 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   private clearSolarCandidateState(): void {
+    this.solarTestEpoch += 1;
+    this.solarTestLoading = false;
     this.solarTestProof = null;
     this.solarTestResult = null;
     this.solarTestError = null;
@@ -2489,17 +2493,24 @@ export class OigOnboardingWizard extends LitElement {
   /** [Otestovat] — side-effect-free probe of the unsaved draft values (Task 6). */
   private async runSolarTest(): Promise<void> {
     if (!this.inverterSn || this.solarTestLoading) return;
+    const requestEpoch = ++this.solarTestEpoch;
     this.solarTestLoading = true;
     this.solarTestResult = null;
     this.solarTestError = null;
     this.solarTestProof = null;
 
-    const result = await haClient.fetchOIGAPITyped<SolarTestResult>(
-      `/${this.inverterSn}/solar_test`,
-      { method: 'POST', body: JSON.stringify(this.buildSolarTestBody()) },
-    );
-
-    this.solarTestLoading = false;
+    let result;
+    try {
+      result = await haClient.fetchOIGAPITyped<SolarTestResult>(
+        `/${this.inverterSn}/solar_test`,
+        { method: 'POST', body: JSON.stringify(this.buildSolarTestBody()) },
+      );
+    } finally {
+      if (requestEpoch === this.solarTestEpoch) {
+        this.solarTestLoading = false;
+      }
+    }
+    if (requestEpoch !== this.solarTestEpoch) return;
     if (result.ok) {
       this.solarTestResult = result.data;
       this.solarTestProof = result.data.proof ?? null;
@@ -3179,8 +3190,7 @@ export class OigOnboardingWizard extends LitElement {
                     ).add(f.key);
                   }
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
-                  this.solarTestMatchesDraft = false;
-                  this.solarTestProof = null;
+                  this.clearSolarCandidateState();
                 },
                 entityCatalog: [],
               });
@@ -3220,8 +3230,7 @@ export class OigOnboardingWizard extends LitElement {
                       solar_forecast_latitude: this.hass?.config?.latitude,
                       solar_forecast_longitude: this.hass?.config?.longitude,
                     };
-                    this.solarTestMatchesDraft = false;
-                    this.solarTestProof = null;
+                    this.clearSolarCandidateState();
                   }}
                 >📍 Převzít z Home Assistanta</button>`,
               ];

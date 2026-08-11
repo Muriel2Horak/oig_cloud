@@ -376,6 +376,170 @@ describe('quick-save bar (fe/fix defect #2)', () => {
     expect(w.legacySolarFields).toEqual({});
   });
 
+  it.each(['discard', 'reopen', 'bootstrap'] as const)(
+    '%s invalidates an unresolved solar success before it can repopulate candidate state',
+    async (action) => {
+      fetchOIGAPI.mockImplementation(moduleConfigFetch(SOLAR_RETRY_DOC));
+      loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+      let resolveOld!: (value: unknown) => void;
+      fetchOIGAPITyped.mockReturnValueOnce(new Promise((resolve) => {
+        resolveOld = resolve;
+      }));
+      const wizard = await openWizard();
+      const w = internals(wizard);
+      const oldRequest = w.runSolarTest();
+      expect(w.solarTestLoading).toBe(true);
+
+      if (action === 'discard') {
+        w.resetAllDraftsToOriginal();
+      } else if (action === 'reopen') {
+        w.open = false;
+        await settle(wizard);
+        w.open = true;
+        await settle(wizard);
+      } else {
+        w.startBootstrap();
+        await settle(wizard);
+      }
+
+      resolveOld({
+        ok: true,
+        status: 200,
+        data: {
+          tomorrow_total_kwh: 99,
+          forecast_covers_tomorrow: true,
+          proof: 'old-proof',
+        },
+      });
+      await oldRequest;
+      await settle(wizard);
+
+      expect(w.solarTestLoading).toBe(false);
+      expect(w.solarTestProof).toBeNull();
+      expect(w.solarTestResult).toBeNull();
+      expect(w.solarTestError).toBeNull();
+      expect(w.solarTestMatchesDraft).toBe(false);
+    },
+  );
+
+  it('bootstrap invalidates an unresolved solar failure including its finally path', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(SOLAR_RETRY_DOC));
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    let resolveOld!: (value: unknown) => void;
+    fetchOIGAPITyped.mockReturnValueOnce(new Promise((resolve) => {
+      resolveOld = resolve;
+    }));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    const oldRequest = w.runSolarTest();
+
+    w.startBootstrap();
+    await settle(wizard);
+    resolveOld({
+      ok: false,
+      status: 503,
+      code: 'provider_unreachable',
+      error: 'old provider failure',
+    });
+    await oldRequest;
+    await settle(wizard);
+
+    expect(w.solarTestLoading).toBe(false);
+    expect(w.solarTestProof).toBeNull();
+    expect(w.solarTestResult).toBeNull();
+    expect(w.solarTestError).toBeNull();
+    expect(w.solarTestMatchesDraft).toBe(false);
+  });
+
+  it('late module config reseed invalidates an unresolved test for the old draft', async () => {
+    let resolveConfig!: (value: unknown) => void;
+    fetchOIGAPI.mockImplementation((path) => {
+      if (path.includes('/module_config')) {
+        return new Promise((resolve) => {
+          resolveConfig = resolve;
+        });
+      }
+      return Promise.resolve(null);
+    });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    let resolveTest!: (value: unknown) => void;
+    fetchOIGAPITyped.mockReturnValueOnce(new Promise((resolve) => {
+      resolveTest = resolve;
+    }));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    expect(w.solarDraft.solar_forecast_string1_kwp).toBeUndefined();
+
+    const oldRequest = w.runSolarTest();
+    resolveConfig(SOLAR_RETRY_DOC);
+    await settle(wizard);
+    expect(w.solarDraft.solar_forecast_string1_kwp).toBe(5.5);
+
+    resolveTest({
+      ok: true,
+      status: 200,
+      data: {
+        tomorrow_total_kwh: 99,
+        forecast_covers_tomorrow: true,
+        proof: 'pre-reseed-proof',
+      },
+    });
+    await oldRequest;
+    await settle(wizard);
+
+    expect(w.solarTestLoading).toBe(false);
+    expect(w.solarTestProof).toBeNull();
+    expect(w.solarTestResult).toBeNull();
+    expect(w.solarTestError).toBeNull();
+    expect(w.solarTestMatchesDraft).toBe(false);
+  });
+
+  it('a new solar test after discard wins over the still unresolved old request', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(SOLAR_RETRY_DOC));
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    let resolveOld!: (value: unknown) => void;
+    fetchOIGAPITyped
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveOld = resolve;
+      }))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        data: {
+          tomorrow_total_kwh: 7.5,
+          forecast_covers_tomorrow: true,
+          proof: 'fresh-proof',
+        },
+      });
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    const oldRequest = w.runSolarTest();
+    w.resetAllDraftsToOriginal();
+
+    await w.runSolarTest();
+    expect(w.solarTestProof).toBe('fresh-proof');
+    expect(w.solarTestResult?.tomorrow_total_kwh).toBe(7.5);
+    expect(w.solarTestLoading).toBe(false);
+
+    resolveOld({
+      ok: true,
+      status: 200,
+      data: {
+        tomorrow_total_kwh: 99,
+        forecast_covers_tomorrow: true,
+        proof: 'old-proof',
+      },
+    });
+    await oldRequest;
+    await settle(wizard);
+
+    expect(w.solarTestProof).toBe('fresh-proof');
+    expect(w.solarTestResult?.tomorrow_total_kwh).toBe(7.5);
+    expect(w.solarTestError).toBeNull();
+    expect(w.solarTestMatchesDraft).toBe(true);
+    expect(w.solarTestLoading).toBe(false);
+  });
+
   it('Zahodit cancel leaves the draft untouched and dismisses the confirm dialog', async () => {
     fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
     const wizard = await openWizard();

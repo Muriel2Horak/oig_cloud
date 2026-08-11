@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -281,6 +282,122 @@ async def test_setup_stops_when_initial_credentials_claim_is_unusable(monkeypatc
 
     assert result is False
     assert continued is False
+
+
+@pytest.mark.asyncio
+async def test_setup_lifecycle_cleans_expired_initial_credentials_without_claim(
+    monkeypatch,
+):
+    """Abandoned pending records must expire even when no new bootstrap occurs."""
+    integration_module = importlib.import_module("custom_components.oig_cloud")
+
+    class _MemStore:
+        bucket = {
+            "oig_cloud.solar_initial_expired-lifecycle-token": {
+                "provider": "forecast_solar",
+                "credentials": {"solar_forecast_api_key": "expired-secret"},
+                "owner_binding": "owner-digest",
+                "expires_at": 1.0,
+            },
+            "oig_cloud.solar_initial_current-lifecycle-token": {
+                "provider": "forecast_solar",
+                "credentials": {"solar_forecast_api_key": "current-secret"},
+                "owner_binding": "owner-digest",
+                "expires_at": 9_999_999_999.0,
+            },
+            "oig_cloud.solar_initial_index": {
+                "expired-lifecycle-token": 1.0,
+                "current-lifecycle-token": 9_999_999_999.0,
+            },
+        }
+
+        def __init__(self, _hass, _version, key, **_kwargs):
+            self.key = key
+
+        async def async_load(self):
+            return self.bucket.get(self.key)
+
+        async def async_save(self, data):
+            self.bucket[self.key] = data
+
+        async def async_remove(self):
+            self.bucket.pop(self.key, None)
+
+    class _LifecycleStop(RuntimeError):
+        pass
+
+    async def _after_cleanup(*_args, **_kwargs):
+        raise _LifecycleStop
+
+    monkeypatch.setattr(solar_key_store_module, "Store", _MemStore)
+    monkeypatch.setattr(
+        integration_module, "_ensure_planner_option_defaults", _after_cleanup
+    )
+    entry = SimpleNamespace(
+        entry_id="cleanup-entry",
+        title="OIG Cloud",
+        data={"username": "owner"},
+        options={"solar_forecast_provider": "forecast_solar"},
+    )
+    hass = SimpleNamespace(data={})
+
+    with pytest.raises(_LifecycleStop):
+        await integration_module.async_setup_entry(hass, entry)
+
+    assert "oig_cloud.solar_initial_expired-lifecycle-token" not in _MemStore.bucket
+    assert "oig_cloud.solar_initial_current-lifecycle-token" in _MemStore.bucket
+    assert _MemStore.bucket["oig_cloud.solar_initial_index"] == {
+        "current-lifecycle-token": 9_999_999_999.0
+    }
+
+
+@pytest.mark.asyncio
+async def test_setup_cleanup_failure_is_safe_and_does_not_block_lifecycle(
+    monkeypatch, caplog
+):
+    """Cleanup failure must omit provider secrets and continue normal setup."""
+    integration_module = importlib.import_module("custom_components.oig_cloud")
+    cleanup_called = False
+    continued = False
+
+    class _LifecycleStop(RuntimeError):
+        pass
+
+    async def _cleanup(_hass):
+        nonlocal cleanup_called
+        cleanup_called = True
+        raise RuntimeError("expired-cleanup-secret-sentinel")
+
+    async def _continued(*_args, **_kwargs):
+        nonlocal continued
+        continued = True
+        raise _LifecycleStop
+
+    monkeypatch.setattr(
+        solar_key_store_module, "async_cleanup_initial_credentials", _cleanup
+    )
+    monkeypatch.setattr(
+        integration_module, "_ensure_planner_option_defaults", _continued
+    )
+    entry = SimpleNamespace(
+        entry_id="cleanup-failure-entry",
+        title="OIG Cloud",
+        data={"username": "owner"},
+        options={"solar_forecast_provider": "forecast_solar"},
+    )
+    hass = SimpleNamespace(data={})
+    caplog.set_level(logging.WARNING, logger="custom_components.oig_cloud")
+
+    with pytest.raises(_LifecycleStop):
+        await integration_module.async_setup_entry(hass, entry)
+
+    assert cleanup_called is True
+    assert continued is True
+    assert "expired-cleanup-secret-sentinel" not in caplog.text
+    assert any(
+        "Solar initial credential cleanup failed" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

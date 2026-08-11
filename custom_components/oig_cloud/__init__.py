@@ -1723,7 +1723,16 @@ async def async_setup_entry(
     from .config.solar_key_store import (
         INITIAL_CREDENTIALS_TOKEN_FIELD,
         async_activate_initial_credentials,
+        async_cleanup_initial_credentials,
     )
+
+    try:
+        await async_cleanup_initial_credentials(hass)
+    except Exception as err:
+        _LOGGER.warning(
+            "Solar initial credential cleanup failed (%s)",
+            type(err).__name__,
+        )
 
     if INITIAL_CREDENTIALS_TOKEN_FIELD in entry.options:
         if not await async_activate_initial_credentials(hass, entry):

@@ -140,6 +140,76 @@
 - Ubuntu PEP 517/wheelhouse and live HP/natural-refresh gates remain quality-plan Task 6/final-release scope.
 - No push, PR, deploy, HP access, or remote mutation occurred.
 
+## Final critic remediation: remaining transaction gaps
+
+### Scope and preserved decisions
+
+- Reviewed base: `ff167429068c4e237d1f94cc7524b2aff7425b7d`.
+- Preserve `ConfigFlow.VERSION == 1`, the no-migration policy, and byte-identical non-negative stored azimuth. Stored `138` remains `138`; only the Forecast.Solar provider boundary sends `-42`.
+- Preserve Solcast-owned geometry and local-only enabled-string kWp metadata.
+- Keep authorization, proof binding, transaction locking, and fail-closed setup behavior strict.
+- Keep the confirmed scheduler startup phase-lock defect in its dedicated next slice.
+
+### Mandatory RED evidence
+
+- Native routing and mixed deltas: `4 failed, 49 deselected`; `section_all` short-circuited mixed saves, newly enabled solar in `section_modules` bypassed the private transaction, and legacy public credentials were neither shared consistently nor stripped after explicit save.
+- Persistent bootstrap rollback: `1 failed, 2 passed`; a persistent public config-entry update fault skipped an independent pending/index compensation and left a non-retryable terminal state.
+- Expired-record lifecycle: `2 failed`; abandoned pending records were not cleaned at a real integration lifecycle boundary and cleanup failure behavior was unproven.
+- Wizard candidate invalidation and Settings i18n: `9 failed, 33 passed`; old success/failure/finally paths repopulated state after reset, a fresh candidate could lose to the old request, and Settings warnings remained hardcoded Czech.
+- Playwright provider fidelity: `1 failed`; fake DTO reconstruction retained provider-irrelevant geometry/disabled strings instead of matching production discrimination.
+- Revision capture guard: `1 failed, 53 deselected`; repeated full-flow preparation refreshed the revision baseline and could bypass the conflict guard.
+- Late module-config reseed: `1 failed, 27 skipped`; an unresolved request installed `pre-reseed-proof` after a new module configuration changed the draft.
+- Setup/import failures were not counted as behavioral RED.
+
+### Implemented remediation
+
+- Route mixed `section_all` and newly enabled solar module saves through `async_commit_solar_configuration`. Commit the non-solar and solar deltas together without boolean short-circuiting, strip legacy public secrets, increment one solar revision, and preserve the shared rollback/reload contract.
+- Reuse the shared selected-provider legacy credential fallback for native validation and capture the OptionsFlow solar revision exactly once, so a later prepare cannot silently move the optimistic-concurrency baseline.
+- Make pending/index/active/public compensation attempts independent. Persist a safe terminal status for an unrecoverable platform update fault without claiming atomic success or logging secret material.
+- Invoke expired pending-record cleanup from config-entry setup. Preserve active/unexpired records; log cleanup failure through exception-class-only diagnostics and continue normal setup when no unusable claim is referenced.
+- Guard every candidate request success, failure, and `finally` path with a monotonically increasing epoch. Discard, reopen, bootstrap, field/GPS edits, and late module-config reseeding invalidate unresolved requests; a new request after reset completes normally.
+- Render Settings invalid/adoption warnings through the CS/EN catalogs with the canonical correction range `0..360`.
+- Make the Playwright fake apply the same provider discrimination as production: Forecast.Solar owns local geometry, enabled-string values are transmitted, Solcast omits local geometry while retaining local kWp metadata, and disabled strings are absent.
+
+### Focused GREEN evidence
+
+- Complete native OptionsFlow: `54 passed`.
+- Plugin-isolated pending key store, including persistent config-entry/pending/index faults and retryable terminal-state assertions: `18 passed`.
+- Config-entry setup/lifecycle cleanup: `23 passed`.
+- Wizard and Settings focused selection after the late-reseed fix: `43 passed`.
+- Late module-config race alone: `1 passed, 27 skipped`.
+- Realistic provider Playwright contract: `5 passed`.
+
+### Full-gate evidence
+
+- Broad affected Python selection: `491 passed`; additional setup/reload selection: `64 passed`.
+- Native provider E2E: `8 passed, 3 skipped`.
+- Full v2 unit suite under `TZ=UTC`: `102 files, 2,053 passed`.
+- Full v2 coverage under `TZ=UTC`: statements/lines `73.24%`, branches `77.76%`, functions `72.47%`.
+- TypeScript typecheck: pass.
+- ESLint: exit `0`, `0` errors and `582` inherited warnings.
+- Flake8 production scope: pass.
+- Canonical Mypy: `Success: no issues found in 200 source files`.
+- Pylint `4.0.7`: exit `0`, score `9.52/10`, `E=0`, `F=0`.
+- Production build and read-only `build:verify`: pass after the final epoch invalidation; tracked distribution rebuilt.
+- Translation JSON parse/copy parity: pass.
+- `git diff --check`: pass.
+- Final pre-commit: two consecutive all-files runs passed all nine hooks without rewrites after adding the repository Python environment to hook `PATH`.
+
+### Security and residual release blockers
+
+- Formal Codex Security diff scan `3dbe08e0-7d28-4fa7-ac16-be5091a79e7e`: complete and sealed, `8/8` deterministic full-file receipts, zero candidates, zero reportable findings.
+- Security report: `/private/var/folders/vj/680smcyn26b89dfkt2hsp96m0000gn/T/codex-security-scans-w4gF6A/wizard-v2-auth-fix/ff167429068c4e237d1f94cc7524b2aff7425b7d_20260811T050838Z_cib8gy65/report.md`.
+- Scan-goal usage: `173,324` tokens over `16m51s`; workbench token counters were unavailable (`scan_thread_unavailable`).
+- Discovery suppressed the late module-config reseed as non-security because server-side DTO/proof binding remains fail closed. The race was nevertheless reproduced and remediated functionally before commit.
+- Post-scan delta review covers the one-line reseed invalidation, its regression test, and regenerated distribution. It adds no source/sink and strictly narrows stale client state.
+- Gitleaks source diff: clean. The full diff has exactly two generated-bundle/map `sourceKey` entropy false positives and no credential finding.
+- Bounded Trivy secret scan over all `14` changed paths: zero findings. Generated distribution contains none of the test proof/error sentinels.
+- Aggregate v2 statement coverage is `73.24%`, below the operator's `>80%` release criterion. No threshold or exclusion was weakened; global coverage uplift remains outside this provider remediation.
+- Confirmed scheduler release blocker remains separate: startup phase `10:42` produces zero accepted wall-clock refresh hits over 96 hours.
+- Previously documented dependency High/Critical findings, exact release Node/npm toolchain, Ubuntu PEP 517/wheelhouse, and live HP/natural-refresh gates remain unresolved external release obligations.
+- No push, PR, deploy, HP access, or remote mutation occurred.
+
 ## Critic remediation follow-up
 
 ### Scope and preserved decisions

@@ -611,8 +611,9 @@ export class OigSettings extends LitElement {
     if (legacy?.invalid_legacy_value) {
       return [
         html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
-          Uložená hodnota ${String(legacy.stored_value)} není platný celočíselný
-          azimut v rozsahu 0° až 360°. Opravte ji před uložením.
+          ${t('onboarding.solar.legacy_invalid', this.uiLang, {
+            stored: String(legacy.stored_value),
+          })}
         </p>`,
         field,
       ];
@@ -620,9 +621,10 @@ export class OigSettings extends LitElement {
     if (!legacy?.requires_adoption) return field;
     return [
       html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
-        Starší hodnota ${String(legacy.stored_value)} je zobrazena jako kompasová
-        hodnota ${String(legacy.display_value)}. Kompas: sever 0°/360°, východ 90°,
-        jih 180°, západ 270° (rozsah 0–360°). Uložením tohoto pole ji převezmete.
+        ${t('onboarding.solar.legacy_adoption', this.uiLang, {
+          stored: String(legacy.stored_value),
+          display: String(legacy.display_value),
+        })}
       </p>`,
       field,
     ];

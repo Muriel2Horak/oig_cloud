@@ -19,7 +19,10 @@ from .solar_key_store import (
     SolarKeyStore,
     async_stage_initial_credentials,
 )
-from .solar_transaction import async_commit_solar_configuration
+from .solar_transaction import (
+    async_commit_solar_configuration,
+    solar_credentials_with_legacy_options,
+)
 from .solar_rules import (
     legacy_azimuth_read_model,
     validate_compass_azimuth,
@@ -3494,10 +3497,26 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
             )
             store = SolarKeyStore(self.hass, entry.entry_id)
-            active = await store.async_get_active(provider)
+            active = solar_credentials_with_legacy_options(
+                provider,
+                entry.options,
+                await store.async_get_active(provider) or {},
+            )
             self._active_solar_provider = provider
-            self._active_solar_credentials = active or {}
-            self._solar_revision_at_open = await store.async_revision()
+            self._active_solar_credentials = active
+            if not hasattr(self, "_solar_revision_at_open"):
+                self._solar_revision_at_open = await store.async_revision()
+
+    async def async_step_wizard_solar(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Prepare private solar state when Modules newly routes into solar."""
+        if (
+            getattr(self, "_section", None) == "modules"
+            and "enable_solar_forecast" in self._newly_enabled_modules()
+        ):
+            await self._async_prepare_solar_section()
+        return await WizardMixin.async_step_wizard_solar(self, user_input)
 
     async def async_step_section_battery(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3748,7 +3767,12 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     if (registry_field := FIELD_REGISTRY.get(key)) is not None
                     and registry_field.section == "solar"
                 }
-                solar_committed = getattr(self, "_section", "unselected") in (None, "solar") and bool(
+                section = getattr(self, "_section", "unselected")
+                solar_route = section in (None, "solar") or (
+                    section == "modules"
+                    and "enable_solar_forecast" in self._newly_enabled_modules()
+                )
+                solar_committed = solar_route and bool(
                     solar_delta or solar_private_updates
                 )
                 if not solar_committed:
@@ -3757,19 +3781,18 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     await async_commit_solar_configuration(
                         self.hass,
                         entry,
-                        solar_delta,
+                        delta,
                         solar_private_updates,
                         proof=None,
                         expected_revision=getattr(
                             self, "_solar_revision_at_open", None
                         ),
                     )
-                remaining_delta = {
-                    key: value for key, value in delta.items() if key not in solar_delta
-                }
-                did_write = solar_committed or merge_entry_options(
+                remaining_delta = {} if solar_committed else delta
+                remaining_written = merge_entry_options(
                     self.hass, entry, remaining_delta, suppress_reload=True
                 )
+                did_write = solar_committed or remaining_written
                 _LOGGER.warning("🔍 async_update_entry completed")
 
                 if did_write:

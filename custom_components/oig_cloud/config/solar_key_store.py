@@ -369,7 +369,14 @@ async def async_activate_initial_credentials(
     if not isinstance(token, str) or not _INITIAL_TOKEN_RE.fullmatch(token):
         return False
     async with _initial_credentials_lock(hass):
-        await _async_cleanup_initial_credentials_locked(hass, now=now)
+        try:
+            await _async_cleanup_initial_credentials_locked(hass, now=now)
+        except Exception as err:
+            _LOGGER.error(
+                "Solar initial credential cleanup unavailable during claim (%s)",
+                type(err).__name__,
+            )
+            return False
         pending = _initial_store(hass, token)
         staged = await pending.async_load()
         if not isinstance(staged, dict):
@@ -414,13 +421,42 @@ async def async_activate_initial_credentials(
             options.pop(INITIAL_CREDENTIALS_TOKEN_FIELD, None)
             hass.config_entries.async_update_entry(entry, options=options)
         except Exception:
+            restored = {
+                "active": False,
+                "options": False,
+                "pending": False,
+                "index": False,
+            }
             try:
                 await store.async_restore_snapshot(snapshot)
-                hass.config_entries.async_update_entry(entry, options=old_options)
-                await pending.async_save(staged)
-                await index_store.async_save(old_index)
+                restored["active"] = True
             except Exception:
-                _LOGGER.exception("Solar initial credential rollback failed")
+                pass
+            try:
+                hass.config_entries.async_update_entry(entry, options=old_options)
+                restored["options"] = True
+            except Exception:
+                pass
+            try:
+                await pending.async_save(staged)
+                restored["pending"] = True
+            except Exception:
+                pass
+            try:
+                await index_store.async_save(old_index)
+                restored["index"] = True
+            except Exception:
+                pass
+            if not all(restored.values()):
+                _LOGGER.error(
+                    "Solar initial credential rollback incomplete for entry %s "
+                    "(active=%s options=%s pending=%s index=%s)",
+                    entry.entry_id,
+                    restored["active"],
+                    restored["options"],
+                    restored["pending"],
+                    restored["index"],
+                )
             return False
     return True
 

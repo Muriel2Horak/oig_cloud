@@ -5,6 +5,7 @@ import type { FieldRegistry } from '@/data/registry-data';
 import type { ModuleConfig } from '@/data/settings-data';
 
 const fetchOIGAPI = vi.hoisted(() => vi.fn());
+const getHassSyncMock = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() =>
   vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>(),
 );
@@ -18,7 +19,7 @@ vi.mock('@/data/ha-client', () => ({
     fetchOIGAPI,
     fetchOIGAPITyped: vi.fn(),
     getHass: vi.fn(async () => ({ auth: { data: { access_token: 'token' } } })),
-    getHassSync: vi.fn(() => null),
+    getHassSync: getHassSyncMock,
     refreshHass: vi.fn().mockResolvedValue(null),
   },
 }));
@@ -40,6 +41,7 @@ vi.mock('@/data/settings-data', async (importOriginal) => {
 import '@/ui/features/settings';
 import { STEP_PRICING_DISTRIBUTION } from '@/ui/features/onboarding/step-pricing-distribution';
 import { fieldsFromRegistry } from '@/data/registry-data';
+import { t } from '@/i18n/onboarding';
 
 const REGISTRY_FIXTURE: FieldRegistry = {
   sections: ['modules', 'battery', 'solar', 'pricing_supplier', 'boiler'],
@@ -230,6 +232,7 @@ async function mountSettings(): Promise<HTMLElement & { updateComplete: Promise<
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getHassSyncMock.mockReturnValue(null);
   loadModuleConfigMock.mockResolvedValue(MODULE_CONFIG);
   loadFieldRegistryMock.mockResolvedValue(REGISTRY_FIXTURE);
 });
@@ -293,6 +296,89 @@ describe('settings registry-driven — showIf field gating', () => {
     expect(warning?.textContent).toContain('-90');
     expect(warning?.textContent).toContain('90');
   });
+
+  it.each([
+    ['cs', 'onboarding.solar.legacy_adoption'],
+    ['en', 'onboarding.solar.legacy_adoption'],
+  ] as const)(
+    'renders the Settings legacy adoption warning from the %s catalog',
+    async (lang, key) => {
+      getHassSyncMock.mockReturnValue({ language: lang });
+      loadFieldRegistryMock.mockResolvedValueOnce(
+        registryWith({
+          solar_forecast_string1_azimuth: {
+            section: 'solar', type: 'int', scope: 'premium',
+            label: 'field.solar_forecast_string1_azimuth.label',
+            hint: 'field.solar_forecast_string1_azimuth.hint',
+            min: 0, max: 360, step: 1,
+          },
+        }),
+      );
+      loadModuleConfigMock.mockResolvedValueOnce({
+        ...moduleConfigWith({ solar: { solar_forecast_string1_azimuth: 90 } }),
+        _meta: {
+          legacy_fields: {
+            solar_forecast_string1_azimuth: {
+              stored_value: -90,
+              display_value: 90,
+              legacy_provider_value: true,
+              requires_adoption: true,
+            },
+          },
+        },
+      });
+
+      const settings = await mountSettings();
+      const warning = settings.shadowRoot!.querySelector(
+        '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+      );
+      expect(warning?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        t(key, lang, { stored: '-90', display: '90' }),
+      );
+    },
+  );
+
+  it.each([
+    ['cs', 'onboarding.solar.legacy_invalid'],
+    ['en', 'onboarding.solar.legacy_invalid'],
+  ] as const)(
+    'renders the Settings corrupt warning from the %s catalog',
+    async (lang, key) => {
+      getHassSyncMock.mockReturnValue({ language: lang });
+      loadFieldRegistryMock.mockResolvedValueOnce(
+        registryWith({
+          solar_forecast_string1_azimuth: {
+            section: 'solar', type: 'int', scope: 'premium',
+            label: 'field.solar_forecast_string1_azimuth.label',
+            hint: 'field.solar_forecast_string1_azimuth.hint',
+            min: 0, max: 360, step: 1,
+          },
+        }),
+      );
+      loadModuleConfigMock.mockResolvedValueOnce({
+        ...moduleConfigWith({ solar: { solar_forecast_string1_azimuth: null } }),
+        _meta: {
+          legacy_fields: {
+            solar_forecast_string1_azimuth: {
+              stored_value: 720,
+              display_value: null,
+              legacy_provider_value: false,
+              requires_adoption: false,
+              invalid_legacy_value: true,
+            },
+          },
+        },
+      });
+
+      const settings = await mountSettings();
+      const warning = settings.shadowRoot!.querySelector(
+        '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+      );
+      expect(warning?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        t(key, lang, { stored: '720' }),
+      );
+    },
+  );
 
   it.each([361, 720, 90.5])(
     'shows a corrupt legacy azimuth warning for %s',

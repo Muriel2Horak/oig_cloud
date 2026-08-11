@@ -16,7 +16,9 @@ class _MemStore:
     bucket: dict[str, Any] = {}
     inits: list[tuple[int, str, bool]] = []
     raise_missing_on_remove = False
+    fail_remove_for: set[str] = set()
     fail_remove_once_for: set[str] = set()
+    fail_save_for: set[str] = set()
     fail_save_once_for: set[str] = set()
     load_delay_for: set[str] = set()
 
@@ -32,12 +34,16 @@ class _MemStore:
         return _MemStore.bucket.get(self.key)
 
     async def async_save(self, data: Any) -> None:
+        if self.key in _MemStore.fail_save_for:
+            raise RuntimeError("injected persistent save failure")
         if self.key in _MemStore.fail_save_once_for:
             _MemStore.fail_save_once_for.remove(self.key)
             raise RuntimeError("injected save failure")
         _MemStore.bucket[self.key] = data
 
     async def async_remove(self) -> None:
+        if self.key in _MemStore.fail_remove_for:
+            raise RuntimeError("injected persistent remove failure")
         if self.key in _MemStore.fail_remove_once_for:
             _MemStore.fail_remove_once_for.remove(self.key)
             raise RuntimeError("injected remove failure")
@@ -77,7 +83,9 @@ def solar_store(monkeypatch: pytest.MonkeyPatch) -> None:
     _MemStore.bucket = {}
     _MemStore.inits = []
     _MemStore.raise_missing_on_remove = False
+    _MemStore.fail_remove_for = set()
     _MemStore.fail_remove_once_for = set()
+    _MemStore.fail_save_for = set()
     _MemStore.fail_save_once_for = set()
     _MemStore.load_delay_for = set()
     monkeypatch.setattr(solar_key_store_module, "Store", _MemStore)
@@ -653,6 +661,146 @@ def test_initial_credentials_activation_and_token_strip_failures_are_retryable(
 
         assert await solar_key_store_module.async_activate_initial_credentials(
             hass, entry, now=lambda: 4_002.0
+        )
+        assert pending_key not in _MemStore.bucket
+        assert solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD not in entry.options
+
+    asyncio.run(_run())
+
+
+def test_initial_credentials_persistent_config_fault_runs_every_compensation() -> None:
+    """One failing compensator must not skip pending/index restoration attempts."""
+
+    async def _run() -> None:
+        hass = SimpleNamespace(data={})
+        token = await solar_key_store_module.async_stage_initial_credentials(
+            hass,
+            "forecast_solar",
+            {"solar_forecast_api_key": "persistent-config-secret"},
+            owner="persistent-owner",
+            now=lambda: 5_000.0,
+        )
+        assert token
+        pending_key = f"oig_cloud.solar_initial_{token}"
+        active_key = "oig_cloud.solar_persistent-entry"
+        entry = SimpleNamespace(
+            entry_id="persistent-entry",
+            data={"username": "persistent-owner"},
+            options={
+                "solar_forecast_provider": "forecast_solar",
+                solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD: token,
+            },
+        )
+
+        class _PersistentlyBrokenConfigEntries:
+            calls = 0
+
+            @classmethod
+            def async_update_entry(
+                cls, _entry: Any, *, options: dict[str, Any]
+            ) -> None:
+                cls.calls += 1
+                # Activation has already mutated the private store. Make its
+                # compensating save independently fail before this platform
+                # boundary reports its own persistent failure.
+                _MemStore.fail_save_for.add(active_key)
+                raise RuntimeError("persistent config-entry failure")
+
+        hass.config_entries = _PersistentlyBrokenConfigEntries()
+
+        result = await solar_key_store_module.async_activate_initial_credentials(
+            hass, entry, now=lambda: 5_001.0
+        )
+
+        assert result is False
+        assert _PersistentlyBrokenConfigEntries.calls == 2
+        assert pending_key in _MemStore.bucket
+        assert _MemStore.bucket["oig_cloud.solar_initial_index"][token] == 5_300.0
+        assert solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD in entry.options
+        # The active Store is the one unrecoverable component while its
+        # platform fault persists; the exact terminal state is still explicit.
+        assert _MemStore.bucket[active_key]["active"] == {
+            "provider": "forecast_solar",
+            "solar_forecast_api_key": "persistent-config-secret",
+        }
+
+        _MemStore.fail_save_for.clear()
+
+        class _RecoveredConfigEntries:
+            @staticmethod
+            def async_update_entry(
+                target: Any, *, options: dict[str, Any]
+            ) -> None:
+                target.options = options
+
+        hass.config_entries = _RecoveredConfigEntries()
+        assert await solar_key_store_module.async_activate_initial_credentials(
+            hass, entry, now=lambda: 5_002.0
+        )
+        assert pending_key not in _MemStore.bucket
+        assert token not in _MemStore.bucket["oig_cloud.solar_initial_index"]
+        assert solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD not in entry.options
+
+    asyncio.run(_run())
+
+
+@pytest.mark.parametrize("fault", ["pending_remove", "index_save"])
+def test_initial_credentials_persistent_private_fault_is_fail_closed_and_retryable(
+    fault: str,
+) -> None:
+    """Each private persistence boundary preserves an operator-retryable claim."""
+
+    async def _run() -> None:
+        hass = SimpleNamespace(data={})
+
+        class _ConfigEntries:
+            @staticmethod
+            def async_update_entry(
+                entry: Any, *, options: dict[str, Any]
+            ) -> None:
+                entry.options = options
+
+        hass.config_entries = _ConfigEntries()
+        token = await solar_key_store_module.async_stage_initial_credentials(
+            hass,
+            "forecast_solar",
+            {"solar_forecast_api_key": f"persistent-{fault}-secret"},
+            owner="private-fault-owner",
+            now=lambda: 6_000.0,
+        )
+        assert token
+        pending_key = f"oig_cloud.solar_initial_{token}"
+        entry = SimpleNamespace(
+            entry_id=f"private-{fault}-entry",
+            data={"username": "private-fault-owner"},
+            options={
+                "solar_forecast_provider": "forecast_solar",
+                solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD: token,
+            },
+        )
+        fault_key = (
+            pending_key
+            if fault == "pending_remove"
+            else "oig_cloud.solar_initial_index"
+        )
+        if fault == "pending_remove":
+            _MemStore.fail_remove_for.add(fault_key)
+        else:
+            _MemStore.fail_save_for.add(fault_key)
+
+        assert not await solar_key_store_module.async_activate_initial_credentials(
+            hass, entry, now=lambda: 6_001.0
+        )
+        assert pending_key in _MemStore.bucket
+        assert solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD in entry.options
+        assert await SolarKeyStore(hass, entry.entry_id).async_get_active(
+            "forecast_solar"
+        ) is None
+
+        _MemStore.fail_remove_for.clear()
+        _MemStore.fail_save_for.clear()
+        assert await solar_key_store_module.async_activate_initial_credentials(
+            hass, entry, now=lambda: 6_002.0
         )
         assert pending_key not in _MemStore.bucket
         assert solar_key_store_module.INITIAL_CREDENTIALS_TOKEN_FIELD not in entry.options
