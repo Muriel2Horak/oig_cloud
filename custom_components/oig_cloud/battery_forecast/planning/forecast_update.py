@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import math
 from datetime import date, datetime
-from pathlib import Path
 from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
@@ -19,6 +17,7 @@ from ...shared.cloud_contract import (
     build_producer_event,
     resolve_telemetry_device_id,
 )
+from ...shared.integration_version import async_load_integration_version
 from ...shared.logging import resolve_no_telemetry
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
@@ -44,8 +43,6 @@ MODE_GUARD_MINUTES = 60
 # when the box's live bat_min sensor (_resolve_proxy_bat_min_pct) is
 # unavailable or implausible. Typically ~20% for CBB 3F Home Plus Premium.
 _HW_MIN_FRACTION = 0.20
-_MANIFEST_PATH = Path(__file__).resolve().parents[2] / "manifest.json"
-_INTEGRATION_VERSION: str | None = None
 
 
 def _build_planner_run_id(sensor: Any, bucket_start: datetime) -> str:
@@ -85,19 +82,6 @@ def _resolve_install_id_hash(sensor: Any) -> str | None:
     if not core_uuid:
         return None
     return hashlib.sha256(core_uuid.encode("utf-8")).hexdigest()
-
-
-def _resolve_integration_version() -> str:
-    global _INTEGRATION_VERSION
-    if _INTEGRATION_VERSION is not None:
-        return _INTEGRATION_VERSION
-
-    try:
-        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-        _INTEGRATION_VERSION = str(manifest.get("version", "unknown"))
-    except Exception:
-        _INTEGRATION_VERSION = "unknown"
-    return _INTEGRATION_VERSION
 
 
 def _classify_planner_event_name(timeline: list[dict[str, Any]], mode_result: Any) -> str:
@@ -253,13 +237,17 @@ async def _emit_planner_summary_event(
         )
         return
 
+    integration_version = await async_load_integration_version(
+        getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    )
+
     try:
         event = build_producer_event(
             event_name=_classify_planner_event_name(timeline, mode_result),
             occurred_at=dt_util.now().isoformat(),
             device_id=device_id,
             install_id_hash=install_id_hash,
-            integration_version=_resolve_integration_version(),
+            integration_version=integration_version,
             run_id=run_id,
             correlation_id=correlation_id,
             diagnostics=_build_planner_summary_diagnostics(sensor, timeline, mode_result),

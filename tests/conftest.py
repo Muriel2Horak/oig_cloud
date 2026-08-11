@@ -73,3 +73,27 @@ def mock_api() -> Mock:
     api._phpsessid = "test-session"
 
     return api
+
+
+@pytest.fixture(autouse=True)
+def _reset_integration_version_cache() -> Any:
+    """Reset the process-global integration-version cache between tests.
+
+    The manifest version resolver caches for the process lifetime (the file is
+    immutable at runtime). Tests that drive the executor path with stub hass
+    objects can otherwise pollute the cache ("unknown") for later tests. This
+    fixture makes each test start uncached without weakening production caching.
+    """
+    try:
+        from custom_components.oig_cloud.shared import integration_version as mod
+
+        mod._CACHED_VERSION = None
+    except Exception:
+        pass
+    yield
+    try:
+        from custom_components.oig_cloud.shared import integration_version as mod
+
+        mod._CACHED_VERSION = None
+    except Exception:
+        pass

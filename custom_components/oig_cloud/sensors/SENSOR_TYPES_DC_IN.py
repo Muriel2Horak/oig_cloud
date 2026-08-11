@@ -11,7 +11,11 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         "unit_of_measurement": UnitOfEnergy.WATT_HOUR,
         "node_id": "dc_in",
         "node_key": "fv_ad",
-        "state_class": SensorStateClass.TOTAL_INCREASING,
+        # Daily accumulator (dc_in.fv_ad = "FVE aktual denni"): resets to 0 at
+        # midnight and may be re-aggregated downward a few Wh during the day.
+        # TOTAL (not TOTAL_INCREASING) so the recorder does not treat a small
+        # dip as a meter reset and the Energy Dashboard sums the day correctly.
+        "state_class": SensorStateClass.TOTAL,
         "sensor_type_category": "data",
         "device_mapping": "main",
         "local_entity_suffix": "tbl_dc_in_fv_ad",

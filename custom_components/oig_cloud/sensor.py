@@ -553,6 +553,14 @@ def _register_ai_eval_sensor(
     return sensors
 
 
+# Sensor types owned by a dedicated entity class (registered via their own
+# ``_register_*`` helper below). They are present in ``SENSOR_TYPES`` so the
+# entity-registry cleanup treats them as expected (never orphaned), but the
+# generic data-sensor factory must NOT also build them -- doing so registers
+# the same unique_id/entity_id twice and Home Assistant drops one entity.
+_DEDICATED_DATA_SENSOR_TYPES: frozenset = frozenset({"ai_eval"})
+
+
 def _create_basic_sensors(coordinator: Any) -> List[Any]:
     basic_sensors: List[Any] = []
     try:
@@ -560,6 +568,7 @@ def _create_basic_sensors(coordinator: Any) -> List[Any]:
             k: v
             for k, v in SENSOR_TYPES.items()
             if v.get("sensor_type_category") == "data"
+            and k not in _DEDICATED_DATA_SENSOR_TYPES
         }
         _LOGGER.debug("Found %s data sensors to create", len(data_sensors))
 

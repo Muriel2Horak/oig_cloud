@@ -71,6 +71,14 @@ class DummyHass:
     def async_create_task(self, task):
         return task
 
+    async def async_add_executor_job(self, func, *args):  # noqa: ANN001
+        # The integration version resolver reads the immutable shipped manifest
+        # via the executor; run it inline so tests observe the real version.
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, func, *args)
+
 
 class RecordingEmitter:
     def __init__(self, *, should_raise: bool = False) -> None:
