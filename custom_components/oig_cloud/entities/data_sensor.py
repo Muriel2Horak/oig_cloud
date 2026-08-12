@@ -740,6 +740,13 @@ class OigCloudDataSensor(_DataSensorBase):
                 return 0.0
         return None
 
+    def _daily_energy_fallback_value(self) -> Optional[Any]:
+        if self._last_state is not None:
+            return self._last_state
+        if self._restored_state is not None:
+            return self._restored_state
+        return None
+
     def _reject_daily_energy_sample(self, reason_class: str) -> Optional[Any]:
         """Rate-limit diagnostic and return fallback for an invalid sample.
 
@@ -747,15 +754,16 @@ class OigCloudDataSensor(_DataSensorBase):
         an exception object.
         """
         now = time.monotonic()
-        last_log = self._daily_energy_invalid_log_ts.get(reason_class, 0.0)
-        if now - last_log >= 300.0:
+        last_log = self._daily_energy_invalid_log_ts.get(reason_class)
+        if last_log is None or now - last_log >= 300.0:
             _LOGGER.debug(
-                "[%s] Invalid daily energy sample rejected: %s",
+                "[%s] Invalid daily energy sample rejected for %s: %s",
                 self.entity_id,
+                self._sensor_type,
                 reason_class,
             )
             self._daily_energy_invalid_log_ts[reason_class] = now
-        return self._fallback_value()
+        return self._daily_energy_fallback_value()
 
     def _observe_daily_cycle_value(self, value_wh: Any) -> None:
         """Update the daily-cycle marker before the value is published."""

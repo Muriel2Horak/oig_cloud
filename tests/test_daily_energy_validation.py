@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from homeassistant.setup import async_setup_component
@@ -221,3 +222,118 @@ async def test_negative_daily_energy_never_changes_recorder_sum(
         if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
     ]
     assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+def _daily_energy_log_records(caplog: Any) -> list[Any]:
+    return [
+        rec
+        for rec in caplog.records
+        if "daily energy" in rec.message.lower() or "dc_in" in rec.message
+    ]
+
+
+def test_initial_invalid_daily_energy_without_state_is_unavailable() -> None:
+    """Invalid first sample with no last valid or restored state returns None."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+    assert sensor.state is None
+
+
+def test_non_validated_energy_sensor_fallback_unchanged() -> None:
+    """Generic energy sensors without ``validated_daily_energy`` still fall back to 0.0."""
+    coordinator = _Coordinator()
+    sensor = OigCloudDataSensor(coordinator, "computed_batt_charge_energy_today")
+    assert sensor._sensor_config.get("device_class") == "energy"
+    assert not sensor._sensor_config.get("validated_daily_energy")
+    assert sensor.state == 0.0
+
+
+def test_restored_daily_energy_state_used_for_initial_invalid_sample() -> None:
+    """Restored state is retained when the first new sample is invalid."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor._restored_state = 19497.0
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+    assert sensor.state == 19497.0
+
+
+def test_first_invalid_diagnostic_emits_before_300_second_monotonic_window(
+    hass, caplog
+) -> None:
+    """First diagnostic for a reason emits immediately, even early in monotonic time."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+    caplog.set_level(logging.DEBUG)
+
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+    with patch("time.monotonic", return_value=5.0):
+        sensor.state
+
+    records = _daily_energy_log_records(caplog)
+    assert len(records) == 1
+    assert "negative" in records[0].message
+
+
+def test_repeated_same_reason_inside_window_is_rate_limited(hass, caplog) -> None:
+    """Same reason within 300 seconds does not emit a second diagnostic."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+    caplog.set_level(logging.DEBUG)
+
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+    with patch("time.monotonic", side_effect=[5.0, 10.0]):
+        sensor.state
+        sensor.state
+
+    records = _daily_energy_log_records(caplog)
+    assert len(records) == 1
+
+
+def test_different_reason_and_boundary_emit_separate_diagnostics(hass, caplog) -> None:
+    """Each reason has its own window; exactly 300 seconds re-opens the window."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+    caplog.set_level(logging.DEBUG)
+
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+    with patch("time.monotonic", side_effect=[5.0, 10.0, 305.0]):
+        sensor.state
+        coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = True
+        sensor.state
+        coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
+        sensor.state
+
+    records = _daily_energy_log_records(caplog)
+    messages = [rec.message for rec in records]
+    assert len(messages) == 3
+    assert messages[0].count("negative") == 1
+    assert messages[1].count("boolean") == 1
+    assert messages[2].count("negative") == 1
+
+
+def test_diagnostic_never_contains_raw_sample_or_exception_text(
+    hass, caplog
+) -> None:
+    """Diagnostic message, args, and formatted record contain no raw value or exception."""
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+    caplog.set_level(logging.DEBUG)
+
+    raw = -12345.678
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = raw
+    with patch("time.monotonic", return_value=5.0):
+        sensor.state
+
+    for rec in _daily_energy_log_records(caplog):
+        assert str(raw) not in rec.message
+        assert str(raw) not in str(rec.args)
+        formatted = rec.getMessage()
+        assert str(raw) not in formatted
+        assert "Traceback" not in formatted
+        assert "Exception" not in formatted
+        assert "negative" in formatted
