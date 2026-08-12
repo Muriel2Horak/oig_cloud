@@ -1502,14 +1502,35 @@ async def _teardown_boiler_runtime(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
     try:
-        from .boiler.runtime import destroy_boiler_runtime
+        from .boiler.runtime import destroy_boiler_runtime, get_boiler_runtime
 
         box_id = entry.options.get("box_id")
-        if isinstance(box_id, str) and box_id.isdigit():
-            destroy_boiler_runtime(hass, entry.entry_id, box_id)
-            _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return
+        runtime = get_boiler_runtime(hass, entry.entry_id, box_id)
+        if runtime is None:
+            return
+        try:
+            await runtime.async_unload()
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.warning(
+                "Boiler runtime unload failed for entry %s box %s (error_class=%s)",
+                entry.entry_id,
+                box_id,
+                err.__class__.__name__,
+            )
+        destroy_boiler_runtime(hass, entry.entry_id, box_id)
+        _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+    except asyncio.CancelledError:
+        raise
     except Exception as err:
-        _LOGGER.debug("Boiler runtime teardown failed: %s", err)
+        _LOGGER.warning(
+            "Boiler runtime teardown failed for entry %s (error_class=%s)",
+            getattr(entry, "entry_id", "?"),
+            err.__class__.__name__,
+        )
 
 
 async def _init_balancing_manager(

@@ -114,6 +114,32 @@ class _BlockingThreadCheckingStore(_ThreadCheckingStore):
         return _save()
 
 
+class _SlowCancellationThreadCheckingStore(_ThreadCheckingStore):
+    def __init__(self):
+        super().__init__()
+        self.started_event = asyncio.Event()
+        self.cancel_started_event = asyncio.Event()
+        self.cancel_release_event = asyncio.Event()
+        self.cancelled = False
+
+    def async_save(self, data):
+        self.create_thread_ids.append(threading.get_ident())
+
+        async def _save():
+            self.await_thread_ids.append(threading.get_ident())
+            self.started_event.set()
+            try:
+                await self.saved_event.wait()
+            except asyncio.CancelledError:
+                self.cancelled = True
+                self.cancel_started_event.set()
+                await self.cancel_release_event.wait()
+                raise
+            self.saved.append(data)
+
+        return _save()
+
+
 def _stub(store):
     stub = SimpleNamespace(
         hass=None,
@@ -501,3 +527,106 @@ async def test_destroy_boiler_runtime_cancels_pending_daily_source_save():
         if not store.cancelled:
             store.release_event.set()
             await _wait_for_save_attempt(store, timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_teardown_boiler_runtime_waits_for_daily_source_save_cancellation_before_removal():
+    from custom_components.oig_cloud import _teardown_boiler_runtime
+
+    loop = asyncio.get_running_loop()
+    hass = _ThreadAwareHass(loop)
+    store = _SlowCancellationThreadCheckingStore()
+    runtime = _stub(store)
+    runtime.hass = hass
+    runtime.entry_id = "entry-test"
+    runtime.box_id = "123"
+    runtime.async_unload = lambda: BoilerRuntime.async_unload(runtime)
+    runtime._daily_source_kwh = {"fve": 1.0, "grid": 0.0, "alternative": 0.0}
+    runtime._daily_source_date = dt_util.now().date()
+    hass.data[DOMAIN] = {
+        "entry-test": {KEY_BOILER_RUNTIMES: {"123": runtime}}
+    }
+    entry = SimpleNamespace(
+        entry_id="entry-test",
+        options={"box_id": "123", "enable_boiler": True},
+    )
+
+    BoilerRuntime._schedule_daily_source_save(runtime)
+    await asyncio.wait_for(store.started_event.wait(), timeout=1.0)
+
+    teardown_task = asyncio.create_task(_teardown_boiler_runtime(hass, entry))
+    await asyncio.wait_for(store.cancel_started_event.wait(), timeout=1.0)
+    await asyncio.sleep(0)
+
+    teardown_done_while_cancel_pending = teardown_task.done()
+    runtime_removed_while_cancel_pending = (
+        "123" not in hass.data[DOMAIN]["entry-test"][KEY_BOILER_RUNTIMES]
+    )
+    store.cancel_release_event.set()
+    await asyncio.wait_for(
+        asyncio.gather(teardown_task, *hass.created_tasks, return_exceptions=True),
+        timeout=1.0,
+    )
+
+    assert not teardown_done_while_cancel_pending
+    assert not runtime_removed_while_cancel_pending
+    assert store.cancelled is True
+    assert store.saved == []
+    assert runtime._daily_source_save_tasks == set()
+    assert hass.data[DOMAIN]["entry-test"][KEY_BOILER_RUNTIMES] == {}
+
+
+@pytest.mark.asyncio
+async def test_teardown_boiler_runtime_logs_unload_failure_class_only_and_removes(caplog):
+    from custom_components.oig_cloud import _teardown_boiler_runtime
+
+    loop = asyncio.get_running_loop()
+    hass = _ThreadAwareHass(loop)
+
+    class FailingUnloadRuntime:
+        async def async_unload(self):
+            raise RuntimeError("raw unload failure text")
+
+    runtime = FailingUnloadRuntime()
+    hass.data[DOMAIN] = {
+        "entry-test": {KEY_BOILER_RUNTIMES: {"123": runtime}}
+    }
+    entry = SimpleNamespace(
+        entry_id="entry-test",
+        options={"box_id": "123", "enable_boiler": True},
+    )
+    caplog.set_level(logging.WARNING, logger="custom_components.oig_cloud")
+
+    await _teardown_boiler_runtime(hass, entry)
+
+    assert hass.data[DOMAIN]["entry-test"][KEY_BOILER_RUNTIMES] == {}
+    assert "RuntimeError" in caplog.text
+    assert "raw unload failure text" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_teardown_boiler_runtime_propagates_caller_cancellation_without_removal():
+    from custom_components.oig_cloud import _teardown_boiler_runtime
+
+    loop = asyncio.get_running_loop()
+    hass = _ThreadAwareHass(loop)
+
+    class CancellingRuntime:
+        async def async_unload(self):
+            raise asyncio.CancelledError("raw cancellation text")
+
+    runtime = CancellingRuntime()
+    hass.data[DOMAIN] = {
+        "entry-test": {KEY_BOILER_RUNTIMES: {"123": runtime}}
+    }
+    entry = SimpleNamespace(
+        entry_id="entry-test",
+        options={"box_id": "123", "enable_boiler": True},
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await _teardown_boiler_runtime(hass, entry)
+
+    assert hass.data[DOMAIN]["entry-test"][KEY_BOILER_RUNTIMES]["123"] is runtime
