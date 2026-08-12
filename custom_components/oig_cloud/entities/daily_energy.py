@@ -60,6 +60,8 @@ class DailyCycleMarkerState:
     armed: bool
     last_value_wh: float | None
     last_local_date: date | None
+    pending_high_value_wh: float | None = None
+    pending_high_local_date: date | None = None
 
 
 class DailyCycleRestoreData(ExtraStoredData):
@@ -79,14 +81,51 @@ class DailyCycleRestoreData(ExtraStoredData):
                     if self._state.last_local_date
                     else None
                 ),
+                "pending_high_value_wh": self._state.pending_high_value_wh,
+                "pending_high_local_date": (
+                    self._state.pending_high_local_date.isoformat()
+                    if self._state.pending_high_local_date
+                    else None
+                ),
             }
         }
+
+
+def _parse_marker_wh(marker: dict[str, Any], field_name: str) -> float | None:
+    raw = marker.get(field_name)
+    if raw is None:
+        return None
+    sample = classify_daily_energy_wh(raw)
+    if sample.reason_class != "ok":
+        raise ValueError(f"{field_name} must be finite daily energy")
+    return sample.value_wh
+
+
+def _parse_marker_date(marker: dict[str, Any], field_name: str) -> date | None:
+    raw = marker.get(field_name)
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        raise ValueError(f"{field_name} must be ISO date")
+    return date.fromisoformat(str(raw))
+
+
+def _parse_pending_marker(
+    marker: dict[str, Any],
+) -> tuple[float | None, date | None]:
+    pending_value = _parse_marker_wh(marker, "pending_high_value_wh")
+    pending_date = _parse_marker_date(marker, "pending_high_local_date")
+    if (pending_value is None) != (pending_date is None):
+        raise ValueError("pending high watermark must include value and date")
+    return pending_value, pending_date
 
 
 def restore_daily_cycle_marker(
     restored_value: float | None,
     restored_local_date: date | None,
     payload: dict[str, Any] | None,
+    *,
+    restored_state_seen: bool = False,
 ) -> DailyCycleMarkerState:
     """Build initial marker state from restored state and extra data.
 
@@ -108,21 +147,15 @@ def restore_daily_cycle_marker(
                 armed_raw = marker.get("armed")
                 if not isinstance(armed_raw, bool):
                     raise ValueError("armed must be boolean")
-                last_value_wh = marker.get("last_value_wh")
-                if last_value_wh is not None:
-                    last_value_wh = float(last_value_wh)
-                    if not math.isfinite(last_value_wh):
-                        raise ValueError("last_value_wh must be finite")
-                    if last_value_wh < 0.0 or last_value_wh > MAX_DAILY_ENERGY_WH:
-                        raise ValueError("last_value_wh out of range")
-                last_local_date_raw = marker.get("last_local_date")
-                last_local_date: date | None = None
-                if last_local_date_raw is not None:
-                    last_local_date = date.fromisoformat(str(last_local_date_raw))
+                last_value_wh = _parse_marker_wh(marker, "last_value_wh")
+                last_local_date = _parse_marker_date(marker, "last_local_date")
+                pending_value_wh, pending_local_date = _parse_pending_marker(marker)
                 return DailyCycleMarkerState(
                     armed=armed_raw,
                     last_value_wh=last_value_wh,
                     last_local_date=last_local_date,
+                    pending_high_value_wh=pending_value_wh,
+                    pending_high_local_date=pending_local_date,
                 )
             except Exception:
                 # Intentionally fail closed: malformed versioned payload is
@@ -130,6 +163,12 @@ def restore_daily_cycle_marker(
                 pass  # nosec B110
 
     if restored_value is None:
+        if restored_state_seen:
+            return DailyCycleMarkerState(
+                armed=False,
+                last_value_wh=None,
+                last_local_date=restored_local_date,
+            )
         return DailyCycleMarkerState(
             armed=True,
             last_value_wh=None,
@@ -162,10 +201,20 @@ def observe_daily_cycle_value(
         )
 
     if state.last_local_date is None:
+        if state.last_value_wh is not None:
+            return DailyCycleMarkerState(
+                armed=False,
+                last_value_wh=value_wh,
+                last_local_date=local_date,
+                pending_high_value_wh=state.pending_high_value_wh,
+                pending_high_local_date=state.pending_high_local_date,
+            )
         return DailyCycleMarkerState(
             armed=False,
-            last_value_wh=value_wh,
-            last_local_date=local_date,
+            last_value_wh=state.last_value_wh,
+            last_local_date=None,
+            pending_high_value_wh=value_wh,
+            pending_high_local_date=local_date,
         )
 
     if local_date < state.last_local_date:
@@ -173,6 +222,8 @@ def observe_daily_cycle_value(
             armed=False,
             last_value_wh=state.last_value_wh,
             last_local_date=state.last_local_date,
+            pending_high_value_wh=state.pending_high_value_wh,
+            pending_high_local_date=state.pending_high_local_date,
         )
 
     if local_date == state.last_local_date:
@@ -180,17 +231,37 @@ def observe_daily_cycle_value(
             armed=False,
             last_value_wh=value_wh,
             last_local_date=local_date,
+            pending_high_value_wh=state.pending_high_value_wh,
+            pending_high_local_date=state.pending_high_local_date,
         )
 
-    if state.last_value_wh is None or value_wh >= state.last_value_wh:
+    if (
+        state.pending_high_value_wh is not None
+        and value_wh < state.pending_high_value_wh
+    ):
         return DailyCycleMarkerState(
-            armed=False,
-            last_value_wh=state.last_value_wh,
-            last_local_date=state.last_local_date,
+            armed=True,
+            last_value_wh=value_wh,
+            last_local_date=local_date,
         )
+
+    if state.last_value_wh is not None and value_wh < state.last_value_wh:
+        return DailyCycleMarkerState(
+            armed=True,
+            last_value_wh=value_wh,
+            last_local_date=local_date,
+        )
+
+    pending_value_wh = state.pending_high_value_wh
+    pending_local_date = state.pending_high_local_date
+    if pending_value_wh is None or value_wh >= pending_value_wh:
+        pending_value_wh = value_wh
+        pending_local_date = local_date
 
     return DailyCycleMarkerState(
-        armed=True,
-        last_value_wh=value_wh,
-        last_local_date=local_date,
+        armed=False,
+        last_value_wh=state.last_value_wh,
+        last_local_date=state.last_local_date,
+        pending_high_value_wh=pending_value_wh,
+        pending_high_local_date=pending_local_date,
     )

@@ -128,6 +128,48 @@ def test_later_day_higher_value_retains_pre_boundary_reference() -> None:
     assert higher.armed is False
     assert higher.last_value_wh == 19497.0
     assert higher.last_local_date == DAY1
+    assert higher.pending_high_value_wh == 20000.0
+    assert higher.pending_high_local_date == DAY2
+
+
+def test_later_day_high_watermark_updates_without_replacing_original_reference() -> None:
+    state = restore_daily_cycle_marker(300.0, DAY1, None)
+
+    first_high = observe_daily_cycle_value(state, 8000.0, DAY2)
+    second_high = observe_daily_cycle_value(first_high, 18000.0, DAY2)
+
+    assert second_high.armed is False
+    assert second_high.last_value_wh == 300.0
+    assert second_high.last_local_date == DAY1
+    assert second_high.pending_high_value_wh == 18000.0
+    assert second_high.pending_high_local_date == DAY2
+
+
+def test_lower_than_pending_high_arms_after_missed_low_window() -> None:
+    state = restore_daily_cycle_marker(300.0, DAY1, None)
+
+    high = observe_daily_cycle_value(state, 8000.0, DAY2)
+    higher = observe_daily_cycle_value(high, 18000.0, DAY2)
+    rolled = observe_daily_cycle_value(higher, 4000.0, DAY3)
+
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 4000.0
+    assert rolled.last_local_date == DAY3
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
+
+
+def test_stale_later_high_then_same_day_lower_arms_from_pending_high() -> None:
+    state = restore_daily_cycle_marker(300.0, DAY1, None)
+
+    stale_high = observe_daily_cycle_value(state, 18000.0, DAY2)
+    rolled = observe_daily_cycle_value(stale_high, 4000.0, DAY2)
+
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 4000.0
+    assert rolled.last_local_date == DAY2
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
 
 
 def test_stale_pre_midnight_data_after_midnight_does_not_arm() -> None:
@@ -174,6 +216,61 @@ def test_restart_after_arming_stays_armed() -> None:
     next_value = observe_daily_cycle_value(restored, 600.0, DAY2)
     assert next_value.armed is True
     assert next_value.last_value_wh == 600.0
+
+
+def test_restart_while_unarmed_preserves_pending_high_watermark() -> None:
+    payload = {
+        "daily_cycle_marker": {
+            "version": 1,
+            "armed": False,
+            "last_value_wh": 300.0,
+            "last_local_date": DAY1.isoformat(),
+            "pending_high_value_wh": 18000.0,
+            "pending_high_local_date": DAY2.isoformat(),
+        }
+    }
+
+    restored = restore_daily_cycle_marker(300.0, DAY1, payload)
+    rolled = observe_daily_cycle_value(restored, 4000.0, DAY3)
+
+    assert restored.armed is False
+    assert restored.last_value_wh == 300.0
+    assert restored.last_local_date == DAY1
+    assert restored.pending_high_value_wh == 18000.0
+    assert restored.pending_high_local_date == DAY2
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 4000.0
+    assert rolled.last_local_date == DAY3
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("last_value_wh", True),
+        ("last_value_wh", -1.0),
+        ("last_value_wh", float("nan")),
+        ("pending_high_value_wh", True),
+        ("pending_high_value_wh", -1.0),
+        ("pending_high_value_wh", float("inf")),
+        ("pending_high_local_date", "not-a-date"),
+    ],
+)
+def test_malformed_versioned_numeric_marker_fields_fail_closed(field, value) -> None:
+    payload = {
+        "daily_cycle_marker": {
+            "version": 1,
+            "armed": True,
+            "last_value_wh": 500.0,
+            "last_local_date": DAY2.isoformat(),
+            "pending_high_value_wh": 18000.0,
+            "pending_high_local_date": DAY2.isoformat(),
+            field: value,
+        }
+    }
+
+    state = restore_daily_cycle_marker(19497.0, DAY1, payload)
+
+    assert state == _unarmed_state(19497.0, DAY1)
 
 
 def test_earlier_local_date_than_reference_is_ignored() -> None:

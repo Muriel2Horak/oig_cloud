@@ -142,16 +142,24 @@ class OigCloudDataSensor(_DataSensorBase):
         # Retain last-known value across HA restarts (acts like "retain" for sensors).
         restored_value: Optional[float] = None
         restored_local_date: Optional[Any] = None
+        restored_state_seen = False
         try:
             last_state = await self.async_get_last_state()
-            if last_state and last_state.state not in (
-                None,
-                "",
-                "unknown",
-                "unavailable",
-            ):
-                self._restored_state = self._coerce_number(last_state.state)
-                restored_value = self._restored_state
+            if last_state and last_state.state not in (None, "unknown", "unavailable"):
+                restores_daily_energy = bool(
+                    self._sensor_config.get("validated_daily_energy")
+                    or self._sensor_config.get("daily_cycle_reset")
+                )
+                if restores_daily_energy:
+                    restored_state_seen = True
+                    sample = classify_daily_energy_wh(last_state.state)
+                    if sample.reason_class == "ok":
+                        self._restored_state = sample.value_wh
+                        restored_value = sample.value_wh
+                    else:
+                        self._restored_state = None
+                elif last_state.state != "":
+                    self._restored_state = self._coerce_number(last_state.state)
                 if hasattr(last_state, "last_changed") and last_state.last_changed:
                     restored_local_date = dt_util.as_local(
                         last_state.last_changed
@@ -169,6 +177,7 @@ class OigCloudDataSensor(_DataSensorBase):
                 restored_value,
                 restored_local_date,
                 payload,
+                restored_state_seen=restored_state_seen,
             )
 
         # Local telemetry mapping is handled centrally by DataSourceController
@@ -275,6 +284,8 @@ class OigCloudDataSensor(_DataSensorBase):
             # Získáme raw hodnotu z parent
             raw_value = self.get_node_value()
             if raw_value is None:
+                if self._sensor_config.get("validated_daily_energy"):
+                    return self._daily_energy_fallback_value()
                 return self._fallback_value()
 
             # Validate daily-energy samples before HA/Recorder sees them.

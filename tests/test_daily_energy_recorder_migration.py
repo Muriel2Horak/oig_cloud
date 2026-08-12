@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,6 +28,8 @@ PRAGUE = "Europe/Prague"
 T_DAY1_NOON = datetime(2026, 8, 11, 10, 0, tzinfo=timezone.utc)
 T_DAY1_LATE = datetime(2026, 8, 11, 20, 0, tzinfo=timezone.utc)
 T_DAY2_EARLY = datetime(2026, 8, 11, 22, 10, tzinfo=timezone.utc)
+T_DAY2_HIGHER = datetime(2026, 8, 11, 22, 20, tzinfo=timezone.utc)
+T_DAY3_EARLY = datetime(2026, 8, 12, 22, 10, tzinfo=timezone.utc)
 
 RECORDER_SENSOR_LOGGER = "homeassistant.components.sensor.recorder"
 
@@ -174,3 +177,61 @@ async def test_legacy_total_increasing_history_is_not_double_counted_on_first_to
 
     assert sensor.last_reset is None
     assert await _latest_sum(hass) == pytest.approx(200.0)
+
+
+async def test_missed_rollover_after_later_high_preserves_recorder_sum(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """D0 300, D1 8000 -> 18000, D2 4000 emits one marker and no negative sum."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[200, 300])
+    seed_stats = await _latest_stats(hass)
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    coordinator = _Coordinator()
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state="300", last_changed=T_DAY1_NOON)
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+    await sensor.async_added_to_hass()
+
+    assert sensor.last_reset is None
+
+    for moment, value in (
+        (T_DAY2_EARLY, 8000),
+        (T_DAY2_HIGHER, 18000),
+        (T_DAY3_EARLY, 4000),
+    ):
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+    new_stats = (await _latest_stats(hass))[len(seed_stats) :]
+    assert len(new_stats) == 3
+    high, higher, low = new_stats
+
+    assert high["last_reset"] is None
+    assert higher["last_reset"] is None
+    marker_values = [
+        row["last_reset"] for row in new_stats if row["last_reset"] is not None
+    ]
+    assert len(marker_values) == 1
+    day3_midnight = datetime(2026, 8, 12, 22, 0, tzinfo=timezone.utc).timestamp()
+    assert marker_values[0] == pytest.approx(day3_midnight)
+    assert low["last_reset"] == pytest.approx(day3_midnight)
+    assert low["sum"] >= higher["sum"]
+    assert all(row["sum"] >= 0 for row in new_stats)
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"

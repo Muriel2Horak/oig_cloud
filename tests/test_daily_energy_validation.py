@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -20,6 +21,8 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 
 from custom_components.oig_cloud.entities.daily_energy import (
     MAX_DAILY_ENERGY_WH,
+    DailyCycleMarkerState,
+    DailyCycleRestoreData,
     DailyEnergySample,
     classify_daily_energy_wh,
 )
@@ -30,6 +33,7 @@ ENTITY_ID = f"sensor.oig_{BOX_ID}_dc_in_fv_ad"
 PRAGUE = "Europe/Prague"
 
 T_DAY1 = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+T_DAY2_EARLY = datetime(2026, 8, 11, 22, 10, tzinfo=timezone.utc)
 
 RECORDER_SENSOR_LOGGER = "homeassistant.components.sensor.recorder"
 
@@ -256,6 +260,124 @@ def test_restored_daily_energy_state_used_for_initial_invalid_sample() -> None:
     sensor._restored_state = 19497.0
     coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = -1
     assert sensor.state == 19497.0
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(True, id="bool"),
+        pytest.param(-1, id="negative"),
+        pytest.param("", id="empty"),
+        pytest.param("not-a-number", id="malformed"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="infinity"),
+        pytest.param(MAX_DAILY_ENERGY_WH + 1, id="above_max"),
+    ],
+)
+async def test_async_added_to_hass_rejects_invalid_restored_daily_energy_state(
+    hass, freezer, caplog, raw: Any
+) -> None:
+    """Invalid restored state is history, not a numeric baseline."""
+    await hass.config.async_set_time_zone(PRAGUE)
+    freezer.move_to(T_DAY2_EARLY)
+
+    coordinator = _Coordinator({BOX_ID: {"dc_in": {}}})
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state=raw, last_changed=T_DAY1)
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+    caplog.set_level(logging.DEBUG)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._restored_state is None
+    assert sensor._daily_energy_fallback_value() is None
+    assert sensor.state is None
+    assert sensor.last_reset is None
+
+    marker = sensor._daily_cycle_marker_state
+    assert marker is not None
+    assert marker.armed is False
+    assert marker.last_value_wh is None
+    assert marker.last_local_date == T_DAY1.date()
+
+    coordinator.data[BOX_ID]["dc_in"]["fv_ad"] = 1000
+    assert sensor.state == 1000.0
+    assert sensor.last_reset is None
+    assert sensor._daily_cycle_marker_state is not None
+    assert sensor._daily_cycle_marker_state.armed is False
+    assert sensor._daily_cycle_marker_state.pending_high_value_wh == 1000.0
+
+    assert not _daily_energy_log_records(caplog)
+
+
+async def test_async_added_to_hass_preserves_valid_restored_marker_payload(
+    hass,
+) -> None:
+    """Valid legacy version-1 marker data remains readable through RestoreEntity."""
+    marker_state = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=19497.0,
+        last_local_date=T_DAY1.date(),
+    )
+    coordinator = _Coordinator({BOX_ID: {"dc_in": {}}})
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state="19497", last_changed=T_DAY1)
+
+    async def _last_extra_data():
+        return DailyCycleRestoreData(marker_state)
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._restored_state == 19497.0
+    assert sensor._daily_cycle_marker_state == marker_state
+    assert sensor.state == 19497.0
+
+
+async def test_invalid_restored_state_without_current_sample_is_not_recorded(
+    recorder_mock_compat, hass, freezer
+) -> None:
+    """Recorder must never see an invalid restored value as sensor input."""
+    await hass.config.async_set_time_zone(PRAGUE)
+    assert await async_setup_component(hass, "sensor", {})
+    await hass.async_block_till_done()
+    freezer.move_to(T_DAY2_EARLY)
+
+    coordinator = _Coordinator({BOX_ID: {"dc_in": {}}})
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state=-1, last_changed=T_DAY1)
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+
+    await sensor.async_added_to_hass()
+    sensor.async_write_ha_state()
+    await async_wait_recording_done(hass)
+    do_adhoc_statistics(hass, start=T_DAY2_EARLY)
+    await async_wait_recording_done(hass)
+
+    ha_state = hass.states.get(ENTITY_ID)
+    assert ha_state is None or ha_state.state in {"unknown", "unavailable"}
+    assert await _latest_sum(hass) is None
 
 
 def test_first_invalid_diagnostic_emits_before_300_second_monotonic_window(
