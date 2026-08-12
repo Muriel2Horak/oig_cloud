@@ -18,6 +18,11 @@ from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
 SCHEDULED = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def freeze_solar_candidate_now(monkeypatch):
+    monkeypatch.setattr(module.dt_util, "now", lambda: SCHEDULED)
+
+
 class Coordinator:
     forced_box_id = "123456"
 

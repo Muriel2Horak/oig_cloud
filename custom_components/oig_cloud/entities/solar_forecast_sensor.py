@@ -195,6 +195,7 @@ if TYPE_CHECKING:
         def __init__(self, coordinator: Any, sensor_type: str) -> None: ...
         async def async_added_to_hass(self) -> None: ...
         async def async_will_remove_from_hass(self) -> None: ...
+        async def async_update(self) -> None: ...
         def async_write_ha_state(self) -> None: ...
 
 else:
@@ -1209,6 +1210,62 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 return False
         return True
 
+    async def async_update(self) -> None:
+        """Update the sensor and adopt the primary sensor's published snapshot."""
+        await super().async_update()
+        if not self._is_primary_sensor():
+            self._adopt_shared_forecast_snapshot()
+
+    def _adopt_shared_forecast_snapshot(self) -> bool:
+        """Adopt a coordinator snapshot after validating it against local options."""
+        shared = getattr(
+            getattr(self, "coordinator", None),
+            "solar_forecast_data",
+            None,
+        )
+        if not isinstance(shared, Mapping) or not shared:
+            return False
+        try:
+            snapshot = self._validated_candidate(shared)
+        except CandidateValidationError as err:
+            _LOGGER.debug(
+                "Solar shared forecast snapshot rejected: error_class=%s",
+                type(err).__name__,
+            )
+            return False
+        if self._shared_snapshot_is_older_than_local(snapshot):
+            return False
+        if self._last_forecast_data == snapshot:
+            return False
+        self._last_forecast_data = snapshot
+        response_time = self._parse_cache_time(snapshot.get("response_time"))
+        if response_time is not None:
+            self._last_api_call = response_time.timestamp()
+        self._cache_usable = True
+        self._forced_stale_reason = None
+        return True
+
+    def _shared_snapshot_is_older_than_local(
+        self, snapshot: Mapping[str, Any]
+    ) -> bool:
+        shared_time = self._snapshot_response_timestamp(snapshot)
+        local_time = self._snapshot_response_timestamp(self._last_forecast_data)
+        return (
+            shared_time is not None
+            and local_time is not None
+            and shared_time < local_time
+        )
+
+    def _snapshot_response_timestamp(
+        self, snapshot: Optional[Mapping[str, Any]]
+    ) -> Optional[float]:
+        if not isinstance(snapshot, Mapping):
+            return None
+        response_time = self._parse_cache_time(snapshot.get("response_time"))
+        if response_time is None:
+            return None
+        return response_time.timestamp()
+
     # Přidání metody pro okamžitou aktualizaci
     async def async_manual_update(self) -> bool:
         """Manuální aktualizace forecast dat - pro službu."""
@@ -2220,10 +2277,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         if not self._last_forecast_data and hasattr(
             self.coordinator, "solar_forecast_data"
         ):
-            self._last_forecast_data = self.coordinator.solar_forecast_data
-            _LOGGER.debug(
-                f"🌞 {self._sensor_type}: loaded shared data from coordinator"
-            )
+            if self._is_primary_sensor():
+                self._last_forecast_data = self.coordinator.solar_forecast_data
+                _LOGGER.debug(
+                    f"🌞 {self._sensor_type}: loaded shared data from coordinator"
+                )
+            elif self._adopt_shared_forecast_snapshot():
+                _LOGGER.debug(
+                    f"🌞 {self._sensor_type}: adopted shared data from coordinator"
+                )
 
         if not self._last_forecast_data:
             return None
@@ -2283,6 +2345,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
         if self._config_entry.options.get("solar_forecast_provider"):
             attrs["config_status"] = "ok"
+
+        if not self._last_forecast_data and not self._is_primary_sensor():
+            self._adopt_shared_forecast_snapshot()
 
         if not self._last_forecast_data:
             return attrs

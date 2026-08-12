@@ -23,6 +23,11 @@ TODAY = "2026-08-11"
 TOMORROW = "2026-08-12"
 
 
+@pytest.fixture(autouse=True)
+def freeze_solar_candidate_now(monkeypatch):
+    monkeypatch.setattr(sensor_module.dt_util, "now", lambda: NOW)
+
+
 def valid_candidate(provider: str = "forecast_solar") -> dict:
     return {
         "response_time": NOW.isoformat(),
