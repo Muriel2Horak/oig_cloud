@@ -105,16 +105,22 @@ def restore_daily_cycle_marker(
         marker = payload.get("daily_cycle_marker")
         if isinstance(marker, dict) and marker.get("version") == 1:
             try:
-                armed = bool(marker.get("armed"))
+                armed_raw = marker.get("armed")
+                if not isinstance(armed_raw, bool):
+                    raise ValueError("armed must be boolean")
                 last_value_wh = marker.get("last_value_wh")
+                if last_value_wh is not None:
+                    last_value_wh = float(last_value_wh)
+                    if not math.isfinite(last_value_wh):
+                        raise ValueError("last_value_wh must be finite")
+                    if last_value_wh < 0.0 or last_value_wh > MAX_DAILY_ENERGY_WH:
+                        raise ValueError("last_value_wh out of range")
                 last_local_date_raw = marker.get("last_local_date")
                 last_local_date: date | None = None
                 if last_local_date_raw is not None:
                     last_local_date = date.fromisoformat(str(last_local_date_raw))
-                if last_value_wh is not None:
-                    last_value_wh = float(last_value_wh)
                 return DailyCycleMarkerState(
-                    armed=armed,
+                    armed=armed_raw,
                     last_value_wh=last_value_wh,
                     last_local_date=last_local_date,
                 )
