@@ -33,7 +33,10 @@ def _clear_retry_unsub(sensor: Any) -> Callable[[], Any] | None:
     try:
         unsub()
     except Exception as err:  # pragma: no cover - defensive
-        _LOGGER.debug("Failed to clear forecast retry timer: %s", err)
+        _LOGGER.debug(
+            "Failed to clear forecast retry timer (error_class=%s)",
+            err.__class__.__name__,
+        )
     return unsub
 
 
@@ -88,9 +91,9 @@ def create_task_threadsafe(sensor, coro_func, *args) -> None:
             hass.async_create_task(coro_func(*args))
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug(
-                "Failed to schedule task %s: %s",
+                "Failed to schedule task %s (error_class=%s)",
                 getattr(coro_func, "__name__", str(coro_func)),
-                err,
+                err.__class__.__name__,
             )
 
     try:

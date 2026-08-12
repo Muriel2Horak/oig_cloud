@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Callable
@@ -223,6 +224,29 @@ def test_unsubscribe_exception_leaves_teardown_fail_safe_and_idempotent():
 
     assert sensor._forecast_retry_unsub is None
     assert sensor._forecast_retry_generation > generation_after_first
+
+
+def test_retry_debug_logs_exception_class_without_secret_message(caplog):
+    sensor = DummySensor()
+
+    def _explode_timer_clear():
+        raise RuntimeError("timer-secret-token")
+
+    sensor._forecast_retry_unsub = _explode_timer_clear
+
+    with caplog.at_level(logging.DEBUG, logger=task_utils.__name__):
+        task_utils.invalidate_forecast_retry_lifecycle(sensor)
+
+        def _explode_create_task(_coro):
+            raise ValueError("task-secret-token")
+
+        sensor._hass.async_create_task = _explode_create_task
+        task_utils.create_task_threadsafe(sensor, lambda: object())
+
+    assert "RuntimeError" in caplog.text
+    assert "ValueError" in caplog.text
+    assert "timer-secret-token" not in caplog.text
+    assert "task-secret-token" not in caplog.text
 
 
 def _init_dummy_sensor(sensor, hass) -> None:

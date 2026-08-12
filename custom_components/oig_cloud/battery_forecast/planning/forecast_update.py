@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, List, Optional
 
@@ -288,6 +289,132 @@ _BAT_MIN_NOT_YET_READABLE = frozenset(
 )
 
 
+def _safe_configured_mode(entry: Any) -> str:
+    """``get_configured_mode()``, tolerant of a config-entry double without ``.options``.
+
+    ``ConfigEntry.options`` is always present on a real entry; test doubles
+    and partial stand-ins are not guaranteed to carry it. Treated as
+    cloud-only (the module default) rather than raised, since callers here
+    only use the result to decide whether a local proxy is expected.
+    """
+    if not hasattr(entry, "options"):
+        return DATA_SOURCE_CLOUD_ONLY
+    return get_configured_mode(entry)
+
+
+def _proxy_bat_min_entity_id(sensor: Any) -> Optional[str]:
+    """Entity ID of the BOX bat_min trigger, or ``None`` with no context yet."""
+    box_id = getattr(sensor, "_box_id", None)
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    if not box_id or hass is None or getattr(hass, "states", None) is None:
+        return None
+    return f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
+
+
+def _classify_proxy_bat_min_raw(raw: Optional[str]) -> tuple[Optional[float], str]:
+    """Classify an already-read bat_min state token (no I/O)."""
+    if raw is None or raw in {"unknown", "unavailable", ""}:
+        return None, BAT_MIN_UNAVAILABLE
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, BAT_MIN_MALFORMED
+    if not 0.0 < value < 100.0:
+        return None, BAT_MIN_IMPLAUSIBLE
+    return value, BAT_MIN_OK
+
+
+@dataclass(frozen=True, slots=True)
+class BoxFloorSnapshot:
+    """One immutable read of the BOX bat_min trigger, crossing planning and commit.
+
+    Captured exactly once per ``async_update()`` run, before any awaited
+    planner input collection. Readiness, hardware-floor resolution, planning
+    minimum and result metadata all consume this same object instead of
+    re-reading the live sensor, so an in-flight change to the box floor can
+    never make readiness accept one value while planning commits another.
+    """
+
+    entity_id: Optional[str]
+    percent: Optional[float]
+    reason_class: str
+    raw_state: Optional[str]
+    last_updated: Optional[datetime]
+    local_mode: bool
+
+
+def _capture_box_floor_snapshot(sensor: Any) -> BoxFloorSnapshot:
+    """Read the BOX bat_min trigger and classify it. Calls ``hass.states.get()`` once."""
+    entity_id = _proxy_bat_min_entity_id(sensor)
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+
+    state = None
+    context_ok = entity_id is not None and hass is not None
+    if context_ok and hass is not None:
+        try:
+            state = hass.states.get(entity_id)
+        except (TypeError, AttributeError):
+            context_ok = False
+
+    if not context_ok:
+        percent, reason_class, raw_state, last_updated = None, BAT_MIN_NO_CONTEXT, None, None
+    elif state is None:
+        percent, reason_class, raw_state, last_updated = None, BAT_MIN_ABSENT, None, None
+    else:
+        raw_state = getattr(state, "state", None)
+        percent, reason_class = _classify_proxy_bat_min_raw(raw_state)
+        last_updated = getattr(state, "last_updated", None)
+
+    entry = getattr(sensor, "_config_entry", None)
+    return BoxFloorSnapshot(
+        entity_id=entity_id,
+        percent=percent,
+        reason_class=reason_class,
+        raw_state=raw_state,
+        last_updated=last_updated,
+        local_mode=(
+            entry is not None
+            and _safe_configured_mode(entry) != DATA_SOURCE_CLOUD_ONLY
+        ),
+    )
+
+
+def _box_floor_snapshot_is_current(sensor: Any, snapshot: BoxFloorSnapshot) -> bool:
+    """Re-read identity only (entity ID, raw state, ``last_updated``) and compare.
+
+    Called immediately before the first result side effect. Does not
+    reclassify or recompute anything -- an identity match is the only
+    condition under which the already-computed result may commit.
+
+    The local/cloud configuration class is part of identity: a mode switch
+    during awaited planning means the snapshot and the result were derived
+    from different source contracts, so the plan is discarded.
+    """
+    entity_id = _proxy_bat_min_entity_id(sensor)
+    if entity_id != snapshot.entity_id:
+        return False
+
+    entry = getattr(sensor, "_config_entry", None)
+    current_local_mode = (
+        entry is not None
+        and _safe_configured_mode(entry) != DATA_SOURCE_CLOUD_ONLY
+    )
+    if current_local_mode != snapshot.local_mode:
+        return False
+
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    state = None
+    if entity_id is not None and hass is not None:
+        try:
+            state = hass.states.get(entity_id)
+        except (TypeError, AttributeError):
+            state = None
+
+    raw_state = getattr(state, "state", None) if state is not None else None
+    last_updated = getattr(state, "last_updated", None) if state is not None else None
+    return raw_state == snapshot.raw_state and last_updated == snapshot.last_updated
+
+
 def _resolve_proxy_bat_min(sensor: Any) -> tuple[Optional[float], str]:
     """Read the BOX bat_min trigger (%) and classify why it is unusable.
 
@@ -295,33 +422,13 @@ def _resolve_proxy_bat_min(sensor: Any) -> tuple[Optional[float], str]:
     installs do not have it at all. The value is returned as a plain float so
     the pure planning layer stays HA-agnostic; the class is for callers that
     must decide between waiting and falling back.
+
+    Backward-compatible accessor only -- the transactional path in
+    :func:`async_update` captures :class:`BoxFloorSnapshot` once and threads
+    it through instead of calling this again.
     """
-    box_id = getattr(sensor, "_box_id", None)
-    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
-    if not box_id or hass is None or getattr(hass, "states", None) is None:
-        return None, BAT_MIN_NO_CONTEXT
-
-    entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
-    try:
-        state = hass.states.get(entity_id)
-    except (TypeError, AttributeError):
-        return None, BAT_MIN_NO_CONTEXT
-
-    if state is None:
-        return None, BAT_MIN_ABSENT
-
-    raw = getattr(state, "state", None)
-    if raw is None or raw in {"unknown", "unavailable", ""}:
-        return None, BAT_MIN_UNAVAILABLE
-
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return None, BAT_MIN_MALFORMED
-
-    if not 0.0 < value < 100.0:
-        return None, BAT_MIN_IMPLAUSIBLE
-    return value, BAT_MIN_OK
+    snapshot = _capture_box_floor_snapshot(sensor)
+    return snapshot.percent, snapshot.reason_class
 
 
 def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
@@ -389,7 +496,7 @@ def _box_floor_grace_minutes(sensor: Any) -> int:
 
 
 def _should_defer_for_box_floor(
-    sensor: Any, reason_class: str, now_aware: datetime
+    sensor: Any, snapshot: BoxFloorSnapshot, now_aware: datetime
 ) -> bool:
     """Wait, rather than guess, while the box's own floor is not yet readable.
 
@@ -399,16 +506,18 @@ def _should_defer_for_box_floor(
     install to a floor the box does not use, so for an install configured to
     take local data the planner defers until the proxy answers.
 
+    The decision consumes the immutable snapshot captured at the start of the
+    update tick; no live config read happens between capture and readiness.
+
     The wait is bounded. Past the grace window a proxy that never appeared is
     reported truthfully — once — and planning proceeds on the fallback, because
     an install with a permanently missing proxy still needs a plan.
     """
-    if reason_class not in _BAT_MIN_NOT_YET_READABLE:
+    if snapshot.reason_class not in _BAT_MIN_NOT_YET_READABLE:
         sensor._box_floor_wait_started_at = None
         return False
 
-    entry = getattr(sensor, "_config_entry", None)
-    if entry is None or get_configured_mode(entry) == DATA_SOURCE_CLOUD_ONLY:
+    if not snapshot.local_mode:
         # No local proxy is expected at all; the fallback floor is the contract.
         return False
 
@@ -423,7 +532,7 @@ def _should_defer_for_box_floor(
             "box_floor_not_ready",
             "debug",
             "BOX bat_min not readable yet (reason_class=%s); deferring the plan",
-            reason_class,
+            snapshot.reason_class,
             cooldown_s=60.0,
         )
         sensor._schedule_forecast_retry(10.0)
@@ -435,7 +544,7 @@ def _should_defer_for_box_floor(
         "BOX bat_min still not readable after %s min (reason_class=%s); "
         "planning on the configured fallback floor",
         grace_minutes,
-        reason_class,
+        snapshot.reason_class,
         cooldown_s=3600.0,
     )
     return False
@@ -1017,6 +1126,7 @@ def _run_planner(
     solar_kwh_list: list[float],
     current_capacity: float,
     max_capacity: float,
+    box_floor: BoxFloorSnapshot,
     *,
     run_id: str | None = None,
     correlation_id: str | None = None,
@@ -1029,7 +1139,7 @@ def _run_planner(
             load_forecast = load_forecast[:max_intervals]
             solar_kwh_list = solar_kwh_list[:max_intervals]
 
-        opts = sensor._config_entry.options if sensor._config_entry else {}
+        opts = getattr(sensor._config_entry, "options", None) or {}
         # NOTE: the `battery_efficiency` sensor measures DC/coulombic efficiency
         # (~99%) from the battery's own charge/discharge energy counters — it is
         # NOT the AC round-trip (grid -> house) the planner economics need, which
@@ -1045,9 +1155,11 @@ def _run_planner(
         # Sensor-first: the box's own bat_min trigger (%) is the true hardware
         # floor. Converted to kWh and validated for plausibility; falls back
         # to the configured fallback fraction (20% by default) when the sensor
-        # is unavailable/implausible (see _resolve_hw_min_kwh). Reused below for
-        # planning_min_percent, so the sensor is read once, not twice.
-        proxy_bat_min_pct, bat_min_reason_class = _resolve_proxy_bat_min(sensor)
+        # is unavailable/implausible (see _resolve_hw_min_kwh). Comes from the
+        # snapshot captured once in async_update(), not a live re-read: a
+        # second read here could disagree with the readiness check that
+        # already ran against the same value.
+        proxy_bat_min_pct, bat_min_reason_class = box_floor.percent, box_floor.reason_class
         sensor_min_kwh = (
             max_capacity * proxy_bat_min_pct / 100.0
             if proxy_bat_min_pct is not None
@@ -1658,8 +1770,12 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         # The box's own bat_min trigger is a planning input, not a decoration:
         # publish nothing until it is readable (or provably absent). Leaving the
         # bucket open makes the next tick retry.
-        _, bat_min_reason_class = _resolve_proxy_bat_min(sensor)
-        if _should_defer_for_box_floor(sensor, bat_min_reason_class, now_aware):
+        #
+        # Captured exactly once, before any awaited planner input collection.
+        # Readiness, planning and the pre-commit identity check below all
+        # consume this same snapshot -- see BoxFloorSnapshot.
+        box_floor = _capture_box_floor_snapshot(sensor)
+        if _should_defer_for_box_floor(sensor, box_floor, now_aware):
             return
 
         planner_run_id = _build_planner_run_id(sensor, bucket_start)
@@ -1701,6 +1817,15 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         await _maybe_apply_solar_correction(
             sensor, adaptive_helper, solar_forecast, solar_kwh_list
         )
+        # _run_planner() writes _plan_lock_until, _plan_lock_modes and
+        # _charging_metrics onto the sensor as it runs -- on both the success
+        # and the except path -- before the commit-identity gate below ever
+        # runs. Snapshot them first so a discard can roll the write back
+        # instead of just skipping publication and leaving it live to steer
+        # (or surface via planner_decision_trace) a later run.
+        pre_run_plan_lock_until = sensor._plan_lock_until
+        pre_run_plan_lock_modes = sensor._plan_lock_modes
+        pre_run_charging_metrics = getattr(sensor, "_charging_metrics", {})
         timeline, mode_result, recommendations = _run_planner(
             sensor,
             spot_prices,
@@ -1709,9 +1834,29 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             solar_kwh_list,
             current_capacity,
             max_capacity,
+            box_floor,
             run_id=planner_run_id,
             correlation_id=planner_run_id,
         )
+
+        # Fail-closed commit gate: re-read identity only, immediately before
+        # the first result side effect. A box-floor change since capture means
+        # readiness and/or planning ran against a value that is no longer
+        # current -- discard the whole result rather than publish a plan built
+        # on a floor the box no longer reports. mark_bucket_done stays False,
+        # so the bucket is left open and the next tick retries.
+        if not _box_floor_snapshot_is_current(sensor, box_floor):
+            sensor._plan_lock_until = pre_run_plan_lock_until
+            sensor._plan_lock_modes = pre_run_plan_lock_modes
+            sensor._charging_metrics = pre_run_charging_metrics
+            sensor._log_rate_limited(
+                "box_floor_changed_before_commit",
+                "debug",
+                "BOX floor changed during planner run; discarding result",
+                cooldown_s=300.0,
+            )
+            return
+
         # M4: only mark the bucket complete once the planner actually produced a
         # timeline. A failed/empty run leaves the bucket open so the next tick
         # retries instead of silently skipping until the next 15-min boundary.

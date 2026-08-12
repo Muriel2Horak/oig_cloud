@@ -89,6 +89,7 @@ def _price_series(count: int, price: float) -> list[dict]:
 
 def _run(sensor: _PlannerSensor):
     n = 8
+    box_floor = forecast_update_module._capture_box_floor_snapshot(sensor)
     return _run_planner(
         sensor,
         _price_series(n, 2.0),
@@ -97,6 +98,7 @@ def _run(sensor: _PlannerSensor):
         [0.0] * n,
         current_capacity=5.0,
         max_capacity=10.0,
+        box_floor=box_floor,
         run_id="test-run",
         correlation_id="test-corr",
     )
