@@ -5,24 +5,64 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any, Callable
 
 from homeassistant.helpers.event import async_call_later
 
 _LOGGER = logging.getLogger(__name__)
 
 
+def _is_active(sensor: Any) -> bool:
+    return bool(getattr(sensor, "_forecast_retry_active", True))
+
+
+def _advance_generation(sensor: Any) -> int:
+    current = int(getattr(sensor, "_forecast_retry_generation", 0))
+    current += 1
+    setattr(sensor, "_forecast_retry_generation", current)
+    return current
+
+
+def _clear_retry_unsub(sensor: Any) -> Callable[[], Any] | None:
+    unsub = getattr(sensor, "_forecast_retry_unsub", None)
+    sensor._forecast_retry_unsub = None
+    if unsub is None:
+        return None
+
+    try:
+        unsub()
+    except Exception as err:  # pragma: no cover - defensive
+        _LOGGER.debug("Failed to clear forecast retry timer: %s", err)
+    return unsub
+
+
 def schedule_forecast_retry(sensor, delay_seconds: float) -> None:
     """Schedule a forecast retry with throttling."""
     if not sensor._hass or delay_seconds <= 0:
         return
-    if sensor._forecast_retry_unsub:
+    if not _is_active(sensor):
         return
 
     def _retry(now: datetime) -> None:
+        if sensor._forecast_retry_unsub is None:
+            return
+        if not _is_active(sensor):
+            return
+        if generation != getattr(sensor, "_forecast_retry_generation", -1):
+            return
         sensor._forecast_retry_unsub = None
         create_task_threadsafe(sensor, sensor.async_update)
 
+    generation = _advance_generation(sensor)
+    _clear_retry_unsub(sensor)
     sensor._forecast_retry_unsub = async_call_later(sensor._hass, delay_seconds, _retry)
+
+
+def invalidate_forecast_retry_lifecycle(sensor) -> None:
+    """Invalidate pending retry callbacks and prevent future retries."""
+    sensor._forecast_retry_active = False
+    _advance_generation(sensor)
+    _clear_retry_unsub(sensor)
 
 
 def create_task_threadsafe(sensor, coro_func, *args) -> None:

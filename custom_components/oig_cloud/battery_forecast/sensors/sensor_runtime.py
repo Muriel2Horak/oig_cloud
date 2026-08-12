@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Union
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..planning import auto_switch as auto_switch_module
+from .. import task_utils as task_utils_module
 
 
 def log_rate_limited(
@@ -85,5 +86,6 @@ def is_available(sensor) -> bool:
 
 def handle_will_remove(sensor) -> None:
     """Cleanup auto switch resources before removal."""
+    task_utils_module.invalidate_forecast_retry_lifecycle(sensor)
     auto_switch_module.cancel_auto_switch_schedule(sensor)
     auto_switch_module.stop_auto_switch_watchdog(sensor)
