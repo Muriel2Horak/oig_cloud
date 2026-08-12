@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypedDict, Union
 
@@ -12,6 +13,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 from ..core.local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
+from .daily_energy import (
+    DailyCycleMarkerState,
+    DailyCycleRestoreData,
+    classify_daily_energy_wh,
+    observe_daily_cycle_value,
+    restore_daily_cycle_marker,
+)
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -80,6 +88,8 @@ class OigCloudDataSensor(_DataSensorBase):
         self._data_source_unsub: Optional[Callable[[], None]] = None
         self._entry_id: Optional[str] = None
         self._restored_state: Optional[Any] = None
+        self._daily_energy_invalid_log_ts: Dict[str, float] = {}
+        self._daily_cycle_marker_state: Optional[DailyCycleMarkerState] = None
 
         # Načteme sensor config
         try:
@@ -130,6 +140,8 @@ class OigCloudDataSensor(_DataSensorBase):
         await super().async_added_to_hass()
 
         # Retain last-known value across HA restarts (acts like "retain" for sensors).
+        restored_value: Optional[float] = None
+        restored_local_date: Optional[Any] = None
         try:
             last_state = await self.async_get_last_state()
             if last_state and last_state.state not in (
@@ -139,8 +151,25 @@ class OigCloudDataSensor(_DataSensorBase):
                 "unavailable",
             ):
                 self._restored_state = self._coerce_number(last_state.state)
+                restored_value = self._restored_state
+                if hasattr(last_state, "last_changed") and last_state.last_changed:
+                    restored_local_date = dt_util.as_local(
+                        last_state.last_changed
+                    ).date()
         except Exception:
             self._restored_state = None
+
+        if self._sensor_config.get("daily_cycle_reset"):
+            try:
+                extra = await self.async_get_last_extra_data()
+                payload = extra.as_dict() if extra else None
+            except Exception:
+                payload = None
+            self._daily_cycle_marker_state = restore_daily_cycle_marker(
+                restored_value,
+                restored_local_date,
+                payload,
+            )
 
         # Local telemetry mapping is handled centrally by DataSourceController
         # which keeps coordinator.data in a cloud-shaped format even in local mode.
@@ -248,9 +277,23 @@ class OigCloudDataSensor(_DataSensorBase):
             if raw_value is None:
                 return self._fallback_value()
 
+            # Validate daily-energy samples before HA/Recorder sees them.
+            if self._sensor_config.get("validated_daily_energy"):
+                sample = classify_daily_energy_wh(raw_value)
+                if sample.reason_class != "ok":
+                    return self._reject_daily_energy_sample(sample.reason_class)
+                raw_value = sample.value_wh
+
             special_state = self._get_special_state(raw_value, pv_data)
             if special_state is not _STATE_NOT_HANDLED:
                 return special_state
+
+            # Observe accepted daily-cycle values before publishing.
+            if self._sensor_config.get("daily_cycle_reset"):
+                self._observe_daily_cycle_value(raw_value)
+
+            if self._sensor_config.get("validated_daily_energy"):
+                self._last_state = raw_value
 
             # Pro ostatní senzory vrátíme raw hodnotu přímo
             return raw_value
@@ -353,7 +396,18 @@ class OigCloudDataSensor(_DataSensorBase):
                 self._attr_state_class,
             )
             return None
+        if self._daily_cycle_marker_state is not None and not self._daily_cycle_marker_state.armed:
+            return None
         return dt_util.start_of_local_day()
+
+    @property
+    def extra_restore_state_data(self) -> Any:
+        """Return daily-cycle marker data for RestoreEntity persistence."""
+        if not self._sensor_config.get("daily_cycle_reset"):
+            return None
+        if self._daily_cycle_marker_state is None:
+            return None
+        return DailyCycleRestoreData(self._daily_cycle_marker_state)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -685,6 +739,37 @@ class OigCloudDataSensor(_DataSensorBase):
             if self._sensor_config.get("device_class") == SensorDeviceClass.ENERGY:
                 return 0.0
         return None
+
+    def _reject_daily_energy_sample(self, reason_class: str) -> Optional[Any]:
+        """Rate-limit diagnostic and return fallback for an invalid sample.
+
+        Logs only the sensor type and reason class. Never logs the raw value or
+        an exception object.
+        """
+        now = time.monotonic()
+        last_log = self._daily_energy_invalid_log_ts.get(reason_class, 0.0)
+        if now - last_log >= 300.0:
+            _LOGGER.debug(
+                "[%s] Invalid daily energy sample rejected: %s",
+                self.entity_id,
+                reason_class,
+            )
+            self._daily_energy_invalid_log_ts[reason_class] = now
+        return self._fallback_value()
+
+    def _observe_daily_cycle_value(self, value_wh: Any) -> None:
+        """Update the daily-cycle marker before the value is published."""
+        if self._daily_cycle_marker_state is None:
+            return
+        try:
+            local_date = dt_util.now().date()
+        except Exception:
+            return
+        self._daily_cycle_marker_state = observe_daily_cycle_value(
+            self._daily_cycle_marker_state,
+            float(value_wh),
+            local_date,
+        )
 
     def _get_local_value(self) -> Optional[Any]:
         local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)

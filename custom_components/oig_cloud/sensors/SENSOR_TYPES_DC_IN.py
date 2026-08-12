@@ -23,6 +23,7 @@ SENSOR_TYPES_DC_IN: Dict[str, Dict[str, Any]] = {
         # tests/test_dc_in_fv_ad_daily_cycle.py.
         "state_class": SensorStateClass.TOTAL,
         "daily_cycle_reset": True,
+        "validated_daily_energy": True,
         "sensor_type_category": "data",
         "device_mapping": "main",
         "local_entity_suffix": "tbl_dc_in_fv_ad",
