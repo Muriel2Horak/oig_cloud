@@ -634,7 +634,7 @@ class OteApi:
         has_tomorrow = any(key.startswith(tomorrow_prefix) for key in prices.keys())
         if has_tomorrow:
             return data
-        _LOGGER.warning(
+        _LOGGER.info(
             "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
         )
         try:
@@ -644,7 +644,10 @@ class OteApi:
             qh_eur_kwh.update(qh_eur_kwh_tomorrow)
             return await self._build_spot_data(qh_eur_kwh, eur_czk_rate, date_value)
         except Exception as err:
-            _LOGGER.warning("Retry for tomorrow data failed: %s", err)
+            _LOGGER.warning(
+                "Retry for tomorrow data failed (error_class=%s)",
+                type(err).__name__,
+            )
             return data
 
     async def _persist_spot_cache(self, data: Dict[str, Any]) -> None:

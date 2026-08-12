@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import asyncio
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -582,7 +582,7 @@ async def test_get_spot_prices_after_13(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_spot_prices_retry_tomorrow_missing(monkeypatch):
+async def test_get_spot_prices_retry_tomorrow_missing(monkeypatch, caplog):
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -590,6 +590,7 @@ async def test_get_spot_prices_retry_tomorrow_missing(monkeypatch):
 
     monkeypatch.setattr(ote_module, "datetime", FixedDateTime)
     api = OteApi()
+    caplog.set_level(logging.INFO, logger=ote_module.__name__)
 
     async def fake_rate():
         return 25.0
@@ -624,6 +625,13 @@ async def test_get_spot_prices_retry_tomorrow_missing(monkeypatch):
         force_today_only=False,
     )
     assert "2025-01-02T00:00:00" in result["prices_czk_kwh"]
+    assert any(
+        rec.levelno == logging.INFO
+        and "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
+        in rec.message
+        for rec in caplog.records
+    )
+    assert not any(rec.levelno >= logging.WARNING for rec in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -676,7 +684,7 @@ async def test_get_spot_prices_empty_build_returns_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_spot_prices_retry_tomorrow_error(monkeypatch):
+async def test_get_spot_prices_retry_tomorrow_error(monkeypatch, caplog):
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -684,21 +692,24 @@ async def test_get_spot_prices_retry_tomorrow_error(monkeypatch):
 
     monkeypatch.setattr(ote_module, "datetime", FixedDateTime)
     api = OteApi()
+    caplog.set_level(logging.INFO, logger=ote_module.__name__)
 
     async def fake_rate():
         return 25.0
 
-    async def fake_qh(*_args, **_kwargs):
-        base = datetime(2025, 1, 1, 0, 0, tzinfo=api.utc)
-        return {base: Decimal("0.1")}
-
     calls = {"count": 0}
 
-    async def fake_format(*_args, **_kwargs):
+    async def fake_qh(*_args, **_kwargs):
         calls["count"] += 1
+        base = datetime(2025, 1, 1, 0, 0, tzinfo=api.utc)
         if calls["count"] == 1:
-            return {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
-        raise RuntimeError("bad retry")
+            return {base: Decimal("0.1")}
+        raise RuntimeError(
+            "retry sentinel response body https://example.com secret-token"
+        )
+
+    async def fake_format(*_args, **_kwargs):
+        return {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
 
     async def fake_persist():
         return None
@@ -713,6 +724,13 @@ async def test_get_spot_prices_retry_tomorrow_error(monkeypatch):
         force_today_only=False,
     )
     assert result["prices_czk_kwh"]
+    warning_records = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "error_class=RuntimeError" in warning_records[0].message
+    assert "retry sentinel response body" not in caplog.text
+    assert "https://example.com" not in caplog.text
+    assert "secret-token" not in caplog.text
+    assert warning_records[0].exc_info is None
 
 
 @pytest.mark.asyncio
@@ -761,7 +779,7 @@ async def test_ensure_tomorrow_data_already_present(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ensure_tomorrow_data_missing_fetch_empty(monkeypatch):
+async def test_ensure_tomorrow_data_missing_fetch_empty(monkeypatch, caplog):
     api = OteApi()
     date_value = datetime(2025, 1, 1, tzinfo=api.timezone)
     data = {"prices_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
@@ -770,9 +788,17 @@ async def test_ensure_tomorrow_data_missing_fetch_empty(monkeypatch):
         return {}
 
     monkeypatch.setattr(api, "_get_dam_period_prices", fake_qh)
+    caplog.set_level(logging.INFO, logger=ote_module.__name__)
 
     result = await api._ensure_tomorrow_data(data, date_value, {}, 25.0)
     assert result == data
+    assert any(
+        rec.levelno == logging.INFO
+        and "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
+        in rec.message
+        for rec in caplog.records
+    )
+    assert not any(rec.levelno >= logging.WARNING for rec in caplog.records)
 
 
 @pytest.mark.asyncio
