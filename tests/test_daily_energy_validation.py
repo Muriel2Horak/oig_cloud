@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 from homeassistant.setup import async_setup_component
-from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
     do_adhoc_statistics,

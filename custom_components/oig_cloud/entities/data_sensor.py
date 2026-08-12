@@ -161,7 +161,7 @@ class OigCloudDataSensor(_DataSensorBase):
 
         if self._sensor_config.get("daily_cycle_reset"):
             try:
-                extra = await self.async_get_last_extra_data()
+                extra = await self.async_get_last_extra_data()  # type: ignore[attr-defined]
                 payload = extra.as_dict() if extra else None
             except Exception:
                 payload = None

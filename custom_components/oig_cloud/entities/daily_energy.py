@@ -125,7 +125,9 @@ def restore_daily_cycle_marker(
                     last_local_date=last_local_date,
                 )
             except Exception:
-                pass
+                # Intentionally fail closed: malformed versioned payload is
+                # treated as no-marker, falling through to legacy unarmed.
+                pass  # nosec B110
 
     if restored_value is None:
         return DailyCycleMarkerState(
@@ -180,7 +182,7 @@ def observe_daily_cycle_value(
             last_local_date=local_date,
         )
 
-    if value_wh >= state.last_value_wh:
+    if state.last_value_wh is None or value_wh >= state.last_value_wh:
         return DailyCycleMarkerState(
             armed=False,
             last_value_wh=state.last_value_wh,
