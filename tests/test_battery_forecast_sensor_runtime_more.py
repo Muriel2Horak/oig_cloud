@@ -18,6 +18,10 @@ class DummySensor:
         self._log_last_ts = {}
         self._timeline_data = []
         self._config_entry = None
+        # Lifecycle fields required by handle_will_remove
+        self._forecast_lifecycle_generation = 1
+        self._forecast_lifecycle_active = True
+        self._forecast_retry_unsub = None
 
 
 def test_log_rate_limited_non_callable_logger():

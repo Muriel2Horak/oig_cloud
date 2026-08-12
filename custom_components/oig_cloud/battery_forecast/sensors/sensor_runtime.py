@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Union
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ..planning import auto_switch as auto_switch_module
+from .. import task_utils as _task_utils
 
 
 def log_rate_limited(
@@ -84,6 +85,21 @@ def is_available(sensor) -> bool:
 
 
 def handle_will_remove(sensor) -> None:
-    """Cleanup auto switch resources before removal."""
+    """Cleanup resources before entity removal.
+
+    Teardown order (per lifecycle integrity contract):
+    1. Mark lifecycle inactive — any in-flight retry callback must no-op.
+    2. Bump generation — stale callbacks are now definitively orphaned.
+    3. Cancel any pending forecast retry — removes the scheduled callback.
+    4. Cancel auto-switch resources — final cleanup.
+    """
+    # Step 1 & 2: invalidate the current lifecycle
+    sensor._forecast_lifecycle_active = False
+    sensor._forecast_lifecycle_generation += 1
+
+    # Step 3: cancel any pending forecast retry
+    _task_utils.cancel_forecast_retry(sensor)
+
+    # Step 4: cancel auto-switch resources
     auto_switch_module.cancel_auto_switch_schedule(sensor)
     auto_switch_module.stop_auto_switch_watchdog(sensor)

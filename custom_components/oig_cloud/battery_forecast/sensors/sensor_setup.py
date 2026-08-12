@@ -85,6 +85,12 @@ def initialize_sensor(
     sensor._auto_switch_watchdog_interval = timedelta(seconds=30)
     sensor._forecast_retry_unsub = None
 
+    # Forecast retry lifecycle tracking — prevents stale callbacks from firing
+    # after entity teardown or reload. Generation increments on every teardown;
+    # callbacks check-in against the generation at schedule time.
+    sensor._forecast_lifecycle_generation = 0
+    sensor._forecast_lifecycle_active = False
+
     # Log throttling to prevent HA "logging too frequently" warnings.
     sensor._log_last_ts = sensor._GLOBAL_LOG_LAST_TS
 

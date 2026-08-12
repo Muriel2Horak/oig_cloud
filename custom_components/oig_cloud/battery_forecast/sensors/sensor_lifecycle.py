@@ -21,6 +21,11 @@ DATE_FMT = "%Y-%m-%d"
 
 async def async_added_to_hass(sensor) -> None:
     """Pri pridani do HA - restore persistent data."""
+    # Activate and bump generation: any stale retry callback from a previous
+    # lifecycle is now invalidated (it will see generation mismatch and no-op).
+    sensor._forecast_lifecycle_generation += 1
+    sensor._forecast_lifecycle_active = True
+
     _ensure_storage_helpers(sensor)
     _maybe_start_auto_switch(sensor)
     await _restore_precomputed(sensor)
