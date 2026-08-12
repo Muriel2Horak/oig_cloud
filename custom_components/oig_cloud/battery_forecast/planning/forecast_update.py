@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, List, Optional
@@ -307,6 +308,78 @@ def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
 # safety margin above it, so the box logic simply never fires. The margin also
 # absorbs the measured ~1 h sim-vs-reality drift toward the floor.
 BOX_FLOOR_SAFETY_MARGIN_PCT = 2.0
+
+# Snapshot staleness log cooldown (300 s — same unit as other rate-limited logs).
+_BOX_FLOOR_LOG_COOLDOWN_S = 300.0
+
+
+@dataclass(frozen=True)
+class BoxFloorSnapshot:
+    """Frozen snapshot of the BOX bat_min floor at capture time.
+
+    Captured ONCE at the start of a planning cycle and used for the entire
+    planning-to-commit transaction. Any divergence between capture-time and
+    commit-time values is detected by _box_floor_snapshot_is_current.
+    """
+
+    entity_id: str | None
+    raw_value: float | None  # None = proxy absent / unreadable
+
+
+_proxy_bat_min_entity_id: str | None = None  # cached per-sensor entity_id
+
+
+def _resolve_proxy_bat_min_entity_id(sensor: Any) -> str | None:
+    """Return the stable entity_id for this sensor's proxy bat_min sensor."""
+    global _proxy_bat_min_entity_id
+    if _proxy_bat_min_entity_id is not None:
+        return _proxy_bat_min_entity_id
+    box_id = getattr(sensor, "_box_id", None)
+    if not box_id:
+        return None
+    _proxy_bat_min_entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
+    return _proxy_bat_min_entity_id
+
+
+def _capture_box_floor_snapshot(sensor: Any) -> BoxFloorSnapshot:
+    """Read the BOX bat_min proxy state exactly once and return a frozen snapshot.
+
+    This is the ONE read for the entire planning-to-commit cycle. The raw HA
+    state value is stored verbatim; callers derive the planning floor from it.
+    """
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    entity_id = _resolve_proxy_bat_min_entity_id(sensor)
+    raw_value: float | None = None
+    if hass is not None and entity_id is not None:
+        state = hass.states.get(entity_id)
+        if (
+            state is not None
+            and state.state not in {"unknown", "unavailable", "", None}
+        ):
+            try:
+                raw_value = float(state.state)
+            except (TypeError, ValueError):
+                pass
+    return BoxFloorSnapshot(entity_id=entity_id, raw_value=raw_value)
+
+
+def _box_floor_snapshot_is_current(sensor: Any, snapshot: BoxFloorSnapshot) -> bool:
+    """Return True if the live HA state still matches the snapshot.
+
+    A False result means the BOX bat_min trigger changed during planning;
+    any partial side effects must be discarded and the bucket left open.
+    """
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    if hass is None or snapshot.entity_id is None:
+        return True  # no HA access — assume current
+    state = hass.states.get(snapshot.entity_id)
+    if state is None or state.state in {"unknown", "unavailable", "", None}:
+        return True  # entity gone — cannot detect staleness, proceed
+    try:
+        live = float(state.state)
+    except (TypeError, ValueError):
+        return True
+    return live == snapshot.raw_value
 
 
 def _derive_planning_min_percent(
@@ -876,6 +949,7 @@ def _run_planner(
     current_capacity: float,
     max_capacity: float,
     *,
+    box_floor_snapshot: BoxFloorSnapshot,
     run_id: str | None = None,
     correlation_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
@@ -910,7 +984,7 @@ def _run_planner(
         # backup that forces uneconomic grid charging. The legacy
         # `min_capacity_percent` option no longer raises this floor.
         planning_min_percent = _derive_planning_min_percent(
-            hw_min_percent, _resolve_proxy_bat_min_pct(sensor)
+            hw_min_percent, box_floor_snapshot.raw_value
         )
 
         # Comfort SoC target: keep a buffer well above the hard floor so the BOX
@@ -1418,6 +1492,7 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         Any,
         AdaptiveConsumptionHelper,
         list[float],
+        BoxFloorSnapshot,
     ]
 ]:
     capacity = _ensure_capacity(sensor)
@@ -1466,6 +1541,11 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
     # count and artificially inflate the charging target.
     _apply_boiler_grid_load_overlay(sensor, spot_prices, load_forecast)
 
+    # Capture the BOX floor snapshot ONCE — used for the entire planning-to-commit
+    # transaction. Any caller that re-reads instead of using this snapshot risks
+    # inconsistent planning inputs if the entity mutates mid-flight.
+    box_floor_snapshot = _capture_box_floor_snapshot(sensor)
+
     return (
         current_capacity,
         max_capacity,
@@ -1476,6 +1556,7 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         adaptive_profiles,
         adaptive_helper,
         load_forecast,
+        box_floor_snapshot,
     )
 
 
@@ -1515,6 +1596,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             adaptive_profiles,
             adaptive_helper,
             load_forecast,
+            box_floor_snapshot,
         ) = prepared
         used_adaptive_profiles = _has_usable_adaptive_profiles(adaptive_profiles)
 
@@ -1538,9 +1620,24 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             solar_kwh_list,
             current_capacity,
             max_capacity,
+            box_floor_snapshot=box_floor_snapshot,
             run_id=planner_run_id,
             correlation_id=planner_run_id,
         )
+
+        # Staleness guard: if the BOX floor changed during planning, discard the
+        # plan and leave the bucket open for the next cycle to retry with a fresh
+        # snapshot. All side effects are gated below.
+        if not _box_floor_snapshot_is_current(sensor, box_floor_snapshot):
+            sensor._log_rate_limited(
+                "box_floor_stale",
+                "warning",
+                "Box floor changed during planning — discarding plan and retrying next cycle",
+                cooldown_s=_BOX_FLOOR_LOG_COOLDOWN_S,
+            )
+            sensor._forecast_in_progress = False
+            return
+
         # M4: only mark the bucket complete once the planner actually produced a
         # timeline. A failed/empty run leaves the bucket open so the next tick
         # retries instead of silently skipping until the next 15-min boundary.
