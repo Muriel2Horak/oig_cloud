@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Any, Callable
 
+from homeassistant.core import callback
 from homeassistant.helpers.event import async_call_later
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,13 +38,24 @@ def _clear_retry_unsub(sensor: Any) -> Callable[[], Any] | None:
 
 
 def schedule_forecast_retry(sensor, delay_seconds: float) -> None:
-    """Schedule a forecast retry with throttling."""
+    """Schedule a forecast retry, replacing any pending retry.
+
+    Debounced via a monotonic generation counter: a new call cancels and
+    replaces the previous timer rather than stacking retries.
+    """
     if not sensor._hass or delay_seconds <= 0:
         return
     if not _is_active(sensor):
         return
 
+    @callback
     def _retry(now: datetime) -> None:
+        # HassJobType.Callback: Home Assistant runs this inline on the event
+        # loop (see HomeAssistant.async_run_hass_job), never via
+        # loop.run_in_executor. That guarantees this guard-and-dispatch runs
+        # atomically with respect to schedule_forecast_retry/
+        # invalidate_forecast_retry_lifecycle, so a dequeued/stale callback
+        # can never clear a replacement timer's handle out from under it.
         if sensor._forecast_retry_unsub is None:
             return
         if not _is_active(sensor):
