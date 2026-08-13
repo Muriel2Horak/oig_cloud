@@ -17,6 +17,8 @@ from custom_components.oig_cloud.entities.daily_energy import (
 DAY1 = date(2026, 8, 11)
 DAY2 = date(2026, 8, 12)
 DAY3 = date(2026, 8, 13)
+DAY4 = date(2026, 8, 14)
+DAY5 = date(2026, 8, 15)
 
 
 def _armed_state(value_wh: float, local_date: date) -> DailyCycleMarkerState:
@@ -29,6 +31,34 @@ def _unarmed_state(value_wh: float, local_date: date) -> DailyCycleMarkerState:
     return DailyCycleMarkerState(
         armed=False, last_value_wh=value_wh, last_local_date=local_date
     )
+
+
+def _restart_marker(state: DailyCycleMarkerState) -> DailyCycleMarkerState:
+    return restore_daily_cycle_marker(
+        state.last_value_wh,
+        state.last_local_date,
+        DailyCycleRestoreData(state).as_dict(),
+        restored_state_seen=True,
+    )
+
+
+def _pending_payload(
+    pending_value_wh: float,
+    pending_local_date: date,
+    last_local_date: date | None = DAY1,
+) -> dict:
+    return {
+        "daily_cycle_marker": {
+            "version": 1,
+            "armed": False,
+            "last_value_wh": None,
+            "last_local_date": (
+                last_local_date.isoformat() if last_local_date is not None else None
+            ),
+            "pending_high_value_wh": pending_value_wh,
+            "pending_high_local_date": pending_local_date.isoformat(),
+        }
+    }
 
 
 def test_new_entity_is_armed_immediately() -> None:
@@ -195,7 +225,7 @@ def test_sentinel_restore_first_same_day_value_seeds_pending_high() -> None:
     assert higher.pending_high_local_date == DAY1
 
 
-def test_sentinel_restore_pending_high_requires_later_local_day() -> None:
+def test_sentinel_restore_promotes_pending_high_then_arms_on_credible_same_day_low() -> None:
     state = DailyCycleMarkerState(
         armed=False,
         last_value_wh=None,
@@ -229,38 +259,37 @@ def test_sentinel_restore_pending_high_requires_later_local_day() -> None:
     assert same_day_higher.pending_high_local_date == DAY2
 
     assert later_equal.armed is False
+    assert later_equal.last_value_wh == 18000.0
+    assert later_equal.last_local_date == DAY2
     assert later_equal.pending_high_value_wh == 18000.0
     assert later_equal.pending_high_local_date == DAY3
 
     assert later_higher.armed is False
+    assert later_higher.last_value_wh == 18000.0
+    assert later_higher.last_local_date == DAY2
     assert later_higher.pending_high_value_wh == 19000.0
     assert later_higher.pending_high_local_date == DAY3
 
-    assert rolled.armed is False
-    assert rolled.pending_high_value_wh == 19000.0
-    assert rolled.pending_high_local_date == DAY3
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 4000.0
+    assert rolled.last_local_date == DAY3
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
 
-    next_day_rollover = observe_daily_cycle_value(rolled, 4000.0, date(2026, 8, 14))
+    next_day_rollover = observe_daily_cycle_value(rolled, 4000.0, DAY4)
     assert next_day_rollover.armed is True
     assert next_day_rollover.last_value_wh == 4000.0
-    assert next_day_rollover.last_local_date == date(2026, 8, 14)
+    assert next_day_rollover.last_local_date == DAY4
 
 
-def test_restart_with_sentinel_pending_high_requires_later_local_day() -> None:
-    payload = {
-        "daily_cycle_marker": {
-            "version": 1,
-            "armed": False,
-            "last_value_wh": None,
-            "last_local_date": DAY1.isoformat(),
-            "pending_high_value_wh": 18000.0,
-            "pending_high_local_date": DAY2.isoformat(),
-        }
-    }
+def test_restart_with_sentinel_pending_high_promotes_then_arms_on_credible_low() -> None:
+    payload = _pending_payload(18000.0, DAY2)
 
     restored = restore_daily_cycle_marker(None, DAY1, payload)
-    same_day_dip = observe_daily_cycle_value(restored, 4000.0, DAY2)
-    rolled = observe_daily_cycle_value(same_day_dip, 0.0, DAY3)
+    stale_high = observe_daily_cycle_value(restored, 18500.0, DAY3)
+    rollover = observe_daily_cycle_value(stale_high, 50.0, DAY3)
+    later_same_day = observe_daily_cycle_value(rollover, 200.0, DAY3)
+    next_day = observe_daily_cycle_value(later_same_day, 100.0, DAY4)
 
     assert restored.armed is False
     assert restored.last_value_wh is None
@@ -268,15 +297,192 @@ def test_restart_with_sentinel_pending_high_requires_later_local_day() -> None:
     assert restored.pending_high_value_wh == 18000.0
     assert restored.pending_high_local_date == DAY2
 
-    assert same_day_dip.armed is False
-    assert same_day_dip.last_value_wh is None
-    assert same_day_dip.last_local_date == DAY1
-    assert same_day_dip.pending_high_value_wh == 18000.0
-    assert same_day_dip.pending_high_local_date == DAY2
+    assert stale_high.armed is False
+    assert stale_high.last_value_wh == 18000.0
+    assert stale_high.last_local_date == DAY2
+    assert stale_high.pending_high_value_wh == 18500.0
+    assert stale_high.pending_high_local_date == DAY3
+
+    assert rollover.armed is True
+    assert rollover.last_value_wh == 50.0
+    assert rollover.last_local_date == DAY3
+    assert rollover.pending_high_value_wh is None
+    assert rollover.pending_high_local_date is None
+
+    assert later_same_day.armed is True
+    assert later_same_day.last_value_wh == 200.0
+    assert later_same_day.last_local_date == DAY3
+    assert later_same_day.pending_high_value_wh is None
+    assert later_same_day.pending_high_local_date is None
+
+    assert next_day.armed is True
+    assert next_day.last_value_wh == 100.0
+    assert next_day.last_local_date == DAY4
+
+
+def test_missing_restored_local_date_uses_pending_high_as_recoverable_reference() -> None:
+    state = restore_daily_cycle_marker(
+        None, None, None, restored_state_seen=True
+    )
+
+    same_day_first = observe_daily_cycle_value(state, 8000.0, DAY2)
+    same_day_high = observe_daily_cycle_value(same_day_first, 18000.0, DAY2)
+    stale_high = observe_daily_cycle_value(same_day_high, 18500.0, DAY3)
+    rollover = observe_daily_cycle_value(stale_high, 50.0, DAY3)
+
+    assert same_day_high.armed is False
+    assert same_day_high.last_value_wh is None
+    assert same_day_high.last_local_date is None
+    assert same_day_high.pending_high_value_wh == 18000.0
+    assert same_day_high.pending_high_local_date == DAY2
+
+    assert stale_high.armed is False
+    assert stale_high.last_value_wh == 18000.0
+    assert stale_high.last_local_date == DAY2
+    assert stale_high.pending_high_value_wh == 18500.0
+    assert stale_high.pending_high_local_date == DAY3
+
+    assert rollover.armed is True
+    assert rollover.last_value_wh == 50.0
+    assert rollover.last_local_date == DAY3
+    assert rollover.pending_high_value_wh is None
+    assert rollover.pending_high_local_date is None
+
+
+def test_missing_restored_date_with_numeric_value_arms_on_credible_drop() -> None:
+    state = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=18000.0,
+        last_local_date=None,
+    )
+
+    rolled = observe_daily_cycle_value(state, 4000.0, DAY3)
 
     assert rolled.armed is True
-    assert rolled.last_value_wh == 0.0
+    assert rolled.last_value_wh == 4000.0
     assert rolled.last_local_date == DAY3
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
+
+
+def test_sentinel_pending_high_ignores_out_of_order_sample_before_pending_day() -> None:
+    restored = restore_daily_cycle_marker(
+        None, DAY1, _pending_payload(18000.0, DAY3)
+    )
+
+    earlier = observe_daily_cycle_value(restored, 10.0, DAY2)
+
+    assert earlier == restored
+
+
+def test_same_day_non_rollover_dip_after_stale_high_stays_unarmed() -> None:
+    restored = restore_daily_cycle_marker(
+        None, DAY1, _pending_payload(18000.0, DAY2)
+    )
+
+    stale_high = observe_daily_cycle_value(restored, 18500.0, DAY3)
+    small_dip = observe_daily_cycle_value(stale_high, 18400.0, DAY3)
+    resumed_climb = observe_daily_cycle_value(small_dip, 18600.0, DAY3)
+
+    assert small_dip.armed is False
+    assert small_dip.last_value_wh == 18000.0
+    assert small_dip.last_local_date == DAY2
+    assert small_dip.pending_high_value_wh == 18500.0
+    assert small_dip.pending_high_local_date == DAY3
+
+    assert resumed_climb.armed is False
+    assert resumed_climb.last_value_wh == 18000.0
+    assert resumed_climb.last_local_date == DAY2
+    assert resumed_climb.pending_high_value_wh == 18600.0
+    assert resumed_climb.pending_high_local_date == DAY3
+
+
+@pytest.mark.parametrize(
+    "value_wh, expected_armed",
+    [
+        pytest.param(18000.0, False, id="equal-high"),
+        pytest.param(4500.1, False, id="just-above-quarter"),
+        pytest.param(4500.0, True, id="quarter-boundary"),
+        pytest.param(4499.9, True, id="just-below-quarter"),
+        pytest.param(4000.0, True, id="accepted-18000-to-4000"),
+        pytest.param(0.0, True, id="zero"),
+    ],
+)
+def test_promoted_pending_high_uses_conservative_rollover_predicate(
+    value_wh: float, expected_armed: bool
+) -> None:
+    promoted = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=1000.0,
+        last_local_date=DAY2,
+        pending_high_value_wh=18000.0,
+        pending_high_local_date=DAY3,
+    )
+
+    observed = observe_daily_cycle_value(promoted, value_wh, DAY3)
+
+    assert observed.armed is expected_armed
+    if expected_armed:
+        assert observed.last_value_wh == value_wh
+        assert observed.last_local_date == DAY3
+        assert observed.pending_high_value_wh is None
+        assert observed.pending_high_local_date is None
+    else:
+        assert observed.last_value_wh == 1000.0
+        assert observed.last_local_date == DAY2
+        assert observed.pending_high_value_wh == 18000.0
+        assert observed.pending_high_local_date == DAY3
+
+
+def test_zero_pending_high_cannot_prove_rollover() -> None:
+    state = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=1000.0,
+        last_local_date=DAY2,
+        pending_high_value_wh=0.0,
+        pending_high_local_date=DAY3,
+    )
+
+    observed = observe_daily_cycle_value(state, 0.0, DAY3)
+
+    assert observed.armed is False
+    assert observed.pending_high_value_wh == 0.0
+    assert observed.pending_high_local_date == DAY3
+
+
+def test_later_stale_highs_roll_pending_high_into_prior_day_reference() -> None:
+    state = restore_daily_cycle_marker(
+        None, DAY1, _pending_payload(18000.0, DAY2)
+    )
+
+    day3 = _restart_marker(observe_daily_cycle_value(state, 18500.0, DAY3))
+    day4 = _restart_marker(observe_daily_cycle_value(day3, 18600.0, DAY4))
+    day5 = _restart_marker(observe_daily_cycle_value(day4, 18700.0, DAY5))
+    rollover = _restart_marker(observe_daily_cycle_value(day5, 30.0, DAY5))
+
+    assert day3.armed is False
+    assert day3.last_value_wh == 18000.0
+    assert day3.last_local_date == DAY2
+    assert day3.pending_high_value_wh == 18500.0
+    assert day3.pending_high_local_date == DAY3
+
+    assert day4.armed is False
+    assert day4.last_value_wh == 18500.0
+    assert day4.last_local_date == DAY3
+    assert day4.pending_high_value_wh == 18600.0
+    assert day4.pending_high_local_date == DAY4
+
+    assert day5.armed is False
+    assert day5.last_value_wh == 18600.0
+    assert day5.last_local_date == DAY4
+    assert day5.pending_high_value_wh == 18700.0
+    assert day5.pending_high_local_date == DAY5
+
+    assert rollover.armed is True
+    assert rollover.last_value_wh == 30.0
+    assert rollover.last_local_date == DAY5
+    assert rollover.pending_high_value_wh is None
+    assert rollover.pending_high_local_date is None
 
 
 def test_stale_pre_midnight_data_after_midnight_does_not_arm() -> None:

@@ -11,6 +11,11 @@ from homeassistant.helpers.restore_state import ExtraStoredData
 
 MAX_DAILY_ENERGY_WH = 1_000_000_000.0
 
+# Conservative recovery rule for stale carried highs: a real daily rollover
+# should return close to the new day's start. A quarter admits the accepted
+# 18 kWh -> 4 kWh replay while rejecting small same-day re-aggregation dips.
+DAILY_ROLLOVER_MAX_FRACTION = 0.25
+
 
 @dataclass(frozen=True, slots=True)
 class DailyEnergySample:
@@ -120,6 +125,65 @@ def _parse_pending_marker(
     return pending_value, pending_date
 
 
+def _is_credible_daily_rollover(previous_high_wh: float | None, value_wh: float) -> bool:
+    if previous_high_wh is None or previous_high_wh <= 0.0:
+        return False
+    return value_wh <= previous_high_wh * DAILY_ROLLOVER_MAX_FRACTION
+
+
+def _armed_marker(value_wh: float, local_date: date) -> DailyCycleMarkerState:
+    return DailyCycleMarkerState(
+        armed=True,
+        last_value_wh=value_wh,
+        last_local_date=local_date,
+    )
+
+
+def _observe_with_pending_high(
+    state: DailyCycleMarkerState,
+    value_wh: float,
+    local_date: date,
+) -> DailyCycleMarkerState:
+    pending_value_wh = state.pending_high_value_wh
+    pending_local_date = state.pending_high_local_date
+    if pending_value_wh is None or pending_local_date is None:
+        return state
+
+    if local_date < pending_local_date:
+        return state
+
+    if local_date == pending_local_date:
+        can_arm_same_day = state.last_value_wh is not None and (
+            state.last_local_date is None
+            or state.last_local_date < pending_local_date
+        )
+        if can_arm_same_day and _is_credible_daily_rollover(
+            pending_value_wh, value_wh
+        ):
+            return _armed_marker(value_wh, local_date)
+
+        if value_wh > pending_value_wh:
+            pending_value_wh = value_wh
+        return DailyCycleMarkerState(
+            armed=False,
+            last_value_wh=state.last_value_wh,
+            last_local_date=state.last_local_date,
+            pending_high_value_wh=pending_value_wh,
+            pending_high_local_date=pending_local_date,
+        )
+
+    if _is_credible_daily_rollover(pending_value_wh, value_wh):
+        return _armed_marker(value_wh, local_date)
+
+    return DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=pending_value_wh,
+        last_local_date=pending_local_date,
+        pending_high_value_wh=value_wh,
+        pending_high_local_date=local_date,
+    )
+
+
 def restore_daily_cycle_marker(
     restored_value: float | None,
     restored_local_date: date | None,
@@ -189,26 +253,33 @@ def observe_daily_cycle_value(
 ) -> DailyCycleMarkerState:
     """Observe one validated daily value and update the marker state.
 
-    While unarmed, retain the pre-boundary reference when a later-day value is
-    equal or higher. Arm only when the later-day validated value is strictly
-    lower. Same-day valid updates refresh the retained reference or pending
-    high watermark without arming.
+    While unarmed, retain the best pre-boundary reference and a pending high
+    watermark for the candidate new local day. Arm only when the observed value
+    is a conservative rollover-sized drop from that high; smaller same-day
+    re-aggregation dips remain unarmed.
     """
     if state.armed:
-        return DailyCycleMarkerState(
-            armed=True,
-            last_value_wh=value_wh,
-            last_local_date=local_date,
-        )
+        return _armed_marker(value_wh, local_date)
+
+    if (
+        state.pending_high_value_wh is not None
+        and state.pending_high_local_date is not None
+    ):
+        return _observe_with_pending_high(state, value_wh, local_date)
 
     if state.last_local_date is None:
         if state.last_value_wh is not None:
+            if _is_credible_daily_rollover(state.last_value_wh, value_wh):
+                return _armed_marker(value_wh, local_date)
+            pending_value_wh = value_wh
+            if value_wh < state.last_value_wh:
+                pending_value_wh = state.last_value_wh
             return DailyCycleMarkerState(
                 armed=False,
-                last_value_wh=value_wh,
-                last_local_date=local_date,
-                pending_high_value_wh=state.pending_high_value_wh,
-                pending_high_local_date=state.pending_high_local_date,
+                last_value_wh=state.last_value_wh,
+                last_local_date=None,
+                pending_high_value_wh=pending_value_wh,
+                pending_high_local_date=local_date,
             )
         return DailyCycleMarkerState(
             armed=False,
@@ -223,55 +294,6 @@ def observe_daily_cycle_value(
             armed=False,
             last_value_wh=state.last_value_wh,
             last_local_date=state.last_local_date,
-            pending_high_value_wh=state.pending_high_value_wh,
-            pending_high_local_date=state.pending_high_local_date,
-        )
-
-    if (
-        state.last_value_wh is None
-        and state.pending_high_value_wh is not None
-        and state.pending_high_local_date is not None
-    ):
-        if local_date < state.pending_high_local_date:
-            return DailyCycleMarkerState(
-                armed=False,
-                last_value_wh=state.last_value_wh,
-                last_local_date=state.last_local_date,
-                pending_high_value_wh=state.pending_high_value_wh,
-                pending_high_local_date=state.pending_high_local_date,
-            )
-
-        if local_date == state.pending_high_local_date:
-            pending_value_wh = state.pending_high_value_wh
-            if value_wh > pending_value_wh:
-                pending_value_wh = value_wh
-            return DailyCycleMarkerState(
-                armed=False,
-                last_value_wh=state.last_value_wh,
-                last_local_date=state.last_local_date,
-                pending_high_value_wh=pending_value_wh,
-                pending_high_local_date=state.pending_high_local_date,
-            )
-
-        if value_wh < state.pending_high_value_wh:
-            return DailyCycleMarkerState(
-                armed=True,
-                last_value_wh=value_wh,
-                last_local_date=local_date,
-            )
-
-        pending_value_wh = state.pending_high_value_wh
-        pending_local_date = state.pending_high_local_date
-        if value_wh >= pending_value_wh:
-            pending_value_wh = value_wh
-            pending_local_date = local_date
-
-        return DailyCycleMarkerState(
-            armed=False,
-            last_value_wh=state.last_value_wh,
-            last_local_date=state.last_local_date,
-            pending_high_value_wh=pending_value_wh,
-            pending_high_local_date=pending_local_date,
         )
 
     if state.last_value_wh is None:
@@ -292,33 +314,13 @@ def observe_daily_cycle_value(
             pending_high_local_date=state.pending_high_local_date,
         )
 
-    if (
-        state.pending_high_value_wh is not None
-        and value_wh < state.pending_high_value_wh
-    ):
-        return DailyCycleMarkerState(
-            armed=True,
-            last_value_wh=value_wh,
-            last_local_date=local_date,
-        )
-
-    if state.last_value_wh is not None and value_wh < state.last_value_wh:
-        return DailyCycleMarkerState(
-            armed=True,
-            last_value_wh=value_wh,
-            last_local_date=local_date,
-        )
-
-    pending_value_wh = state.pending_high_value_wh
-    pending_local_date = state.pending_high_local_date
-    if pending_value_wh is None or value_wh >= pending_value_wh:
-        pending_value_wh = value_wh
-        pending_local_date = local_date
+    if _is_credible_daily_rollover(state.last_value_wh, value_wh):
+        return _armed_marker(value_wh, local_date)
 
     return DailyCycleMarkerState(
         armed=False,
         last_value_wh=state.last_value_wh,
         last_local_date=state.last_local_date,
-        pending_high_value_wh=pending_value_wh,
-        pending_high_local_date=pending_local_date,
+        pending_high_value_wh=value_wh,
+        pending_high_local_date=local_date,
     )
