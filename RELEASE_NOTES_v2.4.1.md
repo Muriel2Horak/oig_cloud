@@ -120,7 +120,7 @@ solárních klíčů.
 
 ## Ověření vydání
 
-- Python: **5 501 passed, 29 skipped**, coverage **91,22 %**.
+- Python: **5 502 passed, 29 skipped**, coverage **91,22 %**.
 - Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
 - Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
   all-files pre-commit běhy prošly.
@@ -129,6 +129,9 @@ solárních klíčů.
   `cryptography==48.0.1` zůstávají jako viditelné, přesně verzované přijetí rizika, protože tuto
   verzi vyžaduje Home Assistant 2026.8.1. Výjimka automaticky vyprší **12. září 2026** a CI selže
   při expiraci nebo jakékoli změně verze balíku.
+- Snyk má do stejného data úzce omezenou výjimku pro tři přesná LiteLLM ID. Týkají se pouze
+  serverových cest LiteLLM Proxy/SSO; OIG používá vlastní odchozí HTTP klient a tento server
+  nespouští. Žádný celý Snyk test ani kategorie balíků nejsou vypnuté.
 - Security diff audit uzavřel **124/124** source-like souborů, všech **7** kandidátů a všech
   **5** relevantních attack-path analýz. Pět nalezených release blockerů (limit AI odpovědi,
   AI lifecycle, závod bezpečnostního minima planneru, forecast retry po unloadu a předčasný

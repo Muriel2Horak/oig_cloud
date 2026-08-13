@@ -10,6 +10,7 @@ import re
 import subprocess
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).parents[1]
@@ -506,6 +507,26 @@ def test_local_checks_load_validated_audit_exceptions() -> None:
     assert "CVE-2026-69247" not in content
     assert "CVE-2026-69248" not in content
     assert "CVE-2026-69249" not in content
+
+
+def test_snyk_policy_limits_litellm_proxy_exceptions() -> None:
+    """Snyk may ignore only unreachable LiteLLM server findings, temporarily."""
+    policy = yaml.safe_load((ROOT / ".snyk").read_text(encoding="utf-8"))
+    ignored = policy["ignore"]
+    assert policy["version"] == "v1.25.0"
+    assert policy["patch"] == {}
+    assert set(ignored) == {
+        "SNYK-PYTHON-LITELLM-17391451",
+        "SNYK-PYTHON-LITELLM-17393717",
+        "SNYK-PYTHON-LITELLM-17393719",
+    }
+    for rules in ignored.values():
+        assert len(rules) == 1
+        details = rules[0]["*"]
+        assert details["expires"] == "2026-09-12T23:59:59.999Z"
+        assert "client" in details["reason"].lower()
+        assert "proxy" in details["reason"].lower()
+        assert "SSO" in details["reason"]
 
 
 def test_local_checks_scope_flake8_to_repository_python() -> None:

@@ -72,6 +72,9 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   `cryptography==48.0.1` advisories remain as a visible, version-bound accepted risk because Home
   Assistant 2026.8.1 pins that version exactly. The exception expires automatically on 2026-09-12
   and CI fails closed after expiry or any package-version drift.
+- Snyk keeps three exact LiteLLM findings visible under a temporary policy that expires on
+  2026-09-12. They affect LiteLLM Proxy/SSO server paths; OIG uses its own outbound client and does
+  not start that server. No general Snyk test or package class is excluded.
 
 ## [2.4.0] - 2026-07-31
 
