@@ -96,6 +96,13 @@ class BatteryHealthTracker:
             f"BatteryHealthTracker initialized, nominal capacity: {nominal_capacity_kwh:.2f} kWh"
         )
 
+    def is_analysis_due(self, now: Optional[datetime] = None) -> bool:
+        """Return whether the expensive recorder scan should run again."""
+        if self._last_analysis is None:
+            return True
+        current_time = now or dt_util.now()
+        return current_time - self._last_analysis >= timedelta(hours=20)
+
     def _get_nominal_capacity_kwh(self) -> float:
         """Get nominal battery capacity from sensor, fallback to stored value."""
         if not self._hass:
@@ -244,8 +251,8 @@ class BatteryHealthTracker:
 
             self._last_analysis = dt_util.now()
 
+            await self.async_save_to_storage()
             if new_measurements:
-                await self.async_save_to_storage()
                 _LOGGER.info(f"Found {len(new_measurements)} new clean charging cycles")
 
             return new_measurements
@@ -1152,7 +1159,10 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
         if not self._tracker:
             return
         await self._tracker.backfill_from_statistics()
-        await self._tracker.analyze_last_10_days()
+        if self._tracker.is_analysis_due():
+            await self._tracker.analyze_last_10_days()
+        else:
+            _LOGGER.debug("Skipping recent battery health recorder scan")
         self._refresh_entity_state()
         self.async_write_ha_state()
 

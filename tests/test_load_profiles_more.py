@@ -120,3 +120,27 @@ def test_get_load_avg_sensors_valid(monkeypatch):
 
     result = load_profiles.get_load_avg_sensors(sensor)
     assert result["sensor.oig_123_load_avg_x"]["value"] == 100.0
+
+
+def test_get_load_avg_sensors_supports_unprefixed_entity_ids(monkeypatch):
+    sensor = DummySensor(
+        DummyHass({"sensor.load_avg_x": SimpleNamespace(state="125")})
+    )
+
+    class DummyStats:
+        data = {
+            "load_avg_x": {"time_range": (0, 24), "day_type": "weekday"},
+        }
+
+        @classmethod
+        def items(cls):
+            return cls.data.items()
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensors.SENSOR_TYPES_STATISTICS.SENSOR_TYPES_STATISTICS",
+        DummyStats,
+        raising=False,
+    )
+
+    result = load_profiles.get_load_avg_sensors(sensor)
+    assert result["sensor.load_avg_x"]["value"] == 125.0
