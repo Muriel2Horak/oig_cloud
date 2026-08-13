@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "custom_components" / "oig_cloud" / "shared" / "mqtt_publisher.py"
@@ -29,6 +30,61 @@ def _load_module():
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_module_import_does_not_load_paho_on_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    imported_modules: list[str] = []
+    original_import = builtins.__import__
+
+    def tracking_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        imported_modules.append(name)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", tracking_import)
+
+    _load_module()
+
+    assert not any(
+        name == "paho" or name.startswith("paho.") for name in imported_modules
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_client_import_runs_in_a_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    client = FakeClient()
+    thread_calls: list[tuple[Any, tuple[Any, ...]]] = []
+    client_calls: list[tuple[Any, ...]] = []
+    callback_api_version = object()
+
+    def create_client(*args: Any) -> FakeClient:
+        client_calls.append(args)
+        return client
+
+    async def fake_to_thread(function: Any, *args: Any) -> Any:
+        thread_calls.append((function, args))
+        return SimpleNamespace(
+            CallbackAPIVersion=SimpleNamespace(VERSION2=callback_api_version),
+            Client=create_client,
+        )
+
+    monkeypatch.setattr(module.asyncio, "to_thread", fake_to_thread)
+    publisher = module.CloudMqttPublisher(
+        entry_id="entry-1",
+        host="mqtt.internal",
+        port=1883,
+        topic_prefix="oig/cloud-telemetry",
+    )
+
+    assert await publisher.async_start() is True
+    assert thread_calls == [(module.importlib.import_module, ("paho.mqtt.client",))]
+    assert client_calls == [(callback_api_version,)]
+
+    await publisher.async_shutdown()
 
 
 class FakeMessageInfo:
@@ -67,7 +123,9 @@ class FakeClient:
     def close(self) -> None:
         self.close_calls += 1
 
-    def publish(self, topic: str, payload: str, qos: int, retain: bool) -> FakeMessageInfo:
+    def publish(
+        self, topic: str, payload: str, qos: int, retain: bool
+    ) -> FakeMessageInfo:
         info = FakeMessageInfo(self.next_publish_rc)
         self.publish_calls.append(
             {
@@ -89,7 +147,9 @@ class FakeClient:
             self.on_disconnect(self, None, rc)
 
 
-def _make_event(*, event_name: str = "incident_auth_failed", device_id: str = "2206237016") -> dict[str, Any]:
+def _make_event(
+    *, event_name: str = "incident_auth_failed", device_id: str = "2206237016"
+) -> dict[str, Any]:
     return {
         "schema_version": "1",
         "source_product": "oig_cloud",
@@ -160,7 +220,10 @@ async def test_emit_cloud_event_accepts_serialized_payload() -> None:
     assert publisher.emit_cloud_event(payload) is True
     await _wait_for(lambda: len(client.publish_calls) == 1)
 
-    assert json.loads(client.publish_calls[0]["payload"])["event_name"] == "incident_retry_exhausted"
+    assert (
+        json.loads(client.publish_calls[0]["payload"])["event_name"]
+        == "incident_retry_exhausted"
+    )
 
     await publisher.async_shutdown()
 
@@ -220,7 +283,9 @@ async def test_invalid_prefix_is_normalized_to_exact_cloud_topic() -> None:
 
 
 @pytest.mark.asyncio
-async def test_emit_cloud_event_rejects_missing_device_id_without_placeholder_topic() -> None:
+async def test_emit_cloud_event_rejects_missing_device_id_without_placeholder_topic() -> (
+    None
+):
     module = _load_module()
     client = FakeClient()
     publisher = module.CloudMqttPublisher(
@@ -260,7 +325,9 @@ async def test_emit_cloud_event_rejects_non_numeric_device_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_queue_overflow_drops_oldest_with_rate_limited_warning(caplog: pytest.LogCaptureFixture) -> None:
+async def test_queue_overflow_drops_oldest_with_rate_limited_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     module = _load_module()
     client = FakeClient()
     publisher = module.CloudMqttPublisher(
@@ -278,11 +345,27 @@ async def test_queue_overflow_drops_oldest_with_rate_limited_warning(caplog: pyt
 
     caplog.set_level("WARNING")
 
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed"))
+        is True
+    )
     await asyncio.sleep(0)
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted")) is True
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_fallback_cloud_to_local")) is True
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_fallback_local_to_cloud")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted"))
+        is True
+    )
+    assert (
+        publisher.emit_cloud_event(
+            _make_event(event_name="incident_fallback_cloud_to_local")
+        )
+        is True
+    )
+    assert (
+        publisher.emit_cloud_event(
+            _make_event(event_name="incident_fallback_local_to_cloud")
+        )
+        is True
+    )
 
     client.trigger_connect()
     await _wait_for(lambda: len(client.publish_calls) == 2)
@@ -301,7 +384,9 @@ async def test_queue_overflow_drops_oldest_with_rate_limited_warning(caplog: pyt
 
 
 @pytest.mark.asyncio
-async def test_first_overflow_logs_warning_immediately(caplog: pytest.LogCaptureFixture) -> None:
+async def test_first_overflow_logs_warning_immediately(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     module = _load_module()
     client = FakeClient()
     publisher = module.CloudMqttPublisher(
@@ -320,10 +405,21 @@ async def test_first_overflow_logs_warning_immediately(caplog: pytest.LogCapture
 
     caplog.set_level("WARNING")
 
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed"))
+        is True
+    )
     await asyncio.sleep(0)
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted")) is True
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_fallback_cloud_to_local")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted"))
+        is True
+    )
+    assert (
+        publisher.emit_cloud_event(
+            _make_event(event_name="incident_fallback_cloud_to_local")
+        )
+        is True
+    )
 
     assert any("queue full" in message.lower() for message in caplog.messages)
 
@@ -331,7 +427,9 @@ async def test_first_overflow_logs_warning_immediately(caplog: pytest.LogCapture
 
 
 @pytest.mark.asyncio
-async def test_async_shutdown_drops_remaining_queue_and_closes_client(caplog: pytest.LogCaptureFixture) -> None:
+async def test_async_shutdown_drops_remaining_queue_and_closes_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     module = _load_module()
     client = FakeClient()
     publisher = module.CloudMqttPublisher(
@@ -348,10 +446,21 @@ async def test_async_shutdown_drops_remaining_queue_and_closes_client(caplog: py
 
     caplog.set_level("INFO")
 
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_auth_failed"))
+        is True
+    )
     await asyncio.sleep(0)
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted")) is True
-    assert publisher.emit_cloud_event(_make_event(event_name="incident_fallback_cloud_to_local")) is True
+    assert (
+        publisher.emit_cloud_event(_make_event(event_name="incident_retry_exhausted"))
+        is True
+    )
+    assert (
+        publisher.emit_cloud_event(
+            _make_event(event_name="incident_fallback_cloud_to_local")
+        )
+        is True
+    )
 
     await publisher.async_shutdown()
 
@@ -361,11 +470,16 @@ async def test_async_shutdown_drops_remaining_queue_and_closes_client(caplog: py
     assert client.disconnect_calls == 1
     assert client.close_calls == 1
     assert publisher.stats["dropped_unload"] == 2
-    assert any("dropped 2 queued mqtt telemetry events during unload" in message.lower() for message in caplog.messages)
+    assert any(
+        "dropped 2 queued mqtt telemetry events during unload" in message.lower()
+        for message in caplog.messages
+    )
 
 
 @pytest.mark.asyncio
-async def test_publish_failure_after_enqueue_is_recorded_without_reaching_caller(caplog: pytest.LogCaptureFixture) -> None:
+async def test_publish_failure_after_enqueue_is_recorded_without_reaching_caller(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     module = _load_module()
     client = FakeClient()
     client.next_publish_rc = 4
