@@ -159,7 +159,7 @@ def _observe_with_pending_high(
                 if _is_credible_daily_rollover(pending_value_wh, value_wh):
                     return _armed_marker(value_wh, local_date)
             elif state.last_local_date < pending_local_date:
-                if pending_value_wh == state.last_value_wh and value_wh < pending_value_wh:
+                if pending_value_wh > 0.0 and value_wh < state.last_value_wh:
                     return _armed_marker(value_wh, local_date)
                 if value_wh < pending_value_wh:
                     if _is_credible_daily_rollover(pending_value_wh, value_wh):

@@ -89,6 +89,22 @@ async def _publish(hass: Any, sensor: OigCloudDataSensor, value: Any) -> None:
     await async_wait_recording_done(hass)
 
 
+async def _drive(hass: Any, freezer: Any, sensor: OigCloudDataSensor, series) -> None:
+    for moment, value in series:
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+
+def _warnings(caplog):
+    return [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+
+
 async def _latest_stats(hass: Any) -> list[dict]:
     from homeassistant.components.recorder.statistics import statistics_during_period
 
@@ -448,6 +464,52 @@ async def test_missed_rollover_after_later_high_preserves_recorder_sum(
         if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
     ]
     assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+async def test_stale_carry_above_restored_reference_drives_recorder_sum_negative(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A stale carry above the restored value must still arm on the real DAY2 drop."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[200, 300])
+    seed_sum = (await _latest_stats(hass))[-1]["sum"]
+    assert seed_sum == pytest.approx(100.0)
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="300", last_changed=T_DAY1_NOON),
+    )
+
+    await _drive(hass, freezer, sensor, [(T_DAY2_EARLY, 500), (T_DAY2_HIGHER, 130)])
+
+    rows = (await _latest_stats(hass))[2:]
+    sums = [row["sum"] for row in rows]
+
+    assert all(s >= 0 for s in sums), f"recorder sum went negative: {sums}"
+    assert not _warnings(caplog), _warnings(caplog)
+
+
+async def test_stale_carry_above_restored_reference_keeps_recorder_sum_monotonic(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A stale carry above the restored value must not yield a decreasing sum."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[200, 300])
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="300", last_changed=T_DAY1_NOON),
+    )
+
+    await _drive(hass, freezer, sensor, [(T_DAY2_EARLY, 500), (T_DAY2_HIGHER, 200)])
+
+    rows = (await _latest_stats(hass))[2:]
+    sums = [row["sum"] for row in rows]
+
+    assert sums == sorted(sums), f"recorder sum not monotonic: {sums}"
+    assert not _warnings(caplog), _warnings(caplog)
 
 
 async def test_sentinel_restore_stale_carry_over_keeps_recorder_sum_continuous(

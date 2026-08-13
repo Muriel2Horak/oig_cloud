@@ -262,6 +262,25 @@ def test_later_than_pending_high_low_yield_arms_after_missed_low_window() -> Non
     assert rolled.pending_high_local_date is None
 
 
+def test_stale_carry_above_restored_reference_arms_on_lower_same_day_value() -> None:
+    state = restore_daily_cycle_marker(300.0, DAY1, None)
+
+    stale_high = observe_daily_cycle_value(state, 500.0, DAY2)
+    rolled = observe_daily_cycle_value(stale_high, 130.0, DAY2)
+
+    assert stale_high.armed is False
+    assert stale_high.last_value_wh == 300.0
+    assert stale_high.last_local_date == DAY1
+    assert stale_high.pending_high_value_wh == 500.0
+    assert stale_high.pending_high_local_date == DAY2
+
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 130.0
+    assert rolled.last_local_date == DAY2
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
+
+
 def test_sentinel_restore_first_same_day_value_seeds_pending_high() -> None:
     state = DailyCycleMarkerState(
         armed=False,
@@ -446,6 +465,18 @@ def test_missing_restored_date_with_numeric_value_arms_on_credible_drop() -> Non
     assert rolled.pending_high_local_date is None
 
 
+def test_missing_restored_date_ordinary_drop_stays_unarmed() -> None:
+    state = restore_daily_cycle_marker(18000.0, None, None)
+
+    out = observe_daily_cycle_value(state, 10000.0, DAY3)
+
+    assert out.armed is False
+    assert out.last_value_wh == 18000.0
+    assert out.last_local_date is None
+    assert out.pending_high_value_wh == 18000.0
+    assert out.pending_high_local_date == DAY3
+
+
 def test_sentinel_pending_high_ignores_out_of_order_sample_before_pending_day() -> None:
     restored = restore_daily_cycle_marker(
         None, DAY1, _pending_payload(18000.0, DAY3)
@@ -454,6 +485,25 @@ def test_sentinel_pending_high_ignores_out_of_order_sample_before_pending_day() 
     earlier = observe_daily_cycle_value(restored, 10.0, DAY2)
 
     assert earlier == restored
+
+
+def test_missing_restored_date_carry_then_ordinary_drop_stays_unarmed() -> None:
+    state = restore_daily_cycle_marker(18000.0, None, None)
+
+    carried = observe_daily_cycle_value(state, 18000.0, DAY2)
+    ordinary_drop = observe_daily_cycle_value(carried, 10000.0, DAY2)
+
+    assert carried.armed is False
+    assert carried.last_value_wh == 18000.0
+    assert carried.last_local_date is None
+    assert carried.pending_high_value_wh == 18000.0
+    assert carried.pending_high_local_date == DAY2
+
+    assert ordinary_drop.armed is False
+    assert ordinary_drop.last_value_wh == 18000.0
+    assert ordinary_drop.last_local_date is None
+    assert ordinary_drop.pending_high_value_wh == 18000.0
+    assert ordinary_drop.pending_high_local_date == DAY2
 
 
 def test_same_day_non_rollover_dip_after_stale_high_stays_unarmed() -> None:
