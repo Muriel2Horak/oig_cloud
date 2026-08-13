@@ -154,14 +154,16 @@ def _observe_with_pending_high(
         return state
 
     if local_date == pending_local_date:
-        can_arm_same_day = state.last_value_wh is not None and (
-            state.last_local_date is None
-            or state.last_local_date < pending_local_date
-        )
-        if can_arm_same_day and _is_credible_daily_rollover(
-            pending_value_wh, value_wh
-        ):
-            return _armed_marker(value_wh, local_date)
+        if state.last_value_wh is not None:
+            if state.last_local_date is None:
+                if _is_credible_daily_rollover(pending_value_wh, value_wh):
+                    return _armed_marker(value_wh, local_date)
+            elif state.last_local_date < pending_local_date:
+                if pending_value_wh == state.last_value_wh and value_wh < pending_value_wh:
+                    return _armed_marker(value_wh, local_date)
+                if value_wh < pending_value_wh:
+                    if _is_credible_daily_rollover(pending_value_wh, value_wh):
+                        return _armed_marker(value_wh, local_date)
 
         if value_wh > pending_value_wh:
             pending_value_wh = value_wh

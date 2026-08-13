@@ -29,6 +29,7 @@ T_DAY1_NOON = datetime(2026, 8, 11, 10, 0, tzinfo=timezone.utc)
 T_DAY1_LATE = datetime(2026, 8, 11, 20, 0, tzinfo=timezone.utc)
 T_DAY2_EARLY = datetime(2026, 8, 11, 22, 10, tzinfo=timezone.utc)
 T_DAY2_HIGHER = datetime(2026, 8, 11, 22, 20, tzinfo=timezone.utc)
+T_DAY2_LATER = datetime(2026, 8, 11, 22, 30, tzinfo=timezone.utc)
 T_DAY3_EARLY = datetime(2026, 8, 12, 22, 10, tzinfo=timezone.utc)
 T_DAY3_ROLLOVER = datetime(2026, 8, 12, 22, 20, tzinfo=timezone.utc)
 T_DAY3_LATER = datetime(2026, 8, 12, 22, 30, tzinfo=timezone.utc)
@@ -333,6 +334,55 @@ async def test_low_yield_then_same_day_high_then_next_zero_keeps_recorder_sum_mo
         later["sum"] >= earlier["sum"]
         for earlier, later in zip(new_stats, new_stats[1:])
     )
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+async def test_low_yield_stale_carry_across_midnight_keeps_recorder_sum_monotonic(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A stale carry then low-yield recovery must stay monotonic across midnight."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[200, 300])
+    seed_sum = (await _latest_stats(hass))[-1]["sum"]
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="300", last_changed=T_DAY1_NOON),
+    )
+
+    assert sensor.entity_id == ENTITY_ID
+    assert sensor.last_reset is None
+
+    for moment, value in (
+        (T_DAY2_EARLY, 300),
+        (T_DAY2_HIGHER, 100),
+        (T_DAY2_LATER, 250),
+    ):
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+    new_stats = (await _latest_stats(hass))[2:]
+    assert len(new_stats) == 3
+    stale, low, later = new_stats
+    day2_midnight = datetime(2026, 8, 11, 22, 0, tzinfo=timezone.utc).timestamp()
+
+    assert stale["last_reset"] is None
+    assert low["last_reset"] == pytest.approx(day2_midnight)
+    assert later["last_reset"] == pytest.approx(day2_midnight)
+    assert stale["sum"] == pytest.approx(seed_sum)
+    assert low["sum"] == pytest.approx(seed_sum + 100.0)
+    assert later["sum"] == pytest.approx(seed_sum + 250.0)
+    assert all(row["sum"] >= 0 for row in new_stats)
+    assert later["sum"] > low["sum"] > stale["sum"]
 
     recorder_warnings = [
         rec.getMessage()
