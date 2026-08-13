@@ -259,7 +259,7 @@ describe('split-flap utils', () => {
 
     clearFlipCache(cacheKey);
 
-    expect(updateWithFlip(container, cacheKey, null as unknown as string)).toBe(true);
-    expect(container.textContent).toBe('');
+    expect(updateWithFlip(container, cacheKey, 'A')).toBe(true);
+    expect(container.textContent).toBe('A');
   });
 });
