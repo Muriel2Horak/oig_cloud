@@ -4,18 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import json
 import logging
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
-
-try:
-    import paho.mqtt.client as mqtt
-except ImportError:  # pragma: no cover - exercised through startup failure path
-    mqtt = None  # type: ignore[assignment]
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +56,7 @@ class CloudMqttPublisher:
         self._monotonic = monotonic or time.monotonic
 
         self._client: Any | None = None
+        self._mqtt_success_code_value = 0
         self._worker_task: asyncio.Task[None] | None = None
         self._connected = asyncio.Event()
         self._accepting = False
@@ -98,7 +94,7 @@ class CloudMqttPublisher:
             return False
 
         try:
-            client = self._build_client()
+            client = await self._async_build_client()
             client.on_connect = self._handle_connect
             client.on_disconnect = self._handle_disconnect
             client.connect_async(self._host, self._port, _DEFAULT_KEEPALIVE)
@@ -174,11 +170,18 @@ class CloudMqttPublisher:
         self._safe_client_call(client, "disconnect")
         self._safe_close_client(client)
 
-    def _build_client(self) -> Any:
+    async def _async_build_client(self) -> Any:
         if self._client_factory is not None:
             return self._client_factory()
-        if mqtt is None:
-            raise RuntimeError("paho-mqtt is not available")
+
+        try:
+            mqtt = await asyncio.to_thread(importlib.import_module, "paho.mqtt.client")
+        except ImportError as err:
+            raise RuntimeError("paho-mqtt is not available") from err
+
+        self._mqtt_success_code_value = int(getattr(mqtt, "MQTT_ERR_SUCCESS", 0))
+        if callback_api_version := getattr(mqtt, "CallbackAPIVersion", None):
+            return mqtt.Client(callback_api_version.VERSION2)
         return mqtt.Client()
 
     def _enqueue(self, queued_event: _QueuedCloudEvent) -> None:
@@ -355,7 +358,9 @@ class CloudMqttPublisher:
         else:
             event_mapping = event
             try:
-                payload = json.dumps(dict(event), separators=(",", ":"), ensure_ascii=False)
+                payload = json.dumps(
+                    dict(event), separators=(",", ":"), ensure_ascii=False
+                )
             except (TypeError, ValueError) as err:
                 _LOGGER.warning(
                     "Failed to serialize MQTT telemetry event for entry %s: %s",
@@ -390,6 +395,5 @@ class CloudMqttPublisher:
             return normalized_prefix
         return _EXACT_CLOUD_TOPIC_PREFIX
 
-    @staticmethod
-    def _mqtt_success_code() -> int:
-        return int(getattr(mqtt, "MQTT_ERR_SUCCESS", 0))
+    def _mqtt_success_code(self) -> int:
+        return self._mqtt_success_code_value
