@@ -58,6 +58,13 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   identify the coordinate source without logging private latitude or longitude values.
 - Home Assistant 2026.8 startup diagnostics, deferred annotations, manifest reads, and recorder
   access paths are compatible with the supported runtime.
+- Battery forecast load profiles now resolve both box-prefixed and canonical
+  `sensor.load_avg_*` entity IDs, restoring the ten configured household load buckets instead of
+  silently falling back to a fixed load.
+- Battery health analysis now persists successful scans even when no new clean charging cycle is
+  found and skips a duplicate full recorder scan for 20 hours after Home Assistant restarts.
+- The boiler daily Wh counter now advertises the Home Assistant energy device class, preserving
+  valid utility-meter metadata, and an expected empty forecast during startup is logged as debug.
 
 ### Security
 - Browser requests use Home Assistant's authenticated transport, strip caller authorization

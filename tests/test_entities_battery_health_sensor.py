@@ -254,6 +254,48 @@ async def test_analyze_last_10_days_happy_path(monkeypatch):
     assert tracker._last_analysis is not None
 
 
+@pytest.mark.asyncio
+async def test_analyze_last_10_days_persists_empty_success(monkeypatch):
+    store = DummyStore()
+    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+    t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=15.3)
+
+    class DummyInstance:
+        async def async_add_executor_job(self, _func, *_args, **_kwargs):
+            return {
+                "sensor.oig_123_batt_bat_c": [
+                    DummyState("10", t0),
+                    DummyState("20", t0 + timedelta(hours=1)),
+                ],
+                "sensor.oig_123_computed_batt_charge_energy_month": [
+                    DummyState("1000", t0),
+                    DummyState("1100", t0 + timedelta(hours=1)),
+                ],
+            }
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.get_instance", lambda *_a, **_k: DummyInstance()
+    )
+
+    assert await tracker.analyze_last_10_days() == []
+    assert store.saved["last_analysis"] is not None
+
+
+def test_analysis_due_uses_last_successful_analysis(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    tracker = module.BatteryHealthTracker(hass, "123")
+    now = datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc)
+
+    assert tracker.is_analysis_due(now)
+    tracker._last_analysis = now - timedelta(hours=19)
+    assert not tracker.is_analysis_due(now)
+    tracker._last_analysis = now - timedelta(hours=21)
+    assert tracker.is_analysis_due(now)
+
+
 def test_find_monotonic_intervals_ignores_unknown(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
@@ -509,7 +551,9 @@ async def test_battery_health_sensor_remove_and_initial_analysis(monkeypatch):
         called["analyze"] += 1
 
     sensor._tracker = SimpleNamespace(
-        analyze_last_10_days=fake_analyze, backfill_from_statistics=fake_backfill
+        analyze_last_10_days=fake_analyze,
+        backfill_from_statistics=fake_backfill,
+        is_analysis_due=lambda: True,
     )
     sensor.async_write_ha_state = lambda *args, **kwargs: None
     sensor._daily_unsub = lambda: called.__setitem__("daily", called["daily"] + 1)
@@ -521,6 +565,41 @@ async def test_battery_health_sensor_remove_and_initial_analysis(monkeypatch):
     assert called["sleep"] == 1
     assert called["analyze"] == 1
     assert called["daily"] == 1
+
+
+@pytest.mark.asyncio
+async def test_initial_analysis_skips_recent_full_history_scan(monkeypatch):
+    monkeypatch.setattr(module, "Store", DummyStore)
+    hass = DummyHass(DummyStates({}))
+    coordinator = SimpleNamespace(
+        hass=hass, last_update_success=True, async_add_listener=lambda *_a, **_k: lambda: None
+    )
+    sensor = module.BatteryHealthSensor(
+        coordinator, "battery_health", SimpleNamespace(), {}, hass
+    )
+    sensor.hass = hass
+    called = {"analyze": 0, "backfill": 0}
+
+    async def fake_backfill():
+        called["backfill"] += 1
+
+    async def fake_analyze():
+        called["analyze"] += 1
+
+    sensor._tracker = SimpleNamespace(
+        analyze_last_10_days=fake_analyze,
+        backfill_from_statistics=fake_backfill,
+        is_analysis_due=lambda: False,
+    )
+    sensor.async_write_ha_state = lambda *args, **kwargs: None
+
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+    await sensor._initial_analysis()
+
+    assert called == {"analyze": 0, "backfill": 1}
 
 
 def test_battery_health_sensor_native_value_and_attrs(monkeypatch):

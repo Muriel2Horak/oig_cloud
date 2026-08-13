@@ -1022,7 +1022,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             forecast_payload = self._build_forecast_payload(temp_sensor)
             if forecast_payload is None:
                 self.battery_forecast_data = None
-                _LOGGER.warning("🔋 Battery forecast returned no timeline data")
+                _LOGGER.debug("🔋 Battery forecast returned no timeline data")
                 return
 
             timeline_data = getattr(temp_sensor, "_timeline_data", None) or []

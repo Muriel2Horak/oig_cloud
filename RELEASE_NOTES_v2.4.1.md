@@ -80,8 +80,14 @@ Senzor `sensor.oig_<box>_dc_in_fv_ad` nyní používá Recorder kontrakt pro den
 - Úspěšně uložené části wizardu se při retry znovu neposílají; neúspěšný pozdější krok nesníží
   ověřené solární přihlašovací údaje na neověřené.
 - Sekundární solární string senzory dostávají stejný přijatý snapshot jako hlavní senzor.
+- Battery forecast znovu načte všech deset profilů spotřeby i z kanonických entit
+  `sensor.load_avg_*`; při restartu už kvůli názvu entity tiše nespadne na pevný odhad.
+- Úspěšná battery-health analýza se uloží i bez nového čistého nabíjecího cyklu a další úplný
+  Recorder scan se po restartu nejméně 20 hodin neopakuje.
 - Boiler plánovač a battery forecast vlastní své async úlohy, retry callbacky a Store zápisy;
   unload je zruší nebo dokončí v bezpečném pořadí.
+- Denní Wh čítač bojleru používá správnou energy metadata klasifikaci pro utility meter a
+  očekávaně prázdný forecast při startu se zapisuje jen jako debug.
 - Prázdný boiler Store a očekávaně chybějící zítřejší OTE data již nevytvářejí zavádějící
   startup warningy.
 - Fallback přes Home Assistant entity registry znovu správně rozpozná číselné ID boxu z reálného
@@ -121,7 +127,7 @@ solárních klíčů.
 
 ## Ověření vydání
 
-- Python: **5 505 passed, 29 skipped**, coverage **91,22 %**.
+- Python: **5 510 passed, 29 skipped**, coverage **91,22 %**.
 - Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
 - Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
   all-files pre-commit běhy prošly.
