@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "package": "cryptography",
+      "version": "48.0.1",
+      "vulnerability_ids": [
+        "CVE-2026-69247",
+        "CVE-2026-69248",
+        "CVE-2026-69249"
+      ],
+      "fixed_versions": {
+        "CVE-2026-69247": "50.0.0",
+        "CVE-2026-69248": "49.0.0",
+        "CVE-2026-69249": "49.0.0"
+      },
+      "accepted_on": "2026-08-13",
+      "expires_on": "2026-09-12",
+      "owner": "release-maintainers",
+      "reason": "Home Assistant 2026.8.1 requires cryptography==48.0.1 exactly; upgrading it independently would create an unsupported runtime.",
+      "reachability": "OIG and the supported Home Assistant paths do not call the affected PKCS7 decryption or X.509 verifier/path-builder APIs.",
+      "remediation": "Upgrade with the first supported Home Assistant release that removes the exact cryptography 48.0.1 pin, then delete this exception."
+    }
+  ]
+}

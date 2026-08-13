@@ -96,6 +96,10 @@ Senzor `sensor.oig_<box>_dc_in_fv_ad` nyní používá Recorder kontrakt pro den
   ponechat starý výpočet běžet na pozadí.
 - Groq-specifické parametry se posílají jen na přesný HTTPS host `api.groq.com`; podobně vypadající
   doména je nedostane. Diagnostika ČHMÚ uvádí zdroj souřadnic, ale neloguje jejich hodnoty.
+- Runtime závislosti `litellm`, `protobuf` a `urllib3` i vývojový formátovač `black` jsou aktualizované
+  na opravné verze a oba hashově uzamčené locky jsou znovu reprodukovatelně vygenerované.
+- Lokální CI nyní kontroluje skutečný V2 frontend, neprochází virtuální prostředí a spouští Hassfest
+  proti podporovanému Home Assistantu 2026.8.1 nad přesnou distribuovanou kopií integrace.
 
 ---
 
@@ -116,11 +120,15 @@ solárních klíčů.
 
 ## Ověření vydání
 
-- Python: **5 489 passed, 29 skipped**, coverage **91,22 %**.
+- Python: **5 501 passed, 29 skipped**, coverage **91,22 %**.
 - Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
 - Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
   all-files pre-commit běhy prošly.
 - Deterministický frontend build byl ověřen na Node.js `22.17.0` a npm `10.9.2`.
+- Runtime i vývojový `pip-audit` mají **0 nepřijatých nálezů**. Tři advisories v
+  `cryptography==48.0.1` zůstávají jako viditelné, přesně verzované přijetí rizika, protože tuto
+  verzi vyžaduje Home Assistant 2026.8.1. Výjimka automaticky vyprší **12. září 2026** a CI selže
+  při expiraci nebo jakékoli změně verze balíku.
 - Security diff audit uzavřel **124/124** source-like souborů, všech **7** kandidátů a všech
   **5** relevantních attack-path analýz. Pět nalezených release blockerů (limit AI odpovědi,
   AI lifecycle, závod bezpečnostního minima planneru, forecast retry po unloadu a předčasný

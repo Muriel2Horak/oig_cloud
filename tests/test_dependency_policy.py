@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 from pathlib import Path
 import re
@@ -355,3 +356,191 @@ def test_local_checks_hash_install_and_validate_canonical_lock() -> None:
         content,
     )
     assert re.search(r'"\$PYTHON_BIN" -m pip check', content)
+
+
+def _run_exception_policy(
+    policy: Path, requirements: Path, *, today: str
+) -> subprocess.CompletedProcess[str]:
+    """Run the real audit-exception policy validator."""
+    return subprocess.run(
+        [
+            os.environ.get("PYTHON", "python3"),
+            str(ROOT / "scripts" / "validate_pip_audit_exceptions.py"),
+            "--policy",
+            str(policy),
+            "--requirements",
+            str(requirements),
+            "--today",
+            today,
+            "--emit-vulnerability-ids",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_cryptography_audit_exception_is_scoped_and_expiring() -> None:
+    """Accepted advisories must be exact, visible, version-bound, and temporary."""
+    result = _run_exception_policy(
+        ROOT / "scripts" / "pip-audit-exceptions.json",
+        ROOT / "requirements.txt",
+        today="2026-08-13",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "CVE-2026-69247",
+        "CVE-2026-69248",
+        "CVE-2026-69249",
+    ]
+    assert "ACCEPTED RISK" in result.stderr
+    assert "cryptography==48.0.1" in result.stderr
+    assert "expires=2026-09-12" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("version", "today", "expected_error"),
+    [
+        ("48.0.1", "2026-09-13", "expired on 2026-09-12"),
+        ("49.0.0", "2026-08-13", "requires cryptography==48.0.1"),
+    ],
+)
+def test_audit_exception_rejects_expiry_or_version_drift(
+    tmp_path: Path, version: str, today: str, expected_error: str
+) -> None:
+    """An exception must fail closed when its bounded acceptance no longer applies."""
+    policy = ROOT / "scripts" / "pip-audit-exceptions.json"
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(f"cryptography=={version}\n", encoding="utf-8")
+
+    result = _run_exception_policy(policy, requirements, today=today)
+
+    assert result.returncode != 0
+    assert expected_error in result.stderr
+
+
+def _policy_copy(tmp_path: Path) -> tuple[Path, dict[str, object]]:
+    policy_data = json.loads(
+        (ROOT / "scripts" / "pip-audit-exceptions.json").read_text(encoding="utf-8")
+    )
+    return tmp_path / "policy.json", policy_data
+
+
+def _write_policy(path: Path, data: dict[str, object]) -> None:
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_audit_exception_rejects_future_acceptance(tmp_path: Path) -> None:
+    """An accepted risk must not activate before its approval date."""
+    policy, data = _policy_copy(tmp_path)
+    entry = data["exceptions"][0]  # type: ignore[index]
+    entry["accepted_on"] = "2026-09-01"
+    entry["expires_on"] = "2026-10-01"
+    _write_policy(policy, data)
+
+    result = _run_exception_policy(
+        policy, ROOT / "requirements.txt", today="2026-08-13"
+    )
+
+    assert result.returncode != 0
+    assert "does not begin until 2026-09-01" in result.stderr
+
+
+def test_audit_exception_rejects_duplicate_or_marked_lock_entries(
+    tmp_path: Path,
+) -> None:
+    """Policy matching must use one unambiguous unconditional lock entry."""
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        'cryptography==48.0.1 ; python_version < "1.0"\n'
+        'cryptography==47.0.0 ; python_version >= "1.0"\n',
+        encoding="utf-8",
+    )
+
+    result = _run_exception_policy(
+        ROOT / "scripts" / "pip-audit-exceptions.json",
+        requirements,
+        today="2026-08-13",
+    )
+
+    assert result.returncode != 0
+    assert "exactly one unconditional cryptography pin" in result.stderr
+
+
+@pytest.mark.parametrize("mutation", ["top_level", "duplicate_package", "blank_fix"])
+def test_audit_exception_rejects_ambiguous_policy_schema(
+    tmp_path: Path, mutation: str
+) -> None:
+    """Unknown or ambiguous policy records must never emit audit suppressions."""
+    policy, data = _policy_copy(tmp_path)
+    entries = data["exceptions"]  # type: ignore[index]
+    entry = entries[0]
+    if mutation == "top_level":
+        data["unexpected"] = True
+    elif mutation == "duplicate_package":
+        duplicate = dict(entry)
+        duplicate["vulnerability_ids"] = ["CVE-2099-1"]
+        duplicate["fixed_versions"] = {"CVE-2099-1": "99.0.0"}
+        entries.append(duplicate)
+    else:
+        entry["fixed_versions"]["CVE-2026-69247"] = "   "
+    _write_policy(policy, data)
+
+    result = _run_exception_policy(
+        policy, ROOT / "requirements.txt", today="2026-08-13"
+    )
+
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+def test_local_checks_load_validated_audit_exceptions() -> None:
+    """Local CI must not contain unconditional inline cryptography suppressions."""
+    content = (ROOT / "scripts" / "run_local_checks.sh").read_text(encoding="utf-8")
+    assert "validate_pip_audit_exceptions.py" in content
+    assert "pip-audit-exceptions.json" in content
+    assert content.count("--requirements requirements.txt") == 1
+    assert content.count("--requirements requirements-dev.txt") == 1
+    assert "CVE-2026-69247" not in content
+    assert "CVE-2026-69248" not in content
+    assert "CVE-2026-69249" not in content
+
+
+def test_local_checks_scope_flake8_to_repository_python() -> None:
+    """Local Flake8 must not traverse task-specific virtual environments."""
+    content = (ROOT / "scripts" / "run_local_checks.sh").read_text(encoding="utf-8")
+    assert re.search(
+        r'"\$PYTHON_BIN" -m flake8 custom_components/oig_cloud tests '
+        r'--max-line-length=120',
+        content,
+    )
+
+
+def test_local_checks_use_v2_frontend_quality_gates() -> None:
+    """Local CI must run the real V2 frontend project, not the retired root package."""
+    content = (ROOT / "scripts" / "run_local_checks.sh").read_text(encoding="utf-8")
+    assert 'FRONTEND_DIR="custom_components/oig_cloud/www_v2"' in content
+    assert 'npm --prefix "$FRONTEND_DIR" ci --no-audit --no-fund' in content
+    assert 'npm --prefix "$FRONTEND_DIR" run lint -- --quiet' in content
+    assert 'npm --prefix "$FRONTEND_DIR" run typecheck' in content
+    assert 'npm --prefix "$FRONTEND_DIR" run test:unit:coverage' in content
+    assert 'npm --prefix "$FRONTEND_DIR" run build:verify' in content
+    assert "npm install --no-audit --no-fund" not in content
+
+
+def test_local_hassfest_uses_supported_ha_and_locked_python() -> None:
+    """Hassfest must use the supported HA source with the locked repository venv."""
+    local_checks = (ROOT / "scripts" / "run_local_checks.sh").read_text(
+        encoding="utf-8"
+    )
+    hassfest = (ROOT / "scripts" / "run_hassfest.sh").read_text(encoding="utf-8")
+    assert 'HASSFEST_PYTHON="$PYTHON_BIN" scripts/run_hassfest.sh' in local_checks
+    assert 'HA_CORE_REF="${HA_CORE_REF:-2026.8.1}"' in hassfest
+    assert 'HASSFEST_PYTHON="${HASSFEST_PYTHON:-python3}"' in hassfest
+    assert '"$HASSFEST_PYTHON" -m script.hassfest' in hassfest
+    assert 'HASSFEST_TMP_DIR="$(mktemp -d' in hassfest
+    assert "rsync -a --exclude=node_modules" in hassfest
+    assert "pip install" not in hassfest
+    assert 'rm -rf "$INTEGRATION_PATH"' not in hassfest

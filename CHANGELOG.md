@@ -26,6 +26,10 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   reading or constructing bearer tokens in application code.
 - CI now enforces Pylint `E0/F0`, Mypy, Flake8, frontend lint/typecheck, deterministic frontend
   builds, pre-commit idempotence, and coverage above 80% for both Python and frontend suites.
+- Runtime pins for `litellm`, `protobuf`, and `urllib3`, plus the development `black` pin, were
+  upgraded to their current security-fix versions and both hash-locked files were regenerated.
+- Local CI now targets the actual V2 frontend and Home Assistant 2026.8.1 Hassfest source without
+  traversing task virtual environments or mutating installed frontend dependencies.
 
 ### Fixed
 - Solar candidates can no longer overwrite newer forecasts or relabel stale cache provenance;
@@ -64,6 +68,10 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   focused regression tests before publication.
 - The immutable post-fix review covered all eight changed production files with complete coverage,
   zero findings, and no deferred security work.
+- Runtime and development `pip-audit` report zero unaccepted findings. Three exact
+  `cryptography==48.0.1` advisories remain as a visible, version-bound accepted risk because Home
+  Assistant 2026.8.1 pins that version exactly. The exception expires automatically on 2026-09-12
+  and CI fails closed after expiry or any package-version drift.
 
 ## [2.4.0] - 2026-07-31
 

@@ -40,6 +40,15 @@ RUNTIME_PIP_AUDIT_IGNORES=(
   CVE-2026-27459
   GHSA-pjjw-68hj-v9mw
 )
+VALIDATED_RUNTIME_AUDIT_IDS="$(
+  "$PYTHON_BIN" scripts/validate_pip_audit_exceptions.py \
+    --policy scripts/pip-audit-exceptions.json \
+    --requirements requirements.txt \
+    --emit-vulnerability-ids
+)"
+while IFS= read -r vuln_id; do
+  [[ -n "$vuln_id" ]] && RUNTIME_PIP_AUDIT_IGNORES+=("$vuln_id")
+done <<< "$VALIDATED_RUNTIME_AUDIT_IDS"
 RUNTIME_PIP_AUDIT_IGNORE_ARGS=()
 for vuln_id in "${RUNTIME_PIP_AUDIT_IGNORES[@]}"; do
   RUNTIME_PIP_AUDIT_IGNORE_ARGS+=(--ignore-vuln "$vuln_id")
@@ -97,6 +106,15 @@ DEV_PIP_AUDIT_IGNORES=(
   GHSA-w476-p2h3-79g9
   GHSA-pqhf-p39g-3x64
 )
+VALIDATED_DEV_AUDIT_IDS="$(
+  "$PYTHON_BIN" scripts/validate_pip_audit_exceptions.py \
+    --policy scripts/pip-audit-exceptions.json \
+    --requirements requirements-dev.txt \
+    --emit-vulnerability-ids
+)"
+while IFS= read -r vuln_id; do
+  [[ -n "$vuln_id" ]] && DEV_PIP_AUDIT_IGNORES+=("$vuln_id")
+done <<< "$VALIDATED_DEV_AUDIT_IDS"
 PIP_AUDIT_IGNORE_ARGS=()
 for vuln_id in "${DEV_PIP_AUDIT_IGNORES[@]}"; do
   PIP_AUDIT_IGNORE_ARGS+=(--ignore-vuln "$vuln_id")
@@ -119,19 +137,22 @@ else
 fi
 
 echo "==> Running flake8"
-"$PYTHON_BIN" -m flake8
+"$PYTHON_BIN" -m flake8 custom_components/oig_cloud tests --max-line-length=120
 
-if [[ -f "package.json" ]]; then
-  echo "==> Installing frontend lint dependencies"
-  npm install --no-audit --no-fund
-  echo "==> Running frontend lint"
-  npm run lint
-  echo "==> Running frontend unit tests"
-  npm run test:fe:unit
-fi
+FRONTEND_DIR="custom_components/oig_cloud/www_v2"
+echo "==> Installing V2 frontend dependencies"
+npm --prefix "$FRONTEND_DIR" ci --no-audit --no-fund
+echo "==> Running V2 frontend lint"
+npm --prefix "$FRONTEND_DIR" run lint -- --quiet
+echo "==> Running V2 frontend typecheck"
+npm --prefix "$FRONTEND_DIR" run typecheck
+echo "==> Running V2 frontend unit tests with coverage"
+npm --prefix "$FRONTEND_DIR" run test:unit:coverage
+echo "==> Verifying tracked V2 frontend build"
+npm --prefix "$FRONTEND_DIR" run build:verify
 
 echo "==> Running hassfest"
-scripts/run_hassfest.sh
+HASSFEST_PYTHON="$PYTHON_BIN" scripts/run_hassfest.sh
 
 echo "==> Running pytest + coverage"
 "$PYTHON_BIN" -m pytest -q --cov=custom_components/oig_cloud --cov-report=term-missing --cov-report=xml
