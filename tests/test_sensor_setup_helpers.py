@@ -67,14 +67,6 @@ def test_resolve_box_id_hass_state_and_registry(monkeypatch):
     assert module.resolve_box_id(coordinator) == "555555"
 
     hass = SimpleNamespace(states=DummyStates(None))
-    import re
-
-    class FakePattern:
-        def match(self, _value):
-            return SimpleNamespace(group=lambda _idx: "888888")
-
-    monkeypatch.setattr(re, "compile", lambda *_a, **_k: FakePattern())
-
     entities = {
         "one": SimpleNamespace(entity_id="sensor.oig_local_888888_power"),
         "two": SimpleNamespace(entity_id="sensor.oig_local_888888_voltage"),

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-08-13
+
+Maintenance release focused on upgrade safety, solar-forecast reliability, authenticated
+dashboard requests, and deterministic release quality. Full Czech release notes:
+`RELEASE_NOTES_v2.4.1.md`.
+
+### Added
+- Hourly AI evaluation can publish a value-gated diagnostic report and dashboard status without
+  changing device control decisions.
+- Solar configuration now supports an explicit provider contract, private credential storage,
+  legacy-value adoption, and truthful test/save transactions.
+
+### Changed
+- Solar azimuth uses the compass convention (`0/360` north, `90` east, `180` south, `270` west)
+  and is converted only at the Forecast.Solar provider boundary.
+- Optimized solar refreshes run at local wall-clock `06:00`, `12:00`, and `16:00`; daily mode
+  runs at `06:00`. Retry recovery is durable across restart and cancellation.
+- Dashboard API requests delegate authentication and token refresh to Home Assistant instead of
+  reading or constructing bearer tokens in application code.
+- CI now enforces Pylint `E0/F0`, Mypy, Flake8, frontend lint/typecheck, deterministic frontend
+  builds, pre-commit idempotence, and coverage above 80% for both Python and frontend suites.
+
+### Fixed
+- Solar candidates can no longer overwrite newer forecasts or relabel stale cache provenance;
+  accepted forecasts, retry metadata, unload, and Store writes share one ordered transaction.
+- Solar refresh survives startup at arbitrary minutes, daylight-saving transitions, repeated
+  cancellation, restart, provider throttling, and Store failures without duplicate publication
+  or secret-bearing diagnostics.
+- Forecast string sensors publish one synchronized snapshot and manual refresh reports failure
+  truthfully when throttled or rejected.
+- `dc_in_fv_ad` daily energy statistics preserve existing Recorder history during the transition
+  from `total_increasing` to daily `total`, and arm reset markers only after a proven rollover.
+- Daily-energy restore handles missing midnight samples, restart gaps, low-yield days, stale
+  markers, counter rollback, and unavailable values without double counting.
+- Empty boiler schedule storage and expected OTE tomorrow-data retries no longer create false
+  startup warnings; asynchronous planner and boiler tasks are owned and reconciled on unload.
+- Registry fallback now resolves numeric OIG box IDs from real Home Assistant entity IDs without
+  patching Python's global regular-expression compiler during tests.
+- Home Assistant 2026.8 startup diagnostics, deferred annotations, manifest reads, and recorder
+  access paths are compatible with the supported runtime.
+
+### Security
+- Browser requests use Home Assistant's authenticated transport, strip caller authorization
+  headers, validate integration-relative paths, and redact provider or exception details.
+- Solar secrets stay in private Store records and proof-bound activation prevents replay or
+  cross-entry credential reuse.
+- A sealed security review of the release diff completed with zero reportable findings.
+
 ## [2.4.0] - 2026-07-31
 
 Major user-facing release. Full Czech release notes: `RELEASE_NOTES_v2.4.0.md`.
