@@ -1857,16 +1857,30 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             )
             return
 
-        # M4: only mark the bucket complete once the planner actually produced a
-        # timeline. A failed/empty run leaves the bucket open so the next tick
-        # retries instead of silently skipping until the next 15-min boundary.
-        mark_bucket_done = bool(timeline)
         await _emit_planner_summary_event(
             sensor,
             bucket_start=bucket_start,
             timeline=timeline,
             mode_result=mode_result,
         )
+        # The summary emitter performs asynchronous telemetry work. Revalidate
+        # the floor once more after that await so a concurrent local-proxy
+        # update cannot commit a plan built from a stale safety boundary.
+        if not _box_floor_snapshot_is_current(sensor, box_floor):
+            sensor._plan_lock_until = pre_run_plan_lock_until
+            sensor._plan_lock_modes = pre_run_plan_lock_modes
+            sensor._charging_metrics = pre_run_charging_metrics
+            sensor._log_rate_limited(
+                "box_floor_changed_before_commit",
+                "debug",
+                "BOX floor changed before planner commit; discarding result",
+                cooldown_s=300.0,
+            )
+            return
+        # M4: only mark the bucket complete once the planner produced a
+        # timeline and its final input identity remained current through every
+        # awaited pre-commit operation. A discard leaves the bucket open.
+        mark_bucket_done = bool(timeline)
         _apply_planner_results(sensor, timeline, mode_result, recommendations)
 
         # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER _timeline_data is set)

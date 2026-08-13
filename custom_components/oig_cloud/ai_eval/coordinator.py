@@ -7,6 +7,7 @@ tick is a graceful no-op.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -207,6 +208,8 @@ class AiEvalCoordinator:
         )
         self._ledger_entries: List[Dict[str, Any]] = []
         self._unsub_timer: Optional[Callable[[], None]] = None
+        self._initial_task: asyncio.Task[None] | None = None
+        self._tick_tasks: set[asyncio.Task[Any]] = set()
         self._shutting_down = False
 
     async def async_setup(self) -> None:
@@ -229,12 +232,19 @@ class AiEvalCoordinator:
         # unreliable at setup time on this box) so the first report appears in
         # seconds rather than up to an hour later.
         async def _initial_tick() -> None:
-            import asyncio
-
             await asyncio.sleep(15)
+            if self._shutting_down:
+                return
             await self._async_on_tick(dt_util.utcnow())
 
-        self.hass.async_create_task(_initial_tick())
+        task = self.hass.async_create_task(_initial_tick())
+        self._initial_task = task
+
+        def _clear_initial_task(done: asyncio.Task[None]) -> None:
+            if self._initial_task is done:
+                self._initial_task = None
+
+        task.add_done_callback(_clear_initial_task)
 
     def _schedule_next_tick(self) -> None:
         if self._shutting_down:
@@ -246,11 +256,18 @@ class AiEvalCoordinator:
         )
 
     async def _async_on_tick(self, now: datetime) -> None:
+        if self._shutting_down:
+            return
+        task = asyncio.current_task()
+        if task is not None:
+            self._tick_tasks.add(task)
         try:
             await self._async_run_tick(now)
         except Exception as err:
             _LOGGER.error("AI eval tick failed: %s", err, exc_info=True)
         finally:
+            if task is not None:
+                self._tick_tasks.discard(task)
             self._schedule_next_tick()
 
     async def _async_run_tick(self, now: datetime) -> None:
@@ -339,6 +356,20 @@ class AiEvalCoordinator:
 
     async def async_shutdown(self) -> None:
         self._shutting_down = True
+        if self._initial_task is not None:
+            task = self._initial_task
+            self._initial_task = None
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        current = asyncio.current_task()
+        tick_tasks = tuple(task for task in self._tick_tasks if task is not current)
+        for task in tick_tasks:
+            task.cancel()
+        if tick_tasks:
+            await asyncio.gather(*tick_tasks, return_exceptions=True)
         if self._unsub_timer:
             try:
                 self._unsub_timer()

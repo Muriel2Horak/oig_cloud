@@ -92,6 +92,23 @@ def test_versioned_armed_restore_round_trips() -> None:
     assert restored == original
 
 
+def test_armed_marker_waits_for_proven_rollover_on_next_day() -> None:
+    state = _armed_state(18000.0, DAY1)
+
+    stale = observe_daily_cycle_value(state, 18000.0, DAY2)
+    rolled = observe_daily_cycle_value(stale, 0.0, DAY2)
+
+    assert stale.armed is True
+    assert stale.last_value_wh == 18000.0
+    assert stale.last_local_date == DAY1
+    assert stale.pending_high_value_wh == 18000.0
+    assert stale.pending_high_local_date == DAY2
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 0.0
+    assert rolled.last_local_date == DAY2
+    assert rolled.pending_high_value_wh is None
+
+
 def test_versioned_unarmed_restore_round_trips() -> None:
     original = _unarmed_state(19497.0, DAY1)
     restore_data = DailyCycleRestoreData(original)
@@ -376,10 +393,12 @@ def test_sentinel_restore_promotes_pending_high_then_arms_on_credible_same_day_l
     assert rolled.pending_high_value_wh is None
     assert rolled.pending_high_local_date is None
 
-    next_day_rollover = observe_daily_cycle_value(rolled, 4000.0, DAY4)
-    assert next_day_rollover.armed is True
-    assert next_day_rollover.last_value_wh == 4000.0
-    assert next_day_rollover.last_local_date == DAY4
+    next_day_stale = observe_daily_cycle_value(rolled, 4000.0, DAY4)
+    assert next_day_stale.armed is True
+    assert next_day_stale.last_value_wh == 4000.0
+    assert next_day_stale.last_local_date == DAY3
+    assert next_day_stale.pending_high_value_wh == 4000.0
+    assert next_day_stale.pending_high_local_date == DAY4
 
 
 def test_restart_with_sentinel_pending_high_promotes_then_arms_on_credible_low() -> None:

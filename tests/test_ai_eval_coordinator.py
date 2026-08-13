@@ -5,11 +5,10 @@ monkeypatched AI client and notification.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
-import types
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -103,9 +102,6 @@ def _make_states(box_id: str, now: datetime) -> Dict[str, List[FakeState]]:
             entity_states.append(FakeState(val_str, ts))
         states[entity_id] = entity_states
     return states
-
-
-import asyncio
 
 
 @pytest.mark.asyncio
@@ -334,3 +330,90 @@ async def test_quiet_hour_writes_ok_status_without_calling_ai(monkeypatch):
     assert fake_store.saved.get("status") == "ok"
     assert fake_store.saved.get("anomaly_count") == 0
     assert fake_store.saved.get("report_lidsky") == ""
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_initial_tick_and_blocks_post_shutdown_work(monkeypatch):
+    """Unload owns delayed work and prevents any later evaluation tick."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    fake_hass = FakeHass()
+    fake_store = FakeStore()
+    monkeypatch.setattr(coordinator, "Store", lambda *_a, **_k: fake_store)
+    coord = coordinator.AiEvalCoordinator(fake_hass, FakeConfigEntry())
+    coord._store = fake_store
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def controlled_sleep(_seconds):
+        started.set()
+        await release.wait()
+
+    ticks = []
+
+    async def record_tick(_now):
+        ticks.append(True)
+
+    monkeypatch.setattr(asyncio, "sleep", controlled_sleep)
+    monkeypatch.setattr(coord, "_async_run_tick", record_tick)
+    monkeypatch.setattr(coordinator, "async_track_point_in_time", lambda *_a: lambda: None)
+
+    await coord.async_setup()
+    await started.wait()
+    await coord.async_shutdown()
+    release.set()
+    await asyncio.get_running_loop().run_in_executor(None, lambda: None)
+
+    assert ticks == []
+    assert coord._initial_task is None
+
+
+@pytest.mark.asyncio
+async def test_shutdown_guard_rejects_already_dispatched_tick(monkeypatch):
+    """A callback that was dispatched before unload cannot cross the boundary."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    fake_store = FakeStore()
+    monkeypatch.setattr(coordinator, "Store", lambda *_a, **_k: fake_store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry())
+    ticks = []
+
+    async def record_tick(_now):
+        ticks.append(True)
+
+    monkeypatch.setattr(coord, "_async_run_tick", record_tick)
+    await coord.async_shutdown()
+    await coord._async_on_tick(datetime.now(timezone.utc))
+
+    assert ticks == []
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_inflight_hourly_tick(monkeypatch):
+    """Unload waits until an already-started evaluation is cancelled."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    fake_store = FakeStore()
+    monkeypatch.setattr(coordinator, "Store", lambda *_a, **_k: fake_store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry())
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def blocked_tick(_now):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(coord, "_async_run_tick", blocked_tick)
+    tick_task = asyncio.create_task(coord._async_on_tick(datetime.now(timezone.utc)))
+    await started.wait()
+
+    await coord.async_shutdown()
+
+    assert cancelled.is_set()
+    assert tick_task.done()
+    assert coord._tick_tasks == set()

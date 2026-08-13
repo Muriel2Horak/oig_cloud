@@ -43,6 +43,12 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   startup warnings; asynchronous planner and boiler tasks are owned and reconciled on unload.
 - Registry fallback now resolves numeric OIG box IDs from real Home Assistant entity IDs without
   patching Python's global regular-expression compiler during tests.
+- AI evaluation now bounds provider response bytes and text, owns all delayed and active tasks,
+  and awaits cancellation before config-entry unload completes.
+- Battery planning revalidates the live safety floor after its final awaited diagnostic step;
+  fired forecast retries are tracked and reconciled during entity teardown.
+- Daily Recorder reset markers retain the last proven cycle until a lower counter value proves
+  the real rollover, preventing a stale post-midnight sample from temporarily doubling the sum.
 - Home Assistant 2026.8 startup diagnostics, deferred annotations, manifest reads, and recorder
   access paths are compatible with the supported runtime.
 
@@ -51,7 +57,9 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   headers, validate integration-relative paths, and redact provider or exception details.
 - Solar secrets stay in private Store records and proof-bound activation prevents replay or
   cross-entry credential reuse.
-- A sealed security review of the release diff completed with zero reportable findings.
+- An exhaustive sealed review covered all 124 source-like release-diff files, validated seven
+  candidates, and identified five release-blocking findings; all five are fixed above with
+  focused regression tests before publication.
 
 ## [2.4.0] - 2026-07-31
 

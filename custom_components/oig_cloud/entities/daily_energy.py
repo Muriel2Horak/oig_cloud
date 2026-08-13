@@ -140,6 +140,48 @@ def _armed_marker(value_wh: float, local_date: date) -> DailyCycleMarkerState:
     )
 
 
+def _observe_armed_marker(
+    state: DailyCycleMarkerState,
+    value_wh: float,
+    local_date: date,
+) -> DailyCycleMarkerState:
+    """Advance an armed marker only after a later-day reset is observed."""
+    last_date = state.last_local_date
+    last_value = state.last_value_wh
+    if last_date is None:
+        return _armed_marker(value_wh, local_date)
+    if local_date < last_date:
+        return state
+    if local_date == last_date:
+        return _armed_marker(value_wh, local_date)
+
+    pending_value = state.pending_high_value_wh
+    pending_date = state.pending_high_local_date
+    if last_value is not None and value_wh < last_value:
+        return _armed_marker(value_wh, local_date)
+    if pending_value is not None and pending_date is not None:
+        if value_wh < pending_value and _is_credible_daily_rollover(
+            pending_value, value_wh
+        ):
+            return _armed_marker(value_wh, local_date)
+        if local_date == pending_date:
+            pending_value = max(pending_value, value_wh)
+        else:
+            pending_value = value_wh
+            pending_date = local_date
+    else:
+        pending_value = value_wh
+        pending_date = local_date
+
+    return DailyCycleMarkerState(
+        armed=True,
+        last_value_wh=last_value,
+        last_local_date=last_date,
+        pending_high_value_wh=pending_value,
+        pending_high_local_date=pending_date,
+    )
+
+
 def _observe_with_pending_high(
     state: DailyCycleMarkerState,
     value_wh: float,
@@ -262,7 +304,7 @@ def observe_daily_cycle_value(
     the conservative rollover predicate.
     """
     if state.armed:
-        return _armed_marker(value_wh, local_date)
+        return _observe_armed_marker(state, value_wh, local_date)
 
     if (
         state.pending_high_value_wh is not None

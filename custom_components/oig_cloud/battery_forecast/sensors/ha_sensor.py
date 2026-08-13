@@ -225,6 +225,7 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
         sensor_runtime_module.handle_will_remove(self)
+        await task_utils_module.async_wait_forecast_retry_tasks(self)
         await super().async_will_remove_from_hass()
 
     def _get_config(self) -> Dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -306,3 +307,40 @@ def test_repeated_initialization_cannot_revive_stale_generation_callback(monkeyp
     # The pre-reinit closure must not match the post-reinit generation.
     stale_callback(datetime.now())
     assert dispatched == []
+
+
+async def test_dispatched_retry_is_cancelled_and_awaited_on_removal(monkeypatch):
+    """A fired timer cannot leave its async update alive after unload."""
+    sensor = DummySensor()
+    sensor._hass.loop = asyncio.get_running_loop()
+    sensor._hass.async_create_task = asyncio.create_task
+    sensor._forecast_retry_tasks = set()
+    callbacks = []
+
+    def fake_call_later(_hass, _delay, callback):
+        callbacks.append(callback)
+        return lambda: None
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def blocked_update():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    sensor.async_update = blocked_update
+    monkeypatch.setattr(task_utils, "async_call_later", fake_call_later)
+
+    task_utils.schedule_forecast_retry(sensor, 1.0)
+    callbacks[0](datetime.now())
+    await started.wait()
+
+    task_utils.invalidate_forecast_retry_lifecycle(sensor)
+    await task_utils.async_wait_forecast_retry_tasks(sensor)
+
+    assert cancelled.is_set()
+    assert sensor._forecast_retry_tasks == set()

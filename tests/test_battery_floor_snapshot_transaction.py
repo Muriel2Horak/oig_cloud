@@ -350,6 +350,31 @@ async def test_floor_identity_change_before_commit_discards_plan(
     assert sensor._last_forecast_bucket is not None
 
 
+async def test_floor_change_during_summary_emit_discards_plan(
+    hass, planner_env, monkeypatch
+):
+    """A state change in the awaited summary window invalidates the plan."""
+    sensor = _PlannerSensor(hass, _local_only())
+    _set_floor(hass, "15")
+    await hass.async_block_till_done()
+
+    async def mutate_during_summary(*_args, **_kwargs):
+        _set_floor(hass, "35")
+        await hass.async_block_till_done()
+
+    monkeypatch.setattr(
+        forecast_update_module,
+        "_emit_planner_summary_event",
+        mutate_during_summary,
+    )
+
+    await forecast_update_module.async_update(sensor)
+
+    assert sensor._timeline_data == []
+    assert planner_env.spies["_apply_planner_results"].calls == 0
+    assert sensor._last_forecast_bucket is None
+
+
 async def test_planner_exception_after_floor_change_discards_failure_metrics(
     hass, planner_env, monkeypatch
 ):

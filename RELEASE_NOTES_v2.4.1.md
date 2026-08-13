@@ -88,6 +88,12 @@ Senzor `sensor.oig_<box>_dc_in_fv_ad` nyní používá Recorder kontrakt pro den
   entity ID; test už kvůli tomu nepřepisuje globální regulární výrazy Pythonu.
 - Volitelné hodinové AI vyhodnocení publikuje jen hodnotný diagnostický report. Nemění samo
   režim boxu ani jinou fyzickou akci.
+- Odpověď AI provideru má pevný limit velikosti a všechny odložené nebo právě běžící AI úlohy
+  se při unloadu zruší a vyčkají; po odebrání entry už nic neukládají ani neposílají.
+- Battery planner po posledním asynchronním diagnostickém kroku znovu ověří aktuální bezpečnostní
+  minimum. Výsledek postavený na staré hodnotě se zahodí a retry zůstane otevřený.
+- Již spuštěný forecast retry je vlastněný senzorem, takže reload nebo odstranění entity nemůže
+  ponechat starý výpočet běžet na pozadí.
 
 ---
 
@@ -108,12 +114,15 @@ solárních klíčů.
 
 ## Ověření vydání
 
-- Python: **5 479 passed, 29 skipped**, coverage **91,18 %**.
+- Python: **5 487 passed, 29 skipped**, coverage **91,22 %**.
 - Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
 - Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
   all-files pre-commit běhy prošly.
 - Deterministický frontend build byl ověřen na Node.js `22.17.0` a npm `10.9.2`.
-- Security diff audit dokončil úplné pokrytí změněných souborů s **0 reportovatelnými nálezy**.
+- Security diff audit uzavřel **124/124** source-like souborů, všech **7** kandidátů a všech
+  **5** relevantních attack-path analýz. Pět nalezených release blockerů (limit AI odpovědi,
+  AI lifecycle, závod bezpečnostního minima planneru, forecast retry po unloadu a předčasný
+  Recorder reset marker) je v této verzi opraveno a kryto regresními testy.
 - Přímé ověření na Home Assistantu `2026.8.1` potvrdilo jeden přijatý automatický refresh v
   16:00, úspěšný pozdější ruční refresh, čistý OIG-scoped log a plynulé Recorder součty bez
   falešného resetu.

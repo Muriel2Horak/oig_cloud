@@ -203,6 +203,48 @@ async def test_legacy_total_increasing_history_is_not_double_counted_on_first_to
     assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
 
 
+async def test_armed_marker_waits_for_real_reset_after_midnight(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A carried daily high must not advertise the next cycle prematurely."""
+    await hass.config.async_set_time_zone(PRAGUE)
+    assert await async_setup_component(hass, "sensor", {})
+    await hass.async_block_till_done()
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+
+    sensor = _make_sensor()
+    sensor.hass = hass
+
+    async def _last_state():
+        return None
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+    await sensor.async_added_to_hass()
+
+    await _drive(
+        hass,
+        freezer,
+        sensor,
+        [
+            (T_DAY1_NOON, 0),
+            (T_DAY1_LATE, 18000),
+            (T_DAY2_EARLY, 18000),
+            (T_DAY2_HIGHER, 0),
+        ],
+    )
+
+    rows = await _latest_stats(hass)
+    sums = [row["sum"] for row in rows]
+    assert sums == pytest.approx([0.0, 18000.0, 18000.0, 18000.0])
+    assert rows[2]["last_reset"] == rows[1]["last_reset"]
+    assert rows[3]["last_reset"] != rows[2]["last_reset"]
+    assert not _warnings(caplog), _warnings(caplog)
+
+
 async def test_legacy_total_increasing_history_is_not_double_counted_on_first_total_sample__via_entity(
     recorder_mock_compat, hass, freezer, caplog
 ):

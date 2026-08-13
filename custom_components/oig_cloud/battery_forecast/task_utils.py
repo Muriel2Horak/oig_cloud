@@ -66,7 +66,14 @@ def schedule_forecast_retry(sensor, delay_seconds: float) -> None:
         if generation != getattr(sensor, "_forecast_retry_generation", -1):
             return
         sensor._forecast_retry_unsub = None
-        create_task_threadsafe(sensor, sensor.async_update)
+        task = create_task_threadsafe(sensor, sensor.async_update)
+        if task is not None:
+            tasks = getattr(sensor, "_forecast_retry_tasks", None)
+            if tasks is None:
+                tasks = set()
+                sensor._forecast_retry_tasks = tasks
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
 
     generation = _advance_generation(sensor)
     _clear_retry_unsub(sensor)
@@ -78,17 +85,28 @@ def invalidate_forecast_retry_lifecycle(sensor) -> None:
     sensor._forecast_retry_active = False
     _advance_generation(sensor)
     _clear_retry_unsub(sensor)
+    for task in tuple(getattr(sensor, "_forecast_retry_tasks", ())):
+        task.cancel()
 
 
-def create_task_threadsafe(sensor, coro_func, *args) -> None:
+async def async_wait_forecast_retry_tasks(sensor) -> None:
+    """Await all retry updates owned by this sensor after invalidation."""
+    while tasks := tuple(getattr(sensor, "_forecast_retry_tasks", ())):
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def create_task_threadsafe(sensor, coro_func, *args) -> asyncio.Task[Any] | None:
     """Create an HA task safely from any thread."""
     hass = getattr(sensor, "_hass", None) or getattr(sensor, "hass", None)
     if not hass:
-        return
+        return None
+
+    created: asyncio.Task[Any] | None = None
 
     def _runner() -> None:
+        nonlocal created
         try:
-            hass.async_create_task(coro_func(*args))
+            created = hass.async_create_task(coro_func(*args))
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug(
                 "Failed to schedule task %s (error_class=%s)",
@@ -108,3 +126,4 @@ def create_task_threadsafe(sensor, coro_func, *args) -> None:
             loop.call_soon_threadsafe(_runner)
     except Exception:  # pragma: no cover - defensive
         _runner()
+    return created

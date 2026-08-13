@@ -407,8 +407,11 @@ class OigCloudDataSensor(_DataSensorBase):
                 self._attr_state_class,
             )
             return None
-        if self._daily_cycle_marker_state is not None and not self._daily_cycle_marker_state.armed:
+        marker = self._daily_cycle_marker_state
+        if marker is not None and not marker.armed:
             return None
+        if marker is not None and marker.last_local_date is not None:
+            return dt_util.start_of_local_day(marker.last_local_date)
         return dt_util.start_of_local_day()
 
     @property

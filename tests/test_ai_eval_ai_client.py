@@ -87,6 +87,14 @@ class _FakeResponse:
     def __init__(self, status=200, body=None):
         self.status = status
         self._body = body or {"choices": [{"message": {"content": "markdown output"}}]}
+        self.headers = {}
+        self.content = self
+        self.max_read = None
+
+    async def read(self, size=-1):
+        self.max_read = size
+        raw = json.dumps(self._body).encode()
+        return raw if size < 0 else raw[:size]
 
     async def json(self):
         return self._body
@@ -161,6 +169,25 @@ async def test_text_path_returns_markdown_not_json(monkeypatch):
         {"role": "system", "content": "system prompt"},
         {"role": "user", "content": "user message"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_text_path_rejects_oversized_provider_output(monkeypatch):
+    response = _FakeResponse(body={
+        "choices": [{"message": {"content": "x" * 200_000}}]
+    })
+    session = _FakeSession(response)
+    hass, _ = _patch_ai_client(
+        monkeypatch, provider="nvidia", key="nvapi-secret00000000", session=session
+    )
+
+    from custom_components.oig_cloud.ai_eval.ai_client import generate_eval_report
+
+    result = await generate_eval_report(hass, _Entry(), "system", "user")
+
+    assert result is None
+    assert response.max_read is not None
+    assert response.max_read < 200_000
 
 
 @pytest.mark.asyncio

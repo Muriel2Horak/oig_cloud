@@ -22,6 +22,8 @@ import voluptuous as vol
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S = 30
+MAX_TEXT_RESPONSE_CHARS = 64_000
+MAX_TEXT_RESPONSE_BYTES = 128_000
 
 # Provider is a CO-EQUAL choice (SCOPE-REVISION #8). Deliberately NO "recommended"
 # and NO ordering semantics: Groq restricted even a legitimate account, so a hard
@@ -384,10 +386,18 @@ class OpenAiCompatBackend:
                 if resp.status != 200:
                     return None, _classify_http_status(resp.status)
                 try:
-                    body = await resp.json()
+                    content_length = resp.headers.get("Content-Length")
+                    if content_length is not None and int(content_length) > MAX_TEXT_RESPONSE_BYTES:
+                        return None, "invalid_response"
+                    raw_body = await resp.content.read(MAX_TEXT_RESPONSE_BYTES + 1)
+                    if len(raw_body) > MAX_TEXT_RESPONSE_BYTES:
+                        return None, "invalid_response"
+                    body = json.loads(raw_body)
                 except Exception:
                     return None, "invalid_response"
             msg_content = body["choices"][0]["message"]["content"]
+            if not isinstance(msg_content, str) or len(msg_content) > MAX_TEXT_RESPONSE_CHARS:
+                return None, "invalid_response"
             if (
                 msg_content
                 and msg_content.lstrip().startswith("<think>")
