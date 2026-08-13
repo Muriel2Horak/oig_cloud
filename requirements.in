@@ -17,5 +17,4 @@ requests==2.34.2
 urllib3==2.7.0
 protobuf==5.29.6
 pycares==5.0.0
-litellm==1.93.2
 python-dotenv==1.2.2

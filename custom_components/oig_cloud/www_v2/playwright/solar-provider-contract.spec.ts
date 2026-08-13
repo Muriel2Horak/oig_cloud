@@ -222,7 +222,9 @@ async function installSolarFake(page: Page) {
             'solar_forecast_string2_azimuth',
           ];
           const unexpected = provider === 'solcast'
-            ? forecastOnly.filter((key) => key in candidate).sort()
+            ? forecastOnly
+              .filter((key) => key in candidate)
+              .sort((left, right) => left.localeCompare(right, 'en'))
             : [];
           const inactiveFields: string[] = [];
           if (unexpected.length === 0) {

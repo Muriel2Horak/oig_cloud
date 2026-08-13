@@ -360,10 +360,7 @@ class AiEvalCoordinator:
             task = self._initial_task
             self._initial_task = None
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            await asyncio.gather(task, return_exceptions=True)
         current = asyncio.current_task()
         tick_tasks = tuple(task for task in self._tick_tasks if task is not current)
         for task in tick_tasks:

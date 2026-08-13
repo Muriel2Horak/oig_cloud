@@ -158,7 +158,7 @@ export function legacyAdoptionsForChanges(
   if (!legacyFields) return [];
   return Object.keys(changedValues)
     .filter((key) => legacyFields[key]?.requires_adoption === true)
-    .sort();
+    .sort((left, right) => left.localeCompare(right, 'en'));
 }
 
 export type SettingsSection =

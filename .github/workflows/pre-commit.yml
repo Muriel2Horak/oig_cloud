@@ -35,7 +35,7 @@ jobs:
 
       - name: Install exact v2 dependencies
         working-directory: custom_components/oig_cloud/www_v2
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run pre-commit
         env:

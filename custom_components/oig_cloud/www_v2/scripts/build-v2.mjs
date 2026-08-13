@@ -78,7 +78,7 @@ function collectOutputFiles(root, directory = root, output = []) {
     output.push(directory.slice(root.length + 1));
     return output;
   }
-  for (const name of readdirSync(directory).sort()) {
+  for (const name of readdirSync(directory).sort((left, right) => left.localeCompare(right, 'en'))) {
     collectOutputFiles(root, join(directory, name), output);
   }
   return output;

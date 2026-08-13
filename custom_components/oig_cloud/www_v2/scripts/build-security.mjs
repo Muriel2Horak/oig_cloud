@@ -36,7 +36,7 @@ function collectDirectoryFiles(root, directory, output) {
   const absoluteDirectory = join(root, directory);
   if (!existsSync(absoluteDirectory)) return;
 
-  for (const name of readdirSync(absoluteDirectory).sort()) {
+  for (const name of readdirSync(absoluteDirectory).sort((left, right) => left.localeCompare(right, 'en'))) {
     if (EXCLUDED_DIRECTORY_NAMES.has(name)) continue;
     const absolute = join(absoluteDirectory, name);
     const stat = lstatSync(absolute);
@@ -67,7 +67,7 @@ export function collectBuildInputs(projectRoot) {
 
   const typescriptConfigs = readdirSync(root)
     .filter((name) => /^tsconfig(?:\.[^.]+)?\.json$/u.test(name))
-    .sort();
+    .sort((left, right) => left.localeCompare(right, 'en'));
   if (typescriptConfigs.length === 0) throw new BuildSecurityError('missing_typescript_config');
   for (const input of typescriptConfigs) {
     const stat = lstatSync(join(root, input));
@@ -78,7 +78,7 @@ export function collectBuildInputs(projectRoot) {
   collectDirectoryFiles(root, 'src', inputs);
   collectDirectoryFiles(root, 'public', inputs);
 
-  const unique = [...new Set(inputs)].sort();
+  const unique = [...new Set(inputs)].sort((left, right) => left.localeCompare(right, 'en'));
   if (unique.length === 0) throw new BuildSecurityError('empty_inputs');
   return unique;
 }

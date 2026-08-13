@@ -42,7 +42,6 @@ RUNTIME_PIP_AUDIT_IGNORES=(
 )
 VALIDATED_RUNTIME_AUDIT_IDS="$(
   "$PYTHON_BIN" scripts/validate_pip_audit_exceptions.py \
-    --policy scripts/pip-audit-exceptions.json \
     --requirements requirements.txt \
     --emit-vulnerability-ids
 )"
@@ -108,7 +107,6 @@ DEV_PIP_AUDIT_IGNORES=(
 )
 VALIDATED_DEV_AUDIT_IDS="$(
   "$PYTHON_BIN" scripts/validate_pip_audit_exceptions.py \
-    --policy scripts/pip-audit-exceptions.json \
     --requirements requirements-dev.txt \
     --emit-vulnerability-ids
 )"
@@ -141,7 +139,7 @@ echo "==> Running flake8"
 
 FRONTEND_DIR="custom_components/oig_cloud/www_v2"
 echo "==> Installing V2 frontend dependencies"
-npm --prefix "$FRONTEND_DIR" ci --no-audit --no-fund
+npm --prefix "$FRONTEND_DIR" ci --ignore-scripts --no-audit --no-fund
 echo "==> Running V2 frontend lint"
 npm --prefix "$FRONTEND_DIR" run lint -- --quiet
 echo "==> Running V2 frontend typecheck"

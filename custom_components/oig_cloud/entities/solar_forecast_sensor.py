@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+from contextlib import suppress
 import logging
 import time
 from datetime import date, datetime, timedelta
@@ -1070,13 +1071,12 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         completed = asyncio.Event()
         task.add_done_callback(lambda _task: completed.set())
         while not task.done():
-            try:
+            current_task = asyncio.current_task()
+            with suppress(asyncio.CancelledError):
                 await completed.wait()
-            except asyncio.CancelledError:
+            if current_task is not None and current_task.cancelling():
                 caller_cancelled = True
-                current_task = asyncio.current_task()
-                if current_task is not None:
-                    current_task.uncancel()
+                current_task.uncancel()
         return caller_cancelled
 
     async def _async_restore_retry_recovery(self, now: datetime) -> bool:

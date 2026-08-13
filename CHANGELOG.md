@@ -26,8 +26,9 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   reading or constructing bearer tokens in application code.
 - CI now enforces Pylint `E0/F0`, Mypy, Flake8, frontend lint/typecheck, deterministic frontend
   builds, pre-commit idempotence, and coverage above 80% for both Python and frontend suites.
-- Runtime pins for `litellm`, `protobuf`, and `urllib3`, plus the development `black` pin, were
-  upgraded to their current security-fix versions and both hash-locked files were regenerated.
+- Removed the unused `litellm` dependency and its Proxy/SSO server dependency tree. Runtime pins
+  for `protobuf` and `urllib3`, plus the development `black` pin, were upgraded to their current
+  security-fix versions and both hash-locked files were regenerated.
 - Local CI now targets the actual V2 frontend and Home Assistant 2026.8.1 Hassfest source without
   traversing task virtual environments or mutating installed frontend dependencies.
 
@@ -72,9 +73,8 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   `cryptography==48.0.1` advisories remain as a visible, version-bound accepted risk because Home
   Assistant 2026.8.1 pins that version exactly. The exception expires automatically on 2026-09-12
   and CI fails closed after expiry or any package-version drift.
-- Snyk keeps three exact LiteLLM findings visible under a temporary policy that expires on
-  2026-09-12. They affect LiteLLM Proxy/SSO server paths; OIG uses its own outbound client and does
-  not start that server. No general Snyk test or package class is excluded.
+- Removed the unused LiteLLM dependency and its entire Proxy/SSO server attack surface. OIG uses
+  its own outbound client and no longer needs an exception for LiteLLM server-only findings.
 
 ## [2.4.0] - 2026-07-31
 
