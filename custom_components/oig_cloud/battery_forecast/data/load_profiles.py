@@ -24,27 +24,38 @@ def get_load_avg_sensors(sensor: Any) -> Dict[str, Any]:
         if "time_range" not in config or "day_type" not in config:
             continue
 
-        entity_id = f"sensor.oig_{sensor._box_id}_{sensor_type}"
-        state = sensor._hass.states.get(entity_id)
-        if not state:
-            _LOGGER.debug("Sensor %s not found in HA", entity_id)
-            continue
+        candidate_ids = (
+            f"sensor.oig_{sensor._box_id}_{sensor_type}",
+            f"sensor.{sensor_type}",
+        )
+        for entity_id in candidate_ids:
+            state = sensor._hass.states.get(entity_id)
+            if not state:
+                _LOGGER.debug("Sensor %s not found in HA", entity_id)
+                continue
 
-        if state.state in ["unknown", "unavailable"]:
-            _LOGGER.debug("Sensor %s is %s", entity_id, state.state)
-            continue
+            if state.state in ["unknown", "unavailable"]:
+                _LOGGER.debug("Sensor %s is %s", entity_id, state.state)
+                continue
 
-        try:
-            value = float(state.state)
-        except (ValueError, TypeError) as err:
-            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to parse %s value '%s': %s", entity_id, state.state, err)
-            continue
+            try:
+                value = float(state.state)
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    "Failed to parse %s value '%s': %s",
+                    entity_id,
+                    state.state,
+                    err,
+                )
+                continue
 
-        load_sensors[entity_id] = {
-            "value": value,
-            "time_range": config["time_range"],
-            "day_type": config["day_type"],
-        }
+            load_sensors[entity_id] = {
+                "value": value,
+                "time_range": config["time_range"],
+                "day_type": config["day_type"],
+            }
+            break
 
     _LOGGER.info("Found %s valid load_avg sensors", len(load_sensors))
     if load_sensors:

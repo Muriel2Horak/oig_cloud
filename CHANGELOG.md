@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-08-13
+
+### Fixed
+- Battery forecast load profiles now resolve both box-prefixed and canonical
+  `sensor.load_avg_*` entity IDs, restoring the ten configured household load
+  buckets instead of silently falling back to a fixed load.
+- Battery health analysis now persists successful scans even when no new clean
+  charging cycle is found and skips a duplicate full recorder scan for 20 hours,
+  avoiding repeated high-volume history reads after Home Assistant restarts.
+- The boiler daily Wh counter now advertises the Home Assistant energy device
+  class, preserving valid utility-meter metadata, and an expected empty forecast
+  during startup is logged as debug instead of a warning.
+
 ## [2.4.0] - 2026-07-31
 
 Major user-facing release. Full Czech release notes: `RELEASE_NOTES_v2.4.0.md`.

@@ -1,6 +1,7 @@
 """Tests for the OIG Cloud Data Update Coordinator."""
 
 import asyncio
+import logging
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -1976,7 +1977,7 @@ async def test_update_battery_forecast_with_timeline(monkeypatch, coordinator):
 
 
 @pytest.mark.asyncio
-async def test_update_battery_forecast_no_timeline(monkeypatch, coordinator):
+async def test_update_battery_forecast_no_timeline(monkeypatch, coordinator, caplog):
     class DummySensor:
         def __init__(self, *_a, **_k):
             self._timeline_data = None
@@ -1995,9 +1996,11 @@ async def test_update_battery_forecast_no_timeline(monkeypatch, coordinator):
         DummySensor,
     )
 
-    await coordinator._update_battery_forecast()
+    with caplog.at_level(logging.WARNING):
+        await coordinator._update_battery_forecast()
 
     assert coordinator.battery_forecast_data is None
+    assert "Battery forecast returned no timeline data" not in caplog.text
 
 
 def test_create_simple_battery_forecast_no_data(monkeypatch, coordinator):
