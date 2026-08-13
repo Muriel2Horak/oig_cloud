@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Battery health analysis now persists successful scans even when no new clean
   charging cycle is found and skips a duplicate full recorder scan for 20 hours,
   avoiding repeated high-volume history reads after Home Assistant restarts.
+- The boiler daily Wh counter now advertises the Home Assistant energy device
+  class, preserving valid utility-meter metadata, and an expected empty forecast
+  during startup is logged as debug instead of a warning.
 
 ## [2.4.0] - 2026-07-31
 

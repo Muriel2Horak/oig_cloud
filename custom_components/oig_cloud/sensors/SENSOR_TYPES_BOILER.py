@@ -35,7 +35,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
     "boiler_day_w": {
         "name": "Boiler - Today Energy",
         "name_cs": "Bojler - Dnešní uložení",
-        "device_class": SensorDeviceClass.POWER,
+        "device_class": SensorDeviceClass.ENERGY,
         "unit_of_measurement": UnitOfEnergy.WATT_HOUR,
         "node_id": "boiler",
         "node_key": "w",
