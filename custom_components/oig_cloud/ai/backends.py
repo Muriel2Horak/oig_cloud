@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 from typing import Any, Dict, Mapping, Sequence
+from urllib.parse import urlsplit
 
 import voluptuous as vol
 
@@ -65,6 +66,20 @@ ALLOWED_TASKS = frozenset({
     "ai_task_generate_data",
     "validate_config",
 })
+
+
+def _is_canonical_groq_endpoint(base_url: str) -> bool:
+    """Return whether a URL names Groq's canonical HTTPS API endpoint."""
+    try:
+        parsed = urlsplit(base_url)
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == "api.groq.com"
+            and parsed.port in (None, 443)
+        )
+    except ValueError:
+        return False
+
 
 # One response contract for the validate_config task. The direct backend accepts
 # this JSON-schema form; the host ai_task path uses validate_config_selector_schema()
@@ -374,7 +389,7 @@ class OpenAiCompatBackend:
         }
         if (
             self._provider == "groq"
-            and "api.groq.com" in self._base_url
+            and _is_canonical_groq_endpoint(self._base_url)
             and model.startswith("qwen")
         ):
             payload["reasoning_effort"] = "none"
@@ -434,7 +449,7 @@ class OpenAiCompatBackend:
         # another endpoint rejects with 400).
         if (
             self._provider == "groq"
-            and "api.groq.com" in self._base_url
+            and _is_canonical_groq_endpoint(self._base_url)
             and model.startswith("qwen")
         ):
             payload["reasoning_effort"] = "none"

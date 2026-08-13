@@ -94,6 +94,8 @@ Senzor `sensor.oig_<box>_dc_in_fv_ad` nyní používá Recorder kontrakt pro den
   minimum. Výsledek postavený na staré hodnotě se zahodí a retry zůstane otevřený.
 - Již spuštěný forecast retry je vlastněný senzorem, takže reload nebo odstranění entity nemůže
   ponechat starý výpočet běžet na pozadí.
+- Groq-specifické parametry se posílají jen na přesný HTTPS host `api.groq.com`; podobně vypadající
+  doména je nedostane. Diagnostika ČHMÚ uvádí zdroj souřadnic, ale neloguje jejich hodnoty.
 
 ---
 
@@ -114,7 +116,7 @@ solárních klíčů.
 
 ## Ověření vydání
 
-- Python: **5 487 passed, 29 skipped**, coverage **91,22 %**.
+- Python: **5 489 passed, 29 skipped**, coverage **91,22 %**.
 - Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
 - Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
   all-files pre-commit běhy prošly.
@@ -123,6 +125,8 @@ solárních klíčů.
   **5** relevantních attack-path analýz. Pět nalezených release blockerů (limit AI odpovědi,
   AI lifecycle, závod bezpečnostního minima planneru, forecast retry po unloadu a předčasný
   Recorder reset marker) je v této verzi opraveno a kryto regresními testy.
+- Následný audit finálního opravného commitu pokryl **8/8** změněných produkčních souborů s
+  úplným coverage, bez nálezu a bez odložené bezpečnostní práce.
 - Přímé ověření na Home Assistantu `2026.8.1` potvrdilo jeden přijatý automatický refresh v
   16:00, úspěšný pozdější ruční refresh, čistý OIG-scoped log a plynulé Recorder součty bez
   falešného resetu.

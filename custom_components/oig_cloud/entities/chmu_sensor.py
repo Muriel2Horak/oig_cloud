@@ -310,7 +310,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             lat = self._config_entry.options.get("solar_forecast_latitude")
             lon = self._config_entry.options.get("solar_forecast_longitude")
             if lat is not None and lon is not None:
-                _LOGGER.debug("🌦️ Using GPS from Solar Forecast: %s, %s", lat, lon)
+                _LOGGER.debug("🌦️ Using GPS from Solar Forecast configuration")
                 return (float(lat), float(lon))
 
         # 2. HA General Settings
@@ -320,7 +320,7 @@ class OigCloudChmuSensor(OigCloudSensor):
             lat = self.hass.config.latitude
             lon = self.hass.config.longitude
             if lat is not None and lon is not None:
-                _LOGGER.debug("🌦️ Using GPS from HA config: %s, %s", lat, lon)
+                _LOGGER.debug("🌦️ Using GPS from Home Assistant configuration")
                 return (float(lat), float(lon))
 
         # 3. Praha default

@@ -507,3 +507,38 @@ async def test_groq_provider_with_overridden_base_url_gets_no_reasoning_effort()
         api_key="gsk_x", models=("qwen/qwen3.6-27b",), provider="groq")
     await backend.async_generate_data("validate_config", {}, {"type": "object"})
     assert "reasoning_effort" not in session.calls[0][2]["json"]
+
+
+@pytest.mark.asyncio
+async def test_groq_lookalike_hostname_gets_no_reasoning_effort_for_json():
+    """A hostname containing api.groq.com is not the canonical Groq host."""
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session,
+        base_url="https://api.groq.com.attacker.example/v1",
+        api_key="gsk_x",
+        models=("qwen/qwen3.6-27b",),
+        provider="groq",
+    )
+
+    await backend.async_generate_data("validate_config", {}, {"type": "object"})
+
+    assert "reasoning_effort" not in session.calls[0][2]["json"]
+
+
+@pytest.mark.asyncio
+async def test_groq_lookalike_hostname_gets_no_reasoning_effort_for_text():
+    """The text path applies the same exact-host boundary as the JSON path."""
+    session = _Session(_Resp(200, {}))
+    backend = OpenAiCompatBackend(
+        session=session,
+        base_url="https://api.groq.com.attacker.example/v1",
+        api_key="gsk_x",
+        models=("qwen/qwen3.6-27b",),
+        provider="groq",
+    )
+
+    await backend.async_generate_text("system", "user")
+
+    assert "reasoning_effort" not in session.calls[0][2]["json"]

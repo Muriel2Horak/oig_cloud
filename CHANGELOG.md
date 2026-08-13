@@ -49,6 +49,8 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
   fired forecast retries are tracked and reconciled during entity teardown.
 - Daily Recorder reset markers retain the last proven cycle until a lower counter value proves
   the real rollover, preventing a stale post-midnight sample from temporarily doubling the sum.
+- Groq-specific request fields now require the exact canonical HTTPS host, and ČHMÚ diagnostics
+  identify the coordinate source without logging private latitude or longitude values.
 - Home Assistant 2026.8 startup diagnostics, deferred annotations, manifest reads, and recorder
   access paths are compatible with the supported runtime.
 
@@ -60,6 +62,8 @@ dashboard requests, and deterministic release quality. Full Czech release notes:
 - An exhaustive sealed review covered all 124 source-like release-diff files, validated seven
   candidates, and identified five release-blocking findings; all five are fixed above with
   focused regression tests before publication.
+- The immutable post-fix review covered all eight changed production files with complete coverage,
+  zero findings, and no deferred security work.
 
 ## [2.4.0] - 2026-07-31
 
