@@ -29,6 +29,7 @@ T_DAY1_NOON = datetime(2026, 8, 11, 10, 0, tzinfo=timezone.utc)
 T_DAY1_LATE = datetime(2026, 8, 11, 20, 0, tzinfo=timezone.utc)
 T_DAY2_EARLY = datetime(2026, 8, 11, 22, 10, tzinfo=timezone.utc)
 T_DAY2_HIGHER = datetime(2026, 8, 11, 22, 20, tzinfo=timezone.utc)
+T_DAY2_DIP = datetime(2026, 8, 11, 22, 30, tzinfo=timezone.utc)
 T_DAY3_EARLY = datetime(2026, 8, 12, 22, 10, tzinfo=timezone.utc)
 
 RECORDER_SENSOR_LOGGER = "homeassistant.components.sensor.recorder"
@@ -228,6 +229,67 @@ async def test_missed_rollover_after_later_high_preserves_recorder_sum(
     assert low["last_reset"] == pytest.approx(day3_midnight)
     assert low["sum"] >= higher["sum"]
     assert all(row["sum"] >= 0 for row in new_stats)
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+async def test_sentinel_restore_same_day_dip_waits_for_later_day_marker(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """Sentinel restore must not publish ``last_reset`` until a later-day rollover."""
+    await hass.config.async_set_time_zone(PRAGUE)
+    assert await async_setup_component(hass, "sensor", {})
+    await hass.async_block_till_done()
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    coordinator = _Coordinator({BOX_ID: {"dc_in": {}}})
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state="unknown", last_changed=T_DAY1_NOON)
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+    await sensor.async_added_to_hass()
+
+    assert sensor.last_reset is None
+
+    for moment, value in (
+        (T_DAY2_EARLY, 8000),
+        (T_DAY2_HIGHER, 18000),
+        (T_DAY2_DIP, 4000),
+        (T_DAY3_EARLY, 0),
+    ):
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+    stats = await _latest_stats(hass)
+    assert len(stats) == 4
+    high, higher, same_day_dip, rollover = stats
+
+    assert high["last_reset"] is None
+    assert higher["last_reset"] is None
+    assert same_day_dip["last_reset"] is None
+
+    marker_values = [
+        row["last_reset"] for row in stats if row["last_reset"] is not None
+    ]
+    assert len(marker_values) == 1
+    day3_midnight = datetime(2026, 8, 12, 22, 0, tzinfo=timezone.utc).timestamp()
+    assert marker_values[0] == pytest.approx(day3_midnight)
+    assert rollover["last_reset"] == pytest.approx(day3_midnight)
+    assert rollover["sum"] >= same_day_dip["sum"]
 
     recorder_warnings = [
         rec.getMessage()

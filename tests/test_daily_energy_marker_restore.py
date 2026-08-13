@@ -172,6 +172,113 @@ def test_stale_later_high_then_same_day_lower_arms_from_pending_high() -> None:
     assert rolled.pending_high_local_date is None
 
 
+def test_sentinel_restore_first_same_day_value_seeds_pending_high() -> None:
+    state = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=None,
+        last_local_date=DAY1,
+    )
+
+    high = observe_daily_cycle_value(state, 8000.0, DAY1)
+    higher = observe_daily_cycle_value(high, 18000.0, DAY1)
+
+    assert high.armed is False
+    assert high.last_value_wh is None
+    assert high.last_local_date == DAY1
+    assert high.pending_high_value_wh == 8000.0
+    assert high.pending_high_local_date == DAY1
+
+    assert higher.armed is False
+    assert higher.last_value_wh is None
+    assert higher.last_local_date == DAY1
+    assert higher.pending_high_value_wh == 18000.0
+    assert higher.pending_high_local_date == DAY1
+
+
+def test_sentinel_restore_pending_high_requires_later_local_day() -> None:
+    state = DailyCycleMarkerState(
+        armed=False,
+        last_value_wh=None,
+        last_local_date=DAY1,
+    )
+
+    high = observe_daily_cycle_value(state, 8000.0, DAY2)
+    same_day_lower = observe_daily_cycle_value(high, 4000.0, DAY2)
+    same_day_equal = observe_daily_cycle_value(same_day_lower, 8000.0, DAY2)
+    same_day_higher = observe_daily_cycle_value(same_day_equal, 18000.0, DAY2)
+    later_equal = observe_daily_cycle_value(same_day_higher, 18000.0, DAY3)
+    later_higher = observe_daily_cycle_value(later_equal, 19000.0, DAY3)
+    rolled = observe_daily_cycle_value(later_higher, 4000.0, DAY3)
+
+    assert high.armed is False
+    assert high.last_value_wh is None
+    assert high.last_local_date == DAY1
+    assert high.pending_high_value_wh == 8000.0
+    assert high.pending_high_local_date == DAY2
+
+    assert same_day_lower.armed is False
+    assert same_day_lower.pending_high_value_wh == 8000.0
+    assert same_day_lower.pending_high_local_date == DAY2
+
+    assert same_day_equal.armed is False
+    assert same_day_equal.pending_high_value_wh == 8000.0
+    assert same_day_equal.pending_high_local_date == DAY2
+
+    assert same_day_higher.armed is False
+    assert same_day_higher.pending_high_value_wh == 18000.0
+    assert same_day_higher.pending_high_local_date == DAY2
+
+    assert later_equal.armed is False
+    assert later_equal.pending_high_value_wh == 18000.0
+    assert later_equal.pending_high_local_date == DAY3
+
+    assert later_higher.armed is False
+    assert later_higher.pending_high_value_wh == 19000.0
+    assert later_higher.pending_high_local_date == DAY3
+
+    assert rolled.armed is False
+    assert rolled.pending_high_value_wh == 19000.0
+    assert rolled.pending_high_local_date == DAY3
+
+    next_day_rollover = observe_daily_cycle_value(rolled, 4000.0, date(2026, 8, 14))
+    assert next_day_rollover.armed is True
+    assert next_day_rollover.last_value_wh == 4000.0
+    assert next_day_rollover.last_local_date == date(2026, 8, 14)
+
+
+def test_restart_with_sentinel_pending_high_requires_later_local_day() -> None:
+    payload = {
+        "daily_cycle_marker": {
+            "version": 1,
+            "armed": False,
+            "last_value_wh": None,
+            "last_local_date": DAY1.isoformat(),
+            "pending_high_value_wh": 18000.0,
+            "pending_high_local_date": DAY2.isoformat(),
+        }
+    }
+
+    restored = restore_daily_cycle_marker(None, DAY1, payload)
+    same_day_dip = observe_daily_cycle_value(restored, 4000.0, DAY2)
+    rolled = observe_daily_cycle_value(same_day_dip, 0.0, DAY3)
+
+    assert restored.armed is False
+    assert restored.last_value_wh is None
+    assert restored.last_local_date == DAY1
+    assert restored.pending_high_value_wh == 18000.0
+    assert restored.pending_high_local_date == DAY2
+
+    assert same_day_dip.armed is False
+    assert same_day_dip.last_value_wh is None
+    assert same_day_dip.last_local_date == DAY1
+    assert same_day_dip.pending_high_value_wh == 18000.0
+    assert same_day_dip.pending_high_local_date == DAY2
+
+    assert rolled.armed is True
+    assert rolled.last_value_wh == 0.0
+    assert rolled.last_local_date == DAY3
+
+
 def test_stale_pre_midnight_data_after_midnight_does_not_arm() -> None:
     """A high pre-midnight sample arriving after midnight must not arm the marker."""
     state = restore_daily_cycle_marker(19497.0, DAY1, None)

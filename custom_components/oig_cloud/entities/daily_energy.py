@@ -191,7 +191,8 @@ def observe_daily_cycle_value(
 
     While unarmed, retain the pre-boundary reference when a later-day value is
     equal or higher. Arm only when the later-day validated value is strictly
-    lower. Same-day valid updates refresh the retained reference.
+    lower. Same-day valid updates refresh the retained reference or pending
+    high watermark without arming.
     """
     if state.armed:
         return DailyCycleMarkerState(
@@ -224,6 +225,62 @@ def observe_daily_cycle_value(
             last_local_date=state.last_local_date,
             pending_high_value_wh=state.pending_high_value_wh,
             pending_high_local_date=state.pending_high_local_date,
+        )
+
+    if (
+        state.last_value_wh is None
+        and state.pending_high_value_wh is not None
+        and state.pending_high_local_date is not None
+    ):
+        if local_date < state.pending_high_local_date:
+            return DailyCycleMarkerState(
+                armed=False,
+                last_value_wh=state.last_value_wh,
+                last_local_date=state.last_local_date,
+                pending_high_value_wh=state.pending_high_value_wh,
+                pending_high_local_date=state.pending_high_local_date,
+            )
+
+        if local_date == state.pending_high_local_date:
+            pending_value_wh = state.pending_high_value_wh
+            if value_wh > pending_value_wh:
+                pending_value_wh = value_wh
+            return DailyCycleMarkerState(
+                armed=False,
+                last_value_wh=state.last_value_wh,
+                last_local_date=state.last_local_date,
+                pending_high_value_wh=pending_value_wh,
+                pending_high_local_date=state.pending_high_local_date,
+            )
+
+        if value_wh < state.pending_high_value_wh:
+            return DailyCycleMarkerState(
+                armed=True,
+                last_value_wh=value_wh,
+                last_local_date=local_date,
+            )
+
+        pending_value_wh = state.pending_high_value_wh
+        pending_local_date = state.pending_high_local_date
+        if value_wh >= pending_value_wh:
+            pending_value_wh = value_wh
+            pending_local_date = local_date
+
+        return DailyCycleMarkerState(
+            armed=False,
+            last_value_wh=state.last_value_wh,
+            last_local_date=state.last_local_date,
+            pending_high_value_wh=pending_value_wh,
+            pending_high_local_date=pending_local_date,
+        )
+
+    if state.last_value_wh is None:
+        return DailyCycleMarkerState(
+            armed=False,
+            last_value_wh=state.last_value_wh,
+            last_local_date=state.last_local_date,
+            pending_high_value_wh=value_wh,
+            pending_high_local_date=local_date,
         )
 
     if local_date == state.last_local_date:
