@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { HaClient, type Hass, type OigApiResult } from '@/data/ha-client';
+import { HaClient, type Hass, type OigApiResult, plannerState } from '@/data/ha-client';
 
 const STALE_TOKEN = 'stale-token-sentinel';
 const CURRENT_TOKEN = 'current-token-sentinel';
@@ -722,6 +722,405 @@ describe('HaClient authenticated Home Assistant transport', () => {
         code: 'invalid_response',
         error: 'Invalid provider response',
       });
+    });
+  });
+
+  describe('Task 4: PlannerStateManager', () => {
+    it('provides default plan as hybrid', () => {
+      const manager = plannerState;
+      expect(manager.getDefaultPlan()).toBe('hybrid');
+    });
+
+    it('returns cached settings when available', async () => {
+      const manager = plannerState;
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // First call should fetch and cache
+      fake.dispatch.mockResolvedValueOnce(response(200, { auto_mode_switch_enabled: true, planner_mode: 'hybrid' }));
+      const result1 = await manager.fetchSettings(client, 'SN1', true);
+      expect(result1).toEqual({ auto_mode_switch_enabled: true, planner_mode: 'hybrid' });
+
+      // getCachedSettings should return the same cached value
+      expect(manager.getCachedSettings()).toEqual({ auto_mode_switch_enabled: true, planner_mode: 'hybrid' });
+    });
+
+    it('returns null when no settings are cached', () => {
+      const manager = plannerState;
+      manager.invalidate();
+      expect(manager.getCachedSettings()).toBeNull();
+    });
+
+    it('returns labels for known plan types', () => {
+      const manager = plannerState;
+      expect(manager.getLabels('hybrid')).toEqual({ short: 'Plán', long: 'Plánování' });
+    });
+
+    it('falls back to hybrid labels for unknown plan types', () => {
+      const manager = plannerState;
+      expect(manager.getLabels('unknown-plan')).toEqual({ short: 'Plán', long: 'Plánování' });
+      expect(manager.getLabels('')).toEqual({ short: 'Plán', long: 'Plánování' });
+    });
+
+    it('invalidates cache and clears timestamp', async () => {
+      const manager = plannerState;
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // Populate cache
+      fake.dispatch.mockResolvedValueOnce(response(200, { cached: true }));
+      await manager.fetchSettings(client, 'SN1', true);
+      expect(manager.getCachedSettings()).toEqual({ cached: true });
+
+      // Invalidate
+      manager.invalidate();
+      expect(manager.getCachedSettings()).toBeNull();
+    });
+
+    it('uses cache within TTL and bypasses fetch', async () => {
+      const manager = plannerState;
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // First call
+      fake.dispatch.mockResolvedValueOnce(response(200, { value: 1 }));
+      const result1 = await manager.fetchSettings(client, 'SN1', true);
+      expect(result1).toEqual({ value: 1 });
+      expect(fake.dispatch).toHaveBeenCalledTimes(1);
+
+      // Second call within TTL - should use cache
+      const result2 = await manager.fetchSettings(client, 'SN1', false);
+      expect(result2).toEqual({ value: 1 });
+      expect(fake.dispatch).toHaveBeenCalledTimes(1); // No additional call
+    });
+
+    it('forces refresh and bypasses cache when force is true', async () => {
+      const manager = plannerState;
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // First call
+      fake.dispatch.mockResolvedValueOnce(response(200, { value: 1 }));
+      await manager.fetchSettings(client, 'SN1', true);
+
+      // Force refresh
+      fake.dispatch.mockResolvedValueOnce(response(200, { value: 2 }));
+      const result = await manager.fetchSettings(client, 'SN1', true);
+      expect(result).toEqual({ value: 2 });
+      expect(fake.dispatch).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns null on silent fetch failure and replaces the cached payload', async () => {
+      const manager = plannerState;
+      manager.invalidate();
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // Populate cache with a successful payload
+      fake.dispatch.mockResolvedValueOnce(response(200, { cached: true }));
+      await manager.fetchSettings(client, 'SN1', true);
+      expect(manager.getCachedSettings()).toEqual({ cached: true });
+
+      // Simulate a silent failure: dispatch rejects -> fetchOIGAPI returns null ->
+      // loadPlannerSettings returns null -> the IIFE assigns cache = null.
+      fake.dispatch.mockRejectedValueOnce(new Error('Network error'));
+      const result = await manager.fetchSettings(client, 'SN1', true);
+      expect(result).toBeNull();
+      // Documents the current behaviour: a silent failure (null payload) wipes
+      // the cached value. See src/data/ha-client.ts:606 — `this.cache = payload`
+      // runs on the success path before distinguishing "fetch failed" from
+      // "fetch succeeded with null".
+      expect(manager.getCachedSettings()).toBeNull();
+    });
+
+    it('deduplicates concurrent inflight requests', async () => {
+      const manager = plannerState;
+      manager.invalidate();
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+
+      // Slow fetch that resolves after concurrent calls
+      let resolveFetch: (value: Response) => void;
+      const slowFetch = new Promise<Response>(resolve => {
+        resolveFetch = resolve;
+      });
+      fake.dispatch.mockReturnValueOnce(slowFetch);
+
+      // Launch concurrent requests
+      const pending1 = manager.fetchSettings(client, 'SN1', true);
+      const pending2 = manager.fetchSettings(client, 'SN1', true);
+      const pending3 = manager.fetchSettings(client, 'SN1', true);
+
+      // Yield so the async chain reaches the dispatch layer
+      await Promise.resolve();
+
+      // All three should be waiting on the same inflight request
+      expect(fake.dispatch).toHaveBeenCalledTimes(1);
+
+      // Resolve the fetch with a proper Response shape so the success branch
+      // is taken once and the same Promise is shared by all three callers.
+      resolveFetch!(response(200, { concurrent: true }));
+
+      // All three should resolve to the same value
+      const [r1, r2, r3] = await Promise.all([pending1, pending2, pending3]);
+      expect(r1).toEqual({ concurrent: true });
+      expect(r2).toEqual({ concurrent: true });
+      expect(r3).toEqual({ concurrent: true });
+      expect(fake.dispatch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Task 5: showNotification and service fallback', () => {
+    it('forwards to persistent_notification.create and never logs when service resolves true', async () => {
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+      (fake.hass.callService as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      await client.showNotification('hello', 'world');
+
+      expect(fake.hass.callService).toHaveBeenCalledTimes(1);
+      const [domain, service, data] = (fake.hass.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(domain).toBe('persistent_notification');
+      expect(service).toBe('create');
+      expect(data).toMatchObject({ title: 'hello', message: 'world' });
+      expect(typeof (data as { notification_id: string }).notification_id).toBe('string');
+      expect((data as { notification_id: string }).notification_id).toMatch(/^oig_dashboard_\d+$/);
+      expect(consoleLog).not.toHaveBeenCalled();
+    });
+
+    it('emits console fallback when callService rejects', async () => {
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+      (fake.hass.callService as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('boom'));
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      await client.showNotification('oh no', 'something broke', 'error');
+
+      expect(fake.hass.callService).toHaveBeenCalledTimes(1);
+      expect(consoleLog).toHaveBeenCalledTimes(1);
+      expect(consoleLog.mock.calls[0][0]).toBe('[ERROR] oh no: something broke');
+    });
+
+    it('emits console fallback when hass is unavailable', async () => {
+      setHass(client, null);
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      await client.showNotification('quiet', 'no hass', 'warning');
+
+      expect(consoleLog).toHaveBeenCalledTimes(1);
+      expect(consoleLog.mock.calls[0][0]).toBe('[WARNING] quiet: no hass');
+    });
+  });
+
+  describe('Task 6: PlannerStateManager catch path via thrown loadPlannerSettings', () => {
+    it('returns null and leaves the cache untouched when loadPlannerSettings throws', async () => {
+      const manager = plannerState;
+      manager.invalidate();
+      const failingClient = {
+        loadPlannerSettings: vi.fn().mockRejectedValue(new Error('load-planner-sentinel')),
+      } as unknown as HaClient;
+
+      const result = await manager.fetchSettings(failingClient, 'SN1', true);
+
+      expect(result).toBeNull();
+      expect(manager.getCachedSettings()).toBeNull();
+      // inflight must be cleared after the throw — next call can start fresh
+      manager.invalidate();
+      expect((manager as unknown as { inflight: unknown }).inflight).toBeNull();
+    });
+  });
+
+  describe('Task 7: callApi and callWS error paths', () => {
+    it('callApi throws AuthError when hass is unavailable', async () => {
+      setHass(client, null);
+
+      await expect(client.callApi('GET', '/x')).rejects.toThrow('Cannot get HASS context');
+    });
+
+    it('callWS throws AuthError when hass is unavailable', async () => {
+      setHass(client, null);
+
+      await expect(client.callWS({ type: 'foo' })).rejects.toThrow('Cannot get HASS context for WS call');
+    });
+
+    it('callService returns false and logs when hass has no callService', async () => {
+      const fake = createHaFake();
+      setHass(client, fake.hass);
+      (fake.hass as unknown as { callService: undefined }).callService = undefined as unknown as never;
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await client.callService('light', 'turn_on', { entity_id: 'light.x' });
+
+      expect(result).toBe(false);
+      expect(errorLog).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Task 8: openEntityDialog dispatch and failure paths', () => {
+    it('fires hass-more-info on the home-assistant element found in the parent document', () => {
+      const haElement = {
+        dispatchEvent: vi.fn(),
+      };
+      const parentDocument = {
+        querySelector: vi.fn().mockReturnValue(haElement),
+      };
+      const fakeParent = { document: parentDocument };
+      const originalParent = (window as unknown as { parent: unknown }).parent;
+      (window as unknown as { parent: unknown }).parent = fakeParent;
+
+      const ok = client.openEntityDialog('light.kitchen');
+
+      expect(ok).toBe(true);
+      expect(parentDocument.querySelector).toHaveBeenCalledWith('home-assistant');
+      expect(haElement.dispatchEvent).toHaveBeenCalledTimes(1);
+      const event = haElement.dispatchEvent.mock.calls[0][0] as CustomEvent;
+      expect(event.type).toBe('hass-more-info');
+      expect(event.bubbles).toBe(true);
+      expect(event.composed).toBe(true);
+      expect(event.detail).toEqual({ entityId: 'light.kitchen' });
+
+      (window as unknown as { parent: unknown }).parent = originalParent;
+    });
+
+    it('falls back to the local document when the parent document has no home-assistant', () => {
+      const haElement = {
+        dispatchEvent: vi.fn(),
+      };
+      const parentDocument = {
+        querySelector: vi.fn().mockReturnValue(null),
+      };
+      const fakeParent = { document: parentDocument };
+      const originalParent = (window as unknown as { parent: unknown }).parent;
+      const documentSpy = vi.spyOn(document, 'querySelector').mockReturnValue(haElement as unknown as Element);
+      (window as unknown as { parent: unknown }).parent = fakeParent;
+
+      const ok = client.openEntityDialog('switch.garage');
+
+      expect(ok).toBe(true);
+      expect(haElement.dispatchEvent).toHaveBeenCalledTimes(1);
+
+      (window as unknown as { parent: unknown }).parent = originalParent;
+      documentSpy.mockRestore();
+    });
+
+    it('returns false and warns when no home-assistant element exists', () => {
+      const parentDocument = {
+        querySelector: vi.fn().mockReturnValue(null),
+      };
+      const fakeParent = { document: parentDocument };
+      const originalParent = (window as unknown as { parent: unknown }).parent;
+      const documentSpy = vi.spyOn(document, 'querySelector').mockReturnValue(null);
+      const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      (window as unknown as { parent: unknown }).parent = fakeParent;
+
+      const ok = client.openEntityDialog('sensor.orphan');
+
+      expect(ok).toBe(false);
+      expect(warnLog).toHaveBeenCalledTimes(1);
+
+      (window as unknown as { parent: unknown }).parent = originalParent;
+      documentSpy.mockRestore();
+    });
+
+    it('returns false and logs when querySelector throws across origins', () => {
+      const originalParent = (window as unknown as { parent: unknown }).parent;
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fakeParent = {
+        get document() {
+          throw new DOMException('cross-origin', 'SecurityError');
+        },
+      };
+      (window as unknown as { parent: unknown }).parent = fakeParent;
+
+      const ok = client.openEntityDialog('sensor.cross');
+
+      expect(ok).toBe(false);
+      expect(errorLog).toHaveBeenCalledTimes(1);
+
+      (window as unknown as { parent: unknown }).parent = originalParent;
+    });
+  });
+
+  describe('Task 9: fetchOIGAPI/Typed JSON parse failure paths', () => {
+    it('returns null when the successful response body cannot be parsed', async () => {
+      vi.useFakeTimers();
+      const fake = createHaFake();
+      const unparseable = {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        type: 'basic',
+        json: vi.fn().mockRejectedValue(new SyntaxError('bad-json-sentinel')),
+      } as unknown as Response;
+      fake.dispatch.mockResolvedValue(unparseable);
+      setHass(client, fake.hass);
+
+      const result = await client.fetchOIGAPI('/battery/x');
+
+      expect(result).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it('fetchOIGAPITyped returns ok=true with null body when response.json rejects on 2xx', async () => {
+      const fake = createHaFake();
+      const unparseable = {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        type: 'basic',
+        json: vi.fn().mockRejectedValue(new SyntaxError('bad-json-sentinel')),
+      } as unknown as Response;
+      fake.dispatch.mockResolvedValue(unparseable);
+      setHass(client, fake.hass);
+
+      const typed = await client.fetchOIGAPITyped('/battery/x');
+
+      expect(typed).toEqual({ ok: true, status: 200, data: null });
+    });
+
+    it('fetchOIGAPITyped falls back to statusText when body has no error/code on non-2xx', async () => {
+      const fake = createHaFake();
+      const empty = {
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        type: 'basic',
+        json: vi.fn().mockResolvedValue(null),
+      } as unknown as Response;
+      fake.dispatch.mockResolvedValue(empty);
+      setHass(client, fake.hass);
+
+      const typed = await client.fetchOIGAPITyped('/battery/x');
+
+      expect(typed).toEqual({
+        ok: false,
+        status: 500,
+        code: 'provider_unreachable',
+        error: 'Internal Server Error',
+      });
+    });
+  });
+
+  describe('Task 10: findHass resolution paths', () => {
+    it('returns null in non-window environments', async () => {
+      const originalWindow = (globalThis as unknown as { window: unknown }).window;
+      (globalThis as unknown as { window: unknown }).window = undefined;
+
+      const result = await (client as unknown as { findHass: () => Promise<unknown> }).findHass();
+
+      expect(result).toBeNull();
+      (globalThis as unknown as { window: unknown }).window = originalWindow;
+    });
+
+    it('returns window.hass when set', async () => {
+      const fakeHass = { auth: { expired: false } } as unknown as Hass;
+      (window as unknown as { hass: Hass }).hass = fakeHass;
+
+      const result = await (client as unknown as { findHass: () => Promise<unknown> }).findHass();
+
+      expect(result).toBe(fakeHass);
+      delete (window as unknown as { hass?: Hass }).hass;
     });
   });
 });
