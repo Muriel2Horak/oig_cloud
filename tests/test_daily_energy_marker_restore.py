@@ -189,6 +189,28 @@ def test_lower_than_pending_high_arms_after_missed_low_window() -> None:
     assert rolled.pending_high_local_date is None
 
 
+@pytest.mark.parametrize(
+    "value_wh",
+    [
+        pytest.param(4500.1, id="above-quarter"),
+        pytest.param(4500.0, id="quarter-boundary"),
+        pytest.param(4499.9, id="below-quarter"),
+    ],
+)
+def test_first_lower_value_on_later_local_day_arms_without_fraction_gate(
+    value_wh: float,
+) -> None:
+    state = restore_daily_cycle_marker(18000.0, DAY1, None)
+
+    rolled = observe_daily_cycle_value(state, value_wh, DAY2)
+
+    assert rolled.armed is True
+    assert rolled.last_value_wh == value_wh
+    assert rolled.last_local_date == DAY2
+    assert rolled.pending_high_value_wh is None
+    assert rolled.pending_high_local_date is None
+
+
 def test_stale_later_high_then_same_day_lower_arms_from_pending_high() -> None:
     state = restore_daily_cycle_marker(300.0, DAY1, None)
 
@@ -223,6 +245,27 @@ def test_sentinel_restore_first_same_day_value_seeds_pending_high() -> None:
     assert higher.last_local_date == DAY1
     assert higher.pending_high_value_wh == 18000.0
     assert higher.pending_high_local_date == DAY1
+
+
+def test_same_day_pending_low_without_prior_day_reference_stays_unarmed() -> None:
+    state = restore_daily_cycle_marker(
+        None, None, None, restored_state_seen=True
+    )
+
+    pending_high = observe_daily_cycle_value(state, 18000.0, DAY2)
+    same_day_low = observe_daily_cycle_value(pending_high, 100.0, DAY2)
+
+    assert pending_high.armed is False
+    assert pending_high.last_value_wh is None
+    assert pending_high.last_local_date is None
+    assert pending_high.pending_high_value_wh == 18000.0
+    assert pending_high.pending_high_local_date == DAY2
+
+    assert same_day_low.armed is False
+    assert same_day_low.last_value_wh is None
+    assert same_day_low.last_local_date is None
+    assert same_day_low.pending_high_value_wh == 18000.0
+    assert same_day_low.pending_high_local_date == DAY2
 
 
 def test_sentinel_restore_promotes_pending_high_then_arms_on_credible_same_day_low() -> None:

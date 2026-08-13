@@ -11,9 +11,10 @@ from homeassistant.helpers.restore_state import ExtraStoredData
 
 MAX_DAILY_ENERGY_WH = 1_000_000_000.0
 
-# Conservative recovery rule for stale carried highs: a real daily rollover
-# should return close to the new day's start. A quarter admits the accepted
-# 18 kWh -> 4 kWh replay while rejecting small same-day re-aggregation dips.
+# Conservative recovery rule for stale carried highs on the same local day:
+# a real daily rollover should return close to the new day's start. A quarter
+# admits the accepted 18 kWh -> 4 kWh replay while rejecting small same-day
+# re-aggregation dips. A strictly later local date is disambiguated by date.
 DAILY_ROLLOVER_MAX_FRACTION = 0.25
 
 
@@ -172,7 +173,7 @@ def _observe_with_pending_high(
             pending_high_local_date=pending_local_date,
         )
 
-    if _is_credible_daily_rollover(pending_value_wh, value_wh):
+    if value_wh < pending_value_wh:
         return _armed_marker(value_wh, local_date)
 
     return DailyCycleMarkerState(
@@ -254,9 +255,9 @@ def observe_daily_cycle_value(
     """Observe one validated daily value and update the marker state.
 
     While unarmed, retain the best pre-boundary reference and a pending high
-    watermark for the candidate new local day. Arm only when the observed value
-    is a conservative rollover-sized drop from that high; smaller same-day
-    re-aggregation dips remain unarmed.
+    watermark for the candidate new local day. A lower value on a later local
+    date proves the rollover; smaller same-day re-aggregation dips still need
+    the conservative rollover predicate.
     """
     if state.armed:
         return _armed_marker(value_wh, local_date)
@@ -314,7 +315,7 @@ def observe_daily_cycle_value(
             pending_high_local_date=state.pending_high_local_date,
         )
 
-    if _is_credible_daily_rollover(state.last_value_wh, value_wh):
+    if value_wh < state.last_value_wh:
         return _armed_marker(value_wh, local_date)
 
     return DailyCycleMarkerState(

@@ -211,6 +211,137 @@ async def test_legacy_total_increasing_history_is_not_double_counted_on_first_to
     assert await _latest_sum(hass) == pytest.approx(200.0)
 
 
+async def test_low_yield_later_day_rollover_emits_marker_and_preserves_recorder_sum(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A low-yield first sample on the next local day is a credible rollover."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[200, 300])
+    seed_sum = (await _latest_stats(hass))[-1]["sum"]
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="300", last_changed=T_DAY1_NOON),
+    )
+
+    assert sensor.entity_id == ENTITY_ID
+    assert sensor._attr_state_class == SensorStateClass.TOTAL
+
+    for moment, value in (
+        (T_DAY2_EARLY, 100),
+        (T_DAY2_HIGHER, 250),
+    ):
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+    new_stats = (await _latest_stats(hass))[2:]
+    assert len(new_stats) == 2
+    rollover, later = new_stats
+    day2_midnight = datetime(2026, 8, 11, 22, 0, tzinfo=timezone.utc).timestamp()
+
+    assert rollover["last_reset"] == pytest.approx(day2_midnight)
+    assert later["last_reset"] == pytest.approx(day2_midnight)
+    assert rollover["sum"] == pytest.approx(seed_sum + 100.0)
+    assert later["sum"] == pytest.approx(seed_sum + 250.0)
+    assert later["sum"] > rollover["sum"]
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+async def test_cloudy_day_low_yield_rollover_does_not_wait_for_quarter_drop(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """A 5000 -> 2000 first-new-day rollover is valid despite exceeding 25%."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[0, 5000])
+    seed_sum = (await _latest_stats(hass))[-1]["sum"]
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="5000", last_changed=T_DAY1_NOON),
+    )
+
+    freezer.move_to(T_DAY2_EARLY)
+    await _publish(hass, sensor, 2000)
+    do_adhoc_statistics(hass, start=T_DAY2_EARLY)
+    await async_wait_recording_done(hass)
+
+    new_stats = (await _latest_stats(hass))[2:]
+    assert len(new_stats) == 1
+    rollover = new_stats[0]
+    assert rollover["last_reset"] == pytest.approx(
+        datetime(2026, 8, 11, 22, 0, tzinfo=timezone.utc).timestamp()
+    )
+    assert rollover["sum"] == pytest.approx(seed_sum + 2000.0)
+    assert rollover["sum"] >= 0
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
+async def test_low_yield_then_same_day_high_then_next_zero_keeps_recorder_sum_monotonic(
+    recorder_mock_compat, hass, freezer, caplog
+):
+    """Legacy 19000 -> 19497 then 6000 -> 18000 -> 0 has no negative sums."""
+    await _seed_legacy_total_increasing(hass, freezer, values=[19000, 19497])
+    seed_sum = (await _latest_stats(hass))[-1]["sum"]
+
+    caplog.set_level(logging.WARNING, logger=RECORDER_SENSOR_LOGGER)
+    sensor = await _restore_sensor_from(
+        hass,
+        None,
+        SimpleNamespace(state="19497", last_changed=T_DAY1_NOON),
+    )
+
+    for moment, value in (
+        (T_DAY2_EARLY, 6000),
+        (T_DAY2_HIGHER, 18000),
+        (T_DAY3_EARLY, 0),
+    ):
+        freezer.move_to(moment)
+        await _publish(hass, sensor, value)
+        do_adhoc_statistics(hass, start=moment)
+        await async_wait_recording_done(hass)
+
+    new_stats = (await _latest_stats(hass))[2:]
+    assert len(new_stats) == 3
+    low, same_day_high, next_zero = new_stats
+    day2_midnight = datetime(2026, 8, 11, 22, 0, tzinfo=timezone.utc).timestamp()
+    day3_midnight = datetime(2026, 8, 12, 22, 0, tzinfo=timezone.utc).timestamp()
+
+    assert low["last_reset"] == pytest.approx(day2_midnight)
+    assert same_day_high["last_reset"] == pytest.approx(day2_midnight)
+    assert next_zero["last_reset"] == pytest.approx(day3_midnight)
+    assert low["sum"] == pytest.approx(seed_sum + 6000.0)
+    assert same_day_high["sum"] == pytest.approx(seed_sum + 18000.0)
+    assert next_zero["sum"] == pytest.approx(same_day_high["sum"])
+    assert all(row["sum"] >= 0 for row in new_stats)
+    assert all(
+        later["sum"] >= earlier["sum"]
+        for earlier, later in zip(new_stats, new_stats[1:])
+    )
+
+    recorder_warnings = [
+        rec.getMessage()
+        for rec in caplog.records
+        if rec.name == RECORDER_SENSOR_LOGGER and rec.levelno >= logging.WARNING
+    ]
+    assert not recorder_warnings, f"recorder warned: {recorder_warnings}"
+
+
 async def test_missed_rollover_after_later_high_preserves_recorder_sum(
     recorder_mock_compat, hass, freezer, caplog
 ):
