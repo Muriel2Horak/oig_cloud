@@ -318,6 +318,40 @@ async def test_async_added_to_hass_rejects_invalid_restored_daily_energy_state(
     assert not _daily_energy_log_records(caplog)
 
 
+@pytest.mark.parametrize("raw", ["unknown", "unavailable"])
+async def test_async_added_to_hass_treats_sentinel_restored_daily_energy_as_history(
+    hass, freezer, raw: str
+) -> None:
+    """A Recorder row with HA sentinel text is history, not a fresh install."""
+    await hass.config.async_set_time_zone(PRAGUE)
+    freezer.move_to(T_DAY2_EARLY)
+
+    coordinator = _Coordinator({BOX_ID: {"dc_in": {}}})
+    sensor = _make_sensor(coordinator)
+    sensor.hass = hass
+
+    async def _last_state():
+        return SimpleNamespace(state=raw, last_changed=T_DAY1)
+
+    async def _last_extra_data():
+        return None
+
+    sensor.async_get_last_state = _last_state
+    sensor.async_get_last_extra_data = _last_extra_data
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._restored_state is None
+    assert sensor.state is None
+    assert sensor.last_reset is None
+
+    marker = sensor._daily_cycle_marker_state
+    assert marker is not None
+    assert marker.armed is False
+    assert marker.last_value_wh is None
+    assert marker.last_local_date == T_DAY1.date()
+
+
 async def test_async_added_to_hass_preserves_valid_restored_marker_payload(
     hass,
 ) -> None:

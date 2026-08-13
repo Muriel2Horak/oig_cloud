@@ -145,7 +145,7 @@ class OigCloudDataSensor(_DataSensorBase):
         restored_state_seen = False
         try:
             last_state = await self.async_get_last_state()
-            if last_state and last_state.state not in (None, "unknown", "unavailable"):
+            if last_state and last_state.state is not None:
                 restores_daily_energy = bool(
                     self._sensor_config.get("validated_daily_energy")
                     or self._sensor_config.get("daily_cycle_reset")
@@ -158,7 +158,7 @@ class OigCloudDataSensor(_DataSensorBase):
                         restored_value = sample.value_wh
                     else:
                         self._restored_state = None
-                elif last_state.state != "":
+                elif last_state.state not in ("", "unknown", "unavailable"):
                     self._restored_state = self._coerce_number(last_state.state)
                 if hasattr(last_state, "last_changed") and last_state.last_changed:
                     restored_local_date = dt_util.as_local(
