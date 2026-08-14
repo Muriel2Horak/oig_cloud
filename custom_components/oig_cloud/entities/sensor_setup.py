@@ -96,7 +96,7 @@ def _resolve_from_registry(hass: Any) -> Optional[str]:
 
         reg = er.async_get(hass)
         ids: set[str] = set()
-        pat = re.compile(r"^sensor\\.oig_local_(\\d+)_")
+        pat = re.compile(r"^sensor\.oig_local_(\d+)_")
         for ent in reg.entities.values():
             m = pat.match(ent.entity_id)
             if m:

@@ -1,23 +1,59 @@
 """Solar forecast senzory pro OIG Cloud integraci."""
 
 import asyncio
+import copy
+from contextlib import suppress
 import logging
 import time
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Union
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_point_in_utc_time,
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..config.solar_key_store import SolarKeyStore
+from ..config.solar_key_store import SolarKeyStore, get_solar_transaction_lock
+from ..config.solar_transaction import async_solar_request_snapshot
+from ..config.solar_rules import legacy_azimuth_read_model
+from ..forecast.provider_contract import (
+    build_forecast_solar_url,
+    build_solcast_url,
+    safe_provider_diagnostic,
+)
+from ..forecast.cache_contract import (
+    SCHEMA_VERSION,
+    CandidateValidationError,
+    build_cache_envelope,
+    build_cache_provenance,
+    build_occurrence_id,
+    build_retry_state,
+    cache_provenance_matches,
+    validate_forecast_candidate,
+    validate_retry_state,
+)
+from ..forecast.refresh_result import (
+    SolarCandidate,
+    SolarCandidateContext,
+    SolarFetchResult,
+    SolarRequestIdentity,
+    classify_http_status,
+    classify_provider_exception,
+)
 from .base_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
+
+ATTEMPT_TIMEOUT_SECONDS = 90.0
+SETUP_RETRY_SECONDS = 60.0
 
 # URL pro forecast.solar API
 FORECAST_SOLAR_API_URL = (
@@ -32,7 +68,10 @@ def _parse_forecast_hour(hour_str: str) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(hour_str)
     except Exception as err:
-        _LOGGER.debug("Invalid forecast hour '%s': %s", hour_str, err)
+        _LOGGER.debug(
+            "Invalid forecast hour discarded: error_class=%s",
+            type(err).__name__,
+        )
         return None
 
 
@@ -101,16 +140,24 @@ def _date_value_kwh(
     i u starší předpovědi ukazuje správný kalendářní den. Pokud datum v datech
     není (zastaralá předpověď), vrací 0 — což je poctivější než zamrzlá hodnota.
     """
-    return round(_daily_value_for_date(forecast_data.get(daily_key, {}), target_date), 3)
+    return round(
+        _daily_value_for_date(forecast_data.get(daily_key, {}), target_date), 3
+    )
 
 
 def _forecast_age_hours(forecast_data: Dict[str, Any]) -> Optional[float]:
-    """Stáří předpovědi v hodinách dle ``response_time`` (naivní lokální čas)."""
+    """Return forecast age for either naive-local or timezone-aware timestamps."""
     rt = forecast_data.get("response_time")
     if not rt:
         return None
     try:
-        return (datetime.now() - datetime.fromisoformat(str(rt))).total_seconds() / 3600.0
+        response_time = datetime.fromisoformat(str(rt).replace("Z", "+00:00"))
+        now = (
+            datetime.now()
+            if response_time.tzinfo is None
+            else dt_util.now().astimezone(response_time.tzinfo)
+        )
+        return (now - response_time).total_seconds() / 3600.0
     except (ValueError, TypeError):
         return None
 
@@ -149,6 +196,7 @@ if TYPE_CHECKING:
         def __init__(self, coordinator: Any, sensor_type: str) -> None: ...
         async def async_added_to_hass(self) -> None: ...
         async def async_will_remove_from_hass(self) -> None: ...
+        async def async_update(self) -> None: ...
         def async_write_ha_state(self) -> None: ...
 
 else:
@@ -187,9 +235,48 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         self._retry_count: int = 0
         self._max_retries: int = 3
         self._update_interval_remover: Optional[Any] = None
+        self._lifecycle_generation = 0
+        self._removed = False
+        self._durable_write_tasks: set[asyncio.Task[Any]] = set()
+        self._committing_occurrences: set[str] = set()
+        self._committed_occurrences: set[str] = set()
+        self._manual_request_counter = 0
+        self._request_sequence_counter = 0
+        self._latest_committed_request_sequence = -1
+        self._latest_retry_request_sequence = -1
+        self._refresh_lock = asyncio.Lock()
+        self._candidate_commit_lock = asyncio.Lock()
+        self._current_occurrence_id: Optional[str] = None
+        self._occurrence_generation = 0
+        self._claimed_occurrences: set[str] = set()
+        self._retry_unsubscribe: Optional[Callable[[], None]] = None
+        self._setup_retry_unsubscribe: Optional[Callable[[], None]] = None
+        self._active_refresh_tasks: set[asyncio.Task[Any]] = set()
+        self._removal_complete = False
+        self._removal_task: Optional[asyncio.Task[None]] = None
+        self._initial_refresh_started = False
 
-        # Storage key pro persistentní uložení posledního API volání a dat
-        self._storage_key = f"oig_solar_forecast_{self._box_id}"
+        # Schema 2 is owned by ConfigEntry; keep the box key read-only for rollback.
+        self._legacy_storage_key = f"oig_solar_forecast_{self._box_id}"
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        self._storage_key = (
+            f"oig_solar_forecast_{entry_id}"
+            if isinstance(entry_id, str) and entry_id
+            else self._legacy_storage_key
+        )
+        self._cache_usable = False
+        self._forced_stale_reason: Optional[str] = None
+        self._cache_provenance: Optional[Dict[str, Any]] = None
+        self._durable_cache_envelope: Optional[Dict[str, Any]] = None
+        self._retry_state: Optional[Dict[str, Any]] = None
+
+    def _create_refresh_task(self, coroutine: Any) -> Any:
+        """Create and immediately track refresh work owned by this entity."""
+        created = self.hass.async_create_task(coroutine)
+        if isinstance(created, asyncio.Task):
+            self._active_refresh_tasks.add(created)
+            created.add_done_callback(self._active_refresh_tasks.discard)
+        return created
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit periodické aktualizace podle konfigurace."""
@@ -199,38 +286,47 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             await self._async_initialize_after_add()
             return
 
-        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        startup_task = self._create_refresh_task(self._async_initialize_after_add())
         if startup_task is None:
             await self._async_initialize_after_add()
         elif asyncio.iscoroutine(startup_task):
             await startup_task
 
     async def _async_initialize_after_add(self) -> None:
+        task = self._register_current_refresh_task()
+        try:
+            if self._removed:
+                return
+            await self._async_initialize_after_add_impl()
+        finally:
+            self._unregister_refresh_task(task)
+
+    async def _async_initialize_after_add_impl(self) -> None:
+        """Load cache, restore recovery, and register one refresh schedule."""
 
         # Načtení posledního času API volání a dat z persistentního úložiště
-        await self._load_persistent_data()
+        provenance_ready = await self._load_persistent_data()
+        if self._removed:
+            return
+        if provenance_ready is False:
+            self._arm_setup_recovery()
+            return
 
-        forecast_mode = self._config_entry.options.get(
-            "solar_forecast_mode", "daily_optimized"
-        )
-
-        if forecast_mode != "manual":
-            interval = self._get_update_interval(forecast_mode)
-            if interval:
-                self._update_interval_remover = async_track_time_interval(
-                    self.hass, self._periodic_update, interval
-                )
-                _LOGGER.info(
-                    f"🌞 Solar forecast periodic updates enabled: {forecast_mode}"
-                )
+        self._cancel_setup_recovery()
+        self._register_refresh_schedule()
+        retry_restored = await self._async_restore_retry_recovery(dt_util.now())
 
         # OKAMŽITÁ inicializace dat při startu - pouze pro hlavní senzor a pouze pokud jsou data zastaralá
-        if self._sensor_type == "solar_forecast" and self._should_fetch_data():
+        if (
+            not retry_restored
+            and self._sensor_type == "solar_forecast"
+            and self._should_fetch_data()
+        ):
             _LOGGER.info(
                 f"🌞 Data is outdated (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S') if self._last_api_call else 'never'}), triggering immediate fetch"
             )
             # Spustíme úlohu na pozadí s malým zpožděním
-            self.hass.async_create_task(self._delayed_initial_fetch())
+            self._create_refresh_task(self._delayed_initial_fetch())
         else:
             # Pokud máme načtená data z úložiště, sdílíme je s koordinátorem
             if self._last_forecast_data:
@@ -249,46 +345,188 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         if hasattr(self.hass, "loop_thread_id"):
             self.async_write_ha_state()
 
-    async def _load_persistent_data(self) -> None:
+    async def _load_persistent_data(self) -> bool:
         """Načte čas posledního API volání a forecast data z persistentního úložiště."""
+        self._cache_usable = False
+        self._forced_stale_reason = None
+        self._retry_state = None
+        self._durable_cache_envelope = None
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if isinstance(entry_id, str) and entry_id:
+            try:
+                provenance = await self._async_current_cache_provenance()
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                self._cache_provenance = None
+                self._last_api_call = 0
+                self._last_forecast_data = None
+                _LOGGER.warning(
+                    "Solar cache provenance unavailable: error_class=%s",
+                    type(err).__name__,
+                )
+                return False
+
+            self._cache_provenance = provenance
+            try:
+                store: Store[Dict[str, Any]] = Store(
+                    self.hass,
+                    version=SCHEMA_VERSION,
+                    key=self._storage_key,
+                )
+                data = await store.async_load()
+                if isinstance(data, Mapping) and data.get("schema") == SCHEMA_VERSION:
+                    self._adopt_schema2_cache(data, provenance)
+                    return True
+
+                legacy_store: Store[Dict[str, Any]] = Store(
+                    self.hass,
+                    version=1,
+                    key=self._legacy_storage_key,
+                )
+                legacy = await legacy_store.async_load()
+                if isinstance(legacy, Mapping):
+                    self._adopt_legacy_cache(legacy)
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning(
+                    "Solar cache artifact unavailable: error_class=%s",
+                    type(err).__name__,
+                )
+                self._last_api_call = 0
+                self._last_forecast_data = None
+            return True
+
         try:
-            store: Store[Dict[str, Any]] = Store(
+            legacy_store = Store(
                 self.hass,
                 version=1,
-                key=self._storage_key,
+                key=self._legacy_storage_key,
             )
-            data = await store.async_load()
-
-            if data:
-                # Načtení času posledního API volání
-                if isinstance(data.get("last_api_call"), (int, float)):
-                    self._last_api_call = float(data["last_api_call"])
-                    _LOGGER.debug(
-                        f"🌞 Loaded last API call time: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
-
-                # Načtení forecast dat
-                if isinstance(data.get("forecast_data"), dict):
-                    self._last_forecast_data = data["forecast_data"]
-                    normalized = self._normalize_forecast_data(self._last_forecast_data)
-                    if normalized != self._last_forecast_data:
-                        self._last_forecast_data = normalized
-                        await self._save_persistent_data()
-                        _LOGGER.debug(
-                            "Normalized solar forecast hourly keys to local time"
-                        )
-                    _LOGGER.debug(
-                        f"🌞 Loaded forecast data from storage with {len(self._last_forecast_data)} keys"
-                    )
-                else:
-                    _LOGGER.debug("🌞 No forecast data found in storage")
-            else:
-                _LOGGER.debug("🌞 No previous data found in storage")
-
-        except Exception as e:
-            _LOGGER.warning(f"🌞 Failed to load persistent data: {e}")
+            legacy = await legacy_store.async_load()
+            if isinstance(legacy, Mapping):
+                self._adopt_legacy_cache(legacy, compatible_without_entry=True)
+        except Exception as err:
+            _LOGGER.warning(
+                "🌞 Failed to load persistent data: error_class=%s",
+                type(err).__name__,
+            )
             self._last_api_call = 0
             self._last_forecast_data = None
+        return True
+
+    def _arm_setup_recovery(self) -> None:
+        """Retry provenance setup without registering an identity-less schedule."""
+        if self._removed or self._setup_retry_unsubscribe is not None:
+            return
+
+        async def _retry_setup(_now: datetime) -> None:
+            self._setup_retry_unsubscribe = None
+            task = self._register_current_refresh_task()
+            try:
+                if not self._removed:
+                    await self._async_initialize_after_add_impl()
+            finally:
+                self._unregister_refresh_task(task)
+
+        try:
+            self._setup_retry_unsubscribe = async_call_later(
+                self.hass,
+                SETUP_RETRY_SECONDS,
+                _retry_setup,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning(
+                "Solar provenance recovery registration failed: error_class=%s",
+                type(err).__name__,
+            )
+
+    def _cancel_setup_recovery(self) -> None:
+        if self._setup_retry_unsubscribe is not None:
+            self._setup_retry_unsubscribe()
+            self._setup_retry_unsubscribe = None
+
+    async def _async_current_cache_provenance(self) -> Dict[str, Any]:
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if not isinstance(entry_id, str) or not entry_id:
+            raise ValueError("ConfigEntry ID is required for schema-2 solar cache")
+        revision = await SolarKeyStore(self.hass, entry_id).async_revision()
+        return build_cache_provenance(
+            entry_id,
+            self._config_entry.options,
+            revision,
+        )
+
+    @staticmethod
+    def _parse_cache_time(value: Any) -> Optional[datetime]:
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed
+
+    def _adopt_schema2_cache(
+        self, envelope: Mapping[str, Any], provenance: Mapping[str, Any]
+    ) -> None:
+        self._durable_cache_envelope = copy.deepcopy(dict(envelope))
+        forecast_data = envelope.get("forecast_data")
+        if not isinstance(forecast_data, Mapping):
+            return
+        self._last_forecast_data = copy_forecast = dict(forecast_data)
+        accepted_at = self._parse_cache_time(envelope.get("last_accepted_time"))
+        if accepted_at is not None:
+            self._last_api_call = accepted_at.timestamp()
+
+        now = dt_util.now()
+        entry_id = str(provenance["entry_id"])
+        mode = str(
+            self._config_entry.options.get("solar_forecast_mode", "daily_optimized")
+        )
+        self._retry_state = validate_retry_state(
+            envelope.get("retry_state"),
+            provenance=provenance,
+            entry_id=entry_id,
+            mode=mode,
+            now=now,
+        )
+        if not cache_provenance_matches(envelope, provenance):
+            self._forced_stale_reason = "provenance_mismatch"
+            return
+        try:
+            validated = self._validated_candidate(copy_forecast)
+        except CandidateValidationError:
+            self._forced_stale_reason = "cache_invalid"
+            return
+        if accepted_at is None:
+            self._forced_stale_reason = "cache_invalid"
+            return
+        if accepted_at.tzinfo is None:
+            accepted_at = accepted_at.replace(tzinfo=now.tzinfo)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=accepted_at.tzinfo)
+        if now - accepted_at > timedelta(hours=24) or accepted_at > now:
+            self._forced_stale_reason = "cache_expired"
+            return
+        self._last_forecast_data = validated
+        self._cache_usable = True
+
+    def _adopt_legacy_cache(
+        self,
+        envelope: Mapping[str, Any],
+        *,
+        compatible_without_entry: bool = False,
+    ) -> None:
+        forecast_data = envelope.get("forecast_data")
+        if isinstance(forecast_data, Mapping):
+            self._last_forecast_data = dict(forecast_data)
+        last_api_call = envelope.get("last_api_call")
+        if isinstance(last_api_call, (int, float)) and not isinstance(
+            last_api_call, bool
+        ):
+            self._last_api_call = float(last_api_call)
+        if compatible_without_entry:
+            self._cache_usable = bool(self._last_forecast_data)
+        else:
+            self._forced_stale_reason = "missing_provenance"
 
     async def _save_persistent_data(self) -> None:
         """Uloží čas posledního API volání a forecast data do persistentního úložiště."""
@@ -338,14 +576,20 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
     def _should_fetch_data(self) -> bool:
         """Rozhodne zda je potřeba načíst nová data na základě módu a posledního volání."""
         current_time = time.time()
+        forecast_mode = self._config_entry.options.get(
+            "solar_forecast_mode", "daily_optimized"
+        )
+
+        if forecast_mode == "manual":
+            return False
+
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if isinstance(entry_id, str) and entry_id:
+            return not self._cache_usable
 
         # Pokud nemáme žádná data
         if not self._last_api_call:
             return True
-
-        forecast_mode = self._config_entry.options.get(
-            "solar_forecast_mode", "daily_optimized"
-        )
 
         time_since_last = current_time - self._last_api_call
 
@@ -371,80 +615,586 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         intervals = {
             "hourly": timedelta(hours=1),  # Pro testing - vysoká frekvence
             "every_4h": timedelta(hours=4),  # Klasický 4-hodinový
-            "daily": timedelta(hours=24),  # Jednou denně
-            "daily_optimized": timedelta(
-                minutes=30
-            ),  # Každých 30 minut, ale update jen 3x denně
+            "daily": None,
+            "daily_optimized": None,
             "manual": None,  # Pouze manuální
         }
         return intervals.get(mode)
 
-    async def _delayed_initial_fetch(self) -> None:
-        """Spustí okamžitou aktualizaci s malým zpožděním."""
-        # Počkáme 5 sekund na dokončení inicializace
-        await asyncio.sleep(5)
-
-        try:
-            _LOGGER.info("🌞 Starting immediate solar forecast data fetch")
-            await self.async_fetch_forecast_data()
-            _LOGGER.info("🌞 Initial solar forecast data fetch completed")
-        except Exception as e:
-            _LOGGER.error(f"🌞 Initial solar forecast fetch failed: {e}")
-
-    async def _periodic_update(self, now: datetime) -> None:
-        """Periodická aktualizace - optimalizovaná pro 3x denně."""
+    def _register_refresh_schedule(self) -> None:
+        """Register one primary-sensor schedule in Home Assistant local time."""
+        if not self._is_primary_sensor():
+            return
         forecast_mode = self._config_entry.options.get(
             "solar_forecast_mode", "daily_optimized"
         )
+        wall_clock_hours = {
+            "daily": [6],
+            "daily_optimized": [6, 12, 16],
+        }.get(forecast_mode)
+        if wall_clock_hours is not None:
+            self._update_interval_remover = async_track_time_change(
+                self.hass,
+                self._wall_clock_update,
+                hour=wall_clock_hours,
+                minute=0,
+                second=0,
+            )
+            return
+        interval = self._get_update_interval(forecast_mode)
+        if interval is not None:
+            self._update_interval_remover = async_track_time_interval(
+                self.hass,
+                self._periodic_update,
+                interval,
+            )
 
-        current_time = time.time()
+    async def _wall_clock_update(self, now: datetime) -> None:
+        """Dispatch one provider attempt for an HA-local wall-clock occurrence."""
+        task = self._register_current_refresh_task()
+        try:
+            scheduled_local = self._canonical_wall_clock_occurrence(now)
+            if (
+                scheduled_local is not None
+                and self._is_primary_sensor()
+                and not self._removed
+            ):
+                await self._async_start_scheduled_occurrence(scheduled_local)
+        finally:
+            self._unregister_refresh_task(task)
 
-        # Kontrola rate limiting - nikdy neaktualizujeme častěji než každých 5 minut
-        if current_time - self._last_api_call < self._min_api_interval:
-            _LOGGER.debug(
-                f"🌞 Rate limiting: {(current_time - self._last_api_call) / 60:.1f} minutes since last call"
+    def _canonical_wall_clock_occurrence(
+        self, delivered: datetime
+    ) -> Optional[datetime]:
+        """Map HA callback jitter to the configured local scheduled instant."""
+        mode = str(
+            self._config_entry.options.get("solar_forecast_mode", "daily_optimized")
+        )
+        scheduled_hours = {
+            "daily": {6},
+            "daily_optimized": {6, 12, 16},
+        }.get(mode)
+        if (
+            scheduled_hours is None
+            or delivered.hour not in scheduled_hours
+            or delivered.minute != 0
+        ):
+            return None
+        return delivered.replace(second=0, microsecond=0)
+
+    async def _async_execute_provider_attempt(
+        self,
+        *,
+        request_id: Optional[str] = None,
+        occurrence_id: Optional[str] = None,
+        occurrence_generation: Optional[int] = None,
+    ) -> SolarFetchResult:
+        """Serialize lock wait and provider I/O under one bounded deadline."""
+        self._request_sequence_counter += 1
+        request_sequence = self._request_sequence_counter
+        resolved_request_id = (
+            request_id or occurrence_id or f"request:{request_sequence}"
+        )
+        resolved_occurrence_generation = (
+            self._occurrence_generation
+            if occurrence_generation is None
+            else occurrence_generation
+        )
+        source_identity = self._request_identity_from_loaded_provenance(
+            request_id=resolved_request_id,
+            occurrence_id=self._current_occurrence_id,
+            occurrence_generation=resolved_occurrence_generation,
+            lifecycle_generation=self._lifecycle_generation,
+            request_sequence=request_sequence,
+        )
+        fallback_context: Optional[SolarCandidateContext] = None
+        try:
+            async with asyncio.timeout(ATTEMPT_TIMEOUT_SECONDS):
+                fallback_context = await self._async_capture_candidate_context(
+                    request_id=resolved_request_id,
+                    occurrence_id=self._current_occurrence_id,
+                    occurrence_generation=resolved_occurrence_generation,
+                    lifecycle_generation=self._lifecycle_generation,
+                    request_sequence=request_sequence,
+                )
+                async with self._refresh_lock:
+                    if self._removed:
+                        return SolarFetchResult.terminal("removed").with_context(
+                            fallback_context
+                        )
+                    if occurrence_id is not None and (
+                        occurrence_id != self._current_occurrence_id
+                        or occurrence_generation != self._occurrence_generation
+                    ):
+                        return SolarFetchResult.terminal("superseded").with_context(
+                            fallback_context
+                        )
+                    result = await self.async_fetch_forecast_data(
+                        request_id=resolved_request_id,
+                        occurrence_id=self._current_occurrence_id,
+                        occurrence_generation=resolved_occurrence_generation,
+                        lifecycle_generation=self._lifecycle_generation,
+                        request_sequence=request_sequence,
+                    )
+                    return result.with_source_identity(source_identity).with_context(
+                        fallback_context
+                    )
+        except TimeoutError:
+            result = SolarFetchResult.retry("timeout").with_source_identity(
+                source_identity
+            )
+            return (
+                result.with_context(fallback_context)
+                if fallback_context is not None
+                else result
+            )
+
+    def _request_identity_from_loaded_provenance(
+        self,
+        *,
+        request_id: str,
+        occurrence_id: Optional[str],
+        occurrence_generation: int,
+        lifecycle_generation: int,
+        request_sequence: int,
+    ) -> Optional[SolarRequestIdentity]:
+        """Capture the setup-validated source identity without awaiting."""
+        provenance = self._cache_provenance
+        if not isinstance(provenance, Mapping):
+            return None
+        try:
+            return SolarRequestIdentity(
+                entry_id=str(provenance["entry_id"]),
+                provider=str(provenance["provider"]),
+                config_fingerprint=str(provenance["config_fingerprint"]),
+                credential_revision=int(provenance["credential_revision"]),
+                request_id=request_id,
+                occurrence_id=occurrence_id,
+                occurrence_generation=occurrence_generation,
+                lifecycle_generation=lifecycle_generation,
+                request_sequence=request_sequence,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def _async_capture_candidate_context(
+        self,
+        *,
+        request_id: str,
+        occurrence_id: Optional[str],
+        occurrence_generation: int,
+        lifecycle_generation: int,
+        request_sequence: int,
+        options: Optional[Mapping[str, Any]] = None,
+        credential_revision: Optional[int] = None,
+    ) -> SolarCandidateContext:
+        """Capture one non-secret immutable request identity before provider I/O."""
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        resolved_entry_id = (
+            entry_id
+            if isinstance(entry_id, str) and entry_id
+            else f"legacy:{self._storage_key}"
+        )
+        if options is None or credential_revision is None:
+            if isinstance(entry_id, str) and entry_id:
+                provenance = await self._async_current_cache_provenance()
+            else:
+                provenance = build_cache_provenance(
+                    resolved_entry_id,
+                    self._config_entry.options,
+                    0,
+                )
+        else:
+            provenance = build_cache_provenance(
+                resolved_entry_id,
+                options,
+                credential_revision,
+            )
+        return SolarCandidateContext(
+            entry_id=str(provenance["entry_id"]),
+            provider=str(provenance["provider"]),
+            config_fingerprint=str(provenance["config_fingerprint"]),
+            credential_revision=int(provenance["credential_revision"]),
+            request_id=request_id,
+            occurrence_id=occurrence_id,
+            occurrence_generation=occurrence_generation,
+            lifecycle_generation=lifecycle_generation,
+            request_sequence=request_sequence,
+        )
+
+    async def _async_start_scheduled_occurrence(
+        self, scheduled_local: datetime
+    ) -> None:
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if not isinstance(entry_id, str) or not entry_id:
+            return
+        mode = str(
+            self._config_entry.options.get("solar_forecast_mode", "daily_optimized")
+        )
+        occurrence_id = build_occurrence_id(entry_id, mode, scheduled_local)
+        if occurrence_id in self._claimed_occurrences:
+            return
+        self._claimed_occurrences.add(occurrence_id)
+        if len(self._claimed_occurrences) > 64:
+            self._claimed_occurrences = {occurrence_id}
+
+        if self._current_occurrence_id != occurrence_id:
+            self._cancel_retry_timer()
+            if self._retry_state is not None:
+                await self._async_persist_retry_state(None)
+            self._current_occurrence_id = occurrence_id
+            self._occurrence_generation += 1
+        generation = self._occurrence_generation
+        await self._async_run_scheduled_attempt(
+            occurrence_id=occurrence_id,
+            occurrence_generation=generation,
+            scheduled_local=scheduled_local,
+            attempt_index=0,
+        )
+
+    async def _async_run_scheduled_attempt(
+        self,
+        *,
+        occurrence_id: str,
+        occurrence_generation: int,
+        scheduled_local: datetime,
+        attempt_index: int,
+    ) -> None:
+        result = await self._async_execute_provider_attempt(
+            occurrence_id=occurrence_id,
+            occurrence_generation=occurrence_generation,
+        )
+        if (
+            occurrence_id != self._current_occurrence_id
+            or occurrence_generation != self._occurrence_generation
+            or self._removed
+        ):
+            return
+
+        candidate = result.candidate
+        if result.accepted and isinstance(candidate, SolarCandidate):
+            had_retry_recovery = (
+                self._retry_state is not None or self._retry_unsubscribe is not None
+            )
+            committed = await self.async_commit_candidate(candidate)
+            if committed:
+                return
+            if had_retry_recovery:
+                self._cancel_retry_timer()
+                await self._async_persist_retry_state(
+                    None,
+                    source_context=result.context,
+                )
+            return
+
+        source_identity = result.context or result.source_identity
+        if source_identity is None:
+            return
+
+        if not result.retryable or attempt_index >= 2:
+            self._cancel_retry_timer()
+            await self._async_persist_retry_state(
+                None,
+                source_context=source_identity,
             )
             return
 
-        should_fetch = False
-        if forecast_mode == "daily_optimized":
-            should_fetch = self._should_fetch_daily_optimized(now, current_time)
-        elif forecast_mode == "daily":
-            should_fetch = self._should_fetch_daily(now)
-        elif forecast_mode == "every_4h":
-            should_fetch = self._should_fetch_every_4h(current_time)
-        elif forecast_mode == "hourly":
-            should_fetch = self._should_fetch_hourly(current_time)
+        next_at = scheduled_local + timedelta(minutes=15 if attempt_index == 0 else 45)
+        state = build_retry_state(
+            occurrence_id=occurrence_id,
+            scheduled_local=scheduled_local,
+            completed_attempt_index=attempt_index,
+            next_at=next_at,
+            code=result.code,
+            provenance=source_identity.provenance(),
+        )
+        if not await self._async_persist_retry_state(
+            state,
+            source_context=source_identity,
+        ):
+            return
+        self._arm_retry_timer(state, occurrence_generation)
 
-        if should_fetch and self._is_primary_sensor():
-            await self.async_fetch_forecast_data()
+    def _arm_retry_timer(
+        self, state: Mapping[str, Any], occurrence_generation: int
+    ) -> bool:
+        next_at = self._parse_cache_time(state.get("next_at"))
+        scheduled_local = self._parse_cache_time(state.get("scheduled_local"))
+        occurrence_id = state.get("occurrence_id")
+        completed = state.get("completed_attempt_index")
+        if (
+            next_at is None
+            or scheduled_local is None
+            or not isinstance(occurrence_id, str)
+            or isinstance(completed, bool)
+            or completed not in (0, 1)
+        ):
+            return False
+
+        async def _retry_callback(_now: datetime) -> None:
+            task = self._register_current_refresh_task()
+            try:
+                self._retry_unsubscribe = None
+                if (
+                    occurrence_id != self._current_occurrence_id
+                    or occurrence_generation != self._occurrence_generation
+                    or self._removed
+                ):
+                    return
+                await self._async_run_scheduled_attempt(
+                    occurrence_id=occurrence_id,
+                    occurrence_generation=occurrence_generation,
+                    scheduled_local=scheduled_local,
+                    attempt_index=int(completed) + 1,
+                )
+            finally:
+                self._unregister_refresh_task(task)
+
+        self._cancel_retry_timer()
+        try:
+            self._retry_unsubscribe = async_track_point_in_utc_time(
+                self.hass,
+                _retry_callback,
+                dt_util.as_utc(next_at),
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Solar retry timer registration failed: error_class=%s",
+                type(err).__name__,
+            )
+            return False
+        return True
+
+    def _cancel_retry_timer(self) -> None:
+        if self._retry_unsubscribe is not None:
+            self._retry_unsubscribe()
+            self._retry_unsubscribe = None
+
+    def _register_current_refresh_task(self) -> Optional[asyncio.Task[Any]]:
+        task = asyncio.current_task()
+        if task is not None:
+            self._active_refresh_tasks.add(task)
+        return task
+
+    def _unregister_refresh_task(self, task: Optional[asyncio.Task[Any]]) -> None:
+        if task is not None:
+            self._active_refresh_tasks.discard(task)
+
+    async def _async_persist_retry_state(
+        self,
+        state: Optional[Mapping[str, Any]],
+        *,
+        source_context: Optional[SolarRequestIdentity] = None,
+    ) -> bool:
+        """Persist retry recovery before arming work; never arm after failure."""
+        async def _ordered_retry_write() -> bool:
+            if source_context is not None and (
+                source_context.request_sequence
+                <= max(
+                    self._latest_committed_request_sequence,
+                    self._latest_retry_request_sequence,
+                )
+                or source_context.request_id in self._committed_occurrences
+                or source_context.request_id in self._committing_occurrences
+                or not await self._async_request_identity_is_current(source_context)
+            ):
+                return False
+
+            store: Store[Dict[str, Any]] = Store(
+                self.hass,
+                version=SCHEMA_VERSION,
+                key=self._storage_key,
+            )
+            caller_cancelled = False
+            try:
+                durable = await store.async_load()
+                if isinstance(durable, Mapping) and durable.get("schema") == SCHEMA_VERSION:
+                    envelope = copy.deepcopy(dict(durable))
+                else:
+                    candidate = self._last_forecast_data or {}
+                    accepted_at = self._parse_cache_time(candidate.get("response_time"))
+                    envelope = build_cache_envelope(
+                        provenance={},
+                        forecast_data=candidate,
+                        last_accepted_time=accepted_at,
+                        saved_at=dt_util.now(),
+                    )
+                if state is None:
+                    envelope.pop("retry_state", None)
+                else:
+                    envelope["retry_state"] = copy.deepcopy(dict(state))
+
+                save_task = self._create_durable_write_task(
+                    store.async_save(envelope)
+                )
+                caller_cancelled = await self._async_reconcile_durable_write(
+                    save_task
+                )
+                save_task.result()
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                _LOGGER.warning(
+                    "Solar retry persistence failed: code=storage_failed error_class=%s",
+                    type(err).__name__,
+                )
+                if caller_cancelled:
+                    raise asyncio.CancelledError from err
+                return False
+
+            self._durable_cache_envelope = envelope
+            self._retry_state = dict(state) if state is not None else None
+            if source_context is not None:
+                self._latest_retry_request_sequence = source_context.request_sequence
+            if caller_cancelled:
+                raise asyncio.CancelledError
+            return True
+
+        async with self._candidate_commit_lock:
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            if isinstance(entry_id, str) and entry_id:
+                async with get_solar_transaction_lock(self.hass, entry_id):
+                    return await _ordered_retry_write()
+            return await _ordered_retry_write()
+
+    def _create_durable_write_task(self, coroutine: Any) -> asyncio.Task[Any]:
+        """Track Store work until the Store task itself reaches a terminal state."""
+        task = asyncio.create_task(coroutine)
+        self._durable_write_tasks.add(task)
+        task.add_done_callback(self._durable_write_tasks.discard)
+        return task
+
+    @staticmethod
+    async def _async_reconcile_durable_write(task: asyncio.Task[Any]) -> bool:
+        """Wait through arbitrary caller cancellation without cancelling Store I/O."""
+        caller_cancelled = False
+        completed = asyncio.Event()
+        task.add_done_callback(lambda _task: completed.set())
+        while not task.done():
+            current_task = asyncio.current_task()
+            with suppress(asyncio.CancelledError):
+                await completed.wait()
+            if current_task is not None and current_task.cancelling():
+                caller_cancelled = True
+                current_task.uncancel()
+        return caller_cancelled
+
+    async def _async_restore_retry_recovery(self, now: datetime) -> bool:
+        """Restore one matching future or overdue scheduled retry after restart."""
+        if self._retry_state is None or self._removed:
+            return False
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if not isinstance(entry_id, str) or not entry_id:
+            return False
+        provenance = await self._async_current_cache_provenance()
+        mode = str(
+            self._config_entry.options.get("solar_forecast_mode", "daily_optimized")
+        )
+        state = validate_retry_state(
+            self._retry_state,
+            provenance=provenance,
+            entry_id=entry_id,
+            mode=mode,
+            now=now,
+        )
+        if state is None:
+            await self._async_persist_retry_state(None)
+            return False
+        occurrence_id = str(state["occurrence_id"])
+        scheduled_local = self._parse_cache_time(state.get("scheduled_local"))
+        next_at = self._parse_cache_time(state.get("next_at"))
+        completed = state.get("completed_attempt_index")
+        if (
+            scheduled_local is None
+            or next_at is None
+            or isinstance(completed, bool)
+            or completed not in (0, 1)
+        ):
+            await self._async_persist_retry_state(None)
+            return False
+        self._current_occurrence_id = occurrence_id
+        self._occurrence_generation += 1
+        generation = self._occurrence_generation
+        self._claimed_occurrences.add(occurrence_id)
+        if next_at > now:
+            self._arm_retry_timer(state, generation)
+            return True
+        await self._async_run_scheduled_attempt(
+            occurrence_id=occurrence_id,
+            occurrence_generation=generation,
+            scheduled_local=scheduled_local,
+            attempt_index=int(completed) + 1,
+        )
+        return True
+
+    async def _delayed_initial_fetch(self) -> None:
+        """Spustí okamžitou aktualizaci s malým zpožděním."""
+        task = self._register_current_refresh_task()
+        try:
+            # Počkáme 5 sekund na dokončení inicializace
+            await asyncio.sleep(5)
+            if self._removed:
+                return
+            _LOGGER.info("🌞 Starting immediate solar forecast data fetch")
+            await self._async_run_initial_refresh()
+            _LOGGER.info("🌞 Initial solar forecast data fetch completed")
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.error(
+                "🌞 Initial solar forecast fetch failed: error_class=%s",
+                type(err).__name__,
+            )
+        finally:
+            self._unregister_refresh_task(task)
+
+    async def _async_run_initial_refresh(self) -> bool:
+        """Run the one guarded setup request through the durable commit boundary."""
+        if self._initial_refresh_started or self._removed:
+            return False
+        self._initial_refresh_started = True
+        request_id = f"initial:{self._lifecycle_generation}"
+        task = self._register_current_refresh_task()
+        try:
+            result = await self._async_execute_provider_attempt(request_id=request_id)
+            candidate = result.candidate
+            if not result.accepted or not isinstance(candidate, SolarCandidate):
+                return False
+            return await self.async_commit_candidate(candidate)
+        finally:
+            self._unregister_refresh_task(task)
+
+    async def _periodic_update(self, now: datetime) -> None:
+        """Periodická aktualizace - optimalizovaná pro 3x denně."""
+        task = self._register_current_refresh_task()
+        try:
+            forecast_mode = self._config_entry.options.get(
+                "solar_forecast_mode", "daily_optimized"
+            )
+
+            current_time = time.time()
+
+            # Kontrola rate limiting - nikdy neaktualizujeme častěji než každých 5 minut
+            if current_time - self._last_api_call < self._min_api_interval:
+                _LOGGER.debug(
+                    f"🌞 Rate limiting: {(current_time - self._last_api_call) / 60:.1f} minutes since last call"
+                )
+                return
+
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            should_fetch = bool(entry_id) and not self._cache_usable
+            if forecast_mode == "every_4h":
+                should_fetch = should_fetch or self._should_fetch_every_4h(current_time)
+            elif forecast_mode == "hourly":
+                should_fetch = should_fetch or self._should_fetch_hourly(current_time)
+
+            if should_fetch and self._is_primary_sensor() and not self._removed:
+                await self._async_start_scheduled_occurrence(now)
+        finally:
+            self._unregister_refresh_task(task)
 
     def _is_primary_sensor(self) -> bool:
         return self._sensor_type == "solar_forecast"
-
-    def _should_fetch_daily_optimized(self, now: datetime, current_time: float) -> bool:
-        target_hours = [6, 12, 16]
-        if now.hour not in target_hours or now.minute > 5:
-            return False
-        if self._last_api_call:
-            time_since_last = current_time - self._last_api_call
-            if time_since_last < 10800:  # 3 hodiny
-                _LOGGER.debug(
-                    f"🌞 Skipping update - last call was {time_since_last / 60:.1f} minutes ago"
-                )
-                return False
-        _LOGGER.info(f"🌞 Scheduled solar forecast update at {now.hour}:00")
-        return True
-
-    def _should_fetch_daily(self, now: datetime) -> bool:
-        if now.hour != 6:
-            return False
-        if self._last_api_call:
-            last_call_date = datetime.fromtimestamp(self._last_api_call).date()
-            if last_call_date == now.date():
-                _LOGGER.debug("🌞 Already updated today, skipping")
-                return False
-        return True
 
     def _should_fetch_every_4h(self, current_time: float) -> bool:
         if self._last_api_call:
@@ -460,33 +1210,131 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 return False
         return True
 
+    async def async_update(self) -> None:
+        """Update the sensor and adopt the primary sensor's published snapshot."""
+        await super().async_update()
+        if not self._is_primary_sensor():
+            self._adopt_shared_forecast_snapshot()
+
+    def _adopt_shared_forecast_snapshot(self) -> bool:
+        """Adopt a coordinator snapshot after validating it against local options."""
+        shared = getattr(
+            getattr(self, "coordinator", None),
+            "solar_forecast_data",
+            None,
+        )
+        if not isinstance(shared, Mapping) or not shared:
+            return False
+        try:
+            snapshot = self._validated_candidate(shared)
+        except CandidateValidationError as err:
+            _LOGGER.debug(
+                "Solar shared forecast snapshot rejected: error_class=%s",
+                type(err).__name__,
+            )
+            return False
+        if self._shared_snapshot_is_older_than_local(snapshot):
+            return False
+        if self._last_forecast_data == snapshot:
+            return False
+        self._last_forecast_data = snapshot
+        response_time = self._parse_cache_time(snapshot.get("response_time"))
+        if response_time is not None:
+            self._last_api_call = response_time.timestamp()
+        self._cache_usable = True
+        self._forced_stale_reason = None
+        return True
+
+    def _shared_snapshot_is_older_than_local(
+        self, snapshot: Mapping[str, Any]
+    ) -> bool:
+        shared_time = self._snapshot_response_timestamp(snapshot)
+        local_time = self._snapshot_response_timestamp(self._last_forecast_data)
+        return (
+            shared_time is not None
+            and local_time is not None
+            and shared_time < local_time
+        )
+
+    def _snapshot_response_timestamp(
+        self, snapshot: Optional[Mapping[str, Any]]
+    ) -> Optional[float]:
+        if not isinstance(snapshot, Mapping):
+            return None
+        response_time = self._parse_cache_time(snapshot.get("response_time"))
+        if response_time is None:
+            return None
+        return response_time.timestamp()
+
     # Přidání metody pro okamžitou aktualizaci
     async def async_manual_update(self) -> bool:
         """Manuální aktualizace forecast dat - pro službu."""
+        task = self._register_current_refresh_task()
         try:
             _LOGGER.info(
                 f"🌞 Manual solar forecast update requested for {self.entity_id}"
             )
-            previous_api_call = self._last_api_call
-            await self.async_fetch_forecast_data()
-            if self._last_api_call <= previous_api_call:
+            self._manual_request_counter += 1
+            request_id = (
+                f"manual:{self._lifecycle_generation}:"
+                f"{self._manual_request_counter}"
+            )
+            result = await self._async_execute_provider_attempt(request_id=request_id)
+            if not isinstance(result, SolarFetchResult):
                 _LOGGER.warning(
                     "🌞 Manual solar forecast update finished without new data for %s",
                     self.entity_id,
                 )
-            return True
-        except Exception as e:
+                return False
+            candidate = result.candidate
+            if not result.accepted or not isinstance(candidate, SolarCandidate):
+                _LOGGER.warning(
+                    "🌞 Manual solar forecast update finished without new data for %s",
+                    self.entity_id,
+                )
+                return False
+            return await self.async_commit_candidate(candidate)
+        except Exception as err:
             _LOGGER.error(
-                f"Manual solar forecast update failed for {self.entity_id}: {e}"
+                "Manual solar forecast update failed for %s: error_class=%s",
+                self.entity_id,
+                type(err).__name__,
             )
             return False
+        finally:
+            self._unregister_refresh_task(task)
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA - zrušit periodické aktualizace."""
+        if self._removal_task is None:
+            self._removal_task = asyncio.create_task(self._async_remove_once())
+        await asyncio.shield(self._removal_task)
+
+    async def _async_remove_once(self) -> None:
+        """Run one shared teardown for every concurrent removal caller."""
+        self._removed = True
+        self._lifecycle_generation += 1
+        self._occurrence_generation += 1
         if self._update_interval_remover:
             self._update_interval_remover()
             self._update_interval_remover = None
+        self._cancel_retry_timer()
+        self._cancel_setup_recovery()
+        current = asyncio.current_task()
+        refresh_tasks = [
+            task
+            for task in self._active_refresh_tasks
+            if task is not current and not task.done()
+        ]
+        for task in refresh_tasks:
+            task.cancel()
+        if refresh_tasks:
+            await asyncio.gather(*refresh_tasks, return_exceptions=True)
+        durable_tasks = [task for task in self._durable_write_tasks if not task.done()]
+        if durable_tasks:
+            await asyncio.wait(durable_tasks)
         await super().async_will_remove_from_hass()
+        self._removal_complete = True
 
     def _is_rate_limited(self, current_time: float) -> bool:
         if current_time - self._last_api_call >= self._min_api_interval:
@@ -504,25 +1352,19 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         api_key: str,
         lat: float,
         lon: float,
-        declination: float,
-        azimuth: float,
+        declination: int,
+        compass_azimuth: int,
         kwp: float,
+        legacy_provider_value: bool = False,
     ) -> str:
-        if api_key:
-            return FORECAST_SOLAR_API_URL_WITH_KEY.format(
-                api_key=api_key,
-                lat=lat,
-                lon=lon,
-                declination=declination,
-                azimuth=azimuth,
-                kwp=kwp,
-            )
-        return FORECAST_SOLAR_API_URL.format(
+        return build_forecast_solar_url(
+            api_key=api_key,
             lat=lat,
             lon=lon,
             declination=declination,
-            azimuth=azimuth,
+            compass_azimuth=compass_azimuth,
             kwp=kwp,
+            legacy_provider_value=legacy_provider_value,
         )
 
     async def _fetch_forecast_solar_strings(
@@ -533,64 +1375,108 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         api_key: str,
         string1_enabled: bool,
         string2_enabled: bool,
-    ) -> tuple[Optional[dict], Optional[dict]]:
-        data_string1: Optional[dict] = None
-        data_string2: Optional[dict] = None
+        dto: Mapping[str, Any] | None = None,
+    ) -> SolarFetchResult:
+        data_string1: Optional[Mapping[str, Any]] = None
+        data_string2: Optional[Mapping[str, Any]] = None
 
         async with aiohttp.ClientSession() as session:
             if string1_enabled:
-                string1_config = self._forecast_string_config("string1")
+                string1_config = self._forecast_string_config("string1", dto)
                 if string1_config is None:
-                    _LOGGER.warning("🌞 String 1 forecast config missing; forecast unavailable")
-                    return None, None
-                declination, azimuth, kwp = string1_config
-                data_string1, fatal = await self._fetch_forecast_string(
+                    _LOGGER.warning(
+                        "🌞 String 1 forecast config missing; forecast unavailable"
+                    )
+                    return SolarFetchResult.terminal("invalid_config")
+                declination, azimuth, kwp, legacy_provider_value = string1_config
+                string1_result = await self._fetch_forecast_string(
                     session=session,
                     label="string 1",
                     lat=lat,
                     lon=lon,
                     api_key=api_key,
                     declination=declination,
-                    azimuth=azimuth,
+                    compass_azimuth=azimuth,
                     kwp=kwp,
-                    fatal_on_error=True,
+                    legacy_provider_value=legacy_provider_value,
                 )
-                if fatal:
-                    return None, None
+                if not string1_result.accepted:
+                    return string1_result
+                data_string1 = string1_result.candidate
             else:
                 _LOGGER.debug("🌞 String 1 disabled")
 
             if string2_enabled:
-                string2_config = self._forecast_string_config("string2")
+                string2_config = self._forecast_string_config("string2", dto)
                 if string2_config is None:
-                    _LOGGER.warning("🌞 String 2 forecast config missing; skipping string 2")
-                    return data_string1, None
-                declination, azimuth, kwp = string2_config
-                data_string2, _fatal = await self._fetch_forecast_string(
+                    _LOGGER.warning(
+                        "🌞 String 2 forecast config missing; skipping string 2"
+                    )
+                    return SolarFetchResult.terminal("invalid_config")
+                declination, azimuth, kwp, legacy_provider_value = string2_config
+                string2_result = await self._fetch_forecast_string(
                     session=session,
                     label="string 2",
                     lat=lat,
                     lon=lon,
                     api_key=api_key,
                     declination=declination,
-                    azimuth=azimuth,
+                    compass_azimuth=azimuth,
                     kwp=kwp,
-                    fatal_on_error=False,
+                    legacy_provider_value=legacy_provider_value,
                 )
+                if not string2_result.accepted:
+                    return string2_result
+                data_string2 = string2_result.candidate
             else:
                 _LOGGER.debug("🌞 String 2 disabled")
 
-        return data_string1, data_string2
+        if (string1_enabled and data_string1 is None) or (
+            string2_enabled and data_string2 is None
+        ):
+            return SolarFetchResult.terminal("invalid_response")
+        forecast_data = self._process_forecast_data(
+            dict(data_string1) if data_string1 is not None else None,
+            dict(data_string2) if data_string2 is not None else None,
+        )
+        if forecast_data.get("error") or not forecast_data.get("total_daily"):
+            return SolarFetchResult.terminal("invalid_response")
+        return SolarFetchResult.accept(forecast_data)
 
-    def _forecast_string_config(self, prefix: str) -> tuple[float, float, float] | None:
-        declination = self._float_option(f"solar_forecast_{prefix}_declination")
-        azimuth = self._float_option(f"solar_forecast_{prefix}_azimuth")
-        kwp = self._float_option(f"solar_forecast_{prefix}_kwp")
-        if declination is None or azimuth is None or kwp is None:
-            if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
-                return None
-            return declination or 0.0, azimuth or 0.0, kwp or 0.0
-        return declination, azimuth, kwp
+    def _forecast_string_config(
+        self, prefix: str, dto: Mapping[str, Any] | None = None
+    ) -> tuple[int, int, float, bool] | None:
+        source = dto if dto is not None else self._config_entry.options
+        declination_value = source.get(f"solar_forecast_{prefix}_declination")
+        kwp_value = source.get(f"solar_forecast_{prefix}_kwp")
+        if declination_value is None or kwp_value is None:
+            return None
+        try:
+            declination = float(declination_value)
+            kwp = float(kwp_value)
+        except (TypeError, ValueError):
+            return None
+        azimuth = source.get(f"solar_forecast_{prefix}_azimuth")
+        legacy = legacy_azimuth_read_model(azimuth)
+        if (
+            not declination.is_integer()
+            or not 0 <= declination <= 90
+            or legacy is None
+            or not legacy["valid_for_provider"]
+            or not 0.1 <= kwp <= 50
+        ):
+            return None
+        return (
+            int(declination),
+            int(legacy["stored_value"]),
+            kwp,
+            bool(
+                source.get(
+                    f"solar_forecast_{prefix}_azimuth_legacy_provider_value",
+                    legacy["legacy_provider_value"],
+                )
+            ),
+        )
 
     def _float_option(self, key: str) -> float | None:
         value = self._config_entry.options.get(key)
@@ -605,9 +1491,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         entry_id = getattr(self._config_entry, "entry_id", None)
         if entry_id:
             try:
-                active = await SolarKeyStore(
-                    self.hass, entry_id
-                ).async_get_active(provider)
+                active = await SolarKeyStore(self.hass, entry_id).async_get_active(
+                    provider
+                )
             except AttributeError:
                 if hasattr(self.hass, "data") and hasattr(
                     getattr(self.hass, "config", None), "config_dir"
@@ -637,38 +1523,240 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         lat: float,
         lon: float,
         api_key: str,
-        declination: float,
-        azimuth: float,
+        declination: int,
+        compass_azimuth: int,
         kwp: float,
-        fatal_on_error: bool,
-    ) -> tuple[Optional[dict], bool]:
+        legacy_provider_value: bool,
+    ) -> SolarFetchResult:
         url = self._build_forecast_url(
             api_key=api_key,
             lat=lat,
             lon=lon,
             declination=declination,
-            azimuth=azimuth,
+            compass_azimuth=compass_azimuth,
             kwp=kwp,
+            legacy_provider_value=legacy_provider_value,
         )
         # Do not log the full URL — the forecast.solar API key is a path segment.
-        _LOGGER.info("🌞 Calling forecast.solar API for %s (lat=%s, lon=%s)", label, lat, lon)
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-            if response.status == 200:
+        _LOGGER.info("🌞 Calling forecast.solar API for %s", label)
+        try:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status != 200:
+                    result = classify_http_status(int(response.status))
+                    _LOGGER.warning(
+                        "🌞 %s API request failed: %s",
+                        label,
+                        safe_provider_diagnostic("forecast_solar", result.code),
+                    )
+                    return result
                 data = await response.json()
-                _LOGGER.debug("🌞 %s data received successfully", label)
-                return data, False
-            if response.status == 422:
-                error_text = await response.text()
-                _LOGGER.warning("🌞 %s API error 422: %s", label, error_text)
-                return None, fatal_on_error
-            if response.status == 429:
-                _LOGGER.warning("🌞 %s rate limited", label)
-                return None, fatal_on_error
-            error_text = await response.text()
-            _LOGGER.error("🌞 %s API error %s: %s", label, response.status, error_text)
-            return None, fatal_on_error
+        except asyncio.CancelledError:
+            raise
+        except BaseException as err:
+            result = classify_provider_exception(err)
+            _LOGGER.warning(
+                "🌞 %s provider request failed: %s error_class=%s",
+                label,
+                safe_provider_diagnostic("forecast_solar", result.code),
+                type(err).__name__,
+            )
+            return result
 
-    async def async_fetch_forecast_data(self) -> None:
+        if (
+            not isinstance(data, Mapping)
+            or data.get("error")
+            or not isinstance(data.get("result"), Mapping)
+        ):
+            return SolarFetchResult.terminal("invalid_response")
+        provider_result = data["result"]
+        if not isinstance(provider_result.get("watts"), Mapping) or not isinstance(
+            provider_result.get("watt_hours_day"), Mapping
+        ):
+            return SolarFetchResult.terminal("invalid_response")
+        if not provider_result["watts"] or not provider_result["watt_hours_day"]:
+            return SolarFetchResult.terminal("invalid_response")
+        _LOGGER.debug("🌞 %s data received successfully", label)
+        return SolarFetchResult.accept(data)
+
+    def _validated_candidate(self, candidate: Mapping[str, Any]) -> Dict[str, Any]:
+        """Validate a complete provider candidate against current local options."""
+        options = self._config_entry.options
+        try:
+            string1_kwp = float(options.get("solar_forecast_string1_kwp") or 0)
+            string2_kwp = float(options.get("solar_forecast_string2_kwp") or 0)
+        except (TypeError, ValueError) as err:
+            raise CandidateValidationError("configured string kWp is invalid") from err
+        return validate_forecast_candidate(
+            candidate,
+            provider=str(options.get("solar_forecast_provider", "forecast_solar")),
+            string1_enabled=bool(options.get("solar_forecast_string1_enabled", True)),
+            string2_enabled=bool(options.get("solar_forecast_string2_enabled", False)),
+            string1_kwp=string1_kwp,
+            string2_kwp=string2_kwp,
+            now=dt_util.now(),
+        )
+
+    async def _async_save_candidate_snapshot(
+        self,
+        candidate: Mapping[str, Any],
+        commit_time: float,
+        context: SolarCandidateContext,
+    ) -> Dict[str, Any]:
+        """Persist one candidate without mutating sensor memory."""
+        accepted_at = self._parse_cache_time(candidate.get("response_time"))
+        if accepted_at is None:
+            raise CandidateValidationError("candidate response_time is invalid")
+        store: Store[Dict[str, Any]] = Store(
+            self.hass,
+            version=SCHEMA_VERSION,
+            key=self._storage_key,
+        )
+        del commit_time
+        envelope = build_cache_envelope(
+            provenance=context.provenance(),
+            forecast_data=candidate,
+            last_accepted_time=accepted_at,
+            saved_at=dt_util.now(),
+        )
+        await store.async_save(envelope)
+        return envelope
+
+    async def _async_candidate_context_is_current(
+        self, context: SolarCandidateContext
+    ) -> bool:
+        """Validate every captured request identity against current runtime state."""
+        if (
+            self._removed
+            or context.lifecycle_generation != self._lifecycle_generation
+            or context.occurrence_generation != self._occurrence_generation
+            or context.occurrence_id != self._current_occurrence_id
+        ):
+            return False
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if isinstance(entry_id, str) and entry_id:
+            current = await self._async_current_cache_provenance()
+        else:
+            current = build_cache_provenance(
+                context.entry_id,
+                self._config_entry.options,
+                0,
+            )
+        return current == context.provenance()
+
+    async def _async_request_identity_is_current(
+        self, identity: SolarRequestIdentity
+    ) -> bool:
+        """Validate confirmed contexts strongly and timeout identities safely."""
+        if isinstance(identity, SolarCandidateContext):
+            return await self._async_candidate_context_is_current(identity)
+        if (
+            self._removed
+            or identity.lifecycle_generation != self._lifecycle_generation
+            or identity.occurrence_generation != self._occurrence_generation
+            or identity.occurrence_id != self._current_occurrence_id
+            or not isinstance(self._cache_provenance, Mapping)
+        ):
+            return False
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if entry_id != identity.entry_id:
+            return False
+        loaded = dict(self._cache_provenance)
+        current_options = build_cache_provenance(
+            identity.entry_id,
+            self._config_entry.options,
+            identity.credential_revision,
+        )
+        return loaded == identity.provenance() == current_options
+
+    async def async_commit_candidate(
+        self,
+        candidate: SolarCandidate,
+    ) -> bool:
+        """Persist a validated snapshot, then publish it exactly once."""
+        if not isinstance(candidate, SolarCandidate):
+            return False
+        context = candidate.context
+
+        async def _ordered_commit() -> bool:
+            if (
+                context.request_sequence
+                <= max(
+                    self._latest_committed_request_sequence,
+                    self._latest_retry_request_sequence,
+                )
+                or context.request_id in self._committed_occurrences
+                or context.request_id in self._committing_occurrences
+                or not await self._async_candidate_context_is_current(context)
+            ):
+                return False
+            try:
+                snapshot = self._validated_candidate(candidate.forecast_data)
+            except CandidateValidationError:
+                return False
+
+            self._committing_occurrences.add(context.request_id)
+            commit_time = time.time()
+            save_task = self._create_durable_write_task(
+                self._async_save_candidate_snapshot(snapshot, commit_time, context)
+            )
+            caller_cancelled = False
+            try:
+                caller_cancelled = await self._async_reconcile_durable_write(save_task)
+                saved_envelope = save_task.result()
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                _LOGGER.warning(
+                    "Solar forecast storage failed: code=storage_failed error_class=%s",
+                    type(err).__name__,
+                )
+                if caller_cancelled:
+                    raise asyncio.CancelledError from err
+                return False
+            finally:
+                self._committing_occurrences.discard(context.request_id)
+
+            self._latest_committed_request_sequence = context.request_sequence
+            self._committed_occurrences.add(context.request_id)
+            lifecycle_current = await self._async_candidate_context_is_current(context)
+            if lifecycle_current:
+                if isinstance(saved_envelope, Mapping):
+                    self._durable_cache_envelope = copy.deepcopy(
+                        dict(saved_envelope)
+                    )
+                self._last_forecast_data = snapshot
+                self._last_api_call = commit_time
+                setattr(self.coordinator, "solar_forecast_data", snapshot)
+                self._cache_usable = True
+                self._forced_stale_reason = None
+                self._cache_provenance = context.provenance()
+                self._retry_state = None
+                self._cancel_retry_timer()
+                self.async_write_ha_state()
+                await self._broadcast_forecast_data()
+
+            if caller_cancelled:
+                raise asyncio.CancelledError
+            return lifecycle_current
+
+        async with self._candidate_commit_lock:
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            if isinstance(entry_id, str) and entry_id:
+                async with get_solar_transaction_lock(self.hass, entry_id):
+                    return await _ordered_commit()
+            return await _ordered_commit()
+
+    async def async_fetch_forecast_data(
+        self,
+        *,
+        request_id: Optional[str] = None,
+        occurrence_id: Optional[str] = None,
+        occurrence_generation: Optional[int] = None,
+        lifecycle_generation: Optional[int] = None,
+        request_sequence: Optional[int] = None,
+    ) -> SolarFetchResult:
         """Získání forecast dat z API pro oba stringy."""
         try:
             _LOGGER.debug(f"[{self.entity_id}] Starting solar forecast API call")
@@ -676,190 +1764,183 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             current_time = time.time()
 
             if self._is_rate_limited(current_time):
-                return
+                return SolarFetchResult.terminal("superseded")
 
-            provider = self._config_entry.options.get(
-                "solar_forecast_provider", "forecast_solar"
+            provenance_options: Mapping[str, Any]
+            entry_id = getattr(self._config_entry, "entry_id", None)
+            if entry_id:
+                dto, provenance_options, revision = await async_solar_request_snapshot(
+                    self.hass, self._config_entry, {}
+                )
+            else:
+                revision = None
+                provider_for_credentials = self._config_entry.options.get(
+                    "solar_forecast_provider", "forecast_solar"
+                )
+                active = await self._active_solar_credentials(provider_for_credentials)
+                from ..forecast.provider_contract import build_effective_solar_dto
+
+                dto = build_effective_solar_dto(
+                    self._config_entry.options,
+                    active,
+                    {},
+                )
+                provenance_options = self._config_entry.options
+            if request_sequence is None:
+                self._request_sequence_counter += 1
+                request_sequence = self._request_sequence_counter
+            resolved_request_id = request_id or f"direct:{request_sequence}"
+            context = await self._async_capture_candidate_context(
+                request_id=resolved_request_id,
+                occurrence_id=(
+                    self._current_occurrence_id
+                    if occurrence_id is None
+                    else occurrence_id
+                ),
+                occurrence_generation=(
+                    self._occurrence_generation
+                    if occurrence_generation is None
+                    else occurrence_generation
+                ),
+                lifecycle_generation=(
+                    self._lifecycle_generation
+                    if lifecycle_generation is None
+                    else lifecycle_generation
+                ),
+                request_sequence=request_sequence,
+                options=provenance_options,
+                credential_revision=int(revision or 0),
             )
+            provider = dto["solar_forecast_provider"]
             if provider == "solcast":
-                await self._fetch_solcast_data(current_time)
-                return
+                result = await self._fetch_solcast_data(
+                    current_time, dto, revision=revision
+                )
+                return result.with_context(context)
 
             # Konfigurační parametry — Plan 4 Task 4 / P7: no implicit author GPS fallback.
             # When the user has not configured a location we surface `unavailable` with
             # a visible warning on the mounted surface (R5.5).
-            lat = self._float_option("solar_forecast_latitude")
-            lon = self._float_option("solar_forecast_longitude")
-            active_credentials = await self._active_solar_credentials("forecast_solar")
-            api_key = (active_credentials or {}).get("solar_forecast_api_key", "")
-            if lat is None or lon is None:
-                if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
-                    _LOGGER.warning("🌞 Solar forecast GPS missing; forecast unavailable")
-                    return
-                lat = lat or 0.0
-                lon = lon or 0.0
+            lat = dto["solar_forecast_latitude"]
+            lon = dto["solar_forecast_longitude"]
+            api_key = dto.get("solar_forecast_api_key", "")
 
             # String 1 - zapnutý podle checkboxu
-            string1_enabled = self._config_entry.options.get(
-                "solar_forecast_string1_enabled", True
-            )
+            string1_enabled = dto["solar_forecast_string1_enabled"]
 
             # String 2 - zapnutý podle checkboxu
-            string2_enabled = self._config_entry.options.get(
-                "solar_forecast_string2_enabled", False
-            )
+            string2_enabled = dto["solar_forecast_string2_enabled"]
 
             _LOGGER.debug("🌞 String 1: enabled=%s", string1_enabled)
             _LOGGER.debug("🌞 String 2: enabled=%s", string2_enabled)
 
-            data_string1, data_string2 = await self._fetch_forecast_solar_strings(
+            result = await self._fetch_forecast_solar_strings(
                 lat=lat,
                 lon=lon,
                 api_key=api_key,
                 string1_enabled=string1_enabled,
                 string2_enabled=string2_enabled,
+                dto=dto,
             )
-
-            # Kontrola, zda máme alespoň jeden string s daty
-            if not data_string1 and not data_string2:
-                _LOGGER.error(
-                    "🌞 No data received - at least one string must be enabled"
-                )
-                return
-
-            # Zpracování dat
-            self._last_forecast_data = self._process_forecast_data(
-                data_string1, data_string2
-            )
-            self._last_api_call = current_time
-
-            # Uložení času posledního API volání a dat do persistentního úložiště
-            await self._save_persistent_data()
-
-            # Uložení dat do koordinátoru pro sdílení mezi senzory
-            if hasattr(self.coordinator, "solar_forecast_data"):
-                self.coordinator.solar_forecast_data = self._last_forecast_data
-            else:
-                setattr(
-                    self.coordinator, "solar_forecast_data", self._last_forecast_data
-                )
-
-            _LOGGER.info(
-                f"🌞 Solar forecast data updated successfully - last API call: {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-
-            # Aktualizuj stav tohoto senzoru
-            self.async_write_ha_state()
-
-            # NOVÉ: Pošli signál ostatním solar forecast sensorům, že jsou dostupná nová data
-            await self._broadcast_forecast_data()
-
-        except asyncio.TimeoutError:
-            _LOGGER.warning(
-                f"[{self.entity_id}] Timeout fetching solar forecast data - preserving cached data"
-            )
-            # DŮLEŽITÉ: Při chybě NEZAPISOVAT do _last_forecast_data!
-            # Zachováváme stará platná data místo jejich přepsání chybovým objektem.
-            if self._last_forecast_data:
-                _LOGGER.info(
-                    f"[{self.entity_id}] Using cached solar forecast data from previous successful fetch"
-                )
-            # else: necháváme _last_forecast_data = None, ale to je OK - nemáme žádná data
-
-        except Exception as e:
+            return result.with_context(context)
+        except asyncio.CancelledError:
+            raise
+        except BaseException as err:
+            result = classify_provider_exception(err)
             _LOGGER.error(
-                f"[{self.entity_id}] Error fetching solar forecast data: {e} - preserving cached data"
+                "[%s] Solar provider request failed: %s error_class=%s; preserving cached data",
+                self.entity_id,
+                safe_provider_diagnostic(
+                    str(locals().get("provider", "unknown")), result.code
+                ),
+                type(err).__name__,
             )
-            # DŮLEŽITÉ: Při chybě NEZAPISOVAT do _last_forecast_data!
-            # Zachováváme stará platná data místo jejich přepsání chybovým objektem.
-            if self._last_forecast_data:
-                _LOGGER.info(
-                    f"[{self.entity_id}] Using cached solar forecast data from previous successful fetch"
-                )
-            # else: necháváme _last_forecast_data = None
+            captured_context = locals().get("context")
+            if isinstance(captured_context, SolarCandidateContext):
+                return result.with_context(captured_context)
+            return result
 
-    async def _fetch_solcast_data(self, current_time: float) -> None:
+    async def _fetch_solcast_data(
+        self,
+        current_time: float,
+        dto: Mapping[str, Any] | None = None,
+        *,
+        revision: Optional[int] = None,
+    ) -> SolarFetchResult:
         """Fetch forecast data from Solcast API and map to unified structure."""
-        active_credentials = await self._active_solar_credentials("solcast")
-        api_key = (active_credentials or {}).get("solcast_api_key", "").strip()
-        site_id = (active_credentials or {}).get("solcast_site_id", "").strip()
+        del current_time, revision
+        if dto is None:
+            active_credentials = await self._active_solar_credentials("solcast")
+            api_key = (active_credentials or {}).get("solcast_api_key", "").strip()
+            site_id = (active_credentials or {}).get("solcast_site_id", "").strip()
+            source: Mapping[str, Any] = self._config_entry.options
+        else:
+            api_key = str(dto.get("solcast_api_key", "")).strip()
+            site_id = str(dto.get("solcast_site_id", "")).strip()
+            source = dto
 
         if not api_key:
             _LOGGER.error("🌞 Solcast API key missing")
-            return
+            return SolarFetchResult.terminal("invalid_config")
         if not site_id:
             _LOGGER.error("🌞 Solcast site ID missing")
-            return
+            return SolarFetchResult.terminal("invalid_config")
 
-        string1_enabled = self._config_entry.options.get(
-            "solar_forecast_string1_enabled", True
-        )
-        string2_enabled = self._config_entry.options.get(
-            "solar_forecast_string2_enabled", False
-        )
+        string1_enabled = source.get("solar_forecast_string1_enabled", True)
+        string2_enabled = source.get("solar_forecast_string2_enabled", False)
 
         kwp1 = (
-            float(self._config_entry.options.get("solar_forecast_string1_kwp") or 0)
+            float(source.get("solar_forecast_string1_kwp") or 0)
             if string1_enabled
             else 0.0
         )
         kwp2 = (
-            float(self._config_entry.options.get("solar_forecast_string2_kwp") or 0)
+            float(source.get("solar_forecast_string2_kwp") or 0)
             if string2_enabled
             else 0.0
         )
         total_kwp = kwp1 + kwp2
         if total_kwp <= 0:
             _LOGGER.error("🌞 Solcast requires at least one enabled string with kWp")
-            return
+            return SolarFetchResult.terminal("invalid_config")
 
-        url = (
-            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
-            f"?format=json&api_key={api_key}"
-        )
-        safe_url = (
-            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
-            "?format=json&api_key=***"
-        )
-        _LOGGER.info("🌞 Calling Solcast API: %s", safe_url)
+        url = build_solcast_url(api_key=api_key, site_id=site_id)
+        _LOGGER.info("🌞 Calling Solcast API")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status == 200:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status != 200:
+                        result = classify_http_status(int(response.status))
+                        _LOGGER.warning(
+                            "🌞 Solcast API request failed: %s",
+                            safe_provider_diagnostic("solcast", result.code),
+                        )
+                        return result
                     data = await response.json()
-                elif response.status in (401, 403):
-                    _LOGGER.error("🌞 Solcast authorization failed")
-                    return
-                elif response.status == 429:
-                    _LOGGER.warning("🌞 Solcast rate limited")
-                    return
-                else:
-                    error_text = await response.text()
-                    _LOGGER.error(
-                        f"🌞 Solcast API error {response.status}: {error_text}"
-                    )
-                    return
+        except asyncio.CancelledError:
+            raise
+        except BaseException as err:
+            result = classify_provider_exception(err)
+            _LOGGER.warning(
+                "🌞 Solcast provider request failed: %s error_class=%s",
+                safe_provider_diagnostic("solcast", result.code),
+                type(err).__name__,
+            )
+            return result
 
-        forecasts = data.get("forecasts", [])
-        if not forecasts:
-            _LOGGER.error("🌞 Solcast response has no forecasts")
-            return
+        if not isinstance(data, Mapping) or data.get("error"):
+            return SolarFetchResult.terminal("invalid_response")
+        forecasts = data.get("forecasts")
+        if not isinstance(forecasts, list) or not forecasts:
+            return SolarFetchResult.terminal("invalid_response")
 
-        self._last_forecast_data = self._process_solcast_data(forecasts, kwp1, kwp2)
-        self._last_api_call = current_time
-
-        await self._save_persistent_data()
-
-        if hasattr(self.coordinator, "solar_forecast_data"):
-            self.coordinator.solar_forecast_data = self._last_forecast_data
-        else:
-            setattr(self.coordinator, "solar_forecast_data", self._last_forecast_data)
-
-        _LOGGER.info(
-            f"🌞 Solcast forecast data updated - last API call: {datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        self.async_write_ha_state()
-        await self._broadcast_forecast_data()
+        forecast_data = self._process_solcast_data(forecasts, kwp1, kwp2)
+        if forecast_data.get("error") or not forecast_data.get("total_daily"):
+            return SolarFetchResult.terminal("invalid_response")
+        return SolarFetchResult.accept(forecast_data)
 
     def _parse_forecast_entry(
         self, entry: Dict[str, Any], total_kwp: float
@@ -950,7 +2031,6 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             "total_daily": total_daily,
             "total_today_kwh": total_today_kwh,
             "total_tomorrow_kwh": _daily_value_for_date(total_daily, tomorrow),
-            "solcast_raw_data": forecasts,
         }
 
     def _process_solcast_data(
@@ -1028,7 +2108,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                         entity = self.hass.states.get(device_entity.entity_id)
                         if entity:
                             # Spustíme aktualizaci entity
-                            self.hass.async_create_task(
+                            self._create_refresh_task(
                                 self.hass.services.async_call(
                                     "homeassistant",
                                     "update_entity",
@@ -1065,14 +2145,20 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             result.update(_build_string_payload("string1", data_string1, string1_data))
             result.update(_build_string_payload("string2", data_string2, string2_data))
 
-            if _safe_float(result.get("string1_today_kwh", 0)) <= 0 and today_key not in string1_data["daily"]:
+            if (
+                _safe_float(result.get("string1_today_kwh", 0)) <= 0
+                and today_key not in string1_data["daily"]
+            ):
                 result["string1_today_kwh"] = _cached_today_value(
                     self._last_forecast_data,
                     today=today,
                     daily_key="string1_daily",
                     value_key="string1_today_kwh",
                 )
-            if _safe_float(result.get("string2_today_kwh", 0)) <= 0 and today_key not in string2_data["daily"]:
+            if (
+                _safe_float(result.get("string2_today_kwh", 0)) <= 0
+                and today_key not in string2_data["daily"]
+            ):
                 result["string2_today_kwh"] = _cached_today_value(
                     self._last_forecast_data,
                     today=today,
@@ -1105,9 +2191,12 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 result.get("total_today_kwh", 0.0),
             )
 
-        except Exception as e:
-            _LOGGER.error("Error processing forecast data: %s", e, exc_info=True)
-            result["error"] = str(e)
+        except Exception as err:
+            _LOGGER.error(
+                "Error processing forecast data: error_class=%s",
+                type(err).__name__,
+            )
+            result["error"] = "invalid_response"
 
         return result
 
@@ -1133,16 +2222,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 ).isoformat()
                 # Uchování nejvyšší hodnoty pro danou hodinu
                 hourly_data[hour_key] = max(hourly_data.get(hour_key, 0), power)
-            except Exception as e:
-                _LOGGER.debug(f"Error parsing timestamp {timestamp_str}: {e}")
+            except Exception as err:
+                _LOGGER.debug(
+                    "Forecast timestamp discarded: error_class=%s",
+                    type(err).__name__,
+                )
 
         _LOGGER.info(
             f"🌞 CONVERT DEBUG: Output hourly_data has {len(hourly_data)} hours"
         )
-        if hourly_data:
-            sample = list(hourly_data.items())[:3]
-            _LOGGER.info(f"🌞 CONVERT DEBUG: Sample output: {sample}")
-
         return hourly_data
 
     @property
@@ -1189,10 +2277,15 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         if not self._last_forecast_data and hasattr(
             self.coordinator, "solar_forecast_data"
         ):
-            self._last_forecast_data = self.coordinator.solar_forecast_data
-            _LOGGER.debug(
-                f"🌞 {self._sensor_type}: loaded shared data from coordinator"
-            )
+            if self._is_primary_sensor():
+                self._last_forecast_data = self.coordinator.solar_forecast_data
+                _LOGGER.debug(
+                    f"🌞 {self._sensor_type}: loaded shared data from coordinator"
+                )
+            elif self._adopt_shared_forecast_snapshot():
+                _LOGGER.debug(
+                    f"🌞 {self._sensor_type}: adopted shared data from coordinator"
+                )
 
         if not self._last_forecast_data:
             return None
@@ -1253,6 +2346,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         if self._config_entry.options.get("solar_forecast_provider"):
             attrs["config_status"] = "ok"
 
+        if not self._last_forecast_data and not self._is_primary_sensor():
+            self._adopt_shared_forecast_snapshot()
+
         if not self._last_forecast_data:
             return attrs
 
@@ -1303,7 +2399,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
         return {
             "today_total_kwh": _date_value_kwh(forecast_data, "total_daily", today),
-            "tomorrow_total_kwh": _date_value_kwh(forecast_data, "total_daily", tomorrow),
+            "tomorrow_total_kwh": _date_value_kwh(
+                forecast_data, "total_daily", tomorrow
+            ),
             "string1_today_kwh": _date_value_kwh(forecast_data, "string1_daily", today),
             "string1_tomorrow_kwh": _date_value_kwh(
                 forecast_data, "string1_daily", tomorrow
@@ -1312,9 +2410,13 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             "string2_tomorrow_kwh": _date_value_kwh(
                 forecast_data, "string2_daily", tomorrow
             ),
-            "forecast_age_hours": round(age_hours, 1) if age_hours is not None else None,
+            "forecast_age_hours": (
+                round(age_hours, 1) if age_hours is not None else None
+            ),
             "forecast_stale": bool(age_hours is not None and age_hours > 24)
-            or not covers_tomorrow,
+            or not covers_tomorrow
+            or self._forced_stale_reason is not None,
+            "stale_reason": self._forced_stale_reason,
             "forecast_covers_today": covers_today,
             "forecast_covers_tomorrow": covers_tomorrow,
             "total_daily": forecast_data.get("total_daily", {}),
@@ -1418,8 +2520,7 @@ def _build_string_payload(
         f"{prefix}_today_kwh": _daily_value_for_date_or_latest(daily, today),
         f"{prefix}_tomorrow_kwh": _daily_value_for_date(daily, tomorrow),
     }
-    if raw_data is not None:
-        payload[f"{prefix}_raw_data"] = raw_data
+    del raw_data
     return payload
 
 

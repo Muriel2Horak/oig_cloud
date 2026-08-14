@@ -637,15 +637,15 @@ export class OigFlowNode extends LitElement {
     }
 
     .temp-hot { animation: pulse-hot 1s ease-in-out infinite; }
-    @keyframes pulse-hot { 
-      0%,100%{opacity:1; transform:scale(1);} 
-      50%{opacity:0.8; transform:scale(1.1); filter:hue-rotate(-10deg);} 
+    @keyframes pulse-hot {
+      0%,100%{opacity:1; transform:scale(1);}
+      50%{opacity:0.8; transform:scale(1.1); filter:hue-rotate(-10deg);}
     }
-    
+
     .temp-cold { animation: pulse-cold 1.5s ease-in-out infinite; }
-    @keyframes pulse-cold { 
-      0%,100%{opacity:1; transform:scale(1);} 
-      50%{opacity:0.7; transform:scale(1.05); filter:hue-rotate(180deg);} 
+    @keyframes pulse-cold {
+      0%,100%{opacity:1; transform:scale(1);}
+      50%{opacity:0.7; transform:scale(1.05); filter:hue-rotate(180deg);}
     }
 
     /* ---- Collapsible detail sections — vždy collapsed, rozbalí se klikem ---- */

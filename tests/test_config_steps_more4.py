@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import types
 from types import SimpleNamespace
 
 import pytest
@@ -223,11 +221,35 @@ async def test_wizard_solar_string_param_errors():
     assert errors["solar_forecast_string1_declination"] == "invalid_declination"
     assert errors["solar_forecast_string2_kwp"] == "invalid_kwp"
     assert errors["solar_forecast_string2_declination"] == "invalid_declination"
-    # Plan 3 T2 / U6: a numeric azimuth is now NORMALISED to the signed
-    # -180..180 convention (999 -> -81, -10 -> -10), never per-field rejected.
-    # Only non-numeric junk raises (as base=invalid_string*_params).
-    assert "solar_forecast_string1_azimuth" not in errors
-    assert "solar_forecast_string2_azimuth" not in errors
+    assert errors["solar_forecast_string1_azimuth"] == "invalid_azimuth"
+    assert errors["solar_forecast_string2_azimuth"] == "invalid_azimuth"
+
+
+@pytest.mark.parametrize("value", [0, 90, 138, 180, 270, 360])
+def test_native_solar_validator_preserves_compass_value(value):
+    flow = DummyWizard()
+    values = {
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.0,
+        "solar_forecast_string1_declination": 35,
+        "solar_forecast_string1_azimuth": value,
+    }
+    assert flow._validate_solar_string1(values) == {}
+    assert values["solar_forecast_string1_azimuth"] == value
+
+
+@pytest.mark.parametrize("value", [-1, 361, 90.5, True, "90", float("nan"), 10**400])
+def test_native_solar_validator_rejects_invalid_compass_value(value):
+    flow = DummyWizard()
+    errors = flow._validate_solar_string1(
+        {
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 5.0,
+            "solar_forecast_string1_declination": 35,
+            "solar_forecast_string1_azimuth": value,
+        }
+    )
+    assert errors["solar_forecast_string1_azimuth"] == "invalid_azimuth"
 
 
 @pytest.mark.asyncio
@@ -582,13 +604,13 @@ async def test_quick_setup_ote_api_warning(monkeypatch):
     async def _ok(_hass, _data):
         return {"title": "ok"}
 
-    class DummyOteApi:
-        async def get_spot_prices(self):
-            return []
+    async def _empty_spot_prices(_self):
+        return []
 
-    module = types.ModuleType("custom_components.oig_cloud.config.api.ote_api")
-    module.OteApi = DummyOteApi
-    monkeypatch.setitem(sys.modules, "custom_components.oig_cloud.config.api.ote_api", module)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ote_api.OteApi.get_spot_prices",
+        _empty_spot_prices,
+    )
     monkeypatch.setattr(steps_module, "validate_input", _ok)
 
     flow = DummyConfigFlow()

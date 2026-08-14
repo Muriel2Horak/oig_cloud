@@ -1,0 +1,50 @@
+minimum_pre_commit_version: 4.6.1
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(?:custom_components/oig_cloud/www_v2/dist/|\.sisyphus/(?:drafts|evidence|notepads|plans/archive)/|\.sisyyphus/|reports/)
+      - id: end-of-file-fixer
+        exclude: ^(?:custom_components/oig_cloud/www_v2/dist/|\.sisyphus/(?:drafts|evidence|notepads|plans/archive)/|\.sisyyphus/|reports/)
+      - id: check-json
+        exclude: ^(?:\.devcontainer/devcontainer\.json|\.vscode/launch\.json)$
+      - id: check-yaml
+
+  - repo: https://github.com/pycqa/flake8
+    rev: d93590f5be797aabb60e3b09f2f52dddb02f349f # 7.3.0
+    hooks:
+      - id: flake8
+        args:
+          - custom_components/oig_cloud
+          - tests
+          - --max-line-length=120
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: Mypy production source
+        entry: python -m mypy custom_components/oig_cloud --ignore-missing-imports --explicit-package-bases
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pylint
+        name: Pylint
+        entry: bash scripts/run_pylint.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: v2-eslint-errors
+        name: v2 ESLint errors
+        entry: npm --prefix custom_components/oig_cloud/www_v2 run lint -- --quiet
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: v2-typecheck
+        name: v2 TypeScript typecheck
+        entry: npm --prefix custom_components/oig_cloud/www_v2 run typecheck
+        language: system
+        pass_filenames: false
+        always_run: true

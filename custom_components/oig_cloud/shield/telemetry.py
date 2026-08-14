@@ -3,32 +3,20 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-from pathlib import Path
 from typing import Any, Mapping
 
 from homeassistant.util.dt import now as dt_now
 
 from ..shared.cloud_contract import build_producer_event, resolve_telemetry_device_id
+from ..shared.integration_version import async_load_integration_version
 
 
 _LOGGER = logging.getLogger(__name__)
-_MANIFEST_PATH = Path(__file__).resolve().parents[1] / "manifest.json"
 _SHIELD_RUN_ID = "na"
 _DEFAULT_TIMEOUT_MINUTES = 15
 _FORMATTING_TIMEOUT_MINUTES = 2
 _FORMATTING_SERVICE = "oig_cloud.set_formating_mode"
-
-
-def _load_integration_version() -> str:
-    try:
-        return str(json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))["version"])
-    except Exception:
-        return "unknown"
-
-
-_INTEGRATION_VERSION = _load_integration_version()
 
 
 def render_shield_log_marker(level: str, correlation_id: str | None, message: str) -> str:
@@ -97,13 +85,17 @@ async def emit_shield_decision_event(
     if install_id_hash is None:
         return False
 
+    integration_version = await async_load_integration_version(
+        getattr(shield, "hass", None)
+    )
+
     try:
         event = build_producer_event(
             event_name=event_name,
             occurred_at=dt_now().isoformat(),
             device_id=device_id,
             install_id_hash=install_id_hash,
-            integration_version=_INTEGRATION_VERSION,
+            integration_version=integration_version,
             run_id=_SHIELD_RUN_ID,
             correlation_id=correlation_id or "na",
             diagnostics=_build_shield_diagnostics(

@@ -169,7 +169,7 @@ export class OigBatteryChargeDialog extends LitElement {
 
   private onSliderInput(e: Event): void {
     this.targetSoc = parseInt((e.target as HTMLInputElement).value, 10);
-    
+
     this.dispatchEvent(new CustomEvent('soc-change', {
       detail: { targetSoc: this.targetSoc },
       bubbles: true,
@@ -187,7 +187,7 @@ export class OigBatteryChargeDialog extends LitElement {
     return html`
       <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
         <div class="dialog-title">Nabít baterii</div>
-        
+
         <div class="dialog-content">
           <div class="soc-display">
             <div class="soc-current">
@@ -200,7 +200,7 @@ export class OigBatteryChargeDialog extends LitElement {
               <div class="soc-value">${this.targetSoc}%</div>
             </div>
           </div>
-          
+
           <div class="slider-container">
             <input
               type="range"
@@ -211,7 +211,7 @@ export class OigBatteryChargeDialog extends LitElement {
               @input=${this.onSliderInput}
             />
           </div>
-          
+
           ${this.estimate ? html`
             <div class="estimate">
               <div class="estimate-row">
@@ -225,7 +225,7 @@ export class OigBatteryChargeDialog extends LitElement {
             </div>
           ` : null}
         </div>
-        
+
         <div class="dialog-actions">
           <button class="btn btn-cancel" @click=${this.onClose}>
             Zrušit

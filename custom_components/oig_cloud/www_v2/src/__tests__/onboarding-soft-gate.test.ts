@@ -7,6 +7,9 @@ import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 const loadFieldRegistryMock = vi.hoisted(() =>
   vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>().mockResolvedValue(null),
 );
+const fetchOIGAPITypedMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ ok: true, status: 200, data: null }),
+);
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
@@ -14,7 +17,7 @@ vi.mock('@/data/ha-client', () => ({
     getHassSync: vi.fn().mockReturnValue(null),
     refreshHass: vi.fn().mockResolvedValue(null),
     fetchOIGAPI: vi.fn().mockResolvedValue(null),
-    fetchOIGAPITyped: vi.fn().mockResolvedValue({ ok: true, status: 200, data: null }),
+    fetchOIGAPITyped: fetchOIGAPITypedMock,
   },
 }));
 
@@ -215,6 +218,8 @@ describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion 
   beforeEach(async () => {
     loadFieldRegistryMock.mockReset();
     loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    fetchOIGAPITypedMock.mockReset();
+    fetchOIGAPITypedMock.mockResolvedValue({ ok: true, status: 200, data: null });
 
     el = await fixture<TestApp>(html`<oig-app></oig-app>`);
     (el as any).loading = false;
@@ -227,6 +232,8 @@ describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion 
     fixtureCleanup();
     loadFieldRegistryMock.mockReset();
     loadFieldRegistryMock.mockResolvedValue(null);
+    fetchOIGAPITypedMock.mockReset();
+    fetchOIGAPITypedMock.mockResolvedValue({ ok: true, status: 200, data: null });
   });
 
   function getWizard(): HTMLElement & Record<string, any> {
@@ -330,6 +337,23 @@ describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion 
 
     expect((el as any).activeTab).toBe('pricing');
     expect(el.shadowRoot!.querySelector('.tab-content.active')).toBeTruthy();
+  });
+
+  it('renders fixed auth failure copy without exposing a transport sentinel', async () => {
+    const wizard = await openWizardOnSolarErrorStep();
+    fetchOIGAPITypedMock.mockResolvedValueOnce({
+      ok: false,
+      status: 0,
+      code: 'auth',
+      error: 'transport-body-query-token-stack-sentinel',
+    });
+
+    await (wizard as any).runSolarTest();
+    await wizard.updateComplete;
+
+    const error = wizard.shadowRoot!.querySelector('[data-testid="solar-test-error"]');
+    expect(error).toBeTruthy();
+    expect(error!.textContent).not.toContain('transport-body-query-token-stack-sentinel');
   });
 
   it('app.ts refreshes onboarding state on close (kept); a mid-wizard onboarding-changed does not need a separate app.ts listener, because Finish always closes too', async () => {

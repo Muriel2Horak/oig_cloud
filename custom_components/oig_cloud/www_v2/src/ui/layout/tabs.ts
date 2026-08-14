@@ -95,7 +95,7 @@ export class OigTabs extends LitElement {
   render() {
     return html`
       ${this.tabs.map(tab => html`
-        <button 
+        <button
           class="tab ${this.isActive(tab.id) ? 'active' : ''}"
           @click=${() => this.onTabClick(tab.id)}
         >

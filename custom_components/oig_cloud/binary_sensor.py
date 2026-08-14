@@ -60,7 +60,7 @@ class OigCloudBinarySensor(CoordinatorEntity, BinarySensorEntity):
             value = pv_data[self._node_id][self._node_key]
             return bool(value)
         except Exception as e:
-            _LOGGER.error(f"Error reading state for {self.unique_id}: {e}")
+            _LOGGER.error("Error reading state for %s: %s", self.unique_id, e)
             return None
 
     @property

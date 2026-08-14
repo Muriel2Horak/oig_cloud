@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from types import SimpleNamespace
-
 import pytest
 
 from custom_components.oig_cloud.entities import solar_forecast_sensor as module
@@ -10,6 +8,8 @@ from custom_components.oig_cloud.entities.solar_forecast_sensor import (
     OigCloudSolarForecastSensor,
     _parse_forecast_hour,
 )
+from custom_components.oig_cloud.forecast.refresh_result import SolarFetchResult
+from custom_components.oig_cloud.forecast.cache_contract import build_cache_provenance
 
 
 class DummyCoordinator:
@@ -30,6 +30,12 @@ def _make_sensor(options, sensor_type="solar_forecast"):
     entry = DummyConfigEntry(options)
     sensor = OigCloudSolarForecastSensor(coordinator, sensor_type, entry, {})
     sensor.async_write_ha_state = lambda: None
+
+    async def _provenance():
+        entry_id = getattr(entry, "entry_id", None) or f"legacy:{sensor._storage_key}"
+        return build_cache_provenance(entry_id, entry.options, 0)
+
+    sensor._async_current_cache_provenance = _provenance
     return sensor
 
 
@@ -106,21 +112,24 @@ async def test_periodic_update_daily_optimized_skips(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_periodic_update_daily_only_at_six(monkeypatch):
+async def test_daily_wall_clock_callback_dispatches_at_registered_six(monkeypatch):
     sensor = _make_sensor({"solar_forecast_mode": "daily"})
     sensor._sensor_type = "solar_forecast"
+    sensor._config_entry.entry_id = "entry-schedule"
 
     called = {"count": 0}
 
-    async def _fetch():
+    async def _fetch(**_request_context):
         called["count"] += 1
+        return SolarFetchResult.terminal("auth")
+
+    async def _persist(_state, **_kwargs):
+        return True
 
     sensor.async_fetch_forecast_data = _fetch
+    sensor._async_persist_retry_state = _persist
 
-    await sensor._periodic_update(datetime(2025, 1, 1, 7, 0, 0))
-    assert called["count"] == 0
-
-    await sensor._periodic_update(datetime(2025, 1, 1, 6, 0, 0))
+    await sensor._wall_clock_update(datetime(2025, 1, 1, 6, 0, 0))
     assert called["count"] == 1
 
 
@@ -159,31 +168,42 @@ async def test_async_fetch_forecast_no_strings(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_async_fetch_forecast_success(monkeypatch):
-    sensor = _make_sensor({"enable_solar_forecast": True})
-    sensor._config_entry.options["solar_forecast_string1_enabled"] = True
-    sensor._config_entry.options["solar_forecast_string2_enabled"] = False
+    sensor = _make_sensor(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_provider": "forecast_solar",
+            "solar_forecast_api_key": "test-key",
+            "solar_forecast_mode": "daily_optimized",
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 5.0,
+            "solar_forecast_string1_declination": 35,
+            "solar_forecast_string1_azimuth": 138,
+            "solar_forecast_string2_enabled": False,
+        }
+    )
+    today = module.dt_util.now().date()
+    tomorrow = today + timedelta(days=1)
 
     payload = {
         "result": {
-            "watts": {"2025-01-01T10:00:00+00:00": 1000},
-            "watt_hours_day": {"2025-01-01": 2000},
+            "watts": {f"{today.isoformat()}T10:00:00+00:00": 1000},
+            "watt_hours_day": {
+                today.isoformat(): 2000,
+                tomorrow.isoformat(): 2200,
+            },
         }
     }
     session = DummySession([DummyResponse(200, payload=payload)])
     monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
 
-    async def _save():
-        return None
+    result = await sensor.async_fetch_forecast_data()
 
-    async def _broadcast():
-        return None
-
-    sensor._save_persistent_data = _save
-    sensor._broadcast_forecast_data = _broadcast
-
-    await sensor.async_fetch_forecast_data()
-    assert sensor._last_forecast_data is not None
-    assert sensor.coordinator.solar_forecast_data is not None
+    assert result.accepted is True
+    assert result.candidate is not None
+    assert sensor._last_forecast_data is None
+    assert sensor.coordinator.solar_forecast_data is None
 
 
 def test_process_forecast_data_string2_only():
@@ -207,7 +227,9 @@ def test_convert_to_hourly_invalid_timestamp():
 
 
 def test_extra_state_attributes_string1_and_string2():
-    sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast_string1")
+    sensor = _make_sensor(
+        {"enable_solar_forecast": True}, sensor_type="solar_forecast_string1"
+    )
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     hour_key = now.isoformat()
     today_date = now.date().isoformat()
@@ -221,7 +243,9 @@ def test_extra_state_attributes_string1_and_string2():
     assert attrs["today_kwh"] == 2.5
     assert attrs["current_hour_kw"] == 0.5
 
-    sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast_string2")
+    sensor = _make_sensor(
+        {"enable_solar_forecast": True}, sensor_type="solar_forecast_string2"
+    )
     sensor._last_forecast_data = {
         "response_time": now.isoformat(),
         "string2_today_kwh": 3.0,

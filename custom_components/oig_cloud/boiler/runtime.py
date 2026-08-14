@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
 import logging
 import math
@@ -10,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, time as datetime_time
 from typing import Any, Optional, Protocol
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
 from ..const import (
@@ -1401,6 +1402,8 @@ class BoilerRuntime:
         self._daily_source_loaded: bool = False
         self._daily_source_loaded_from_store: bool = False
         self._daily_source_last_save_at: Optional[datetime] = None
+        self._daily_source_save_tasks: set[asyncio.Future[Any]] = set()
+        self._daily_source_unloaded: bool = False
         self._setup_activity_state_listeners()
 
     @property
@@ -1442,7 +1445,9 @@ class BoilerRuntime:
         self._activity_listener_unsubs.clear()
 
     async def async_unload(self) -> None:
+        self._daily_source_unloaded = True
         self.unload_activity_listeners()
+        await self._async_cancel_daily_source_saves()
 
     def _resolve_activity_entity_ids(self) -> set[str]:
         config = getattr(self.coordinator, "config", {}) or {}
@@ -1771,6 +1776,8 @@ class BoilerRuntime:
 
     def _schedule_daily_source_save(self) -> None:
         """Persist the daily accumulators (throttled to at most once per minute)."""
+        if getattr(self, "_daily_source_unloaded", False):
+            return
         store = self._ensure_daily_source_store()
         if store is None:
             return
@@ -1788,11 +1795,119 @@ class BoilerRuntime:
             "kwh": dict(self._daily_source_kwh),
             "cost_czk": dict(self._daily_source_cost_czk),
         }
+        self._schedule_daily_source_save_payload(store, payload)
+
+    def _schedule_daily_source_save_payload(self, store: Any, payload: dict[str, Any]) -> None:
+        """Hand daily-source persistence to the HA loop without building a coroutine."""
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
         try:
-            if hasattr(self.hass, "async_create_task"):
-                self.hass.async_create_task(store.async_save(payload))
-        except Exception:  # pragma: no cover - defensive
-            pass
+            if self._is_daily_source_save_on_hass_loop():
+                self._create_daily_source_save_task(store, payload)
+                return
+            add_job = getattr(hass, "add_job", None)
+            if callable(add_job):
+                add_job(self._create_daily_source_save_task, store, payload)
+                return
+            loop = getattr(hass, "loop", None)
+            if loop is not None:
+                loop.call_soon_threadsafe(
+                    self._create_daily_source_save_task,
+                    store,
+                    payload,
+                )
+                return
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.warning(
+                "Boiler daily source save scheduling failed for %s/%s (error_class=%s)",
+                getattr(self, "entry_id", "?"),
+                getattr(self, "box_id", "?"),
+                err.__class__.__name__,
+            )
+
+    def _is_daily_source_save_on_hass_loop(self) -> bool:
+        hass = getattr(self, "hass", None)
+        hass_loop = getattr(hass, "loop", None)
+        if hass_loop is None:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return False
+            return True
+        try:
+            return asyncio.get_running_loop() is hass_loop
+        except RuntimeError:
+            return False
+
+    @callback
+    def _create_daily_source_save_task(self, store: Any, payload: dict[str, Any]) -> None:
+        if getattr(self, "_daily_source_unloaded", False):
+            return
+        hass = getattr(self, "hass", None)
+        create_task = getattr(hass, "async_create_task", None)
+        if not callable(create_task):
+            return
+        coro = self._async_save_daily_source_payload(store, payload)
+        try:
+            task = create_task(coro)
+        except Exception as err:  # pragma: no cover - defensive
+            coro.close()
+            _LOGGER.warning(
+                "Boiler daily source save scheduling failed for %s/%s (error_class=%s)",
+                getattr(self, "entry_id", "?"),
+                getattr(self, "box_id", "?"),
+                err.__class__.__name__,
+            )
+            return
+        if task is None:
+            coro.close()
+            return
+        if asyncio.iscoroutine(task):
+            task.close()
+            return
+        if not asyncio.isfuture(task):
+            return
+        tasks = getattr(self, "_daily_source_save_tasks", None)
+        if tasks is None:
+            self._daily_source_save_tasks = set()
+            tasks = self._daily_source_save_tasks
+        tasks.add(task)
+        task.add_done_callback(self._daily_source_save_done)
+
+    async def _async_save_daily_source_payload(self, store: Any, payload: dict[str, Any]) -> None:
+        try:
+            await store.async_save(payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.warning(
+                "Boiler daily source save failed for %s/%s (error_class=%s)",
+                getattr(self, "entry_id", "?"),
+                getattr(self, "box_id", "?"),
+                err.__class__.__name__,
+            )
+
+    @callback
+    def _daily_source_save_done(self, task: asyncio.Future[Any]) -> None:
+        tasks = getattr(self, "_daily_source_save_tasks", None)
+        if tasks is not None:
+            tasks.discard(task)
+        if task.cancelled():
+            return
+        try:
+            task.exception()
+        except asyncio.CancelledError:
+            return
+
+    async def _async_cancel_daily_source_saves(self) -> None:
+        tasks = list(getattr(self, "_daily_source_save_tasks", set()))
+        if not tasks:
+            return
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._daily_source_save_tasks.difference_update(tasks)
 
     def reseed_daily_source_kwh(self, total_kwh: float) -> None:
         """Re-seed the fve+grid buckets once after HA restart.
@@ -2255,7 +2370,11 @@ class BoilerRuntime:
                     current_segment = None
                 continue
 
-            if current_segment is None or current_segment["key"] != source_key:
+            segment_changed = (
+                current_segment is None
+                or current_segment.get("key") != source_key
+            )
+            if segment_changed:
                 if current_segment is not None:
                     current_segment["end"] = timestamp
                     current_segment["active"] = False
@@ -2269,6 +2388,7 @@ class BoilerRuntime:
                     "active": True,
                 }
 
+            assert current_segment is not None
             if i + 1 < len(buffer):
                 next_entry = buffer[i + 1]
                 duration_hours = self._duration_hours(timestamp, next_entry.get("timestamp"))
@@ -3099,6 +3219,42 @@ def destroy_boiler_runtime(
     if isinstance(runtimes, dict):
         runtime = runtimes.pop(box_id, None)
         if runtime is not None:
+            try:
+                runtime._daily_source_unloaded = True
+                cancel_saves = getattr(runtime, "_async_cancel_daily_source_saves", None)
+                if callable(cancel_saves):
+
+                    @callback
+                    def _schedule_daily_source_save_cancel() -> None:
+                        coro = cancel_saves()
+                        try:
+                            task = hass.async_create_task(coro)
+                        except Exception as exc:
+                            coro.close()
+                            _LOGGER.warning(
+                                "Error cancelling daily source save during runtime destroy: %s",
+                                exc.__class__.__name__,
+                            )
+                            return
+                        if task is None:
+                            coro.close()
+                        elif asyncio.iscoroutine(task):
+                            task.close()
+
+                    if BoilerRuntime._is_daily_source_save_on_hass_loop(runtime):
+                        _schedule_daily_source_save_cancel()
+                    else:
+                        add_job = getattr(hass, "add_job", None)
+                        loop = getattr(hass, "loop", None)
+                        if callable(add_job):
+                            add_job(_schedule_daily_source_save_cancel)
+                        elif loop is not None:
+                            loop.call_soon_threadsafe(_schedule_daily_source_save_cancel)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Error cancelling daily source save during runtime destroy: %s",
+                    exc.__class__.__name__,
+                )
             if hasattr(runtime, "unload_activity_listeners"):
                 try:
                     runtime.unload_activity_listeners()

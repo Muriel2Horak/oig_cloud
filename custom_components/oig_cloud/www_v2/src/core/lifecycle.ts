@@ -34,7 +34,7 @@ export class Lifecycle {
     }
 
     oigLog.debug('Lifecycle mounting');
-    
+
     for (const hook of this.onMountHooks) {
       try {
         await hook();
@@ -42,7 +42,7 @@ export class Lifecycle {
         oigLog.error('onMount hook failed', e as Error);
       }
     }
-    
+
     this.state.mounted = true;
     oigLog.debug('Lifecycle mounted');
   }
@@ -53,10 +53,10 @@ export class Lifecycle {
     }
 
     oigLog.debug('Lifecycle unmounting');
-    
+
     this.clearAllTimers();
     this.removeAllEventListeners();
-    
+
     for (const hook of this.onUnmountHooks) {
       try {
         await hook();
@@ -64,7 +64,7 @@ export class Lifecycle {
         oigLog.error('onUnmount hook failed', e as Error);
       }
     }
-    
+
     this.state.destroyed = true;
     oigLog.debug('Lifecycle unmounted');
   }

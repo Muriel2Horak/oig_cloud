@@ -13,7 +13,7 @@ jobs:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14.3"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -44,9 +44,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install coverage
+          python -m pip install --require-hashes -r requirements-dev.txt
+          python -m pip check
           npm ci --ignore-scripts
 
       - name: Install frontend dependencies
@@ -78,7 +77,7 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.python.pylintConfigFile=.pylintrc
             -Dsonar.python.bandit.reportPaths=bandit-report.json
-            -Dsonar.tests=tests,custom_components/oig_cloud/www_v2/src/__tests__,custom_components/oig_cloud/www_v2/tests
-            -Dsonar.test.inclusions=tests/**/*.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts
-            -Dsonar.exclusions=**/test*.py,**/tests/**,**/__pycache__/**,**/*.pyc
-            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/__init__.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts
+            -Dsonar.tests=tests,custom_components/oig_cloud/www_v2/src/__tests__,custom_components/oig_cloud/www_v2/tests,custom_components/oig_cloud/www_v2/playwright
+            -Dsonar.test.inclusions=tests/**/*.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts,custom_components/oig_cloud/www_v2/playwright/**/*.spec.ts
+            -Dsonar.exclusions=**/test*.py,**/tests/**,**/*.spec.ts,**/__pycache__/**,**/*.pyc
+            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/*.spec.ts,**/__init__.py,scripts/**,custom_components/oig_cloud/www_v2/scripts/**,custom_components/oig_cloud/www_v2/vite.config.ts,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts

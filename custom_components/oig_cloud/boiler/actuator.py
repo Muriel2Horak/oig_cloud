@@ -800,6 +800,10 @@ async def _clear_persisted_schedule(hass: HomeAssistant, entry_id: str) -> None:
 async def _restore_boiler_schedule(hass: HomeAssistant, entry_id: str) -> None:
     store: Store[dict[str, dict[str, Any]]] = Store(hass, _STORAGE_VERSION, _STORAGE_KEY)
     raw: dict[str, Any] = await store.async_load() or {}
+    if not raw:
+        # No persisted schedule at all (fresh install or cleared store). That is
+        # not legacy data, so it must not be reported as a skipped migration.
+        return
     if raw.get("schema_version") != _SCHEDULE_SCHEMA_VERSION:
         _LOGGER.warning(
             "Skipping legacy unversioned boiler schedule restore for %s", entry_id

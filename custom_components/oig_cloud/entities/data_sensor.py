@@ -1,12 +1,25 @@
 import logging
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypedDict, Union
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import dt as dt_util
 
 from ..core.local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
+from .daily_energy import (
+    DailyCycleMarkerState,
+    DailyCycleRestoreData,
+    classify_daily_energy_wh,
+    observe_daily_cycle_value,
+    restore_daily_cycle_marker,
+)
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -75,6 +88,8 @@ class OigCloudDataSensor(_DataSensorBase):
         self._data_source_unsub: Optional[Callable[[], None]] = None
         self._entry_id: Optional[str] = None
         self._restored_state: Optional[Any] = None
+        self._daily_energy_invalid_log_ts: Dict[str, float] = {}
+        self._daily_cycle_marker_state: Optional[DailyCycleMarkerState] = None
 
         # Načteme sensor config
         try:
@@ -125,17 +140,45 @@ class OigCloudDataSensor(_DataSensorBase):
         await super().async_added_to_hass()
 
         # Retain last-known value across HA restarts (acts like "retain" for sensors).
+        restored_value: Optional[float] = None
+        restored_local_date: Optional[Any] = None
+        restored_state_seen = False
         try:
             last_state = await self.async_get_last_state()
-            if last_state and last_state.state not in (
-                None,
-                "",
-                "unknown",
-                "unavailable",
-            ):
-                self._restored_state = self._coerce_number(last_state.state)
+            if last_state and last_state.state is not None:
+                restores_daily_energy = bool(
+                    self._sensor_config.get("validated_daily_energy")
+                    or self._sensor_config.get("daily_cycle_reset")
+                )
+                if restores_daily_energy:
+                    restored_state_seen = True
+                    sample = classify_daily_energy_wh(last_state.state)
+                    if sample.reason_class == "ok":
+                        self._restored_state = sample.value_wh
+                        restored_value = sample.value_wh
+                    else:
+                        self._restored_state = None
+                elif last_state.state not in ("", "unknown", "unavailable"):
+                    self._restored_state = self._coerce_number(last_state.state)
+                if hasattr(last_state, "last_changed") and last_state.last_changed:
+                    restored_local_date = dt_util.as_local(
+                        last_state.last_changed
+                    ).date()
         except Exception:
             self._restored_state = None
+
+        if self._sensor_config.get("daily_cycle_reset"):
+            try:
+                extra = await self.async_get_last_extra_data()  # type: ignore[attr-defined]
+                payload = extra.as_dict() if extra else None
+            except Exception:
+                payload = None
+            self._daily_cycle_marker_state = restore_daily_cycle_marker(
+                restored_value,
+                restored_local_date,
+                payload,
+                restored_state_seen=restored_state_seen,
+            )
 
         # Local telemetry mapping is handled centrally by DataSourceController
         # which keeps coordinator.data in a cloud-shaped format even in local mode.
@@ -241,18 +284,34 @@ class OigCloudDataSensor(_DataSensorBase):
             # Získáme raw hodnotu z parent
             raw_value = self.get_node_value()
             if raw_value is None:
+                if self._sensor_config.get("validated_daily_energy"):
+                    return self._daily_energy_fallback_value()
                 return self._fallback_value()
+
+            # Validate daily-energy samples before HA/Recorder sees them.
+            if self._sensor_config.get("validated_daily_energy"):
+                sample = classify_daily_energy_wh(raw_value)
+                if sample.reason_class != "ok":
+                    return self._reject_daily_energy_sample(sample.reason_class)
+                raw_value = sample.value_wh
 
             special_state = self._get_special_state(raw_value, pv_data)
             if special_state is not _STATE_NOT_HANDLED:
                 return special_state
+
+            # Observe accepted daily-cycle values before publishing.
+            if self._sensor_config.get("daily_cycle_reset"):
+                self._observe_daily_cycle_value(raw_value)
+
+            if self._sensor_config.get("validated_daily_energy"):
+                self._last_state = raw_value
 
             # Pro ostatní senzory vrátíme raw hodnotu přímo
             return raw_value
 
         except Exception as e:
             _LOGGER.error(
-                f"Error getting state for {self.entity_id}: {e}", exc_info=True
+                "Error getting state for %s: %s", self.entity_id, e, exc_info=True
             )
             return self._fallback_value()
 
@@ -322,6 +381,47 @@ class OigCloudDataSensor(_DataSensorBase):
         if self._sensor_type in {"boiler_is_use", "box_prms_crct", "box_prms_crcte"}:
             return self._get_on_off_name(raw_value, "cs")
         return _STATE_NOT_HANDLED
+
+    @property
+    def last_reset(self) -> Optional[datetime]:
+        """Local midnight for sensors that carry the daily-cycle marker.
+
+        A sensor config opts in explicitly with ``daily_cycle_reset: True``.
+        Only accumulators that really do restart at local midnight may do so --
+        announcing a daily cycle for a monthly/yearly counter would corrupt its
+        long-term sum just as badly as announcing none for a daily one.
+
+        ``last_reset`` is only meaningful for ``TOTAL``; Home Assistant raises
+        if it is set for any other state class, so the state class is checked
+        here rather than trusted from configuration.
+
+        The boundary comes from ``dt_util.start_of_local_day()``, i.e. the
+        timezone Home Assistant is configured with -- never a hardcoded zone.
+        """
+        if not self._sensor_config.get("daily_cycle_reset"):
+            return None
+        if self._attr_state_class != SensorStateClass.TOTAL:
+            _LOGGER.debug(
+                "[%s] daily_cycle_reset ignored for state_class %s",
+                self.entity_id,
+                self._attr_state_class,
+            )
+            return None
+        marker = self._daily_cycle_marker_state
+        if marker is not None and not marker.armed:
+            return None
+        if marker is not None and marker.last_local_date is not None:
+            return dt_util.start_of_local_day(marker.last_local_date)
+        return dt_util.start_of_local_day()
+
+    @property
+    def extra_restore_state_data(self) -> Any:
+        """Return daily-cycle marker data for RestoreEntity persistence."""
+        if not self._sensor_config.get("daily_cycle_reset"):
+            return None
+        if self._daily_cycle_marker_state is None:
+            return None
+        return DailyCycleRestoreData(self._daily_cycle_marker_state)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -438,17 +538,17 @@ class OigCloudDataSensor(_DataSensorBase):
 
             index = mapping.get(sensor_type)
             if index is None:
-                _LOGGER.warning(f"Unknown extended sensor mapping for {sensor_type}")
+                _LOGGER.warning("Unknown extended sensor mapping for %s", sensor_type)
                 return None
 
             if index >= len(last_values):
-                _LOGGER.warning(f"Index {index} out of range for extended values")
+                _LOGGER.warning("Index %s out of range for extended values", index)
                 return None
 
             return last_values[index]
 
         except (KeyError, IndexError, TypeError) as e:
-            _LOGGER.error(f"Error getting extended value for {sensor_type}: {e}")
+            _LOGGER.error("Error getting extended value for %s: %s", sensor_type, e)
             return None
 
     def _compute_fve_current(self, sensor_type: str) -> Optional[float]:
@@ -483,13 +583,13 @@ class OigCloudDataSensor(_DataSensorBase):
             if voltage != 0:
                 current = power / voltage
                 _LOGGER.debug(
-                    f"{sensor_type}: {current:.3f}A (P={power}W, U={voltage}V)"
+                    "%s: %.3fA (P=%sW, U=%sV)", sensor_type, current, power, voltage
                 )
                 return round(current, 3)
             else:
                 return 0.0
         except (KeyError, TypeError, ZeroDivisionError, IndexError) as e:
-            _LOGGER.error(f"Error computing {sensor_type}: {e}", exc_info=True)
+            _LOGGER.error("Error computing %s: %s", sensor_type, e, exc_info=True)
             return None
 
     def _get_mode_name(self, node_value: int, language: str) -> str:
@@ -521,7 +621,7 @@ class OigCloudDataSensor(_DataSensorBase):
             return _LANGS["unknown"][language]
 
         except (KeyError, ValueError, TypeError) as e:
-            _LOGGER.error(f"[{self.entity_id}] Error determining grid mode: {e}")
+            _LOGGER.error("[%s] Error determining grid mode: %s", self.entity_id, e)
             return _LANGS["unknown"][language]
 
     def _extract_grid_inputs(
@@ -653,6 +753,45 @@ class OigCloudDataSensor(_DataSensorBase):
             if self._sensor_config.get("device_class") == SensorDeviceClass.ENERGY:
                 return 0.0
         return None
+
+    def _daily_energy_fallback_value(self) -> Optional[Any]:
+        if self._last_state is not None:
+            return self._last_state
+        if self._restored_state is not None:
+            return self._restored_state
+        return None
+
+    def _reject_daily_energy_sample(self, reason_class: str) -> Optional[Any]:
+        """Rate-limit diagnostic and return fallback for an invalid sample.
+
+        Logs only the sensor type and reason class. Never logs the raw value or
+        an exception object.
+        """
+        now = time.monotonic()
+        last_log = self._daily_energy_invalid_log_ts.get(reason_class)
+        if last_log is None or now - last_log >= 300.0:
+            _LOGGER.debug(
+                "[%s] Invalid daily energy sample rejected for %s: %s",
+                self.entity_id,
+                self._sensor_type,
+                reason_class,
+            )
+            self._daily_energy_invalid_log_ts[reason_class] = now
+        return self._daily_energy_fallback_value()
+
+    def _observe_daily_cycle_value(self, value_wh: Any) -> None:
+        """Update the daily-cycle marker before the value is published."""
+        if self._daily_cycle_marker_state is None:
+            return
+        try:
+            local_date = dt_util.now().date()
+        except Exception:
+            return
+        self._daily_cycle_marker_state = observe_daily_cycle_value(
+            self._daily_cycle_marker_state,
+            float(value_wh),
+            local_date,
+        )
 
     def _get_local_value(self) -> Optional[Any]:
         local_entity_id = self._get_local_entity_id_for_config(self._sensor_config)
@@ -823,9 +962,7 @@ def resolve_grid_delivery_live_state(raw_values: dict) -> GridDeliveryLiveState:
         else None
     )
     to_grid_raw = (
-        invertor_prms.get("to_grid")
-        if isinstance(invertor_prms, dict)
-        else None
+        invertor_prms.get("to_grid") if isinstance(invertor_prms, dict) else None
     )
 
     if grid_enabled_raw is None or max_grid_feed_raw is None or to_grid_raw is None:

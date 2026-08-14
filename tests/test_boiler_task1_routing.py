@@ -527,7 +527,8 @@ def test_boiler_coordinator_no_infer_box_id_from_states():
                 return ["sensor.oig_123_boiler_day_w", "sensor.oig_456_boiler_day_w"]
 
     hass = DummyHassNoInfer()
-    coordinator = mod.BoilerCoordinator(hass, {})
+    coordinator = object.__new__(mod.BoilerCoordinator)
+    coordinator.hass = hass
     result = coordinator._resolve_box_id({})
     assert result == UNKNOWN_BOX_ID, (
         f"Expected UNKNOWN_BOX_ID when config has no box_id, got {result}"
@@ -545,7 +546,8 @@ def test_boiler_coordinator_infer_method_removed_or_safe():
                 return ["sensor.oig_123_boiler_day_w"]
 
     hass = DummyHassInfer()
-    coordinator = mod.BoilerCoordinator(hass, {})
+    coordinator = object.__new__(mod.BoilerCoordinator)
+    coordinator.hass = hass
     # Method should either not exist, or return None (no unsafe inference)
     if hasattr(coordinator, "_infer_box_id_from_states"):
         result = coordinator._infer_box_id_from_states()

@@ -7,7 +7,7 @@ const createMockElement = (tagName: string, props: Record<string, any> = {}) => 
     querySelector: vi.fn((sel: string) => null),
     querySelectorAll: vi.fn((sel: string) => []),
   };
-  
+
   const element = {
     tagName: tagName.toUpperCase(),
     shadowRoot,
@@ -21,7 +21,7 @@ const createMockElement = (tagName: string, props: Record<string, any> = {}) => 
     getAttribute: vi.fn((name: string) => props[name] ?? null),
     hasAttribute: vi.fn((name: string) => name in props),
   };
-  
+
   return element as any;
 };
 

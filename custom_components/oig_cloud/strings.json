@@ -54,7 +54,7 @@
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
-          "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
+          "enable_solar_forecast": "Vyžaduje přístupové údaje pro Forecast.Solar nebo Solcast",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
@@ -91,9 +91,12 @@
       },
       "wizard_solar": {
         "title": "☀️ Konfigurace solární předpovědi",
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Můžete zvolit Forecast.Solar nebo Solcast.\n\n🔧 **Co je potřeba:**\n• Přístupové údaje vybraného poskytovatele\n• Forecast.Solar: GPS souřadnice a parametry panelů (sklon, azimut, výkon)\n• Solcast: nakonfigurovaný Rooftop Site; jeho geometrie se použije místo místních GPS, sklonu a azimutu\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)",
         "data": {
+          "solar_forecast_provider": "Poskytovatel solární předpovědi",
           "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solcast_api_key": "Solcast API klíč",
+          "solcast_site_id": "Solcast Site ID",
           "solar_forecast_mode": "Režim aktualizace předpovědi",
           "solar_forecast_latitude": "GPS šířka instalace",
           "solar_forecast_longitude": "GPS délka instalace",
@@ -108,18 +111,21 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
+          "solar_forecast_provider": "Forecast.Solar používá místní geometrii; Solcast přebírá geometrii z Rooftop Site.",
           "solar_forecast_api_key": "Nepovinné pro ZDARMA režimy. Povinné pro časté aktualizace (4h, 1h)",
+          "solcast_api_key": "Povinné pro Solcast; prázdná hodnota ponechá aktivní klíč beze změny.",
+          "solcast_site_id": "Geometrii nastavte v Solcast Rooftop Site. Zde zadejte jeho Site ID.",
           "solar_forecast_mode": "🎯 Optimalizovaný = 3× denně v 6:00, 12:00, 16:00 (DOPORUČENO)\n🌅 Denní = 1× denně v 6:00\n🕐 4h/⚡1h = vyžaduje API klíč",
           "solar_forecast_latitude": "Rozsah: -90° až 90° (Střední Evropa cca 48-51°)",
           "solar_forecast_longitude": "Rozsah: -180° až 180° (Střední Evropa cca 12-19°)",
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
-          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
+          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
-          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
+          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -351,7 +357,7 @@
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_extended_sensors": "Doporučeno - detailní monitoring",
-          "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
+          "enable_solar_forecast": "Vyžaduje přístupové údaje pro Forecast.Solar nebo Solcast",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
@@ -388,9 +394,12 @@
       },
       "wizard_solar": {
         "title": "☀️ Konfigurace solární předpovědi",
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Využívá službu Forecast.Solar s přesnými meteorologickými daty.\n\n🔧 **Co je potřeba:**\n• Bezplatný nebo placený API klíč z Forecast.Solar\n• GPS souřadnice instalace FVE\n• Parametry panelů (sklon, azimut, výkon)\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)\n\n🔑 API klíč získáte registrací na Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nPoskytuje předpověď výroby elektřiny z fotovoltaických panelů na následujících 24-72 hodin. Můžete zvolit Forecast.Solar nebo Solcast.\n\n🔧 **Co je potřeba:**\n• Přístupové údaje vybraného poskytovatele\n• Forecast.Solar: GPS souřadnice a parametry panelů (sklon, azimut, výkon)\n• Solcast: nakonfigurovaný Rooftop Site; jeho geometrie se použije místo místních GPS, sklonu a azimutu\n\n⚠️ **Tento modul je vyžadován pro:**\n• 🔋 Predikce baterie (inteligentní nabíjení)",
         "data": {
+          "solar_forecast_provider": "Poskytovatel solární předpovědi",
           "solar_forecast_api_key": "Forecast.Solar API klíč",
+          "solcast_api_key": "Solcast API klíč",
+          "solcast_site_id": "Solcast Site ID",
           "solar_forecast_mode": "Režim aktualizace předpovědi",
           "solar_forecast_latitude": "GPS šířka instalace",
           "solar_forecast_longitude": "GPS délka instalace",
@@ -405,18 +414,21 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
+          "solar_forecast_provider": "Forecast.Solar používá místní geometrii; Solcast přebírá geometrii z Rooftop Site.",
           "solar_forecast_api_key": "Nepovinné pro ZDARMA režimy. Povinné pro časté aktualizace (4h, 1h)",
+          "solcast_api_key": "Povinné pro Solcast; prázdná hodnota ponechá aktivní klíč beze změny.",
+          "solcast_site_id": "Geometrii nastavte v Solcast Rooftop Site. Zde zadejte jeho Site ID.",
           "solar_forecast_mode": "🎯 Optimalizovaný = 3× denně v 6:00, 12:00, 16:00 (DOPORUČENO)\n🌅 Denní = 1× denně v 6:00\n🕐 4h/⚡1h = vyžaduje API klíč",
           "solar_forecast_latitude": "Rozsah: -90° až 90° (Střední Evropa cca 48-51°)",
           "solar_forecast_longitude": "Rozsah: -180° až 180° (Střední Evropa cca 12-19°)",
           "solar_forecast_string1_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Pokud máte panely pouze na jedné orientaci, stačí String 1",
-          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp (např. 5.0 kWp)",
+          "solar_forecast_string1_kwp": "Celkový výkon String 1 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string1_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string1_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string1_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "solar_forecast_string2_enabled": "💡 Klikněte 'Odeslat' pro zobrazení parametrů. Zapněte, pokud máte panely na dvou různých orientacích (např. východ + západ)",
-          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp (např. 3.5 kWp)",
+          "solar_forecast_string2_kwp": "Celkový výkon String 2 v kWp. Pro Solcast slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.",
           "solar_forecast_string2_declination": "0° = horizontálně, 90° = vertikálně (střechy obvykle 30-45°). Rozsah: 0-90°",
-          "solar_forecast_string2_azimuth": "0° = jih, -90° = východ, 90° = západ. Rozsah: 0-360°",
+          "solar_forecast_string2_azimuth": "Sever 0°/360°, východ 90°, jih 180°, západ 270°. Rozsah: 0–360°.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -546,18 +558,24 @@
       },
       "ai": {
         "title": "🤖 Volitelný AI pomocník",
-        "description": "AI je volitelná a dashboard funguje i bez ní. Groq, NVIDIA a vlastní HA AI Task jsou rovnocenné volby.\n\n**Groq:** 1. Zaregistrujte se na {groq_console_url}. 2. Otevřete {groq_keys_url}. 3. Zvolte Create API Key a klíč ihned zkopírujte.\n\n**NVIDIA:** 1. Zaregistrujte se na {nvidia_build_url}. 2. Otevřete {nvidia_keys_url}. 3. Zvolte Generate API Key a klíč zkopírujte.\n\nKlíč se ukládá soukromě do .storage a nikdy do options.",
+        "description": "AI je volitelná a dashboard funguje i bez ní. Groq, NVIDIA a vlastní HA AI Task jsou rovnocenné volby.\n\n**Groq:** 1. Zaregistrujte se na {groq_console_url}. 2. Otevřete {groq_keys_url}. 3. Zvolte Create API Key a klíč ihned zkopírujte.\n\n**NVIDIA:** 1. Zaregistrujte se na {nvidia_build_url}. 2. Otevřete {nvidia_keys_url}. 3. Zvolte Generate API Key a klíč zkopírujte.\n\nKlíč se ukládá soukromě do .storage a nikdy do options.\n\nVolitelně můžete přidat i záložního poskytovatele, na kterého se integrace přepne, pokud hlavní poskytovatel selže. Záložní poskytovatel je JINÝ dodavatel, takže mu bude odesláno stejné anonymní číslo jako hlavnímu — proto vyžadujeme samostatný souhlas.",
         "data": {
           "ai_provider": "Poskytovatel AI",
           "ai_base_url": "Base URL API",
           "ai_model": "Model",
-          "ai_api_key": "API klíč"
+          "ai_api_key": "API klíč",
+          "ai_fallback_provider": "Záložní poskytovatel AI",
+          "ai_fallback_api_key": "API klíč záložního poskytovatele",
+          "ai_consent_cross_provider_fallback": "Souhlasím s odesíláním anonymizovaných dat i záložnímu poskytovateli"
         },
         "data_description": {
           "ai_provider": "Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.",
           "ai_base_url": "Volitelná vlastní OpenAI-compatible URL.",
           "ai_model": "Volitelný identifikátor modelu.",
-          "ai_api_key": "Prázdné pole zachová dříve uložený klíč."
+          "ai_api_key": "Prázdné pole zachová dříve uložený klíč.",
+          "ai_fallback_provider": "Volitelné; použije se pouze při selhání hlavního poskytovatele.",
+          "ai_fallback_api_key": "Vyžadován spolu se záložním poskytovatelem; prázdné pole nic neuloží.",
+          "ai_consent_cross_provider_fallback": "Bez tohoto souhlasu se záložní poskytovatel nikdy nepoužije, i když je uložen."
         }
       },
       "init": {

@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.oig_cloud.config.solar_rules import (
-    normalize_azimuth,
-    validate_solar_effective,
-)
+from custom_components.oig_cloud.config import solar_rules
+
+validate_solar_effective = solar_rules.validate_solar_effective
 
 
 def _opts(**over):
@@ -69,11 +68,71 @@ def test_switching_to_solcast_without_credentials_is_rejected():
     assert "solcast_api_key" in errors and "solcast_site_id" in errors
 
 
-@pytest.mark.parametrize("raw,expected", [
-    (0, 0), (90, 90), (-90, -90), (180, 180),
-    (270, -90),    # legacy unsigned west
-    (360, 0),      # legacy unsigned north
-    (181, -179),
-])
-def test_normalize_azimuth_maps_legacy_unsigned_to_signed(raw, expected):
-    assert normalize_azimuth(raw) == expected
+@pytest.mark.parametrize("raw", [0, 90, 138, 180, 270, 360, 90.0])
+def test_compass_azimuth_accepts_only_finite_integral_range(raw):
+    expected = int(raw)
+    assert solar_rules.validate_compass_azimuth(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        True,
+        False,
+        "90",
+        90.5,
+        -1,
+        361,
+        10**400,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+    ],
+)
+def test_compass_azimuth_rejects_noncanonical_input(raw):
+    with pytest.raises(ValueError):
+        solar_rules.validate_compass_azimuth(raw)
+
+
+@pytest.mark.parametrize(
+    ("stored", "display", "legacy", "valid"),
+    [
+        (-180, 0, True, True),
+        (-90, 90, True, True),
+        (-42, 138, True, True),
+        (138, 138, False, True),
+        (360, 360, False, True),
+        (361, None, False, False),
+        (720, None, False, False),
+        (90.5, None, False, False),
+        ("NaN", None, False, False),
+        (float("inf"), None, False, False),
+    ],
+)
+def test_legacy_azimuth_read_model_never_mutates_stored_value(
+    stored, display, legacy, valid
+):
+    model = solar_rules.legacy_azimuth_read_model(stored)
+    assert model["stored_value"] == stored
+    assert model["display_value"] == display
+    assert model["legacy_provider_value"] is legacy
+    assert model["requires_adoption"] is legacy
+    assert model["valid_for_provider"] is valid
+
+
+@pytest.mark.parametrize(
+    ("compass", "provider"),
+    [(0, -180), (90, -90), (138, -42), (180, 0), (270, 90), (360, 180)],
+)
+def test_forecast_solar_azimuth_converts_only_at_provider_boundary(
+    compass, provider
+):
+    assert solar_rules.forecast_solar_azimuth(compass) == provider
+
+
+def test_forecast_solar_azimuth_keeps_explicit_legacy_provider_value_raw():
+    assert solar_rules.forecast_solar_azimuth(-90, legacy_provider_value=True) == -90
+    with pytest.raises(ValueError):
+        solar_rules.forecast_solar_azimuth(361)
+    with pytest.raises(ValueError):
+        solar_rules.forecast_solar_azimuth(90.5)

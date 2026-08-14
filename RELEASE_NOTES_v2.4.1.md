@@ -1,0 +1,153 @@
+# OIG Cloud pro Home Assistant — poznámky k vydání 2.4.1
+
+Verze 2.4.1 je servisní vydání zaměřené na spolehlivost po upgradu. Opravuje plánování a ukládání
+solární předpovědi, navazování denní výroby v Recorderu, autentizaci V2 dashboardu a několik
+startovacích a lifecycle problémů. Stávající konfigurace zůstává zachována; po aktualizaci stačí
+Home Assistant jednou restartovat.
+
+---
+
+## Nejdůležitější opravy
+
+### Solární předpověď se obnovuje podle skutečného místního času
+
+- Režim `daily_optimized` spouští automatický refresh v **06:00, 12:00 a 16:00 místního času**.
+- Režim `daily` spouští refresh v **06:00 místního času**.
+- Čas startu Home Assistanta už plán neposouvá; start například v 10:42 nezpůsobí, že by se
+  další refreshy navždy spouštěly v nesprávnou minutu.
+- Přechod na letní nebo zimní čas, restart, překryv ručního a automatického volání ani opakované
+  doručení stejného callbacku nevytvoří duplicitní přijatý forecast.
+- Dočasné chyby provideru mají trvalý retry stav `+15/+45 minut`; terminální chyba se neopakuje
+  a platná předchozí předpověď zůstává dostupná.
+
+### Solární cache a konfigurace jsou transakční
+
+- Provider, konfigurace, revize privátních přihlašovacích údajů a occurrence jsou svázané s
+  konkrétním požadavkem. Starší odpověď už nemůže přepsat novější výsledek.
+- Forecast a retry metadata používají stejné pořadí zámků a jeden trvalý zápis. Restart proto
+  neobnoví již úspěšně dokončený retry ani nepřejmenuje starou cache na novou konfiguraci.
+- Unload čeká na rozpracovaný Store zápis, zruší callbacky a po odebrání entity nic nepublikuje.
+- Manuální služba `oig_cloud.update_solar_forecast` vrací `updated` jen po validaci a trvalém
+  uložení nových dat. Rate limit nebo odmítnutí providerem vrací pravdivou chybu.
+
+### Azimut používá běžný kompas
+
+V nastavení se azimut zadává jako:
+
+- `0` nebo `360` — sever,
+- `90` — východ,
+- `180` — jih,
+- `270` — západ.
+
+Hodnota se uloží a zobrazí beze změny. Převod na formát Forecast.Solar probíhá až na hranici
+provideru. Staré záporné hodnoty se zobrazí jako legacy konfigurace a lze je výslovně převzít;
+integrace je nepřepisuje skrytě.
+
+### Solární klíče zůstávají privátní
+
+- Forecast.Solar a Solcast přihlašovací údaje se ukládají mimo veřejné options.
+- Test konfigurace vydá krátkodobý proof svázaný s přesným efektivním DTO; proof nelze přehrát,
+  použít pro jinou entry ani použít po změně konfigurace.
+- Explicitní uložení bez testu zůstává možné a označí nové údaje jako neověřené.
+- Solcast nedostává lokální GPS, sklon ani azimut; geometrii spravuje jeho Rooftop Site.
+
+### Denní výroba navazuje bez poškození historie
+
+Senzor `sensor.oig_<box>_dc_in_fv_ad` nyní používá Recorder kontrakt pro denní čítač:
+
+- existující historie z `total_increasing` se při upgradu zachová,
+- první stav po restartu nevytvoří falešný reset ani dvojí započtení,
+- reset marker se aktivuje až po prokázaném přechodu do nového dne,
+- chybějící půlnoční vzorek, krátký restart, nízká denní výroba, rollback čítače a dočasné
+  `unknown/unavailable` hodnoty jsou ošetřené bez skoku v dlouhodobých statistikách.
+
+### Dashboard používá autentizaci Home Assistanta
+
+- V2 dashboard deleguje HTTP požadavky na `hass.fetchWithAuth`.
+- Aplikační kód nečte access token, nesestavuje vlastní `Bearer` hlavičku a nevolá globální
+  `fetch` pro autentizované OIG endpointy.
+- Home Assistant vlastní refresh expirovaného přihlášení; paralelní požadavky používají čerstvý
+  token a neodesílají známý expirovaný token.
+- Cesty jsou omezené na relativní OIG API, hlavičky dodané volajícím jsou očištěné a diagnostika
+  neobsahuje token, URL query ani text výjimky.
+
+---
+
+## Další změny
+
+- Solar Settings a onboarding používají stejné podmínky viditelnosti, providerovou validaci,
+  varování k legacy hodnotám a české/anglické texty.
+- Úspěšně uložené části wizardu se při retry znovu neposílají; neúspěšný pozdější krok nesníží
+  ověřené solární přihlašovací údaje na neověřené.
+- Sekundární solární string senzory dostávají stejný přijatý snapshot jako hlavní senzor.
+- Battery forecast znovu načte všech deset profilů spotřeby i z kanonických entit
+  `sensor.load_avg_*`; při restartu už kvůli názvu entity tiše nespadne na pevný odhad.
+- Úspěšná battery-health analýza se uloží i bez nového čistého nabíjecího cyklu a další úplný
+  Recorder scan se po restartu nejméně 20 hodin neopakuje.
+- Boiler plánovač a battery forecast vlastní své async úlohy, retry callbacky a Store zápisy;
+  unload je zruší nebo dokončí v bezpečném pořadí.
+- Denní Wh čítač bojleru používá správnou energy metadata klasifikaci pro utility meter a
+  očekávaně prázdný forecast při startu se zapisuje jen jako debug.
+- Prázdný boiler Store a očekávaně chybějící zítřejší OTE data již nevytvářejí zavádějící
+  startup warningy.
+- Fallback přes Home Assistant entity registry znovu správně rozpozná číselné ID boxu z reálného
+  entity ID; test už kvůli tomu nepřepisuje globální regulární výrazy Pythonu.
+- Volitelné hodinové AI vyhodnocení publikuje jen hodnotný diagnostický report. Nemění samo
+  režim boxu ani jinou fyzickou akci.
+- Odpověď AI provideru má pevný limit velikosti a všechny odložené nebo právě běžící AI úlohy
+  se při unloadu zruší a vyčkají; po odebrání entry už nic neukládají ani neposílají.
+- Battery planner po posledním asynchronním diagnostickém kroku znovu ověří aktuální bezpečnostní
+  minimum. Výsledek postavený na staré hodnotě se zahodí a retry zůstane otevřený.
+- Již spuštěný forecast retry je vlastněný senzorem, takže reload nebo odstranění entity nemůže
+  ponechat starý výpočet běžet na pozadí.
+- Groq-specifické parametry se posílají jen na přesný HTTPS host `api.groq.com`; podobně vypadající
+  doména je nedostane. Diagnostika ČHMÚ uvádí zdroj souřadnic, ale neloguje jejich hodnoty.
+- Nepoužívaná závislost `litellm` a její serverový strom Proxy/SSO byly odstraněny. Runtime
+  závislosti `protobuf` a `urllib3` i vývojový formátovač `black` jsou aktualizované na opravné
+  verze a oba hashově uzamčené locky jsou znovu reprodukovatelně vygenerované.
+- Lokální CI nyní kontroluje skutečný V2 frontend, neprochází virtuální prostředí a spouští Hassfest
+  proti podporovanému Home Assistantu 2026.8.1 nad přesnou distribuovanou kopií integrace.
+
+---
+
+## Upgrade
+
+1. Aktualizujte integraci přes **HACS → Integrations → OIG Cloud → Update**.
+2. Restartujte Home Assistant.
+3. V **Nastavení → Solár** zkontrolujte azimut v kompasovém rozsahu `0..360`.
+4. Pokud se zobrazí upozornění na starou zápornou hodnotu, zkontrolujte zobrazený kompasový
+   ekvivalent a potvrďte převzetí. Bez potvrzení se hodnota automaticky nezmění.
+5. U Solcastu ponechte geometrii v Rooftop Site; lokální kWp slouží pro alokaci a fallback a
+   neposílá se jako geometrie provideru.
+
+Při běžném upgradu není nutná ruční migrace Recorder databáze ani opětovné zadání aktivních
+solárních klíčů.
+
+---
+
+## Ověření vydání
+
+- Python: **5 510 passed, 29 skipped**, coverage **91,22 %**.
+- Frontend: **2 489 testů**, statements **81,51 %**, branches **80,81 %**, functions **80,50 %**.
+- Flake8, Mypy, Pylint `E0/F0`, ESLint, TypeScript, build verification a dva po sobě jdoucí
+  all-files pre-commit běhy prošly.
+- Deterministický frontend build byl lokálně ověřen na Node.js `24.3.0` a npm `11.4.2`;
+  referenční release toolchain Node.js `22.17.0` a npm `10.9.2` ověří origin CI před vydáním.
+- Runtime i vývojový `pip-audit` mají **0 nepřijatých nálezů**. Tři advisories v
+  `cryptography==48.0.1` zůstávají jako viditelné, přesně verzované přijetí rizika, protože tuto
+  verzi vyžaduje Home Assistant 2026.8.1. Výjimka automaticky vyprší **12. září 2026** a CI selže
+  při expiraci nebo jakékoli změně verze balíku.
+- Nepoužívaný balík LiteLLM byl zcela odstraněn včetně jeho serverových cest Proxy/SSO. OIG používá
+  vlastní odchozí HTTP klient, takže není potřeba žádná Snyk výjimka pro tento serverový kód.
+- Security diff audit uzavřel **124/124** source-like souborů, všech **7** kandidátů a všech
+  **5** relevantních attack-path analýz. Pět nalezených release blockerů (limit AI odpovědi,
+  AI lifecycle, závod bezpečnostního minima planneru, forecast retry po unloadu a předčasný
+  Recorder reset marker) je v této verzi opraveno a kryto regresními testy.
+- Následný audit finálního opravného commitu pokryl **8/8** změněných produkčních souborů s
+  úplným coverage, bez nálezu a bez odložené bezpečnostní práce.
+- Přímé ověření na Home Assistantu `2026.8.1` potvrdilo jeden přijatý automatický refresh v
+  16:00, úspěšný pozdější ruční refresh, čistý OIG-scoped log a plynulé Recorder součty bez
+  falešného resetu.
+
+Známé warningy jiných integrací Home Assistanta (například uživatelské šablony, Songpal, Tuya
+nebo samostatný MQTT OIG Proxy) nejsou součástí OIG Cloud 2.4.1.

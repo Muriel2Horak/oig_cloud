@@ -87,14 +87,14 @@ panel_v2_url = "/oig_cloud_static_v2/index.html"
 
 async def async_setup(hass, config):
     # ... existing V1 registration ...
-    
+
     # Register V2 panel
     hass.http.register_static_path(
         "/oig_cloud_static_v2",
         hass.config.path("custom_components/oig_cloud/www_v2/dist"),
         cache_headers=False
     )
-    
+
     hass.components.frontend.async_register_built_in_panel(
         component_name="custom",
         sidebar_title="OIG Dashboard V2 (BETA)",
@@ -165,7 +165,7 @@ async def async_setup(hass, config):
         },
         require_admin=False
     )
-    
+
     # V1 as legacy
     hass.components.frontend.async_register_built_in_panel(
         component_name="custom",

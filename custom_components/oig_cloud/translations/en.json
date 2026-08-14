@@ -239,7 +239,7 @@
           "enable_dashboard": "Web interface with charts accessible in HA",
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_pricing": "Recommended - OTE spot prices + cost calculation",
-          "enable_solar_forecast": "Requires API key from Forecast.Solar",
+          "enable_solar_forecast": "Requires credentials for Forecast.Solar or Solcast",
           "enable_statistics": "Recommended - consumption median, predictions",
           "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
@@ -339,23 +339,23 @@
         },
         "data_description": {
           "go_back": "Check this box and press 'Submit' - you will go back one step",
-          "solar_forecast_provider": "Select the solar forecast data provider",
+          "solar_forecast_provider": "Forecast.Solar uses local geometry; Solcast takes geometry from its Rooftop Site.",
           "solar_forecast_api_key": "Optional for FREE modes. Required for frequent updates (4h, 1h)",
           "solcast_api_key": "Required for Solcast requests",
-          "solcast_site_id": "Rooftop site ID from Solcast (used for hobbyist/free plans)",
+          "solcast_site_id": "Configure geometry in the Solcast Rooftop Site, then enter its Site ID here.",
           "solar_forecast_latitude": "Range: -90° to 90° (Central Europe approx 48-51°)",
           "solar_forecast_longitude": "Range: -180° to 180° (Central Europe approx 12-19°)",
           "solar_forecast_mode": "🎯 Optimized = 3x daily at 6:00, 12:00, 16:00 (RECOMMENDED)\n🌅 Daily = 1x daily at 6:00\n🕐 4h/⚡1h = requires API key",
-          "solar_forecast_string1_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
+          "solar_forecast_string1_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string1_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
           "solar_forecast_string1_enabled": "💡 Click 'Submit' to show parameters. If you have panels on only one orientation, String 1 is enough",
-          "solar_forecast_string1_kwp": "Total String 1 power in kWp (e.g., 5.0 kWp)",
-          "solar_forecast_string2_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
+          "solar_forecast_string1_kwp": "Total String 1 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast.",
+          "solar_forecast_string2_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string2_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
-          "solar_forecast_string2_kwp": "Total String 2 power in kWp (e.g., 3.5 kWp)"
+          "solar_forecast_string2_kwp": "Total String 2 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast."
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides forecast of electricity production from photovoltaic panels for the next 24-72 hours. Uses Forecast.Solar service with accurate meteorological data.\n\n🔧 **What is needed:**\n• Free or paid API key from Forecast.Solar\n• GPS coordinates of PV installation\n• Panel parameters (tilt, azimuth, power)\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)\n\n🔑 Get API key by registering at Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides a photovoltaic production forecast for the next 24-72 hours. You can choose Forecast.Solar or Solcast.\n\n🔧 **What is needed:**\n• Credentials for the selected provider\n• Forecast.Solar: GPS coordinates and panel parameters (tilt, azimuth, power)\n• Solcast: a configured Rooftop Site; its geometry is used instead of local GPS, tilt, and azimuth\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)",
         "title": "☀️ Solar Forecast Configuration"
       },
       "wizard_summary": {
@@ -533,11 +533,11 @@
           "solar_forecast_latitude": "GPS latitude of your PV system (-90 to 90)",
           "solar_forecast_longitude": "GPS longitude of your PV system (-180 to 180)",
           "solar_forecast_mode": "How often to update solar forecast",
-          "solar_forecast_string1_azimuth": "Orientation of 1st string panels (0°=north, 90°=east, 180°=south, 270°=west)",
+          "solar_forecast_string1_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string1_declination": "Tilt of 1st string panels from horizontal (0-90°)",
           "solar_forecast_string1_enabled": "Enable first panel string (at least one required)",
           "solar_forecast_string1_kwp": "Installed power of 1st string in kWp",
-          "solar_forecast_string2_azimuth": "Orientation of 2nd string panels (0°=north, 90°=east, 180°=south, 270°=west)",
+          "solar_forecast_string2_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string2_declination": "Tilt of 2nd string panels from horizontal (0-90°)",
           "solar_forecast_string2_enabled": "Enable second panel string (optional)",
           "solar_forecast_string2_kwp": "Installed power of 2nd string in kWp"
@@ -748,7 +748,7 @@
           "enable_dashboard": "Web interface with charts accessible in HA",
           "enable_extended_sensors": "Recommended - detailed monitoring",
           "enable_pricing": "Recommended - spot prices from OTE + cost calculations",
-          "enable_solar_forecast": "Requires API key from Forecast.Solar",
+          "enable_solar_forecast": "Requires credentials for Forecast.Solar or Solcast",
           "enable_statistics": "Recommended - consumption median, predictions",
           "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
@@ -848,23 +848,23 @@
         },
         "data_description": {
           "go_back": "Check this box and press 'Submit' - you will go back one step",
-          "solar_forecast_provider": "Select the solar forecast data provider",
+          "solar_forecast_provider": "Forecast.Solar uses local geometry; Solcast takes geometry from its Rooftop Site.",
           "solar_forecast_api_key": "Optional for FREE modes. Required for frequent updates (4h, 1h)",
           "solcast_api_key": "Required for Solcast requests",
-          "solcast_site_id": "Rooftop site ID from Solcast (used for hobbyist/free plans)",
+          "solcast_site_id": "Configure geometry in the Solcast Rooftop Site, then enter its Site ID here.",
           "solar_forecast_latitude": "Range: -90° to 90° (Central Europe approx 48-51°)",
           "solar_forecast_longitude": "Range: -180° to 180° (Central Europe approx 12-19°)",
           "solar_forecast_mode": "🎯 Optimized = 3x daily at 6:00, 12:00, 16:00 (RECOMMENDED)\n🌅 Daily = 1x daily at 6:00\n🕐 4h/⚡1h = requires API key",
-          "solar_forecast_string1_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
+          "solar_forecast_string1_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string1_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
           "solar_forecast_string1_enabled": "💡 Click 'Submit' to show parameters. If you have panels on only one orientation, String 1 is enough",
-          "solar_forecast_string1_kwp": "Total String 1 power in kWp (e.g., 5.0 kWp)",
-          "solar_forecast_string2_azimuth": "0° = SOUTH, 90° = WEST, 180° = NORTH, 270° = EAST (range 0-360°)",
+          "solar_forecast_string1_kwp": "Total String 1 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast.",
+          "solar_forecast_string2_azimuth": "North 0°/360°, east 90°, south 180°, west 270°. Range: 0–360°.",
           "solar_forecast_string2_declination": "0° = horizontal, 90° = vertical (roofs usually 30-45°). Range: 0-90°",
           "solar_forecast_string2_enabled": "💡 Click 'Submit' to show parameters. Enable if you have panels on two different orientations (e.g., east + west)",
-          "solar_forecast_string2_kwp": "Total String 2 power in kWp (e.g., 3.5 kWp)"
+          "solar_forecast_string2_kwp": "Total String 2 power in kWp. For Solcast it is allocation/fallback metadata only and is not sent to Solcast."
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides forecast of electricity production from photovoltaic panels for the next 24-72 hours. Uses Forecast.Solar service with accurate meteorological data.\n\n🔧 **What is needed:**\n• Free or paid API key from Forecast.Solar\n• GPS coordinates of PV installation\n• Panel parameters (tilt, azimuth, power)\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)\n\n🔑 Get API key by registering at Forecast.Solar",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nProvides a photovoltaic production forecast for the next 24-72 hours. You can choose Forecast.Solar or Solcast.\n\n🔧 **What is needed:**\n• Credentials for the selected provider\n• Forecast.Solar: GPS coordinates and panel parameters (tilt, azimuth, power)\n• Solcast: a configured Rooftop Site; its geometry is used instead of local GPS, tilt, and azimuth\n\n⚠️ **This module is required for:**\n• 🔋 Battery prediction (intelligent charging)",
         "title": "☀️ Solar Forecast Configuration"
       },
       "wizard_summary": {
@@ -883,18 +883,24 @@
       },
       "ai": {
         "title": "🤖 Optional AI helper",
-        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
+        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.\n\nYou may also add a fallback provider that the integration switches to if the primary one fails. The fallback is a DIFFERENT vendor, so it receives the same anonymised number the primary one does — that is why a separate consent is required.",
         "data": {
           "ai_provider": "AI provider",
           "ai_base_url": "API base URL",
           "ai_model": "Model",
-          "ai_api_key": "API key"
+          "ai_api_key": "API key",
+          "ai_fallback_provider": "Fallback AI provider",
+          "ai_fallback_api_key": "Fallback provider API key",
+          "ai_consent_cross_provider_fallback": "I consent to sending anonymised data to the fallback provider too"
         },
         "data_description": {
           "ai_provider": "Optional; no provider is preselected or preferred.",
           "ai_base_url": "Optional custom OpenAI-compatible URL.",
           "ai_model": "Optional model identifier.",
-          "ai_api_key": "Leave blank to keep a previously stored key."
+          "ai_api_key": "Leave blank to keep a previously stored key.",
+          "ai_fallback_provider": "Optional; only used when the primary provider fails.",
+          "ai_fallback_api_key": "Required together with the fallback provider; leave blank to store nothing.",
+          "ai_consent_cross_provider_fallback": "Without this consent the fallback provider is never used, even if stored."
         }
       },
       "init": {

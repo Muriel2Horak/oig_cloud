@@ -34,7 +34,17 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
         super().__setattr__(name, value)
         try:
             if object.__getattribute__(self, "_initialized"):
-                if name in ("_sampling_data", "_current_hourly_value", "_hourly_data", "_interval_data", "hass", "_source_entity_id", "_sensor_config", "_calculate_statistics_value", "_calculate_hourly_value"):
+                if name in (
+                    "_sampling_data",
+                    "_current_hourly_value",
+                    "_hourly_data",
+                    "_interval_data",
+                    "hass",
+                    "_source_entity_id",
+                    "_sensor_config",
+                    "_calculate_statistics_value",
+                    "_calculate_hourly_value",
+                ):
                     self._refresh_attrs()
         except AttributeError:
             pass
@@ -156,7 +166,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             self._max_age_days = config.get("max_age_days", 30)
 
         _LOGGER.debug(
-            f"[{self.entity_id}] Initialized statistics sensor: {sensor_type}"
+            "[%s] Initialized statistics sensor: %s", self.entity_id, sensor_type
         )
         self._initialized = True
         self._refresh_attrs()
@@ -170,9 +180,11 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             entry = getattr(self._coordinator, "config_entry", None)
             if entry:
                 self._stats_store = StatisticsStore.get_instance(self.hass)
-                _LOGGER.debug(f"[{self.entity_id}] StatisticsStore initialized")
+                _LOGGER.debug("[%s] StatisticsStore initialized", self.entity_id)
         except Exception as e:
-            _LOGGER.warning(f"[{self.entity_id}] Failed to initialize StatisticsStore: {e}")
+            _LOGGER.warning(
+                "[%s] Failed to initialize StatisticsStore: %s", self.entity_id, e
+            )
 
         # Nastavení pravidelných aktualizací
         if self._sensor_type == "battery_load_median":
@@ -193,7 +205,9 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     self.hass, self._check_hourly_end, timedelta(minutes=5)
                 )
                 _LOGGER.debug(
-                    f"[{self.entity_id}] Set up hourly tracking for sensor: {self._sensor_type}"
+                    "[%s] Set up hourly tracking for sensor: %s",
+                    self.entity_id,
+                    self._sensor_type,
                 )
             except AttributeError:
                 _LOGGER.debug(
@@ -210,7 +224,9 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     self.hass, self._daily_statistics_update, hour=2, minute=0, second=0
                 )
                 _LOGGER.debug(
-                    f"[{self.entity_id}] Set up daily statistics calculation at 2:00 for time range: {self._time_range}"
+                    "[%s] Set up daily statistics calculation at 2:00 for time range: %s",
+                    self.entity_id,
+                    self._time_range,
                 )
             except AttributeError:
                 _LOGGER.debug(
@@ -269,8 +285,11 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 await self._cleanup_old_data()
 
                 _LOGGER.debug(
-                    f"[{self.entity_id}] Loaded data - sampling: {len(self._sampling_data)}, "
-                    f"hourly: {len(self._hourly_data)}, current_hourly: {self._current_hourly_value}"
+                    "[%s] Loaded data - sampling: %s, hourly: %s, current_hourly: %s",
+                    self.entity_id,
+                    len(self._sampling_data),
+                    len(self._hourly_data),
+                    self._current_hourly_value,
                 )
 
                 # Okamžitý výpočet stavu po načtení dat
@@ -278,7 +297,9 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     initial_state = self._calculate_statistics_value()
                     if initial_state is not None:
                         _LOGGER.debug(
-                            f"[{self.entity_id}] Restored median state: {initial_state}W"
+                            "[%s] Restored median state: %sW",
+                            self.entity_id,
+                            initial_state,
                         )
                         self.async_write_ha_state()
 
@@ -287,19 +308,25 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     and self._current_hourly_value is not None
                 ):
                     _LOGGER.debug(
-                        f"[{self.entity_id}] Restored hourly state: {self._current_hourly_value} kWh"
+                        "[%s] Restored hourly state: %s kWh",
+                        self.entity_id,
+                        self._current_hourly_value,
                     )
                     self.async_write_ha_state()
                 elif self._interval_data and hasattr(self, "_time_range"):
                     restored_state = self._calculate_statistics_value()
                     if restored_state is not None:
                         _LOGGER.debug(
-                            f"[{self.entity_id}] Restored interval state: {restored_state}"
+                            "[%s] Restored interval state: %s",
+                            self.entity_id,
+                            restored_state,
                         )
                         self.async_write_ha_state()
 
         except Exception as e:
-            _LOGGER.warning(f"[{self.entity_id}] Failed to load statistics data: {e}")
+            _LOGGER.warning(
+                "[%s] Failed to load statistics data: %s", self.entity_id, e
+            )
 
     def _restore_sampling_data(self, data: Dict[str, Any]) -> None:
         if "sampling_data" in data:
@@ -331,7 +358,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 self._last_hour_reset = self._last_hour_reset.replace(tzinfo=None)
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
-                f"[{self.entity_id}] Invalid last_hour_reset format: {e}"
+                "[%s] Invalid last_hour_reset format: %s", self.entity_id, e
             )
             self._last_hour_reset = None
 
@@ -361,16 +388,20 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     await self._stats_store.save_sensor_data(
                         entry_id, self._sensor_type, save_data
                     )
-                    _LOGGER.debug(f"[{self.entity_id}] Queued statistics data for batch write")
+                    _LOGGER.debug(
+                        "[%s] Queued statistics data for batch write", self.entity_id
+                    )
                     return
 
             # Fallback na přímý Store save pokud StatisticsStore není dostupný
             store: Store = Store(self.hass, version=1, key=self._storage_key)
             await store.async_save(save_data)
-            _LOGGER.debug(f"[{self.entity_id}] Saved statistics data directly")
+            _LOGGER.debug("[%s] Saved statistics data directly", self.entity_id)
 
         except Exception as e:
-            _LOGGER.warning(f"[{self.entity_id}] Failed to save statistics data: {e}")
+            _LOGGER.warning(
+                "[%s] Failed to save statistics data: %s", self.entity_id, e
+            )
 
     async def _cleanup_old_data(self) -> None:
         """Vyčistí stará data podle konfigurace."""
@@ -385,9 +416,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
         if hasattr(self, "_max_age_days") and self._interval_data:
             max_age_days = getattr(self, "_max_age_days", 30)
             if isinstance(max_age_days, int):
-                cutoff_date = (now - timedelta(days=max_age_days)).strftime(
-                    "%Y-%m-%d"
-                )
+                cutoff_date = (now - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
                 keys_to_remove = [
                     key for key in self._interval_data.keys() if key < cutoff_date
                 ]
@@ -439,12 +468,15 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 await self._save_statistics_data()
 
             _LOGGER.debug(
-                f"[{self.entity_id}] Updated sampling data: {len(self._sampling_data)} points, "
-                f"current value: {source_value}W, time: {now_local.strftime('%H:%M:%S')}"
+                "[%s] Updated sampling data: %s points, current value: %sW, time: %s",
+                self.entity_id,
+                len(self._sampling_data),
+                source_value,
+                now_local.strftime("%H:%M:%S"),
             )
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error updating sampling data: {e}")
+            _LOGGER.error("[%s] Error updating sampling data: %s", self.entity_id, e)
 
     async def _check_hourly_end(self, now: datetime) -> None:
         """Kontroluje konec hodiny a aktualizuje hodinové senzory."""
@@ -462,12 +494,12 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
 
             self._current_hourly_value = hourly_value
             previous_hour_naive = _previous_hour_naive(current_hour_naive)
-            _append_hourly_record(
-                self._hourly_data, previous_hour_naive, hourly_value
-            )
+            _append_hourly_record(self._hourly_data, previous_hour_naive, hourly_value)
 
             cutoff_time = now - timedelta(hours=48)
-            cutoff_naive = cutoff_time.replace(tzinfo=None) if cutoff_time.tzinfo else cutoff_time
+            cutoff_naive = (
+                cutoff_time.replace(tzinfo=None) if cutoff_time.tzinfo else cutoff_time
+            )
             self._hourly_data = self._filter_hourly_data(cutoff_naive)
 
             self._last_hour_reset = current_hour_naive
@@ -483,7 +515,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             )
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error in hourly check: {e}")
+            _LOGGER.error("[%s] Error in hourly check: %s", self.entity_id, e)
 
     async def _daily_statistics_update(self, now: Optional[datetime]) -> None:
         """Denní aktualizace intervalových statistik z recorder dat."""
@@ -491,7 +523,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             return
 
         try:
-            _LOGGER.debug(f"[{self.entity_id}] Starting daily statistics calculation")
+            _LOGGER.debug("[%s] Starting daily statistics calculation", self.entity_id)
 
             # Spočítat medián z posledních 30 dní
             new_value = await self._calculate_interval_statistics_from_history()
@@ -521,17 +553,21 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 self.async_write_ha_state()
 
                 _LOGGER.debug(
-                    f"[{self.entity_id}] Daily statistics updated: {new_value:.1f}W "
-                    f"for interval {self._time_range}"
+                    "[%s] Daily statistics updated: %.1fW for interval %s",
+                    self.entity_id,
+                    new_value,
+                    self._time_range,
                 )
             else:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] Daily statistics calculation returned None"
+                    "[%s] Daily statistics calculation returned None", self.entity_id
                 )
 
         except Exception as e:
             _LOGGER.error(
-                f"[{self.entity_id}] Error in daily statistics update: {e}",
+                "[%s] Error in daily statistics update: %s",
+                self.entity_id,
+                e,
                 exc_info=True,
             )
 
@@ -581,8 +617,11 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             start_time = end_time - timedelta(days=max_days)
 
             _LOGGER.debug(
-                f"[{self.entity_id}] Loading history for {source_entity_id} "
-                f"from {start_time.date()} to {end_time.date()}"
+                "[%s] Loading history for %s from %s to %s",
+                self.entity_id,
+                source_entity_id,
+                start_time.date(),
+                end_time.date(),
             )
 
             try:
@@ -608,14 +647,14 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     source_entity_id,
                 )
             else:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Recorder instance not available"
-                )
+                _LOGGER.warning("[%s] Recorder instance not available", self.entity_id)
                 return None
 
             if source_entity_id not in states or not states[source_entity_id]:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] No historical data found for {source_entity_id}"
+                    "[%s] No historical data found for %s",
+                    self.entity_id,
+                    source_entity_id,
                 )
                 return None
 
@@ -631,19 +670,24 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             if daily_medians:
                 result = median(daily_medians)
                 _LOGGER.debug(
-                    f"[{self.entity_id}] Calculated interval median: {result:.1f}W "
-                    f"from {len(daily_medians)} days (out of {max_days})"
+                    "[%s] Calculated interval median: %.1fW from %s days (out of %s)",
+                    self.entity_id,
+                    result,
+                    len(daily_medians),
+                    max_days,
                 )
                 return round(result, 1)
             else:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] No valid data found for calculation"
+                    "[%s] No valid data found for calculation", self.entity_id
                 )
                 return None
 
         except Exception as e:
             _LOGGER.error(
-                f"[{self.entity_id}] Error calculating interval statistics: {e}",
+                "[%s] Error calculating interval statistics: %s",
+                self.entity_id,
+                e,
                 exc_info=True,
             )
             return None
@@ -735,7 +779,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 return float(source_entity.state)
 
         except (ValueError, TypeError) as e:
-            _LOGGER.warning(f"[{self.entity_id}] Error getting load value: {e}")
+            _LOGGER.warning("[%s] Error getting load value: %s", self.entity_id, e)
 
         return None
 
@@ -769,9 +813,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 self._last_source_value = current_value
                 if energy_diff is None:
                     return None
-                return _convert_energy_by_unit(
-                    self.entity_id, energy_diff, source_unit
-                )
+                return _convert_energy_by_unit(self.entity_id, energy_diff, source_unit)
 
             if hourly_data_type == "power_integral":
                 return _convert_power_integral(
@@ -781,7 +823,9 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             return None
 
         except (ValueError, TypeError) as e:
-            _LOGGER.warning(f"[{self.entity_id}] Error calculating hourly energy: {e}")
+            _LOGGER.warning(
+                "[%s] Error calculating hourly energy: %s", self.entity_id, e
+            )
             return None
 
     def _calculate_hourly_value(self) -> Optional[float]:
@@ -807,7 +851,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 )
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error calculating statistics: {e}")
+            _LOGGER.error("[%s] Error calculating statistics: %s", self.entity_id, e)
 
         return None
 
@@ -830,7 +874,10 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             return False
 
         if self._sensor_type == "battery_load_median":
-            return len(self._sampling_data) > 0 or getattr(self._coordinator, "data", None) is not None
+            return (
+                len(self._sampling_data) > 0
+                or getattr(self._coordinator, "data", None) is not None
+            )
         elif self._sensor_type.startswith("hourly_"):
             if self._source_entity_id and self.hass is not None:
                 source_entity = self.hass.states.get(self._source_entity_id)
@@ -876,7 +923,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     )
 
         except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error creating attributes: {e}")
+            _LOGGER.error("[%s] Error creating attributes: %s", self.entity_id, e)
             attributes["error"] = str(e)
 
         return attributes
@@ -898,7 +945,10 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 samples.append((dt, item[1]))
             except (ValueError, TypeError) as err:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] Skipping invalid sample: {item[0]} - {err}"
+                    "[%s] Skipping invalid sample: %s - %s",
+                    self.entity_id,
+                    item[0],
+                    err,
                 )
         return samples
 
@@ -915,11 +965,16 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     safe_hourly_data.append(record)
                 else:
                     _LOGGER.warning(
-                        f"[{self.entity_id}] Invalid hourly record structure: {record}"
+                        "[%s] Invalid hourly record structure: %s",
+                        self.entity_id,
+                        record,
                     )
             except (ValueError, TypeError, KeyError) as err:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] Skipping invalid hourly record: {record} - {err}"
+                    "[%s] Skipping invalid hourly record: %s - %s",
+                    self.entity_id,
+                    record,
+                    err,
                 )
         return safe_hourly_data
 
@@ -948,7 +1003,9 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
             safe_hourly_data.append(safe_record)
         return safe_hourly_data
 
-    def _filter_sampling_data(self, cutoff_time: datetime) -> List[Tuple[datetime, float]]:
+    def _filter_sampling_data(
+        self, cutoff_time: datetime
+    ) -> List[Tuple[datetime, float]]:
         cleaned: List[Tuple[datetime, float]] = []
         for dt, value in self._sampling_data:
             dt_naive = dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
@@ -970,7 +1027,10 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     cleaned_hourly_data.append(record)
             except (ValueError, TypeError, KeyError) as err:
                 _LOGGER.warning(
-                    f"[{self.entity_id}] Invalid hourly record format: {record} - {err}"
+                    "[%s] Invalid hourly record format: %s - %s",
+                    self.entity_id,
+                    record,
+                    err,
                 )
         return cleaned_hourly_data
 
@@ -1226,9 +1286,7 @@ def _split_hourly_records(
     return today_data, yesterday_data
 
 
-def _parse_record_time(
-    entity_id: str, record: Dict[str, Any]
-) -> Optional[datetime]:
+def _parse_record_time(entity_id: str, record: Dict[str, Any]) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(record["datetime"])
     except (ValueError, TypeError, KeyError) as e:
@@ -1286,7 +1344,7 @@ def safe_datetime_compare(dt1: datetime, dt2: datetime) -> bool:
         dt2_aware = ensure_timezone_aware(dt2)
         return dt1_aware < dt2_aware
     except Exception as e:
-        _LOGGER.warning(f"Error comparing datetimes: {e}")
+        _LOGGER.warning("Error comparing datetimes: %s", e)
         return False
 
 
@@ -1336,7 +1394,7 @@ def create_hourly_attributes(
         return attributes
 
     except Exception as e:
-        _LOGGER.error(f"[{sensor_name}] Error creating attributes: {e}")
+        _LOGGER.error("[%s] Error creating attributes: %s", sensor_name, e)
         return {
             "error": str(e),
             "last_updated": dt_util.now().isoformat(),
@@ -1376,7 +1434,7 @@ class StatisticsProcessor:
             return {"value": current_value, "attributes": attributes}
 
         except Exception as e:
-            _LOGGER.error(f"[{sensor_name}] Error processing hourly data: {e}")
+            _LOGGER.error("[%s] Error processing hourly data: %s", sensor_name, e)
             return {
                 "value": 0.0,
                 "attributes": {

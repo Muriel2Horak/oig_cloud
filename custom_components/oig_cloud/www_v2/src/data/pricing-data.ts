@@ -2,7 +2,7 @@
  * OIG Cloud V2 — Pricing Data Layer
  *
  * Full data extraction for the pricing tab:
- * - Timeline API fetch (spot prices, battery forecast, mode segments)
+ * - Timeline API request (spot prices, battery forecast, mode segments)
  * - Solar forecast from sensor attributes (String 1 + 2, interpolated to 15min)
  * - Battery forecast stacked arrays (baseline, solar/grid charge, consumption, net grid)
  * - Extreme price block detection (sliding window)

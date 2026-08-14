@@ -191,10 +191,13 @@ class OIGCloudPlannerSimulateView(HomeAssistantView):
                 config_overrides = payload.get("config_overrides") or {}
                 cfg = dict(defaults)
                 cfg.update(config_overrides)
-                soc_start_kwh = float(
-                    payload.get("soc_start")
-                    if payload.get("soc_start") is not None
-                    else preset["soc_start_percent"] / 100.0 * float(cfg["max_capacity_kwh"])
+                soc_start_value = payload.get("soc_start")
+                soc_start_kwh = (
+                    float(soc_start_value)
+                    if soc_start_value is not None
+                    else preset["soc_start_percent"]
+                    / 100.0
+                    * float(cfg["max_capacity_kwh"])
                 )
             else:
                 for key in ("prices", "solar", "consumption"):

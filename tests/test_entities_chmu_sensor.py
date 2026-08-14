@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -37,7 +38,7 @@ class DummyHass:
         return coro
 
 
-def test_get_gps_coordinates_priority():
+def test_get_gps_coordinates_priority_does_not_log_private_coordinates(caplog):
     coordinator = DummyCoordinator()
     entry = DummyConfigEntry(
         {
@@ -49,20 +50,26 @@ def test_get_gps_coordinates_priority():
     sensor = OigCloudChmuSensor(coordinator, "chmu_warning_level", entry, {})
     sensor.hass = DummyHass(lat=49.0, lon=13.0)
 
+    caplog.set_level(logging.DEBUG)
     lat, lon = sensor._get_gps_coordinates()
     assert lat == 50.1
     assert lon == 14.2
+    assert "50.1" not in caplog.text
+    assert "14.2" not in caplog.text
 
 
-def test_get_gps_coordinates_fallback_to_ha():
+def test_get_gps_coordinates_fallback_to_ha_does_not_log_private_coordinates(caplog):
     coordinator = DummyCoordinator()
     entry = DummyConfigEntry({"enable_solar_forecast": False})
     sensor = OigCloudChmuSensor(coordinator, "chmu_warning_level", entry, {})
     sensor.hass = DummyHass(lat=49.0, lon=13.0)
 
+    caplog.set_level(logging.DEBUG)
     lat, lon = sensor._get_gps_coordinates()
     assert lat == 49.0
     assert lon == 13.0
+    assert "49.0" not in caplog.text
+    assert "13.0" not in caplog.text
 
 
 def test_compute_severity_global_and_local():

@@ -185,7 +185,7 @@ class OigNotificationParser:
     def parse_from_controller_call(self, content: str) -> List[OigNotification]:
         """Parse notifications from Controller.Call.php content."""
         try:
-            _LOGGER.debug(f"Parsing notification content preview: {content[:500]}...")
+            _LOGGER.debug("Parsing notification content preview: %s...", content[:500])
 
             notifications = self._parse_notifications_from_content(content)
             _LOGGER.debug(
@@ -195,12 +195,10 @@ class OigNotificationParser:
             return notifications
 
         except Exception as e:
-            _LOGGER.error(f"Error parsing notifications: {e}")
+            _LOGGER.error("Error parsing notifications: %s", e)
             return []
 
-    def _parse_notifications_from_content(
-        self, content: str
-    ) -> List[OigNotification]:
+    def _parse_notifications_from_content(self, content: str) -> List[OigNotification]:
         html_content = self._extract_html_from_json_response(content)
         if html_content:
             _LOGGER.debug(
@@ -252,10 +250,10 @@ class OigNotificationParser:
             return None
 
         except (JSONDecodeError, IndexError, TypeError) as e:
-            _LOGGER.debug(f"Content is not JSON wrapper format: {e}")
+            _LOGGER.debug("Content is not JSON wrapper format: %s", e)
             return None
         except Exception as e:
-            _LOGGER.warning(f"Error extracting HTML from JSON: {e}")
+            _LOGGER.warning("Error extracting HTML from JSON: %s", e)
             return None
 
     def _parse_html_notifications(self, content: str) -> List[OigNotification]:
@@ -270,7 +268,7 @@ class OigNotificationParser:
             parser.feed(content)
             parser.close()
 
-            _LOGGER.debug(f"Found {len(parser.items)} HTML notification matches")
+            _LOGGER.debug("Found %s HTML notification matches", len(parser.items))
 
             for match in parser.items:
                 severity_level, date_str, device_id, short_message, full_message = match
@@ -282,11 +280,13 @@ class OigNotificationParser:
                     if notification:
                         notifications.append(notification)
                 except Exception as e:
-                    _LOGGER.warning(f"Error creating notification from HTML match: {e}")
+                    _LOGGER.warning(
+                        "Error creating notification from HTML match: %s", e
+                    )
                     continue
 
         except Exception as e:
-            _LOGGER.error(f"Error parsing HTML notifications: {e}")
+            _LOGGER.error("Error parsing HTML notifications: %s", e)
 
         return notifications
 
@@ -299,7 +299,7 @@ class OigNotificationParser:
             if not payloads:
                 payloads = [content]
 
-            _LOGGER.debug(f"Found {len(payloads)} JS function matches")
+            _LOGGER.debug("Found %s JS function matches", len(payloads))
 
             for payload in payloads:
                 json_matches = self._extract_json_objects(payload)
@@ -309,7 +309,7 @@ class OigNotificationParser:
                         notifications.append(notification)
 
         except Exception as e:
-            _LOGGER.error(f"Error parsing JSON notifications: {e}")
+            _LOGGER.error("Error parsing JSON notifications: %s", e)
 
         return notifications
 
@@ -390,10 +390,10 @@ class OigNotificationParser:
             data = json.loads(clean_json)
             return self._create_notification_from_json(data)
         except ValueError as e:
-            _LOGGER.debug(f"Failed to parse JSON notification: {e}")
+            _LOGGER.debug("Failed to parse JSON notification: %s", e)
             return None
         except Exception as e:
-            _LOGGER.warning(f"Error parsing single notification: {e}")
+            _LOGGER.warning("Error parsing single notification: %s", e)
             return None
 
     def parse_notification(self, notif_data: Dict[str, Any]) -> OigNotification:
@@ -404,7 +404,7 @@ class OigNotificationParser:
                 return notification
             raise ValueError("Notification payload produced no notification")
         except Exception as e:
-            _LOGGER.warning(f"Error parsing notification from API data: {e}")
+            _LOGGER.warning("Error parsing notification from API data: %s", e)
             # Return fallback notification
             return OigNotification(
                 id=f"fallback_{int(datetime.now().timestamp())}",
@@ -518,7 +518,7 @@ class OigNotificationParser:
             )
 
         except Exception as e:
-            _LOGGER.warning(f"Error creating notification from data {data}: {e}")
+            _LOGGER.warning("Error creating notification from data %s: %s", data, e)
             return None
 
     def _get_priority_name(self, priority: int) -> str:
@@ -539,7 +539,10 @@ class OigNotificationParser:
 
         result = severity_map.get(css_level, ("info", 1))
         _LOGGER.debug(
-            f"Mapped CSS level-{css_level} to severity: {result[0]} (numeric: {result[1]})"
+            "Mapped CSS level-%s to severity: %s (numeric: %s)",
+            css_level,
+            result[0],
+            result[1],
         )
         return result
 
@@ -592,7 +595,7 @@ class OigNotificationParser:
             )
 
         except Exception as e:
-            _LOGGER.warning(f"Error creating HTML notification: {e}")
+            _LOGGER.warning("Error creating HTML notification: %s", e)
             return None
 
     def _clean_html_message(self, full_message: str) -> str:
@@ -647,7 +650,7 @@ class OigNotificationParser:
             return datetime(year, month, day, hour, minute)
 
         except Exception as e:
-            _LOGGER.warning(f"Error parsing datetime '{date_str}': {e}")
+            _LOGGER.warning("Error parsing datetime '%s': %s", date_str, e)
             return datetime.now()
 
     def detect_bypass_status(self, content: str) -> bool:
@@ -677,13 +680,11 @@ class OigNotificationParser:
             return False
 
         except Exception as e:
-            _LOGGER.error(f"Error detecting bypass status: {e}")
+            _LOGGER.error("Error detecting bypass status: %s", e)
             return False
 
 
-def _collect_bypass_matches(
-    normalized: str, compact: str
-) -> List[Tuple[int, bool]]:
+def _collect_bypass_matches(normalized: str, compact: str) -> List[Tuple[int, bool]]:
     matches: List[Tuple[int, bool]] = []
     matches.extend(_phrase_matches(normalized))
     matches.extend(_window_matches(normalized))
@@ -871,7 +872,9 @@ class OigNotificationManager:
         self._max_notifications = 100
         self._device_id: Optional[str] = None
         _LOGGER.debug(
-            f"NotificationManager initialized: base_url={base_url}, api_type={type(api)}"
+            "NotificationManager initialized: base_url=%s, api_type=%s",
+            base_url,
+            type(api),
         )
 
     def set_device_id(self, device_id: str) -> None:
@@ -879,7 +882,7 @@ class OigNotificationManager:
         self._device_id = device_id
         # Aktualizovat storage key s device_id
         self._storage_key = f"oig_notifications_{device_id}"
-        _LOGGER.debug(f"Set device_id to {device_id} for notification manager")
+        _LOGGER.debug("Set device_id to %s for notification manager", device_id)
 
     def get_device_id(self) -> Optional[str]:
         """Get current device ID."""
@@ -922,10 +925,10 @@ class OigNotificationManager:
                 }
             )
 
-            _LOGGER.debug(f"Saved {len(notifications_data)} notifications to storage")
+            _LOGGER.debug("Saved %s notifications to storage", len(notifications_data))
 
         except Exception as e:
-            _LOGGER.error(f"Error saving notifications to storage: {e}")
+            _LOGGER.error("Error saving notifications to storage: %s", e)
 
     async def _load_notifications_from_storage(self) -> List[OigNotification]:
         """Load notifications from storage."""
@@ -953,18 +956,18 @@ class OigNotificationManager:
                     )
                     notifications.append(notification)
                 except Exception as e:
-                    _LOGGER.warning(f"Error loading notification from storage: {e}")
+                    _LOGGER.warning("Error loading notification from storage: %s", e)
                     continue
 
             # Obnovit bypass status pokud je k dispozici
             if "bypass_status" in data:
                 self._bypass_status = data["bypass_status"]
 
-            _LOGGER.debug(f"Loaded {len(notifications)} notifications from storage")
+            _LOGGER.debug("Loaded %s notifications from storage", len(notifications))
             return notifications
 
         except Exception as e:
-            _LOGGER.warning(f"Error loading notifications from storage: {e}")
+            _LOGGER.warning("Error loading notifications from storage: %s", e)
             return []
 
     async def refresh_data(self) -> bool:
@@ -979,10 +982,11 @@ class OigNotificationManager:
             return False
 
         try:
-            _LOGGER.debug(f"Updating notifications for device: {self._device_id}")
-            _LOGGER.debug(f"API object type: {type(self._api)}")
+            _LOGGER.debug("Updating notifications for device: %s", self._device_id)
+            _LOGGER.debug("API object type: %s", type(self._api))
             _LOGGER.debug(
-                f"API object methods: {[method for method in dir(self._api) if not method.startswith('_')]}"
+                "API object methods: %s",
+                [method for method in dir(self._api) if not method.startswith("_")],
             )
 
             # OPRAVA: Použít API metodu přímo
@@ -992,7 +996,7 @@ class OigNotificationManager:
             return await self._handle_missing_notification_api()
 
         except Exception as e:
-            _LOGGER.error(f"Error in update_from_api: {e}")
+            _LOGGER.error("Error in update_from_api: %s", e)
             return await self._use_cached_notifications_on_error("exception")
 
     async def _update_from_notification_api(self) -> bool:
@@ -1053,9 +1057,7 @@ class OigNotificationManager:
             method for method in available_methods if "notification" in method.lower()
         ]
         if notification_methods:
-            _LOGGER.info(
-                "Found notification-related methods: %s", notification_methods
-            )
+            _LOGGER.info("Found notification-related methods: %s", notification_methods)
 
         return await self._use_cached_notifications_on_error("missing_api")
 
@@ -1071,7 +1073,7 @@ class OigNotificationManager:
                 self._notifications = cached_notifications
                 return True
         except Exception as cache_error:
-            _LOGGER.warning(f"Error loading cached notifications: {cache_error}")
+            _LOGGER.warning("Error loading cached notifications: %s", cache_error)
         return False
 
     async def get_notifications_and_status(self) -> Tuple[List[OigNotification], bool]:
@@ -1093,7 +1095,7 @@ class OigNotificationManager:
             )
 
         except Exception as e:
-            _LOGGER.error(f"Error updating notifications: {e}")
+            _LOGGER.error("Error updating notifications: %s", e)
 
     def get_latest_notification_message(self) -> str:
         """Get latest notification message."""

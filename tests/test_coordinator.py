@@ -2113,7 +2113,7 @@ async def test_update_battery_forecast_config_entry_options_error(
             raise RuntimeError("bad opt")
 
     coordinator.config_entry.options = BadOptions()
-    coordinator.data = {"123": {"batt_bat_c": 10}}
+    coordinator.data = {"not-a-box": {"batt_bat_c": 10}}
 
     await coordinator._update_battery_forecast()
 

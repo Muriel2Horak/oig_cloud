@@ -982,4 +982,3 @@ pylint custom_components/oig_cloud/boiler/
 **Plan saved to**: `.sisyphus/plans/boiler-config-ui-optimization.md`
 
 **To start execution, run**: `/start-work boiler-config-ui-optimization`
-

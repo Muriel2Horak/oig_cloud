@@ -1,20 +1,23 @@
 [MASTER]
+fail-under=9.50
+fail-on=E,F
+load-plugins=pylint.extensions.no_self_use
 
 [MESSAGES CONTROL]
 disable=
-    -fixme
-    -no-member
-    -no-self-use
-    -protected-access
-    -too-many-arguments
-    -too-many-boolean-expressions
-    -too-many-branches
-    -too-many-locals
-    -too-many-public-methods
-    -too-many-return-statements
-    -too-many-statements
-    -too-few-public-methods
-    -duplicate-code
+    fixme,
+    no-member,
+    no-self-use,
+    protected-access,
+    too-many-arguments,
+    too-many-boolean-expressions,
+    too-many-branches,
+    too-many-locals,
+    too-many-public-methods,
+    too-many-return-statements,
+    too-many-statements,
+    too-few-public-methods,
+    duplicate-code
 
 [DESIGN]
 max-args=10

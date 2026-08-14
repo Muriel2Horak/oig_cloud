@@ -543,7 +543,7 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             # JSON ints. The 2026-07-31 portal update rejects string values on
             # these columns with HTTP 500 ("Nastala chyba"), so coerce a numeric
             # string back to int to match the browser payload exactly.
-            coerced_value = value
+            coerced_value: str | int = value
             if isinstance(value, str) and value.strip().lstrip("-").isdigit():
                 coerced_value = int(value.strip())
             data: str = json.dumps(

@@ -101,6 +101,8 @@ describe('onboarding i18n catalog (F1 Plan 3.6 Task 12)', () => {
     'Stav průvodce se nepodařilo načíst.',
     'Uložení se nezdařilo.',
     'Ceny jsou z předchozího roku.',
+    'Uložená hodnota',
+    'Starší hodnota',
   ];
 
   it('no retired literal Czech string remains embedded in onboarding/index.ts', () => {
@@ -127,6 +129,8 @@ describe('onboarding i18n catalog (F1 Plan 3.6 Task 12)', () => {
       'onboarding.finish.error.save_failed',
       'onboarding.finish.error.reload_timeout',
       'onboarding.finish.error.generic',
+      'onboarding.solar.legacy_invalid',
+      'onboarding.solar.legacy_adoption',
     ];
     for (const key of keys) {
       expect(t(key, 'cs').length).toBeGreaterThan(0);
@@ -210,6 +214,14 @@ describe('onboarding classified-error rendering is catalog-driven (Task 12)', ()
   });
 
   it('Finish retry error renders the catalog copy for a classified finish failure', async () => {
+    fetchOIGAPI.mockImplementation((path: string, options?: RequestInit) => {
+      if (path.includes('/module_config') && options?.method === 'POST') {
+        return Promise.resolve({ updated: true });
+      }
+      if (path.includes('/onboarding')) return Promise.resolve(ONBOARDING_STATE);
+      if (path.includes('/pricelists')) return Promise.resolve(PRICELISTS);
+      return Promise.resolve(null);
+    });
     fetchOIGAPITyped.mockResolvedValueOnce({ ok: false, status: 409, code: 'finish_in_progress' });
 
     const wizard = await openWizardOnSolarStep();
@@ -250,5 +262,28 @@ describe('onboarding classified-error rendering is catalog-driven (Task 12)', ()
     expect(solarRetry?.textContent).toBe(t('onboarding.bootstrap.load_failed', 'en'));
     const solarRetryBtn = wizard.shadowRoot!.querySelector('[data-testid="solar-bootstrap-retry-button"]');
     expect(solarRetryBtn?.textContent).toBe(t('onboarding.bootstrap.retry_button', 'en'));
+  });
+
+  it('renders corrupt legacy guidance from the English catalog with the compass correction range', async () => {
+    const wizard = await openWizardOnSolarStep({ locale: { language: 'en' } });
+    wizard.legacySolarFields = {
+      solar_forecast_string1_azimuth: {
+        stored_value: 720,
+        display_value: null,
+        legacy_provider_value: false,
+        requires_adoption: false,
+        invalid_legacy_value: true,
+      },
+    };
+    await settle(wizard);
+
+    const warning = wizard.shadowRoot!.querySelector(
+      '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+    );
+    expect(warning?.textContent).toContain('720');
+    expect(warning?.textContent).toContain('0');
+    expect(warning?.textContent).toContain('360');
+    expect(warning?.textContent).toContain('stored value');
+    expect(warning?.textContent).not.toContain('Uložená hodnota');
   });
 });

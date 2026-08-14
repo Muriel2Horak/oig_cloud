@@ -7,16 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.4.1] - 2026-08-13
 
+Maintenance release focused on upgrade safety, solar-forecast reliability, authenticated
+dashboard requests, and deterministic release quality. Full Czech release notes:
+`RELEASE_NOTES_v2.4.1.md`.
+
+### Added
+- Hourly AI evaluation can publish a value-gated diagnostic report and dashboard status without
+  changing device control decisions.
+- Solar configuration now supports an explicit provider contract, private credential storage,
+  legacy-value adoption, and truthful test/save transactions.
+
+### Changed
+- Solar azimuth uses the compass convention (`0/360` north, `90` east, `180` south, `270` west)
+  and is converted only at the Forecast.Solar provider boundary.
+- Optimized solar refreshes run at local wall-clock `06:00`, `12:00`, and `16:00`; daily mode
+  runs at `06:00`. Retry recovery is durable across restart and cancellation.
+- Dashboard API requests delegate authentication and token refresh to Home Assistant instead of
+  reading or constructing bearer tokens in application code.
+- CI now enforces Pylint `E0/F0`, Mypy, Flake8, frontend lint/typecheck, deterministic frontend
+  builds, pre-commit idempotence, and coverage above 80% for both Python and frontend suites.
+- Removed the unused `litellm` dependency and its Proxy/SSO server dependency tree. Runtime pins
+  for `protobuf` and `urllib3`, plus the development `black` pin, were upgraded to their current
+  security-fix versions and both hash-locked files were regenerated.
+- Local CI now targets the actual V2 frontend and Home Assistant 2026.8.1 Hassfest source without
+  traversing task virtual environments or mutating installed frontend dependencies.
+
 ### Fixed
+- Solar candidates can no longer overwrite newer forecasts or relabel stale cache provenance;
+  accepted forecasts, retry metadata, unload, and Store writes share one ordered transaction.
+- Solar refresh survives startup at arbitrary minutes, daylight-saving transitions, repeated
+  cancellation, restart, provider throttling, and Store failures without duplicate publication
+  or secret-bearing diagnostics.
+- Forecast string sensors publish one synchronized snapshot and manual refresh reports failure
+  truthfully when throttled or rejected.
+- `dc_in_fv_ad` daily energy statistics preserve existing Recorder history during the transition
+  from `total_increasing` to daily `total`, and arm reset markers only after a proven rollover.
+- Daily-energy restore handles missing midnight samples, restart gaps, low-yield days, stale
+  markers, counter rollback, and unavailable values without double counting.
+- Empty boiler schedule storage and expected OTE tomorrow-data retries no longer create false
+  startup warnings; asynchronous planner and boiler tasks are owned and reconciled on unload.
+- Registry fallback now resolves numeric OIG box IDs from real Home Assistant entity IDs without
+  patching Python's global regular-expression compiler during tests.
+- AI evaluation now bounds provider response bytes and text, owns all delayed and active tasks,
+  and awaits cancellation before config-entry unload completes.
+- Battery planning revalidates the live safety floor after its final awaited diagnostic step;
+  fired forecast retries are tracked and reconciled during entity teardown.
+- Daily Recorder reset markers retain the last proven cycle until a lower counter value proves
+  the real rollover, preventing a stale post-midnight sample from temporarily doubling the sum.
+- Groq-specific request fields now require the exact canonical HTTPS host, and ČHMÚ diagnostics
+  identify the coordinate source without logging private latitude or longitude values.
+- Home Assistant 2026.8 startup diagnostics, deferred annotations, manifest reads, and recorder
+  access paths are compatible with the supported runtime.
 - Battery forecast load profiles now resolve both box-prefixed and canonical
-  `sensor.load_avg_*` entity IDs, restoring the ten configured household load
-  buckets instead of silently falling back to a fixed load.
-- Battery health analysis now persists successful scans even when no new clean
-  charging cycle is found and skips a duplicate full recorder scan for 20 hours,
-  avoiding repeated high-volume history reads after Home Assistant restarts.
-- The boiler daily Wh counter now advertises the Home Assistant energy device
-  class, preserving valid utility-meter metadata, and an expected empty forecast
-  during startup is logged as debug instead of a warning.
+  `sensor.load_avg_*` entity IDs, restoring the ten configured household load buckets instead of
+  silently falling back to a fixed load.
+- Battery health analysis now persists successful scans even when no new clean charging cycle is
+  found and skips a duplicate full recorder scan for 20 hours after Home Assistant restarts.
+- The boiler daily Wh counter now advertises the Home Assistant energy device class, preserving
+  valid utility-meter metadata, and an expected empty forecast during startup is logged as debug.
+
+### Security
+- Browser requests use Home Assistant's authenticated transport, strip caller authorization
+  headers, validate integration-relative paths, and redact provider or exception details.
+- Solar secrets stay in private Store records and proof-bound activation prevents replay or
+  cross-entry credential reuse.
+- An exhaustive sealed review covered all 124 source-like release-diff files, validated seven
+  candidates, and identified five release-blocking findings; all five are fixed above with
+  focused regression tests before publication.
+- The immutable post-fix review covered all eight changed production files with complete coverage,
+  zero findings, and no deferred security work.
+- Runtime and development `pip-audit` report zero unaccepted findings. Three exact
+  `cryptography==48.0.1` advisories remain as a visible, version-bound accepted risk because Home
+  Assistant 2026.8.1 pins that version exactly. The exception expires automatically on 2026-09-12
+  and CI fails closed after expiry or any package-version drift.
+- Removed the unused LiteLLM dependency and its entire Proxy/SSO server attack surface. OIG uses
+  its own outbound client and no longer needs an exception for LiteLLM server-only findings.
 
 ## [2.4.0] - 2026-07-31
 

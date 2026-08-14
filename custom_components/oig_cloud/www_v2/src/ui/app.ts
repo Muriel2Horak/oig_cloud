@@ -14,6 +14,7 @@ import { resolveLang, t } from '@/i18n/boiler';
 import { loadModuleConfig } from '@/data/settings-data';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
+import { extractAiEvalData, type AiEvalData, EMPTY_AI_EVAL } from '@/data/ai-eval-data';
 import { loadWeatherData, type WeatherData, EMPTY_WEATHER_DATA } from '@/data/weather-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
 import {
@@ -59,6 +60,7 @@ import '@/ui/features/tiles/icon-picker';
 import '@/ui/features/tiles/tile-dialog';
 import '@/ui/features/onboarding/banner';
 import '@/ui/features/onboarding';  // registers oig-onboarding-wizard + oig-onboarding-step-ai
+import '@/ui/features/ai-eval';
 import '@/ui/components/oig-simulator';
 
 const u = unsafeCSS;
@@ -143,6 +145,9 @@ export class OigApp extends LitElement {
   @state() private weatherData: WeatherData = EMPTY_WEATHER_DATA;
   @state() private chmuModalOpen = false;
   private weatherRefreshTimer: number | null = null;
+
+  // AI eval
+  @state() private aiEvalData: AiEvalData = EMPTY_AI_EVAL;
 
   // Timeline
   @state() private timelineTab: TimelineTab = 'today';
@@ -918,6 +923,10 @@ export class OigApp extends LitElement {
     // ČHMÚ
     this.chmuData = extractChmuData(INVERTER_SN);
 
+    // AI eval
+    const liveStates = this.entityStore?.getAll() ?? this.hass;
+    this.aiEvalData = extractAiEvalData(liveStates?.states ?? liveStates, INVERTER_SN);
+
     if (this.activeTab === 'pricing') {
       this.analyticsData = {
         ...this.analyticsData,
@@ -1021,7 +1030,7 @@ export class OigApp extends LitElement {
   /**
    * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
    * boiler/statistics/battery_prediction module enable flags (modules section)
-   * from module_config in one fetch (best-effort).
+   * from module_config in one request (best-effort).
    */
   private async loadBoxHasHome56(): Promise<void> {
     try {
@@ -1584,6 +1593,10 @@ export class OigApp extends LitElement {
                       <oig-control-panel embedded .boxHasHome56=${this.boxHasHome56}></oig-control-panel>
                     </div>
                   </div>
+                  <oig-ai-eval-tile
+                    .data=${this.aiEvalData}
+                    .hass=${this.hass}
+                  ></oig-ai-eval-tile>
                 </div>
               </div>
             </div>

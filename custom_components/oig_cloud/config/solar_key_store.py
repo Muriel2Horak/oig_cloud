@@ -1,15 +1,20 @@
-"""Solar provider credential storage.
-
-Solar credentials live in `.storage/oig_cloud.solar_<entry_id>` and nowhere in
-config-entry options. Module config writes candidates; successful `/solar_test`
-promotes one candidate to the active provider credentials.
-"""
+"""Solar credential, proof, and per-entry transaction primitives."""
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
 import logging
+import re
+import secrets
+import time
+from copy import deepcopy
+from collections.abc import Callable
 from typing import Any, Dict, Mapping, Optional
 
 from homeassistant.helpers.storage import Store
+
+from ..forecast.provider_contract import serialize_effective_solar_dto
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +28,15 @@ _PROVIDER_FIELDS = {
     PROVIDER_FORECAST_SOLAR: ("solar_forecast_api_key",),
     PROVIDER_SOLCAST: ("solcast_api_key", "solcast_site_id"),
 }
+_TRANSACTION_DATA_KEY = "_oig_cloud_solar_transactions"
+_PROOF_DATA_KEY = "_oig_cloud_solar_proofs"
+_PROOF_TTL_SECONDS = 300.0
+INITIAL_CREDENTIALS_TOKEN_FIELD = "_solar_credentials_setup_token"
+_INITIAL_CREDENTIALS_STORE_PREFIX = "oig_cloud.solar_initial_"
+_INITIAL_CREDENTIALS_INDEX_KEY = "oig_cloud.solar_initial_index"
+_INITIAL_CREDENTIALS_LOCK_KEY = "_oig_cloud_solar_initial_claim_lock"
+_INITIAL_CREDENTIALS_TTL_SECONDS = 300.0
+_INITIAL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 
 
 def _redact(raw: Optional[str]) -> str:
@@ -63,6 +77,19 @@ class SolarKeyStore:
             candidates = self._data.get("candidates")
             if not isinstance(candidates, dict):
                 self._data["candidates"] = {}
+            revision = self._data.get("revision")
+            if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+                self._data["revision"] = 0
+            verification = self._data.get("verification")
+            if not isinstance(verification, dict):
+                active = self._data.get("active")
+                self._data["verification"] = {
+                    "status": (
+                        "verified"
+                        if isinstance(active, dict) and active.get("verified_at")
+                        else "unverified"
+                    )
+                }
         return self._data
 
     async def async_set_candidate(
@@ -98,16 +125,49 @@ class SolarKeyStore:
         candidate = await self.async_get_candidate(provider)
         if not candidate:
             return False
-        data = await self._async_data()
-        data["active"] = {
-            "provider": provider,
-            **candidate,
-            "verified_at": verified_at,
-        }
-        data.setdefault("candidates", {}).pop(provider, None)
-        await self._store.async_save(data)
+        await self.async_activate(provider, candidate, verified_at=verified_at)
         _LOGGER.debug("Solar candidate promoted for provider %s", provider)
         return True
+
+    async def async_activate(
+        self,
+        provider: str,
+        credentials: Mapping[str, Any],
+        *,
+        verified_at: Optional[str],
+    ) -> int:
+        """Atomically activate one provider and advance the additive revision once."""
+        cleaned = _clean_credentials(provider, credentials)
+        data = await self._async_data()
+        revision = int(data.get("revision", 0)) + 1
+        active: Dict[str, Any] = {"provider": provider, **cleaned}
+        verification: Dict[str, Any] = {"status": "unverified"}
+        if verified_at:
+            active["verified_at"] = verified_at
+            verification = {"status": "verified", "verified_at": verified_at}
+        data.update(
+            {
+                "active": active,
+                "candidates": {},
+                "revision": revision,
+                "verification": verification,
+            }
+        )
+        await self._store.async_save(data)
+        _LOGGER.debug("Solar credentials activated for provider %s", provider)
+        return revision
+
+    async def async_snapshot(self) -> Dict[str, Any]:
+        """Return an exact private-store snapshot for compensating transactions."""
+        return deepcopy(await self._async_data())
+
+    async def async_restore_snapshot(self, snapshot: Mapping[str, Any]) -> None:
+        """Restore a previously captured private-store snapshot exactly."""
+        self._data = deepcopy(dict(snapshot))
+        await self._store.async_save(self._data)
+
+    async def async_revision(self) -> int:
+        return int((await self._async_data()).get("revision", 0))
 
     async def async_clear_inactive(self, provider: str) -> None:
         """Clear credentials that do not belong to the selected provider."""
@@ -170,9 +230,299 @@ class SolarKeyStore:
 
     async def async_api_state(self) -> Dict[str, Any]:
         data = await self._async_data()
-        active = data.get("active") if isinstance(data.get("active"), dict) else {}
+        active_value = data.get("active")
+        active: Dict[str, Any] = active_value if isinstance(active_value, dict) else {}
         return {
             "provider": active.get("provider"),
             **await self.async_private_field_state(),
             "verified": bool(active.get("verified_at")),
+            "revision": int(data.get("revision", 0)),
+            "verification": deepcopy(data.get("verification", {})),
         }
+
+
+def get_solar_transaction_lock(hass: Any, entry_id: str) -> asyncio.Lock:
+    """Return the shared per-entry proof/credential/options transaction lock."""
+    root = getattr(hass, "data", None)
+    if not isinstance(root, dict):
+        root = {}
+        hass.data = root
+    locks = root.setdefault(_TRANSACTION_DATA_KEY, {})
+    lock = locks.get(entry_id)
+    if not isinstance(lock, asyncio.Lock):
+        lock = asyncio.Lock()
+        locks[entry_id] = lock
+    return lock
+
+
+def _initial_credentials_lock(hass: Any) -> asyncio.Lock:
+    """Return one process-wide bootstrap lock so a token has one claimant."""
+    root = getattr(hass, "data", None)
+    if not isinstance(root, dict):
+        root = {}
+        hass.data = root
+    lock = root.get(_INITIAL_CREDENTIALS_LOCK_KEY)
+    if not isinstance(lock, asyncio.Lock):
+        lock = asyncio.Lock()
+        root[_INITIAL_CREDENTIALS_LOCK_KEY] = lock
+    return lock
+
+
+def _owner_binding(owner: str) -> str:
+    return hashlib.sha256(owner.encode("utf-8")).hexdigest()
+
+
+def _initial_store(hass: Any, token: str) -> Store:
+    return Store(
+        hass,
+        STORAGE_VERSION,
+        f"{_INITIAL_CREDENTIALS_STORE_PREFIX}{token}",
+        private=True,
+    )
+
+
+def _initial_index_store(hass: Any) -> Store:
+    return Store(
+        hass, STORAGE_VERSION, _INITIAL_CREDENTIALS_INDEX_KEY, private=True
+    )
+
+
+async def _async_cleanup_initial_credentials_locked(
+    hass: Any, *, now: Callable[[], float]
+) -> int:
+    index_store = _initial_index_store(hass)
+    loaded = await index_store.async_load()
+    index = dict(loaded) if isinstance(loaded, dict) else {}
+    current = now()
+    removed = 0
+    for token, expires_at in list(index.items()):
+        if not isinstance(expires_at, (int, float)) or expires_at <= current:
+            try:
+                await _initial_store(hass, token).async_remove()
+            except FileNotFoundError:
+                pass
+            index.pop(token, None)
+            removed += 1
+    if removed or not isinstance(loaded, dict):
+        await index_store.async_save(index)
+    return removed
+
+
+async def async_cleanup_initial_credentials(
+    hass: Any, *, now: Callable[[], float] = time.time
+) -> int:
+    """Remove expired or abandoned private setup records deterministically."""
+    async with _initial_credentials_lock(hass):
+        return await _async_cleanup_initial_credentials_locked(hass, now=now)
+
+
+async def async_stage_initial_credentials(
+    hass: Any,
+    provider: str,
+    credentials: Mapping[str, Any],
+    *,
+    owner: str,
+    now: Callable[[], float] = time.time,
+) -> Optional[str]:
+    """Stage first-entry credentials privately behind an opaque setup token."""
+    cleaned = _clean_credentials(provider, credentials)
+    required = _PROVIDER_FIELDS.get(provider, ())
+    if (
+        not owner
+        or not required
+        or any(key not in cleaned for key in required)
+    ):
+        return None
+    async with _initial_credentials_lock(hass):
+        await _async_cleanup_initial_credentials_locked(hass, now=now)
+        token = secrets.token_urlsafe(32)
+        expires_at = now() + _INITIAL_CREDENTIALS_TTL_SECONDS
+        pending = _initial_store(hass, token)
+        index_store = _initial_index_store(hass)
+        loaded_index = await index_store.async_load()
+        index = dict(loaded_index) if isinstance(loaded_index, dict) else {}
+        try:
+            await pending.async_save(
+                {
+                    "provider": provider,
+                    "credentials": cleaned,
+                    "owner_binding": _owner_binding(owner),
+                    "expires_at": expires_at,
+                }
+            )
+            index[token] = expires_at
+            await index_store.async_save(index)
+        except Exception:
+            try:
+                await pending.async_remove()
+            except Exception:
+                pass
+            raise
+        return token
+
+
+async def async_activate_initial_credentials(
+    hass: Any, entry: Any, *, now: Callable[[], float] = time.time
+) -> bool:
+    """Claim staged first-entry credentials and remove the public opaque token."""
+    token = entry.options.get(INITIAL_CREDENTIALS_TOKEN_FIELD)
+    if not isinstance(token, str) or not _INITIAL_TOKEN_RE.fullmatch(token):
+        return False
+    async with _initial_credentials_lock(hass):
+        try:
+            await _async_cleanup_initial_credentials_locked(hass, now=now)
+        except Exception as err:
+            _LOGGER.error(
+                "Solar initial credential cleanup unavailable during claim (%s)",
+                type(err).__name__,
+            )
+            return False
+        pending = _initial_store(hass, token)
+        staged = await pending.async_load()
+        if not isinstance(staged, dict):
+            return False
+        provider = staged.get("provider")
+        credentials = staged.get("credentials")
+        owner = getattr(entry, "data", {}).get("username")
+        owner_binding = staged.get("owner_binding")
+        expires_at = staged.get("expires_at")
+        selected_provider = entry.options.get(
+            "solar_forecast_provider", PROVIDER_FORECAST_SOLAR
+        )
+        if (
+            not isinstance(provider, str)
+            or provider != selected_provider
+            or not isinstance(credentials, dict)
+            or not isinstance(owner, str)
+            or not owner
+            or not isinstance(owner_binding, str)
+            or not hmac.compare_digest(owner_binding, _owner_binding(owner))
+            or not isinstance(expires_at, (int, float))
+            or expires_at <= now()
+        ):
+            return False
+        cleaned = _clean_credentials(provider, credentials)
+        required = _PROVIDER_FIELDS.get(provider, ())
+        if not required or any(key not in cleaned for key in required):
+            return False
+        store = SolarKeyStore(hass, entry.entry_id)
+        snapshot = await store.async_snapshot()
+        old_options = dict(entry.options)
+        index_store = _initial_index_store(hass)
+        loaded_index = await index_store.async_load()
+        old_index = dict(loaded_index) if isinstance(loaded_index, dict) else {}
+        try:
+            await store.async_activate(provider, cleaned, verified_at=None)
+            await pending.async_remove()
+            new_index = dict(old_index)
+            new_index.pop(token, None)
+            await index_store.async_save(new_index)
+            options = dict(entry.options)
+            options.pop(INITIAL_CREDENTIALS_TOKEN_FIELD, None)
+            hass.config_entries.async_update_entry(entry, options=options)
+        except Exception:
+            restored = {
+                "active": False,
+                "options": False,
+                "pending": False,
+                "index": False,
+            }
+            try:
+                await store.async_restore_snapshot(snapshot)
+                restored["active"] = True
+            except Exception:
+                pass
+            try:
+                hass.config_entries.async_update_entry(entry, options=old_options)
+                restored["options"] = True
+            except Exception:
+                pass
+            try:
+                await pending.async_save(staged)
+                restored["pending"] = True
+            except Exception:
+                pass
+            try:
+                await index_store.async_save(old_index)
+                restored["index"] = True
+            except Exception:
+                pass
+            if not all(restored.values()):
+                _LOGGER.error(
+                    "Solar initial credential rollback incomplete for entry %s "
+                    "(active=%s options=%s pending=%s index=%s)",
+                    entry.entry_id,
+                    restored["active"],
+                    restored["options"],
+                    restored["pending"],
+                    restored["index"],
+                )
+            return False
+    return True
+
+
+class SolarProofStore:
+    """In-memory opaque five-minute single-use solar verification proofs."""
+
+    def __init__(
+        self,
+        hass: Any,
+        *,
+        now: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._hass = hass
+        self._now = now
+        root = getattr(hass, "data", None)
+        if not isinstance(root, dict):
+            root = {}
+            hass.data = root
+        self._proofs: Dict[str, Dict[str, Any]] = root.setdefault(_PROOF_DATA_KEY, {})
+
+    @staticmethod
+    def _binding(entry_id: str, dto: Mapping[str, Any]) -> tuple[str, str, str, bytes]:
+        return (
+            entry_id,
+            str(dto.get("solar_forecast_provider", "")),
+            str(dto.get("solar_forecast_mode", "")),
+            hashlib.sha256(serialize_effective_solar_dto(dto)).digest(),
+        )
+
+    async def async_issue(self, entry_id: str, dto: Mapping[str, Any]) -> str:
+        async with get_solar_transaction_lock(self._hass, entry_id):
+            return self.issue_locked(entry_id, dto)
+
+    def issue_locked(self, entry_id: str, dto: Mapping[str, Any]) -> str:
+        self._prune()
+        token = secrets.token_urlsafe(32)
+        self._proofs[token] = {
+            "binding": self._binding(entry_id, dto),
+            "expires_at": self._now() + _PROOF_TTL_SECONDS,
+        }
+        return token
+
+    async def async_claim(
+        self, entry_id: str, token: str, dto: Mapping[str, Any]
+    ) -> bool:
+        async with get_solar_transaction_lock(self._hass, entry_id):
+            return self.claim_locked(entry_id, token, dto)
+
+    def claim_locked(self, entry_id: str, token: str, dto: Mapping[str, Any]) -> bool:
+        record = self._proofs.pop(token, None)
+        if not isinstance(record, dict) or record.get("expires_at", 0) < self._now():
+            return False
+        expected = record.get("binding")
+        actual = self._binding(entry_id, dto)
+        if not isinstance(expected, tuple) or len(expected) != len(actual):
+            return False
+        return all(
+            hmac.compare_digest(left, right)
+            if isinstance(left, bytes) and isinstance(right, bytes)
+            else left == right
+            for left, right in zip(expected, actual)
+        )
+
+    def _prune(self) -> None:
+        now = self._now()
+        for token, record in list(self._proofs.items()):
+            if not isinstance(record, dict) or record.get("expires_at", 0) < now:
+                self._proofs.pop(token, None)

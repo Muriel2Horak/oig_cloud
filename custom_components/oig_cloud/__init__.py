@@ -73,8 +73,20 @@ except Exception as err:
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _ai_task_platform_available() -> bool:
+    """Return whether HA exposes and can import the optional AI task platform."""
+    if not hasattr(Platform, "AI_TASK"):
+        return False
+    try:
+        __import__("homeassistant.components.ai_task")
+    except (AttributeError, ImportError):
+        return False
+    return True
+
+
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
-if hasattr(Platform, "AI_TASK"):  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
+if _ai_task_platform_available():  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
     PLATFORMS.append(Platform.AI_TASK)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -1490,14 +1502,35 @@ async def _teardown_boiler_runtime(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
     try:
-        from .boiler.runtime import destroy_boiler_runtime
+        from .boiler.runtime import destroy_boiler_runtime, get_boiler_runtime
 
         box_id = entry.options.get("box_id")
-        if isinstance(box_id, str) and box_id.isdigit():
-            destroy_boiler_runtime(hass, entry.entry_id, box_id)
-            _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return
+        runtime = get_boiler_runtime(hass, entry.entry_id, box_id)
+        if runtime is None:
+            return
+        try:
+            await runtime.async_unload()
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.warning(
+                "Boiler runtime unload failed for entry %s box %s (error_class=%s)",
+                entry.entry_id,
+                box_id,
+                err.__class__.__name__,
+            )
+        destroy_boiler_runtime(hass, entry.entry_id, box_id)
+        _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+    except asyncio.CancelledError:
+        raise
     except Exception as err:
-        _LOGGER.debug("Boiler runtime teardown failed: %s", err)
+        _LOGGER.warning(
+            "Boiler runtime teardown failed for entry %s (error_class=%s)",
+            getattr(entry, "entry_id", "?"),
+            err.__class__.__name__,
+        )
 
 
 async def _init_balancing_manager(
@@ -1708,6 +1741,28 @@ async def async_setup_entry(
     _LOGGER.debug("Config data keys: %s", list(entry.data.keys()))
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
+    from .config.solar_key_store import (
+        INITIAL_CREDENTIALS_TOKEN_FIELD,
+        async_activate_initial_credentials,
+        async_cleanup_initial_credentials,
+    )
+
+    try:
+        await async_cleanup_initial_credentials(hass)
+    except Exception as err:
+        _LOGGER.warning(
+            "Solar initial credential cleanup failed (%s)",
+            type(err).__name__,
+        )
+
+    if INITIAL_CREDENTIALS_TOKEN_FIELD in entry.options:
+        if not await async_activate_initial_credentials(hass, entry):
+            _LOGGER.error(
+                "Solar initial credential claim is unavailable for entry %s",
+                entry.entry_id,
+            )
+            return False
+
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     await _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
@@ -1816,6 +1871,18 @@ async def async_setup_entry(
 
         # Vždy registrovat sensor + switch platform
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        # Hourly AI evaluation — OPTIONAL. Started right after the platforms so a
+        # later setup step cannot skip it; self-schedules and no-ops when AI is
+        # not configured; must NEVER break integration setup.
+        try:
+            from .ai_eval.coordinator import async_setup_ai_eval
+
+            ai_eval_coordinator = await async_setup_ai_eval(hass, entry)
+            hass.data[DOMAIN][entry.entry_id]["ai_eval_coordinator"] = ai_eval_coordinator
+            entry.async_on_unload(ai_eval_coordinator.async_shutdown)
+        except Exception:  # noqa: BLE001 — optional feature, isolate all failures
+            _LOGGER.exception("AI eval coordinator setup failed (optional feature)")
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.

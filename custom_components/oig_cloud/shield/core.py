@@ -32,7 +32,9 @@ class ServiceShield:
         return shield_validation.extract_expected_entities(self, service_name, data)
 
     def _check_entity_state_change(self, entity_id: str, expected_value: Any) -> bool:
-        return shield_validation.check_entity_state_change(self, entity_id, expected_value)
+        return shield_validation.check_entity_state_change(
+            self, entity_id, expected_value
+        )
 
     async def _log_event(
         self,
@@ -42,7 +44,9 @@ class ServiceShield:
         reason: Optional[str] = None,
         context: Optional[Context] = None,
     ) -> None:
-        await shield_dispatch.log_event(self, event_type, service, data, reason, context)
+        await shield_dispatch.log_event(
+            self, event_type, service, data, reason, context
+        )
 
     async def _safe_call_service(
         self, service_name: str, service_data: Dict[str, Any]
@@ -122,7 +126,8 @@ class ServiceShield:
                 "custom_components.oig_cloud.service_shield.security"
             )
             security_logger.info(
-                f"SHIELD_SECURITY: {event_type}",
+                "SHIELD_SECURITY: %s",
+                event_type,
                 extra={
                     "shield_event_type": event_type,
                     "task_id": details.get("task_id"),
@@ -159,7 +164,8 @@ class ServiceShield:
     def _notify_state_change(self) -> None:
         """Zavolá všechny registrované callbacky při změně stavu."""
         _LOGGER.debug(
-            f"[OIG Shield] Notifikuji {len(self._state_change_callbacks)} callbacků o změně stavu"
+            "[OIG Shield] Notifikuji %s callbacků o změně stavu",
+            len(self._state_change_callbacks),
         )
         for cb in self._state_change_callbacks:
             try:
@@ -191,7 +197,8 @@ class ServiceShield:
 
         # Časový backup interval - slouží jako fallback, event-based monitoring je primární
         _LOGGER.info(
-            f"[OIG Shield] Spouštím backup check_loop každých {CHECK_INTERVAL_SECONDS} sekund (primárně event-based)"
+            "[OIG Shield] Spouštím backup check_loop každých %s sekund (primárně event-based)",
+            CHECK_INTERVAL_SECONDS,
         )
 
         async_track_time_interval(
@@ -220,7 +227,9 @@ class ServiceShield:
             return
 
         _LOGGER.info(
-            f"[OIG Shield] Nastavuji state listener pro {len(entity_ids)} entit: {entity_ids}"
+            "[OIG Shield] Nastavuji state listener pro %s entit: %s",
+            len(entity_ids),
+            entity_ids,
         )
 
         # Nastavíme posluchač pro všechny sledované entity
@@ -250,7 +259,9 @@ class ServiceShield:
             return
 
         _LOGGER.debug(
-            f"[OIG Shield] Detekována změna entity {entity_id} na '{new_state.state}' - spouštím kontrolu"
+            "[OIG Shield] Detekována změna entity %s na '%s' - spouštím kontrolu",
+            entity_id,
+            new_state.state,
         )
 
         # KRITICKÁ OPRAVA: @callback NESMÍ být async!
@@ -400,7 +411,9 @@ class ServiceShield:
                 await self.mode_tracker.async_cleanup()
                 self._logger.info("[OIG Shield] Mode tracker cleaned up")
             except Exception as err:  # pragma: no cover - defensive
-                self._logger.warning("[OIG Shield] Mode tracker cleanup failed: %s", err)
+                self._logger.warning(
+                    "[OIG Shield] Mode tracker cleanup failed: %s", err
+                )
 
         # Zrušíme state listener
         if self._state_listener_unsub:
@@ -441,7 +454,7 @@ class ModeTransitionTracker:
         # Listener pro změny stavu box_prms_mode
         self._state_listener_unsub: Optional[Callable] = None
 
-        self._logger.info(f"[ModeTracker] Initialized for box {box_id}")
+        self._logger.info("[ModeTracker] Initialized for box %s", box_id)
 
     async def async_setup(self) -> None:
         """Setup state change listener and load historical data."""
@@ -452,7 +465,7 @@ class ModeTransitionTracker:
             self.hass, sensor_id, self._async_mode_changed
         )
 
-        self._logger.info(f"[ModeTracker] Listening to {sensor_id}")
+        self._logger.info("[ModeTracker] Listening to %s", sensor_id)
 
         # Načíst historická data z recorderu (async)
         await self._async_load_historical_data(sensor_id)
@@ -476,7 +489,7 @@ class ModeTransitionTracker:
         }
 
         self._logger.debug(
-            f"[ModeTracker] Tracking {trace_id}: {from_mode} → {to_mode}"
+            "[ModeTracker] Tracking %s: %s → %s", trace_id, from_mode, to_mode
         )
 
     @callback
@@ -515,7 +528,7 @@ class ModeTransitionTracker:
                     self._transition_history[scenario_key].pop(0)  # Remove oldest
 
                 self._logger.info(
-                    f"[ModeTracker] ✅ Completed {scenario_key} in {duration:.1f}s"
+                    "[ModeTracker] ✅ Completed %s in %.1fs", scenario_key, duration
                 )
 
                 # Odstranit z aktivních
@@ -587,14 +600,16 @@ class ModeTransitionTracker:
             # Použít 95. percentil pokud máme alespoň 2 vzorky
             offset = stats[scenario_key]["p95_seconds"]
             self._logger.debug(
-                f"[ModeTracker] Using offset for {scenario_key}: {offset}s "
-                f"(samples={stats[scenario_key]['samples']})"
+                "[ModeTracker] Using offset for %s: %ss (samples=%s)",
+                scenario_key,
+                offset,
+                stats[scenario_key]["samples"],
             )
             return offset
 
         # Fallback: 10 sekund
         self._logger.debug(
-            f"[ModeTracker] No data for {scenario_key}, using fallback 10s"
+            "[ModeTracker] No data for %s, using fallback 10s", scenario_key
         )
         return 10.0
 
@@ -606,7 +621,7 @@ class ModeTransitionTracker:
         """
         try:
             self._logger.info(
-                f"[ModeTracker] Loading historical data for {sensor_id}..."
+                "[ModeTracker] Loading historical data for %s...", sensor_id
             )
 
             state_list = await self._load_historical_states(sensor_id)
@@ -619,15 +634,16 @@ class ModeTransitionTracker:
                 return
 
             self._logger.info(
-                f"[ModeTracker] Found {len(state_list)} historical states"
+                "[ModeTracker] Found %s historical states", len(state_list)
             )
 
             transitions_found = self._track_transitions(state_list)
             self._trim_transition_history()
 
             self._logger.info(
-                f"[ModeTracker] Loaded {transitions_found} transitions from history, "
-                f"scenarios: {len(self._transition_history)}"
+                "[ModeTracker] Loaded %s transitions from history, scenarios: %s",
+                transitions_found,
+                len(self._transition_history),
             )
 
             self._log_transition_stats()
@@ -644,7 +660,9 @@ class ModeTransitionTracker:
         end_time = dt_now()
         start_time = end_time - timedelta(days=30)
 
-        from homeassistant.components.recorder.history import state_changes_during_period
+        from homeassistant.components.recorder.history import (
+            state_changes_during_period,
+        )
 
         states = await self.hass.async_add_executor_job(
             state_changes_during_period,
@@ -669,7 +687,9 @@ class ModeTransitionTracker:
             if not self._is_valid_transition(prev_mode, curr_mode):
                 continue
 
-            duration = (curr_state.last_changed - prev_state.last_changed).total_seconds()
+            duration = (
+                curr_state.last_changed - prev_state.last_changed
+            ).total_seconds()
             if 0.1 < duration < 300:
                 self._record_transition(prev_mode, curr_mode, duration)
                 transitions_found += 1
@@ -678,12 +698,12 @@ class ModeTransitionTracker:
     @staticmethod
     def _is_valid_transition(prev_mode: str, curr_mode: str) -> bool:
         return (
-            prev_mode != curr_mode
-            and prev_mode != "unknown"
-            and curr_mode != "unknown"
+            prev_mode != curr_mode and prev_mode != "unknown" and curr_mode != "unknown"
         )
 
-    def _record_transition(self, prev_mode: str, curr_mode: str, duration: float) -> None:
+    def _record_transition(
+        self, prev_mode: str, curr_mode: str, duration: float
+    ) -> None:
         scenario_key = f"{prev_mode}→{curr_mode}"
         self._transition_history.setdefault(scenario_key, []).append(duration)
 
@@ -698,8 +718,11 @@ class ModeTransitionTracker:
         stats = self.get_statistics()
         for scenario, data in stats.items():
             self._logger.debug(
-                f"[ModeTracker] {scenario}: median={data['median_seconds']}s, "
-                f"p95={data['p95_seconds']}s, samples={data['samples']}"
+                "[ModeTracker] %s: median=%ss, p95=%ss, samples=%s",
+                scenario,
+                data["median_seconds"],
+                data["p95_seconds"],
+                data["samples"],
             )
 
     async def async_cleanup(self) -> None:

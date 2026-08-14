@@ -247,6 +247,7 @@ def _candidate_module() -> Any:
 def _forecast_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "provider": "forecast_solar",
+        "solar_forecast_mode": "daily_optimized",
         "solar_forecast_api_key": "fs_valid_secret",
         "solar_forecast_latitude": 50.12,
         "solar_forecast_longitude": 13.94,
@@ -267,6 +268,13 @@ def _solcast_payload(**overrides: Any) -> dict[str, Any]:
         solcast_site_id="site-123",
     )
     payload.pop("solar_forecast_api_key")
+    for key in (
+        "solar_forecast_latitude",
+        "solar_forecast_longitude",
+        "solar_forecast_string1_declination",
+        "solar_forecast_string1_azimuth",
+    ):
+        payload.pop(key)
     payload.update(overrides)
     return payload
 
@@ -327,16 +335,25 @@ def test_solar_test_rejects_unknown_provider_or_extra_key_before_outbound(
 @pytest.mark.parametrize(
     "payload",
     [
+        _payload_without(_forecast_payload(), "solar_forecast_mode"),
+        _forecast_payload(solar_forecast_mode="unknown"),
         _payload_without(_forecast_payload(), "solar_forecast_latitude"),
         _payload_without(_forecast_payload(), "solar_forecast_longitude"),
-        _payload_without(_forecast_payload(), "solar_forecast_api_key"),
+        _payload_without(
+            _forecast_payload(solar_forecast_mode="hourly"),
+            "solar_forecast_api_key",
+        ),
         _payload_without(_solcast_payload(), "solcast_api_key"),
         _payload_without(_solcast_payload(), "solcast_site_id"),
         _forecast_payload(solcast_api_key="sc_unexpected_secret"),
         _forecast_payload(solcast_site_id="site-unexpected"),
         _solcast_payload(solar_forecast_api_key="fs_unexpected_secret"),
+        _solcast_payload(solar_forecast_latitude=50),
+        _solcast_payload(solar_forecast_string1_azimuth=90),
     ],
     ids=[
+        "missing-mode",
+        "unknown-mode",
         "missing-latitude",
         "missing-longitude",
         "missing-forecast-solar-key",
@@ -345,6 +362,8 @@ def test_solar_test_rejects_unknown_provider_or_extra_key_before_outbound(
         "forecast-solar-solcast-key",
         "forecast-solar-solcast-site",
         "solcast-forecast-solar-key",
+        "solcast-forecast-solar-gps",
+        "solcast-forecast-solar-geometry",
     ],
 )
 def test_solar_test_rejects_missing_or_unexpected_credentials_before_outbound(
@@ -370,16 +389,13 @@ def test_solar_test_success_uses_shared_session_and_returns_shape(
 ) -> None:
     hass, _ = _hass()
     shared_session = object()
-    calls: list[tuple[Any, str, dict[str, Any], dict[str, float], list[dict[str, Any]]]] = []
+    calls: list[tuple[Any, dict[str, Any]]] = []
 
     async def _stub(
         session: Any,
-        provider: str,
-        credentials: dict[str, Any],
-        gps: dict[str, float],
-        strings: list[dict[str, Any]],
+        dto: dict[str, Any],
     ) -> dict[str, Any]:
-        calls.append((session, provider, credentials, gps, strings))
+        calls.append((session, dto))
         return {"tomorrow_total_kwh": 4.25, "forecast_covers_tomorrow": True}
 
     monkeypatch.setattr(
@@ -395,14 +411,154 @@ def test_solar_test_success_uses_shared_session_and_returns_shape(
     payload = json.loads(response.text)
 
     assert response.status == 200
-    assert payload == {"tomorrow_total_kwh": 4.25, "forecast_covers_tomorrow": True}
+    assert payload["tomorrow_total_kwh"] == 4.25
+    assert payload["forecast_covers_tomorrow"] is True
+    assert isinstance(payload["proof"], str)
     assert calls[0][0] is shared_session
-    assert calls[0][1] == "forecast_solar"
-    assert calls[0][2] == {"solar_forecast_api_key": "fs_valid_secret"}
-    assert calls[0][3] == {"latitude": 50.12, "longitude": 13.94}
-    assert calls[0][4] == [
-        {"kwp": 5.5, "declination": 35.0, "azimuth": 180.0},
-    ]
+    assert calls[0][1] == {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "daily_optimized",
+        "solar_forecast_api_key": "fs_valid_secret",
+        "solar_forecast_latitude": 50.12,
+        "solar_forecast_longitude": 13.94,
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.5,
+        "solar_forecast_string1_declination": 35,
+        "solar_forecast_string1_azimuth": 180,
+        "solar_forecast_string2_enabled": False,
+    }
+
+
+def test_solar_test_partial_draft_uses_legacy_option_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = _hass()
+    entry.options = {
+        **_payload_without(_forecast_payload(), "provider"),
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "hourly",
+        "solar_forecast_api_key": "legacy-options-secret",
+    }
+    calls: list[dict[str, Any]] = []
+
+    async def _stub(_session: Any, dto: dict[str, Any]) -> dict[str, Any]:
+        calls.append(dto)
+        return {"tomorrow_total_kwh": 1.0, "forecast_covers_tomorrow": True}
+
+    monkeypatch.setattr(api_module, "run_solar_candidate_test", _stub)
+    monkeypatch.setattr(
+        api_module.aiohttp_client,
+        "async_get_clientsession",
+        lambda _hass: object(),
+    )
+
+    response = asyncio.run(
+        _solar_view().post(
+            DummyJsonRequest(
+                hass,
+                {"provider": "forecast_solar", "solar_forecast_mode": "hourly"},
+            ),
+            "box1",
+        )
+    )
+
+    assert response.status == 200
+    assert calls[0]["solar_forecast_api_key"] == "legacy-options-secret"
+
+
+@pytest.mark.parametrize("mode", ["daily", "daily_optimized"])
+def test_solar_test_forecast_daily_modes_allow_missing_key(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    hass, _ = _hass()
+    calls: list[Any] = []
+
+    async def _stub(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append((args, kwargs))
+        return {"tomorrow_total_kwh": 1.0, "forecast_covers_tomorrow": True}
+
+    monkeypatch.setattr(api_module, "run_solar_candidate_test", _stub)
+    monkeypatch.setattr(
+        api_module.aiohttp_client,
+        "async_get_clientsession",
+        lambda _hass: object(),
+    )
+    response = asyncio.run(
+        _solar_view().post(
+            DummyJsonRequest(
+                hass,
+                _payload_without(
+                    _forecast_payload(solar_forecast_mode=mode),
+                    "solar_forecast_api_key",
+                ),
+            ),
+            "box1",
+        )
+    )
+    assert response.status == 200
+    assert len(calls) == 1
+
+
+def test_solar_test_solcast_omits_geometry_and_kwp_from_provider_request() -> None:
+    candidate = _candidate_module()
+    tomorrow = (dt_util.now().date() + timedelta(days=1)).isoformat()
+    session = _Session(
+        _Resp(
+            200,
+            {"forecasts": [{
+                "period_end": f"{tomorrow}T12:00:00Z",
+                "period": "PT30M",
+                "pv_estimate": 2.0,
+            }]},
+        )
+    )
+    dto = {
+        "solar_forecast_provider": "solcast",
+        "solar_forecast_mode": "daily",
+        "solcast_api_key": "sc/key?hash# percent% value",
+        "solcast_site_id": "site/key?hash# percent% value",
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.5,
+        "solar_forecast_string2_enabled": False,
+    }
+    asyncio.run(candidate.run_solar_candidate_test(session, dto))
+    assert len(session.calls) == 1
+    url = session.calls[0][0]
+    assert "solar_forecast" not in url
+    assert "latitude" not in url and "longitude" not in url
+    assert "declination" not in url and "azimuth" not in url and "kwp" not in url
+    assert "site%2Fkey%3Fhash%23%20percent%25%20value" in url
+
+
+def test_solar_test_success_never_writes_candidate_or_active_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, _ = _hass()
+
+    class FailOnWriteStore:
+        async def async_set_candidate(self, *_args: Any, **_kwargs: Any) -> None:
+            raise AssertionError("candidate write attempted")
+
+        async def async_promote_candidate(self, *_args: Any, **_kwargs: Any) -> None:
+            raise AssertionError("promotion attempted")
+
+    monkeypatch.setattr(
+        api_module, "_solar_key_store_or_none", lambda *_args: FailOnWriteStore()
+    )
+    monkeypatch.setattr(
+        api_module.aiohttp_client,
+        "async_get_clientsession",
+        lambda _hass: object(),
+    )
+
+    async def _stub(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"tomorrow_total_kwh": 1.0, "forecast_covers_tomorrow": True}
+
+    monkeypatch.setattr(api_module, "run_solar_candidate_test", _stub)
+    response = asyncio.run(
+        _solar_view().post(DummyJsonRequest(hass, _forecast_payload()), "box1")
+    )
+    assert response.status == 200
 
 
 def test_solar_test_releases_lease_when_provider_call_raises(
@@ -440,7 +596,9 @@ def test_solar_test_releases_lease_when_provider_call_raises(
 
     assert calls == 2
     assert response.status == 200
-    assert payload == {"tomorrow_total_kwh": 4.25, "forecast_covers_tomorrow": True}
+    assert payload["tomorrow_total_kwh"] == 4.25
+    assert payload["forecast_covers_tomorrow"] is True
+    assert isinstance(payload["proof"], str)
 
 
 def test_solar_test_rate_limits_same_pair_burst_before_shared_session(

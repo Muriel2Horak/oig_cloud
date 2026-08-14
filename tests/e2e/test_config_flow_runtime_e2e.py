@@ -20,6 +20,9 @@ from custom_components.oig_cloud.config.schema import (
 )
 from custom_components.oig_cloud.const import DOMAIN
 from custom_components.oig_cloud.core import data_source as data_source_module
+from custom_components.oig_cloud.forecast.provider_contract import (
+    build_forecast_solar_url,
+)
 
 
 @pytest.mark.e2e
@@ -93,6 +96,50 @@ async def test_solar_provider_and_strings_applied(e2e_setup_with_options):
     assert cfg["solcast_api_key"] == "test-solcast-key"
     assert cfg["solar_forecast_string2_enabled"] is True
     assert cfg["solar_forecast_string2_kwp"] == 4.2
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(("compass", "provider_value"), [(90, -90), (138, -42)])
+async def test_compass_azimuth_persists_and_converts_only_at_provider_boundary(
+    e2e_setup_with_options,
+    compass,
+    provider_value,
+):
+    options: Dict[str, Any] = {
+        "box_id": "2206237016",
+        "enable_statistics": True,
+        "enable_solar_forecast": True,
+        "enable_battery_prediction": False,
+        "enable_pricing": False,
+        "enable_extended_sensors": False,
+        "enable_chmu_warnings": False,
+        "enable_dashboard": False,
+        "enable_boiler": False,
+        "enable_auto": False,
+        "balancing_enabled": False,
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "daily",
+        "solar_forecast_latitude": 50.12,
+        "solar_forecast_longitude": 13.94,
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.5,
+        "solar_forecast_string1_declination": 35,
+        "solar_forecast_string1_azimuth": compass,
+        "solar_forecast_string2_enabled": False,
+        "data_source_mode": data_source_module.DATA_SOURCE_CLOUD_ONLY,
+    }
+    _hass, entry = await e2e_setup_with_options(options)
+
+    assert entry.options["solar_forecast_string1_azimuth"] == compass
+    url = build_forecast_solar_url(
+        api_key="",
+        lat=entry.options["solar_forecast_latitude"],
+        lon=entry.options["solar_forecast_longitude"],
+        declination=entry.options["solar_forecast_string1_declination"],
+        compass_azimuth=entry.options["solar_forecast_string1_azimuth"],
+        kwp=entry.options["solar_forecast_string1_kwp"],
+    )
+    assert f"/{provider_value}/" in url
 
 
 @pytest.mark.e2e

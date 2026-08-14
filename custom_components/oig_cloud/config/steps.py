@@ -13,8 +13,21 @@ from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .modules_validation import missing_dashboard_requirements, validate_modules_selection
-from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
-from .solar_rules import normalize_azimuth, validate_solar_effective
+from .solar_key_store import (
+    INITIAL_CREDENTIALS_TOKEN_FIELD,
+    SOLAR_PRIVATE_FIELDS,
+    SolarKeyStore,
+    async_stage_initial_credentials,
+)
+from .solar_transaction import (
+    async_commit_solar_configuration,
+    solar_credentials_with_legacy_options,
+)
+from .solar_rules import (
+    legacy_azimuth_read_model,
+    validate_compass_azimuth,
+    validate_solar_effective,
+)
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -1488,6 +1501,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_solar")
 
+            self._consume_legacy_solar_controls(user_input)
+
             if self._should_refresh_solar_form(user_input):
                 return self._show_solar_form(user_input)
 
@@ -1510,6 +1525,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
             data_schema=self._get_solar_schema(),
             description_placeholders=self._get_step_placeholders("wizard_solar"),
         )
+
+    def _consume_legacy_solar_controls(self, user_input: Dict[str, Any]) -> None:
+        """Consume transient native adoption controls before persistence."""
+        legacy_models = getattr(self, "_legacy_solar_azimuths", {})
+        adopted: set[str] = set(
+            getattr(self, "_adopt_legacy_solar_fields", set())
+        )
+        for key, model in legacy_models.items():
+            control = f"adopt_legacy_{key}"
+            if bool(user_input.pop(control, False)):
+                adopted.add(key)
+            if key in user_input and user_input[key] != model["display_value"]:
+                adopted.add(key)
+        self._adopt_legacy_solar_fields = adopted
 
     def _show_solar_form(
         self,
@@ -1546,9 +1575,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # provider/mode/key AND no_strings_enabled now come from the single
         # shared rule set, so this surface can never drift from the REST POST
         # (U3). See config/solar_rules.py.
-        return validate_solar_effective(user_input)
+        effective = dict(user_input)
+        provider = effective.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+        if provider == getattr(self, "_active_solar_provider", None):
+            for key, value in getattr(self, "_active_solar_credentials", {}).items():
+                if not str(effective.get(key, "")).strip():
+                    effective[key] = value
+        return validate_solar_effective(effective)
 
     def _validate_solar_coordinates(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        if user_input.get(CONF_SOLAR_FORECAST_PROVIDER) == "solcast":
+            return {}
         errors: Dict[str, str] = {}
         try:
             lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
@@ -1566,6 +1603,19 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # _validate_solar_provider, called first at :1570). Only per-string
         # geometry stays here.
         errors: Dict[str, str] = {}
+        if user_input.get(CONF_SOLAR_FORECAST_PROVIDER) == "solcast":
+            for enabled_key, kwp_key in (
+                (CONF_SOLAR_FORECAST_STRING1_ENABLED, CONF_SOLAR_FORECAST_STRING1_KWP),
+                ("solar_forecast_string2_enabled", "solar_forecast_string2_kwp"),
+            ):
+                if not user_input.get(enabled_key):
+                    continue
+                try:
+                    if not 0 < float(user_input.get(kwp_key, 5.0)) <= 15:
+                        errors[kwp_key] = "invalid_kwp"
+                except (TypeError, ValueError):
+                    errors[kwp_key] = "invalid_kwp"
+            return errors
         if user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED):
             errors.update(self._validate_solar_string1(user_input))
         if user_input.get("solar_forecast_string2_enabled"):
@@ -1577,17 +1627,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
             decl1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35))
-            azim1 = normalize_azimuth(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
-            # Persist the normalised, signed azimuth so it matches the registry
-            # bounds (-180..180) that REST and the schema enforce (U6).
-            user_input[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = azim1
-
             if not (0 < kwp1 <= 15):
                 errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
             if not (0 <= decl1 <= 90):
                 errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = "invalid_declination"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string1_params"
+        try:
+            validate_compass_azimuth(
+                user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0)
+            )
+        except ValueError:
+            errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
         return errors
 
     def _validate_solar_string2(self, user_input: Dict[str, Any]) -> Dict[str, str]:
@@ -1595,17 +1646,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
             decl2 = int(user_input.get("solar_forecast_string2_declination", 35))
-            azim2 = normalize_azimuth(user_input.get("solar_forecast_string2_azimuth", 180))
-            # Persist the normalised, signed azimuth so it matches the registry
-            # bounds (-180..180) that REST and the schema enforce (U6).
-            user_input["solar_forecast_string2_azimuth"] = azim2
-
             if not (0 < kwp2 <= 15):
                 errors["solar_forecast_string2_kwp"] = "invalid_kwp"
             if not (0 <= decl2 <= 90):
                 errors["solar_forecast_string2_declination"] = "invalid_declination"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string2_params"
+        try:
+            validate_compass_azimuth(
+                user_input.get("solar_forecast_string2_azimuth", 180)
+            )
+        except ValueError:
+            errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
         return errors
 
     def _get_hass_gps(self) -> tuple[Optional[float], Optional[float]]:
@@ -1651,7 +1703,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         provider = defaults.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
 
-        schema_fields = {
+        schema_fields: Dict[vol.Marker, Any] = {
             vol.Optional(
                 CONF_SOLAR_FORECAST_PROVIDER,
                 default=provider,
@@ -1672,16 +1724,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
                 }
             ),
-            self._gps_marker(
-                CONF_SOLAR_FORECAST_LATITUDE,
-                defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
-                ha_latitude,
-            ): vol.Coerce(float),
-            self._gps_marker(
-                CONF_SOLAR_FORECAST_LONGITUDE,
-                defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
-                ha_longitude,
-            ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,
                 default=defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True),
@@ -1690,45 +1732,64 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         if provider == "forecast_solar":
             schema_fields[
+                self._gps_marker(
+                    CONF_SOLAR_FORECAST_LATITUDE,
+                    defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                    ha_latitude,
+                )
+            ] = vol.Coerce(float)
+            schema_fields[
+                self._gps_marker(
+                    CONF_SOLAR_FORECAST_LONGITUDE,
+                    defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                    ha_longitude,
+                )
+            ] = vol.Coerce(float)
+            schema_fields[
                 vol.Optional(
                     CONF_SOLAR_FORECAST_API_KEY,
-                    default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
+                    default="",
                 )
             ] = str
         else:
             schema_fields[
                 vol.Optional(
                     CONF_SOLCAST_API_KEY,
-                    default=defaults.get(CONF_SOLCAST_API_KEY, ""),
+                    default="",
                 )
             ] = str
             schema_fields[
                 vol.Optional(
                     CONF_SOLCAST_SITE_ID,
-                    default=defaults.get(CONF_SOLCAST_SITE_ID, ""),
+                    default="",
                 )
             ] = str
 
         # String 1 parametry - zobrazit jen když je povolen
         if defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True):
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_KWP,
-                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_DECLINATION,
-                        default=defaults.get(
-                            CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
-                        ),
-                    ): vol.Coerce(int),
-                    vol.Optional(
-                        CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
-                        default=defaults.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0),
-                    ): vol.Coerce(int),
-                }
-            )
+            schema_fields[
+                vol.Optional(
+                    CONF_SOLAR_FORECAST_STRING1_KWP,
+                    default=defaults.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0),
+                )
+            ] = vol.Coerce(float)
+            if provider == "forecast_solar":
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            CONF_SOLAR_FORECAST_STRING1_DECLINATION,
+                            default=defaults.get(
+                                CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35
+                            ),
+                        ): vol.Coerce(int),
+                        vol.Optional(
+                            CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+                            default=defaults.get(
+                                CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0
+                            ),
+                        ): vol.Coerce(int),
+                    }
+                )
 
         # String 2 checkbox
         schema_fields[
@@ -1740,22 +1801,42 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         # String 2 parametry - zobrazit jen když je povolen
         if defaults.get("solar_forecast_string2_enabled", False):
-            schema_fields.update(
-                {
-                    vol.Optional(
-                        "solar_forecast_string2_kwp",
-                        default=defaults.get("solar_forecast_string2_kwp", 5.0),
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        "solar_forecast_string2_declination",
-                        default=defaults.get("solar_forecast_string2_declination", 35),
-                    ): vol.Coerce(int),
-                    vol.Optional(
-                        "solar_forecast_string2_azimuth",
-                        default=defaults.get("solar_forecast_string2_azimuth", 180),
-                    ): vol.Coerce(int),
-                }
+            schema_fields[
+                vol.Optional(
+                    "solar_forecast_string2_kwp",
+                    default=defaults.get("solar_forecast_string2_kwp", 5.0),
+                )
+            ] = vol.Coerce(float)
+            if provider == "forecast_solar":
+                schema_fields.update(
+                    {
+                        vol.Optional(
+                            "solar_forecast_string2_declination",
+                            default=defaults.get(
+                                "solar_forecast_string2_declination", 35
+                            ),
+                        ): vol.Coerce(int),
+                        vol.Optional(
+                            "solar_forecast_string2_azimuth",
+                            default=defaults.get("solar_forecast_string2_azimuth", 180),
+                        ): vol.Coerce(int),
+                    }
+                )
+
+        for legacy_key in (
+            getattr(self, "_legacy_solar_azimuths", {})
+            if provider == "forecast_solar"
+            else {}
+        ):
+            string_enabled_key = (
+                CONF_SOLAR_FORECAST_STRING1_ENABLED
+                if legacy_key == CONF_SOLAR_FORECAST_STRING1_AZIMUTH
+                else "solar_forecast_string2_enabled"
             )
+            if defaults.get(string_enabled_key, False):
+                schema_fields[
+                    vol.Optional(f"adopt_legacy_{legacy_key}", default=False)
+                ] = bool
 
         # Přidat go_back na konec
         schema_fields[vol.Optional("go_back", default=False)] = bool
@@ -3177,6 +3258,25 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_summary")
 
+            # Stage selected-provider secrets privately. Public options carry
+            # only a short-lived opaque claim token until async_setup_entry.
+            options = self._build_options_payload(self._wizard_data)
+            provider = options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
+            credentials = {
+                key: value
+                for key in SOLAR_PRIVATE_FIELDS
+                if isinstance((value := self._wizard_data.get(key)), str)
+                and value.strip()
+            }
+            token = await async_stage_initial_credentials(
+                self.hass,
+                provider,
+                credentials,
+                owner=str(self._wizard_data.get(CONF_USERNAME, "")),
+            )
+            if token:
+                options[INITIAL_CREDENTIALS_TOKEN_FIELD] = token
+
             # Vytvořit entry s nakonfigurovanými daty
             return self.async_create_entry(
                 title=DEFAULT_NAME,
@@ -3184,7 +3284,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     CONF_USERNAME: self._wizard_data[CONF_USERNAME],
                     CONF_PASSWORD: self._wizard_data[CONF_PASSWORD],
                 },
-                options=self._build_options_payload(self._wizard_data),
+                options=options,
             )
 
         # Vygenerovat detailní shrnutí konfigurace
@@ -3241,6 +3341,17 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             )
             self._options_read_ok = False
             backend_options = {}
+
+        self._legacy_solar_azimuths: Dict[str, Dict[str, Any]] = {}
+        self._adopt_legacy_solar_fields: set[str] = set()
+        for key in (
+            CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+            "solar_forecast_string2_azimuth",
+        ):
+            model = legacy_azimuth_read_model(backend_options.get(key))
+            if model["legacy_provider_value"]:
+                self._legacy_solar_azimuths[key] = model
+                backend_options[key] = model["display_value"]
 
         # Pre-seed basic keys into the snapshot so that registry defaults are not
         # treated as user deltas for keys that predate the registry. Without this,
@@ -3375,7 +3486,37 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_section_solar(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
+        await self._async_prepare_solar_section()
         return await self._enter_section("solar", "wizard_solar")
+
+    async def _async_prepare_solar_section(self) -> None:
+        """Load private validation credentials and the optimistic revision guard."""
+        entry = getattr(self, "_config_entry_cache", None)
+        if entry is not None:
+            provider = self._wizard_data.get(
+                CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
+            )
+            store = SolarKeyStore(self.hass, entry.entry_id)
+            active = solar_credentials_with_legacy_options(
+                provider,
+                entry.options,
+                await store.async_get_active(provider) or {},
+            )
+            self._active_solar_provider = provider
+            self._active_solar_credentials = active
+            if not hasattr(self, "_solar_revision_at_open"):
+                self._solar_revision_at_open = await store.async_revision()
+
+    async def async_step_wizard_solar(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Prepare private solar state when Modules newly routes into solar."""
+        if (
+            getattr(self, "_section", None) == "modules"
+            and "enable_solar_forecast" in self._newly_enabled_modules()
+        ):
+            await self._async_prepare_solar_section()
+        return await WizardMixin.async_step_wizard_solar(self, user_input)
 
     async def async_step_section_battery(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3425,6 +3566,26 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                         autocomplete="off",
                     )
                 ),
+                vol.Optional("ai_fallback_provider", default=""): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="", label="—"),
+                            selector.SelectOptionDict(value="groq", label="Groq"),
+                            selector.SelectOptionDict(value="nvidia", label="NVIDIA"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("ai_fallback_api_key", default=""): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                        autocomplete="off",
+                    )
+                ),
+                vol.Optional(
+                    "ai_consent_cross_provider_fallback",
+                    default=defaults.get("ai_consent_cross_provider_fallback", False),
+                ): bool,
             }
         )
 
@@ -3443,6 +3604,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             values = dict(user_input)
             api_key = values.pop("ai_api_key", "")
             api_key = api_key.strip() if isinstance(api_key, str) else ""
+            fallback_provider = values.pop("ai_fallback_provider", "") or ""
+            fallback_api_key = values.pop("ai_fallback_api_key", "")
+            fallback_api_key = (
+                fallback_api_key.strip() if isinstance(fallback_api_key, str) else ""
+            )
             ai_fields = fields_for_section("ai")
             updates = {
                 key: values.get(key, field.default)
@@ -3456,6 +3622,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 await store.async_set_key(selected_provider, api_key)
             elif current_provider and selected_provider != current_provider:
                 await store.async_clear()
+
+            # Fallback is an OPTIONAL second provider (F1 fallback setter):
+            # only stored when BOTH a provider and a key are supplied, so a
+            # half-filled form never overwrites a previously stored fallback
+            # with a broken pair.
+            if fallback_provider and fallback_api_key:
+                await store.async_set_fallback(fallback_provider, fallback_api_key)
 
             current.update(updates)
             self.hass.config_entries.async_update_entry(entry, options=current)
@@ -3490,6 +3663,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
         self._section = None
+        await self._async_prepare_solar_section()
         return await self.async_step_wizard_welcome_reconfigure()
 
     async def async_step_wizard_welcome_reconfigure(
@@ -3543,12 +3717,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             payload = self._build_options_payload(self._wizard_data)
             new_options = dict(entry.options)
             new_options.update(payload)
-            solar_private_updates = {
-                key: self._wizard_data.get(key)
-                for key in SOLAR_PRIVATE_FIELDS
-                if isinstance(self._wizard_data.get(key), str)
-                and self._wizard_data.get(key).strip()
-            }
+            solar_private_updates = {}
+            for key in SOLAR_PRIVATE_FIELDS:
+                private_value = self._wizard_data.get(key)
+                if isinstance(private_value, str) and private_value.strip():
+                    solar_private_updates[key] = private_value
 
             # Submitted-fields-only delta: exactly those keys whose serialized
             # value differs from the one this flow would have written at open.
@@ -3562,6 +3735,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 for key, value in payload.items()
                 if value != self._options_payload_at_open.get(key)
             }
+            for key in getattr(self, "_adopt_legacy_solar_fields", set()):
+                if key in payload:
+                    delta[key] = payload[key]
 
             # A mirror pair (charge_rate_kw / home_charge_rate) is ONE logical
             # field. The serializer writes the same value to both aliases, so a
@@ -3585,35 +3761,38 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                if getattr(self, "_section", None) == "solar" and (
-                    solar_private_updates or CONF_SOLAR_FORECAST_PROVIDER in delta
-                ):
-                    solar_store = SolarKeyStore(self.hass, entry.entry_id)
-                    provider = payload.get(
-                        CONF_SOLAR_FORECAST_PROVIDER,
-                        entry.options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"),
-                    )
-                    if CONF_SOLAR_FORECAST_PROVIDER in delta:
-                        await solar_store.async_clear_inactive(str(provider))
-                    if CONF_SOLAR_FORECAST_API_KEY in solar_private_updates:
-                        await solar_store.async_set_candidate(
-                            "forecast_solar",
-                            {
-                                CONF_SOLAR_FORECAST_API_KEY: solar_private_updates[
-                                    CONF_SOLAR_FORECAST_API_KEY
-                                ]
-                            },
-                        )
-                    solcast_updates = {
-                        key: solar_private_updates[key]
-                        for key in (CONF_SOLCAST_API_KEY, CONF_SOLCAST_SITE_ID)
-                        if key in solar_private_updates
-                    }
-                    if solcast_updates:
-                        await solar_store.async_set_candidate("solcast", solcast_updates)
-                did_write = merge_entry_options(
-                    self.hass, entry, delta, suppress_reload=True
+                solar_delta = {
+                    key: value
+                    for key, value in delta.items()
+                    if (registry_field := FIELD_REGISTRY.get(key)) is not None
+                    and registry_field.section == "solar"
+                }
+                section = getattr(self, "_section", "unselected")
+                solar_route = section in (None, "solar") or (
+                    section == "modules"
+                    and "enable_solar_forecast" in self._newly_enabled_modules()
                 )
+                solar_committed = solar_route and bool(
+                    solar_delta or solar_private_updates
+                )
+                if not solar_committed:
+                    solar_delta = {}
+                if solar_committed:
+                    await async_commit_solar_configuration(
+                        self.hass,
+                        entry,
+                        delta,
+                        solar_private_updates,
+                        proof=None,
+                        expected_revision=getattr(
+                            self, "_solar_revision_at_open", None
+                        ),
+                    )
+                remaining_delta = {} if solar_committed else delta
+                remaining_written = merge_entry_options(
+                    self.hass, entry, remaining_delta, suppress_reload=True
+                )
+                did_write = solar_committed or remaining_written
                 _LOGGER.warning("🔍 async_update_entry completed")
 
                 if did_write:
@@ -3663,7 +3842,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
                 # Automaticky reloadnout integraci pro aplikování změn
                 _LOGGER.warning("🔍 About to reload integration")
-                await self.hass.config_entries.async_reload(entry.entry_id)
+                if not solar_committed:
+                    await self.hass.config_entries.async_reload(entry.entry_id)
                 _LOGGER.warning("🔍 Integration reload completed")
 
                 # CRITICAL: V OptionsFlow NESMÍME volat async_create_entry,

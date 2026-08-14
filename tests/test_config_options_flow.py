@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler, WizardMixin
 from custom_components.oig_cloud.config import solar_key_store as solar_key_store_module
+from custom_components.oig_cloud.config import solar_transaction as solar_transaction_module
 from custom_components.oig_cloud.config_registry import fields_for_section
 from custom_components.oig_cloud.const import CONF_USERNAME
 
@@ -18,6 +19,7 @@ class DummyConfigEntries:
         self.reloaded = []
 
     def async_update_entry(self, entry, options=None):
+        entry.options = options or {}
         self.updated.append((entry, options))
 
     async def async_reload(self, entry_id):
@@ -448,11 +450,455 @@ async def test_options_flow_solar_provider_switch_without_key_clears_inactive_st
     reloaded = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
     assert await reloaded.async_get_active("solcast") is None
     assert await reloaded.async_get_candidate("solcast") is None
+    state = await reloaded.async_api_state()
+    assert state["provider"] == "forecast_solar"
+    assert state["verified"] is False
+    assert state["revision"] == 2
     options = flow.hass.config_entries.updated[0][1]
     assert options["solar_forecast_provider"] == "forecast_solar"
+    assert options["solar_forecast_latitude"] == 50.12
+    assert options["solar_forecast_string1_declination"] == 35
+    assert options["solar_forecast_string1_azimuth"] == 0
     assert "solcast_api_key" not in options
     assert "solcast_site_id" not in options
     assert "sc_secret_123456789" not in str(options)
+
+
+@pytest.mark.asyncio
+async def test_native_solar_save_activates_new_credentials_as_unverified(
+    mem_solar_store,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+
+    result = await flow.async_step_wizard_solar(
+        _solar_values(solar_forecast_api_key="native-secret")
+    )
+    assert result["type"] == "form"
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "native-secret"
+    }
+    state = await store.async_api_state()
+    assert state["verified"] is False
+    assert state["revision"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "credentials", "submitted"),
+    [
+        (
+            "forecast_solar",
+            {"solar_forecast_api_key": "forecast-private-secret"},
+            _solar_values(
+                solar_forecast_mode="hourly",
+                solar_forecast_api_key="",
+            ),
+        ),
+        (
+            "solcast",
+            {
+                "solcast_api_key": "solcast-private-secret",
+                "solcast_site_id": "private-rooftop-id",
+            },
+            _solar_values(
+                solar_forecast_provider="solcast",
+                solar_forecast_mode="hourly",
+                solcast_api_key="",
+                solcast_site_id="",
+            ),
+        ),
+    ],
+)
+async def test_options_flow_blank_solar_secrets_retain_active_private_credentials(
+    mem_solar_store,
+    provider,
+    credentials,
+    submitted,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(
+            solar_forecast_provider=provider,
+            solar_forecast_mode="hourly",
+        ),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(provider, credentials, verified_at=None)
+
+    await flow.async_step_section_solar()
+    result = await flow.async_step_wizard_solar(submitted)
+
+    assert result["step_id"] == "wizard_summary"
+    assert await store.async_get_active(provider) == credentials
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "credentials", "submitted"),
+    [
+        (
+            "forecast_solar",
+            {"solar_forecast_api_key": "full-flow-forecast-secret"},
+            _solar_values(
+                solar_forecast_provider="forecast_solar",
+                solar_forecast_mode="hourly",
+                solar_forecast_api_key="",
+            ),
+        ),
+        (
+            "solcast",
+            {
+                "solcast_api_key": "full-flow-solcast-secret",
+                "solcast_site_id": "full-flow-rooftop-id",
+            },
+            _solar_values(
+                solar_forecast_provider="solcast",
+                solar_forecast_mode="hourly",
+                solcast_api_key="",
+                solcast_site_id="",
+            ),
+        ),
+    ],
+)
+async def test_options_flow_section_all_retains_blank_active_private_credentials(
+    mem_solar_store,
+    provider,
+    credentials,
+    submitted,
+):
+    """Removing the section-specific loader must not lose full-flow credentials."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(
+            solar_forecast_provider=provider,
+            solar_forecast_mode="hourly",
+        ),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(provider, credentials, verified_at=None)
+
+    await flow.async_step_section_all()
+    result = await flow.async_step_wizard_solar(submitted)
+
+    assert result["step_id"] == "wizard_summary"
+    assert await store.async_get_active(provider) == credentials
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_all_commits_solar_through_atomic_transaction(
+    mem_solar_store,
+):
+    """Bypassing the solar transaction must lose this private activation/revision."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_kwp=5.5),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    await flow.async_step_section_all()
+    flow._wizard_data.update(
+        _solar_values(
+            solar_forecast_api_key="full-flow-new-secret",
+            solar_forecast_string1_kwp=6.5,
+        )
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "full-flow-new-secret"
+    }
+    state = await store.async_api_state()
+    assert state["revision"] == 1
+    assert state["verified"] is False
+    assert entry.options["solar_forecast_string1_kwp"] == 6.5
+    assert "full-flow-new-secret" not in repr(entry.options)
+    assert flow.hass.config_entries.reloaded == ["entry1"]
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_all_persists_mixed_solar_and_basic_delta_once(
+    mem_solar_store,
+):
+    """A successful solar branch must not short-circuit the non-solar merge."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            **_solar_values(solar_forecast_string1_kwp=5.5),
+            "standard_scan_interval": 30,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    await flow.async_step_section_all()
+    flow._wizard_data.update(
+        {
+            "solar_forecast_api_key": "mixed-flow-secret",
+            "solar_forecast_string1_kwp": 6.5,
+            "standard_scan_interval": 45,
+        }
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result == {"type": "abort", "reason": "reconfigure_successful"}
+    assert entry.options["solar_forecast_string1_kwp"] == 6.5
+    assert entry.options["standard_scan_interval"] == 45
+    assert "mixed-flow-secret" not in repr(entry.options)
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "mixed-flow-secret"
+    }
+    assert (await store.async_api_state())["revision"] == 1
+    assert flow.hass.config_entries.reloaded == ["entry1"]
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_modules_new_solar_uses_private_transaction(
+    mem_solar_store,
+):
+    """New solar setup from Modules must not take the generic options route."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            **_solar_values(enable_solar_forecast=False),
+            "standard_scan_interval": 30,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "modules"
+    flow._modules_enabled_at_entry = set()
+    submitted = _solar_values(
+        enable_solar_forecast=True,
+        solar_forecast_api_key="module-route-secret",
+        solar_forecast_string1_kwp=6.2,
+    )
+
+    result = await flow.async_step_wizard_solar(submitted)
+    assert result["step_id"] == "wizard_summary"
+    result = await flow.async_step_wizard_summary({})
+
+    assert result == {"type": "abort", "reason": "reconfigure_successful"}
+    assert entry.options["enable_solar_forecast"] is True
+    assert entry.options["solar_forecast_string1_kwp"] == 6.2
+    assert "module-route-secret" not in repr(entry.options)
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "module-route-secret"
+    }
+    assert (await store.async_api_state())["revision"] == 1
+    assert flow.hass.config_entries.reloaded == ["entry1"]
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_modules_preserves_opening_solar_revision(
+    mem_solar_store,
+):
+    """Submitting Modules must not refresh away its optimistic revision guard."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            **_solar_values(enable_solar_forecast=False),
+            "standard_scan_interval": 30,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "modules"
+    flow._modules_enabled_at_entry = set()
+    flow._wizard_data["enable_solar_forecast"] = True
+
+    result = await flow.async_step_wizard_solar()
+    assert result["type"] == "form"
+
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "concurrent-secret"},
+        verified_at="2026-08-11T00:00:00+00:00",
+    )
+    submitted = _solar_values(
+        enable_solar_forecast=True,
+        solar_forecast_api_key="module-route-secret",
+        solar_forecast_string1_kwp=6.2,
+    )
+    result = await flow.async_step_wizard_solar(submitted)
+    assert result["step_id"] == "wizard_summary"
+
+    conflict_type = getattr(
+        solar_transaction_module, "SolarTransactionConflict", RuntimeError
+    )
+    with pytest.raises(conflict_type):
+        await flow.async_step_wizard_summary({})
+
+    assert entry.options["enable_solar_forecast"] is False
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "concurrent-secret"
+    }
+    assert (await store.async_api_state())["revision"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "legacy_credentials", "submitted"),
+    [
+        (
+            "forecast_solar",
+            {"solar_forecast_api_key": "legacy-forecast-secret"},
+            _solar_values(
+                solar_forecast_provider="forecast_solar",
+                solar_forecast_mode="hourly",
+                solar_forecast_api_key="",
+                solar_forecast_string1_kwp=6.1,
+            ),
+        ),
+        (
+            "solcast",
+            {
+                "solcast_api_key": "legacy-solcast-secret",
+                "solcast_site_id": "legacy-rooftop-id",
+            },
+            _solar_values(
+                solar_forecast_provider="solcast",
+                solar_forecast_mode="hourly",
+                solcast_api_key="",
+                solcast_site_id="",
+                solar_forecast_string1_kwp=6.1,
+            ),
+        ),
+    ],
+)
+async def test_options_flow_legacy_option_credentials_validate_then_move_private(
+    mem_solar_store,
+    provider,
+    legacy_credentials,
+    submitted,
+):
+    """Legacy option credentials remain usable until an explicit atomic save."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            **_solar_values(
+                solar_forecast_provider=provider,
+                solar_forecast_mode="hourly",
+                solar_forecast_string1_kwp=5.5,
+            ),
+            **legacy_credentials,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    await flow.async_step_section_solar()
+    result = await flow.async_step_wizard_solar(submitted)
+    assert result["step_id"] == "wizard_summary"
+    result = await flow.async_step_wizard_summary({})
+
+    assert result == {"type": "abort", "reason": "reconfigure_successful"}
+    assert not set(legacy_credentials).intersection(entry.options)
+    assert not any(value in repr(entry.options) for value in legacy_credentials.values())
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await store.async_get_active(provider) == legacy_credentials
+    assert (await store.async_api_state())["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_all_rejects_concurrent_solar_revision(
+    mem_solar_store,
+):
+    """Removing the revision check must overwrite a newer solar transaction."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_kwp=5.5),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "opening-secret"},
+        verified_at=None,
+    )
+    await flow.async_step_section_all()
+    await store.async_activate(
+        "forecast_solar",
+        {"solar_forecast_api_key": "concurrent-secret"},
+        verified_at="2026-08-11T00:00:00+00:00",
+    )
+    flow._wizard_data["solar_forecast_string1_kwp"] = 7.0
+
+    conflict_type = getattr(
+        solar_transaction_module, "SolarTransactionConflict", RuntimeError
+    )
+    with pytest.raises(conflict_type):
+        await flow.async_step_wizard_summary({})
+
+    assert entry.options["solar_forecast_string1_kwp"] == 5.5
+    assert await store.async_get_active("forecast_solar") == {
+        "solar_forecast_api_key": "concurrent-secret"
+    }
+    assert (await store.async_api_state())["revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_native_solcast_schema_owns_geometry_and_validation_ignores_it():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_provider="solcast"),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    schema = flow._get_solar_schema(_solar_values(solar_forecast_provider="solcast"))
+    keys = {marker.schema for marker in schema.schema}
+
+    assert "solar_forecast_string1_kwp" in keys
+    assert {
+        "solar_forecast_latitude",
+        "solar_forecast_longitude",
+        "solar_forecast_string1_declination",
+        "solar_forecast_string1_azimuth",
+    }.isdisjoint(keys)
+
+    submitted = _solar_values(
+        solar_forecast_provider="solcast",
+        solar_forecast_mode="daily",
+        solcast_api_key="solcast-secret",
+        solcast_site_id="roof-id",
+        solar_forecast_latitude="not-a-coordinate",
+        solar_forecast_longitude=999,
+        solar_forecast_string1_declination=999,
+        solar_forecast_string1_azimuth=999,
+    )
+    flow._wizard_data.update(submitted)
+    result = await flow.async_step_wizard_solar(submitted)
+    assert result["step_id"] == "wizard_summary"
 
 
 @pytest.mark.asyncio
@@ -523,6 +969,58 @@ async def test_options_flow_section_jumps_to_summary():
     flow._section = None
     # without a section, battery continues into pricing as before
     assert flow._get_next_step("wizard_battery") == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_legacy_azimuth_requires_change_or_transient_adoption():
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_azimuth=-90),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+
+    schema = flow._get_solar_schema()
+    keys = {marker.schema for marker in schema.schema}
+    assert "adopt_legacy_solar_forecast_string1_azimuth" in keys
+    assert flow._wizard_data["solar_forecast_string1_azimuth"] == 90
+
+    await flow.async_step_wizard_solar(
+        _solar_values(
+            solar_forecast_string1_azimuth=90,
+            adopt_legacy_solar_forecast_string1_azimuth=False,
+        )
+    )
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+    assert flow.hass.config_entries.updated == []
+    assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+async def test_options_flow_transient_checkbox_adopts_legacy_without_storing_control(
+    mem_solar_store,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_string1_azimuth=-90),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+    await flow.async_step_wizard_solar(
+        _solar_values(
+            solar_forecast_string1_azimuth=90,
+            adopt_legacy_solar_forecast_string1_azimuth=True,
+        )
+    )
+    await flow.async_step_wizard_summary({})
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["solar_forecast_string1_azimuth"] == 90
+    assert not any(key.startswith("adopt_legacy_") for key in options)
 
 
 @pytest.mark.asyncio

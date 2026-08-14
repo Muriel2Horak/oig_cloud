@@ -24,21 +24,21 @@ export function teardownErrorHandling(): void {
 function handleGlobalError(event: ErrorEvent): void {
   const error = event.error || new Error(event.message);
   recordError(error, 'global');
-  
+
   oigLog.error('Uncaught error', error, {
     filename: event.filename,
     lineno: event.lineno,
     colno: event.colno
   });
-  
+
   event.preventDefault();
 }
 
 function handleUnhandledRejection(event: PromiseRejectionEvent): void {
-  const error = event.reason instanceof Error 
-    ? event.reason 
+  const error = event.reason instanceof Error
+    ? event.reason
     : new Error(String(event.reason));
-  
+
   recordError(error, 'promise');
   oigLog.error('Unhandled promise rejection', error);
   event.preventDefault();
@@ -51,7 +51,7 @@ function recordError(error: Error, component: string): void {
     timestamp: Date.now(),
     recovered: false
   });
-  
+
   while (errorHistory.length > MAX_ERRORS) {
     errorHistory.shift();
   }

@@ -12,6 +12,19 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 
+@pytest.fixture
+def _disable_external_mqtt_worker(monkeypatch):
+    """Setup-entry unit tests keep the shared emitter but not its network worker."""
+
+    async def _noop_start(_entry):
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shared.emitter._start_mqtt_publisher",
+        _noop_start,
+    )
+
+
 class DummyConfigEntries:
     def __init__(self):
         self.updated = []
@@ -214,7 +227,9 @@ async def test_async_setup_entry_missing_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_migrates_legacy_credentials_from_options(monkeypatch):
+async def test_async_setup_entry_migrates_legacy_credentials_from_options(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -287,7 +302,9 @@ async def test_async_setup_entry_migrates_legacy_credentials_from_options(monkey
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_success_local(monkeypatch):
+async def test_async_setup_entry_success_local(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -525,7 +542,9 @@ async def test_init_session_manager_uses_first_refresh_when_only_box_id_exists(
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_success_cloud(monkeypatch):
+async def test_async_setup_entry_success_cloud(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -622,7 +641,9 @@ async def test_async_setup_entry_success_cloud(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_migrates_spot_prices_flag(monkeypatch):
+async def test_async_setup_entry_migrates_spot_prices_flag(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -685,7 +706,9 @@ async def test_async_setup_entry_migrates_spot_prices_flag(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_infers_box_id_from_proxy(monkeypatch):
+async def test_async_setup_entry_infers_box_id_from_proxy(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -758,7 +781,9 @@ async def test_async_setup_entry_infers_box_id_from_proxy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_infers_box_id_from_registry(monkeypatch):
+async def test_async_setup_entry_infers_box_id_from_registry(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -846,7 +871,9 @@ def test_infer_box_id_from_local_entities(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_cloud_empty_stats(monkeypatch):
+async def test_async_setup_entry_cloud_empty_stats(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyApiEmptyStats:
         def __init__(self, *_args, **_kwargs):
             pass
@@ -913,7 +940,9 @@ async def test_async_setup_entry_cloud_empty_stats(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_service_shield_failure(monkeypatch):
+async def test_async_setup_entry_service_shield_failure(
+    monkeypatch, _disable_external_mqtt_worker
+):
     def _raise(*_a, **_k):
         raise RuntimeError("boom")
 
@@ -977,7 +1006,9 @@ async def test_async_setup_entry_service_shield_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_cloud_missing_live_data(monkeypatch):
+async def test_async_setup_entry_cloud_missing_live_data(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyApiMissingActual:
         def __init__(self, *_args, **_kwargs):
             pass
@@ -1016,7 +1047,9 @@ async def test_async_setup_entry_cloud_missing_live_data(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_infer_box_id_exception(monkeypatch):
+async def test_async_setup_entry_infer_box_id_exception(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -1082,7 +1115,9 @@ async def test_async_setup_entry_infer_box_id_exception(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_live_data_check_error(monkeypatch):
+async def test_async_setup_entry_live_data_check_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyApiFailStats(DummyApi):
         async def get_stats(self):
             raise RuntimeError("boom")
@@ -1146,7 +1181,9 @@ async def test_async_setup_entry_live_data_check_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_no_coordinator_data(monkeypatch):
+async def test_async_setup_entry_no_coordinator_data(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyCoordinatorNoData(DummyCoordinator):
         def __init__(self, hass, session_manager, *_args, **_kwargs):
             super().__init__(hass, session_manager, *_args, **_kwargs)
@@ -1184,7 +1221,9 @@ async def test_async_setup_entry_no_coordinator_data(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_notification_manager_fetch_error(monkeypatch):
+async def test_async_setup_entry_notification_manager_fetch_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyNotificationManagerFail(DummyNotificationManager):
         async def update_from_api(self):
             raise RuntimeError("boom")
@@ -1266,7 +1305,9 @@ async def test_async_setup_entry_notification_manager_fetch_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_pricing_init_error(monkeypatch):
+async def test_async_setup_entry_pricing_init_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyOteApi:
         def __init__(self):
             self.closed = False
@@ -1344,7 +1385,9 @@ async def test_async_setup_entry_pricing_init_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_optional_modules(monkeypatch):
+async def test_async_setup_entry_optional_modules(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyBoilerCoordinator:
         def __init__(self, hass, config):
             self.hass = hass
@@ -1500,7 +1543,11 @@ async def test_async_setup_entry_optional_modules(monkeypatch):
     ],
 )
 async def test_async_setup_entry_runtime_flags(
-    monkeypatch, enable_pricing, enable_solar, enable_boiler
+    monkeypatch,
+    _disable_external_mqtt_worker,
+    enable_pricing,
+    enable_solar,
+    enable_boiler,
 ):
     def _no_interval(*_a, **_k):
         return lambda: None
@@ -1607,7 +1654,9 @@ async def test_async_setup_entry_runtime_flags(
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_disabled_and_missing_manager(monkeypatch):
+async def test_async_setup_entry_balancing_disabled_and_missing_manager(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -1668,7 +1717,9 @@ async def test_async_setup_entry_balancing_disabled_and_missing_manager(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_boiler_error(monkeypatch):
+async def test_async_setup_entry_boiler_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     def _raise(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -1747,7 +1798,9 @@ class _BoilerCoordForTest:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime(monkeypatch):
+async def test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime(
+    monkeypatch, _disable_external_mqtt_worker
+):
     sentinel = object()
     captured_in_runtime = []
 
@@ -1801,7 +1854,9 @@ async def test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_ru
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_telemetry_store_error(monkeypatch):
+async def test_async_setup_entry_telemetry_store_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyTelemetryStore:
         def __init__(self, *_args, **_kwargs):
             raise RuntimeError("boom")
@@ -1879,7 +1934,9 @@ async def test_async_setup_entry_telemetry_store_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_shield_device_info_resolve_error(monkeypatch):
+async def test_async_setup_entry_shield_device_info_resolve_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -1943,7 +2000,9 @@ async def test_async_setup_entry_shield_device_info_resolve_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_notification_manager_no_device(monkeypatch):
+async def test_async_setup_entry_notification_manager_no_device(
+    monkeypatch, _disable_external_mqtt_worker
+):
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
     )
@@ -2019,7 +2078,9 @@ async def test_async_setup_entry_notification_manager_no_device(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_notification_manager_init_error(monkeypatch):
+async def test_async_setup_entry_notification_manager_init_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     def _raise(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -2092,7 +2153,9 @@ async def test_async_setup_entry_notification_manager_init_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_notification_manager_box_id_error(monkeypatch):
+async def test_async_setup_entry_notification_manager_box_id_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class Options(dict):
         def get(self, key, default=None):
             if key == "box_id":
@@ -2173,7 +2236,9 @@ async def test_async_setup_entry_notification_manager_box_id_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_persist_box_id_error(monkeypatch):
+async def test_async_setup_entry_persist_box_id_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyCoordinatorData(DummyCoordinator):
         def __init__(self, hass, session_manager, *_args, **_kwargs):
             super().__init__(hass, session_manager, *_args, **_kwargs)
@@ -2248,7 +2313,9 @@ async def test_async_setup_entry_persist_box_id_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_solar_forecast_error(monkeypatch):
+async def test_async_setup_entry_solar_forecast_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     def debug_raise(message, *args, **kwargs):
         if "Initializing solar forecast functionality" in message:
             raise RuntimeError("boom")
@@ -2314,7 +2381,9 @@ async def test_async_setup_entry_solar_forecast_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_paths(monkeypatch):
+async def test_async_setup_entry_balancing_manager_paths(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyBalancingManager:
         def __init__(self, hass, box_id, storage_path, entry):
             self.hass = hass
@@ -2416,7 +2485,9 @@ async def test_async_setup_entry_balancing_manager_paths(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_no_box_id(monkeypatch):
+async def test_async_setup_entry_balancing_manager_no_box_id(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyCoordinatorNoDigits(DummyCoordinator):
         def __init__(self, hass, session_manager, *_args, **_kwargs):
             super().__init__(hass, session_manager, *_args, **_kwargs)
@@ -2496,7 +2567,9 @@ async def test_async_setup_entry_balancing_manager_no_box_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_executes(monkeypatch):
+async def test_async_setup_entry_balancing_manager_executes(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyBalancingManager:
         def __init__(self, hass, box_id, storage_path, entry):
             self.hass = hass
@@ -2605,7 +2678,9 @@ async def test_async_setup_entry_balancing_manager_executes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_callbacks(monkeypatch):
+async def test_async_setup_entry_balancing_manager_callbacks(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class Options(dict):
         def get(self, key, default=None):
             if key == "box_id":
@@ -2708,7 +2783,9 @@ async def test_async_setup_entry_balancing_manager_callbacks(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_initial_plan(monkeypatch):
+async def test_async_setup_entry_balancing_manager_initial_plan(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyBalancingManager:
         def __init__(self, hass, box_id, storage_path, entry):
             self.hass = hass
@@ -2805,7 +2882,9 @@ async def test_async_setup_entry_balancing_manager_initial_plan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_no_plan(monkeypatch):
+async def test_async_setup_entry_balancing_manager_no_plan(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyBalancingManager:
         def __init__(self, hass, box_id, storage_path, entry):
             self.hass = hass
@@ -2897,7 +2976,9 @@ async def test_async_setup_entry_balancing_manager_no_plan(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_balancing_manager_box_id_error(monkeypatch):
+async def test_async_setup_entry_balancing_manager_box_id_error(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class Options(dict):
         def get(self, key, default=None):
             if key == "box_id":
@@ -2989,7 +3070,9 @@ async def test_async_setup_entry_balancing_manager_box_id_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_shield_monitoring_no_telemetry(monkeypatch):
+async def test_async_setup_entry_shield_monitoring_no_telemetry(
+    monkeypatch, _disable_external_mqtt_worker
+):
     class DummyShieldNoTelemetry(DummyShield):
         def __init__(self, hass, entry):
             super().__init__(hass, entry)

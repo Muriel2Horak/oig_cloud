@@ -294,4 +294,3 @@ export function renderBoilerDrawSvg(draws: number[]): string {
     valueLabel: (value, hour) => `${hourLabel(hour)} — odběr ${Math.round(value)} l`,
   });
 }
-

@@ -166,6 +166,7 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
         if not hasattr(coordinator, "last_update_success"):
             setattr(coordinator, "last_update_success", True)
         super().__init__(coordinator, sensor_type)
+        self._config_entry: ConfigEntry = config_entry
 
         sensor_setup_module.initialize_sensor(
             self,
@@ -224,6 +225,7 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
         sensor_runtime_module.handle_will_remove(self)
+        await task_utils_module.async_wait_forecast_retry_tasks(self)
         await super().async_will_remove_from_hass()
 
     def _get_config(self) -> Dict[str, Any]:

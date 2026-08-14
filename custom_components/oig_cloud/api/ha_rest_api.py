@@ -33,7 +33,6 @@ import sys
 import time
 import asyncio
 from datetime import timedelta
-from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional
 
 from aiohttp import web
@@ -67,8 +66,23 @@ from ..config_registry import (
 )
 from ..battery_forecast.config import SimulatorConfig
 from ..config.modules_validation import validate_modules_selection
-from ..config.solar_rules import normalize_azimuth, validate_solar_effective
-from ..config.solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
+from ..config.solar_rules import (
+    legacy_azimuth_read_model,
+    validate_compass_azimuth,
+    validate_solar_effective,
+)
+from ..config.solar_key_store import (
+    SOLAR_PRIVATE_FIELDS,
+    SolarKeyStore,
+    SolarProofStore,
+    get_solar_transaction_lock,
+)
+from ..config.solar_transaction import (
+    InvalidSolarProof,
+    SolarTransactionError,
+    async_commit_solar_configuration,
+    solar_credentials_with_legacy_options,
+)
 from ..ai.backends import (
     AiBackendError,
     PROMPT_ALLOWED_FIELDS,
@@ -87,6 +101,7 @@ from ..boiler.planner_contract import PlannerReasonCode
 from ..boiler.runtime import get_boiler_runtime
 from ..entities.ai_status_sensor import OigCloudAiStatusSensor, SAFE_ERROR_CODES
 from ..forecast.candidate_test import run_solar_candidate_test
+from ..forecast.provider_contract import build_effective_solar_dto
 from ..forecast.solar_test_limiter import get_solar_test_limiter
 from ..onboarding import ONBOARDING_STEPS, OnboardingState
 
@@ -98,6 +113,7 @@ SENSOR_COMPONENT_NOT_FOUND = "Sensor component not found"
 _SOLAR_TEST_ALLOWED_KEYS = frozenset(
     {
         "provider",
+        "solar_forecast_mode",
         "solar_forecast_api_key",
         "solcast_api_key",
         "solcast_site_id",
@@ -114,6 +130,12 @@ _SOLAR_TEST_ALLOWED_KEYS = frozenset(
     }
 )
 _SOLAR_TEST_PROVIDERS = frozenset({"forecast_solar", "solcast"})
+_SOLAR_AZIMUTH_FIELDS = frozenset(
+    {
+        "solar_forecast_string1_azimuth",
+        "solar_forecast_string2_azimuth",
+    }
+)
 
 try:
     # Reuse the established chains on HA versions that provide ai_task. The
@@ -122,7 +144,7 @@ try:
     from ..ai_task import MODEL_CHAINS
 except ImportError:
     MODEL_CHAINS = {
-        "groq": ("llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant"),
+        "groq": ("qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
         "nvidia": ("z-ai/glm-5.2",),
     }
 
@@ -343,6 +365,8 @@ async def _delegate_validate_config_ai_task(
     install: Mapping[str, Any],
 ) -> Any:
     """Delegate through the existing Task 9 entity helper."""
+    from homeassistant.components.conversation import ChatLog
+
     from ..ai_task import GenDataTask, OigAiTaskEntity
 
     entity = OigAiTaskEntity(
@@ -358,10 +382,11 @@ async def _delegate_validate_config_ai_task(
     )
     entity.hass = hass
     task = GenDataTask(
+        name="validate_config",
         instructions=build_anonymous_prompt("validate_config", install),
         structure=structure,
     )
-    result = await entity._async_generate_data(task, SimpleNamespace(conversation_id=None))
+    result = await entity._async_generate_data(task, ChatLog(hass, entry.entry_id))
     return getattr(result, "data", result)
 
 
@@ -1451,6 +1476,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         opts = dict(entry.options)
         out: dict[str, Any] = {}
+        legacy_fields: dict[str, dict[str, Any]] = {}
         solar_store = _solar_key_store_or_none(hass, entry.entry_id)
         solar_private_state = (
             await solar_store.async_private_field_state()
@@ -1469,8 +1495,29 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 if field.secret:
                     sec[f"{key}_set"] = bool(opts.get(key))
                     continue
-                sec[key] = opts.get(key, field.default)
+                stored_value = opts.get(key, field.default)
+                if section == "solar" and key in _SOLAR_AZIMUTH_FIELDS:
+                    model = legacy_azimuth_read_model(stored_value)
+                    if model["legacy_provider_value"]:
+                        sec[key] = model["display_value"]
+                        legacy_fields[key] = {
+                            "stored_value": model["stored_value"],
+                            "display_value": model["display_value"],
+                            "legacy_provider_value": True,
+                            "requires_adoption": True,
+                        }
+                        continue
+                    if not model["valid_for_provider"] and stored_value is not None:
+                        legacy_fields[key] = {
+                            "stored_value": model["stored_value"],
+                            "display_value": model["display_value"],
+                            "legacy_provider_value": False,
+                            "requires_adoption": False,
+                            "invalid_legacy_value": True,
+                        }
+                sec[key] = stored_value
             out[section] = sec
+        out["_meta"] = {"legacy_fields": legacy_fields}
         return web.json_response(out)
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
@@ -1492,11 +1539,44 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         section = payload.get("section") if isinstance(payload, dict) else None
         values = payload.get("values") if isinstance(payload, dict) else None
+        adoption_value = (
+            payload.get("adopt_legacy_fields", []) if isinstance(payload, dict) else []
+        )
+        proof_value = payload.get("solar_test_proof") if isinstance(payload, dict) else None
+        if proof_value is not None and (
+            not isinstance(proof_value, str) or not proof_value
+        ):
+            return web.json_response(
+                {"error": "validation", "fields": {"solar_test_proof": "invalid"}},
+                status=400,
+            )
         section_fields = fields_for_section(section or "")
         if not section_fields or not isinstance(values, dict):
             return web.json_response(
                 {"error": "Expected {section, values} with a known section"},
                 status=400,
+            )
+
+        if (
+            not isinstance(adoption_value, list)
+            or any(not isinstance(key, str) for key in adoption_value)
+        ):
+            return web.json_response(
+                {"error": "validation", "fields": {"adopt_legacy_fields": "invalid"}},
+                status=400,
+            )
+        adopt_legacy_fields = set(adoption_value)
+        adoption_errors: dict[str, str] = {}
+        for key in adopt_legacy_fields:
+            if section != "solar" or key not in _SOLAR_AZIMUTH_FIELDS:
+                adoption_errors[key] = "unknown legacy field"
+                continue
+            model = legacy_azimuth_read_model(entry.options.get(key))
+            if not model["legacy_provider_value"] or key not in values:
+                adoption_errors[key] = "field is not awaiting legacy adoption"
+        if adoption_errors:
+            return web.json_response(
+                {"error": "validation", "fields": adoption_errors}, status=400
             )
 
         updates: dict[str, Any] = {}
@@ -1510,11 +1590,18 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             # Empty secret = keep current value
             if field.secret and value == "":
                 continue
-            if key in ("solar_forecast_string1_azimuth", "solar_forecast_string2_azimuth"):
+            if key in _SOLAR_AZIMUTH_FIELDS:
                 try:
-                    value = normalize_azimuth(value)
-                except (TypeError, ValueError):
+                    value = validate_compass_azimuth(value)
+                except ValueError:
                     errors[key] = "invalid_azimuth"
+                    continue
+                stored_model = legacy_azimuth_read_model(entry.options.get(key))
+                if (
+                    stored_model["legacy_provider_value"]
+                    and key not in adopt_legacy_fields
+                    and value == stored_model["display_value"]
+                ):
                     continue
             try:
                 coerced = coerce_value(field, value)
@@ -1546,7 +1633,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 )
             )
             private_effective = (
-                await solar_store.async_credentials_for_validation(effective_provider)
+                await solar_store.async_get_active(effective_provider) or {}
                 if solar_store is not None
                 else {}
             )
@@ -1581,7 +1668,9 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 {"error": "Solar credential storage unavailable"},
                 status=500,
             )
-        if not updates and not private_updates:
+        if not updates and not private_updates and not (
+            section == "solar" and proof_value is not None
+        ):
             return web.json_response({"updated": False})
 
         # RCA-R3 (F1 U4): dual-ness is derived from confirmed_distribution_tariff,
@@ -1592,29 +1681,41 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 updates["confirmed_distribution_tariff"]
             )
 
-        previous_provider = entry.options.get("solar_forecast_provider", "forecast_solar")
-        wrote = merge_entry_options(hass, entry, updates)
         if section == "solar":
-            if (
-                solar_store is not None
-                and isinstance(effective_provider, str)
-                and effective_provider != previous_provider
-            ):
-                await solar_store.async_clear_inactive(effective_provider)
-        if section == "solar" and private_updates:
-            if "solar_forecast_api_key" in private_updates:
-                await solar_store.async_set_candidate(
-                    "forecast_solar",
-                    {"solar_forecast_api_key": private_updates["solar_forecast_api_key"]},
-                )
-            solcast_updates = {
-                key: private_updates[key]
-                for key in ("solcast_api_key", "solcast_site_id")
-                if key in private_updates
-            }
-            if solcast_updates:
-                await solar_store.async_set_candidate("solcast", solcast_updates)
-            wrote = True
+            if solar_store is None:
+                if private_updates or proof_value is not None:
+                    return web.json_response(
+                        {"error": "Solar credential storage unavailable"}, status=500
+                    )
+                wrote = merge_entry_options(hass, entry, updates)
+                revision, verified = 0, False
+            else:
+                try:
+                    revision, verified = await async_commit_solar_configuration(
+                        hass,
+                        entry,
+                        updates,
+                        private_updates,
+                        proof=proof_value,
+                    )
+                except InvalidSolarProof:
+                    return web.json_response(
+                        {"error": "invalid solar test proof"}, status=400
+                    )
+                except ValueError as err:
+                    error_field = str(err).split(":", 1)[0]
+                    return web.json_response(
+                        {"error": "validation", "fields": {error_field: "invalid"}},
+                        status=400,
+                    )
+                except SolarTransactionError:
+                    _LOGGER.error("Solar configuration transaction failed for %s", box_id)
+                    return web.json_response(
+                        {"error": "solar configuration transaction failed"}, status=500
+                    )
+                wrote = True
+        else:
+            wrote = merge_entry_options(hass, entry, updates)
         _LOGGER.info(
             "Module config updated for %s (%s): %s",
             box_id,
@@ -1624,9 +1725,13 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 for k, v in {**updates, **private_updates}.items()
             },
         )
-        return web.json_response(
-            {"updated": wrote, "keys": sorted({**updates, **private_updates})}
-        )
+        response_data: dict[str, Any] = {
+            "updated": wrote,
+            "keys": sorted({**updates, **private_updates}),
+        }
+        if section == "solar":
+            response_data.update({"revision": revision, "verified": verified})
+        return web.json_response(response_data)
 
 
 class OIGCloudConfigRegistryView(HomeAssistantView):
@@ -2039,21 +2144,40 @@ class OIGCloudSolarTestView(HomeAssistantView):
         if not isinstance(payload, dict):
             return web.json_response({"error": "Invalid payload"}, status=400)
 
-        parsed, error_response = self._parse_payload(payload)
-        if error_response is not None:
-            return error_response
-
         hass: HomeAssistant = request.app["hass"]
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
             return web.json_response({"error": "Box not found"}, status=404)
+
+        provider = payload.get("provider")
+        async with get_solar_transaction_lock(hass, entry.entry_id):
+            active_credentials: Mapping[str, Any] = {}
+            store = _solar_key_store_or_none(hass, entry.entry_id)
+            if store is not None and hasattr(store, "async_get_active"):
+                active_credentials = await store.async_get_active(str(provider)) or {}
+            active_credentials = solar_credentials_with_legacy_options(
+                str(provider),
+                entry.options,
+                active_credentials,
+            )
+            parsed, error_response = self._parse_payload(
+                payload,
+                dict(entry.options),
+                active_credentials,
+            )
+        if error_response is not None:
+            return error_response
+        if parsed is None:
+            return web.json_response({"error": "Invalid payload"}, status=400)
 
         limiter = get_solar_test_limiter(hass)
         limiter.prune(
             (candidate.entry_id for candidate in hass.config_entries.async_entries(DOMAIN)),
             _SOLAR_TEST_PROVIDERS,
         )
-        lease = await limiter.acquire(entry.entry_id, parsed["provider"])
+        lease = await limiter.acquire(
+            entry.entry_id, parsed["solar_forecast_provider"]
+        )
         if lease is None:
             return web.json_response(
                 {"ok": False, "code": "rate_limited"},
@@ -2070,13 +2194,7 @@ class OIGCloudSolarTestView(HomeAssistantView):
                     status=502,
                 )
 
-            result = await run_solar_candidate_test(
-                session,
-                parsed["provider"],
-                parsed["credentials"],
-                parsed["gps"],
-                parsed["strings"],
-            )
+            result = await run_solar_candidate_test(session, parsed)
         finally:
             lease.release()
         if "code" in result:
@@ -2084,16 +2202,14 @@ class OIGCloudSolarTestView(HomeAssistantView):
                 result,
                 status=504 if result["code"] == "timeout" else 502,
             )
-        store = _solar_key_store_or_none(hass, entry.entry_id)
-        if store is not None:
-            await store.async_set_candidate(parsed["provider"], parsed["credentials"])
-            await store.async_promote_candidate(
-                parsed["provider"], dt_util.utcnow().isoformat()
-            )
-        return web.json_response(result)
+        proof = await SolarProofStore(hass).async_issue(entry.entry_id, parsed)
+        return web.json_response({**result, "proof": proof})
 
     def _parse_payload(
-        self, payload: Dict[str, Any]
+        self,
+        payload: Dict[str, Any],
+        stored_options: Mapping[str, Any],
+        active_credentials: Mapping[str, Any],
     ) -> tuple[Optional[Dict[str, Any]], Optional[web.Response]]:
         unknown = sorted(set(payload) - _SOLAR_TEST_ALLOWED_KEYS)
         if unknown:
@@ -2105,134 +2221,61 @@ class OIGCloudSolarTestView(HomeAssistantView):
         provider = payload.get("provider")
         if not isinstance(provider, str) or provider not in _SOLAR_TEST_PROVIDERS:
             return None, web.json_response({"error": "unknown provider"}, status=400)
-
-        gps, gps_error = self._parse_gps(payload)
-        if gps_error is not None:
-            return None, gps_error
-
-        strings: list[Dict[str, float]] = []
-        for idx in (1, 2):
-            parsed_string, string_error = self._parse_string(payload, idx)
-            if string_error is not None:
-                return None, string_error
-            if parsed_string is not None:
-                strings.append(parsed_string)
-
-        credentials, credential_error = self._parse_credentials(payload, provider)
-        if credential_error is not None:
-            return None, credential_error
-
-        return {
-            "provider": provider,
-            "credentials": credentials,
-            "gps": gps,
-            "strings": strings,
-        }, None
-
-    def _parse_gps(
-        self, payload: Dict[str, Any]
-    ) -> tuple[Optional[Dict[str, float]], Optional[web.Response]]:
-        lat, lat_error = self._required_number(payload, "solar_forecast_latitude")
-        if lat_error is not None:
-            return None, lat_error
-        lon, lon_error = self._required_number(payload, "solar_forecast_longitude")
-        if lon_error is not None:
-            return None, lon_error
-        return {"latitude": lat, "longitude": lon}, None
-
-    def _parse_string(
-        self, payload: Dict[str, Any], idx: int
-    ) -> tuple[Optional[Dict[str, float]], Optional[web.Response]]:
-        enabled_key = f"solar_forecast_string{idx}_enabled"
-        enabled = payload.get(enabled_key, False)
-        if not isinstance(enabled, bool):
+        if "solar_forecast_mode" not in payload:
             return None, web.json_response(
-                {"error": f"{enabled_key} must be boolean"},
+                {"error": "solar_forecast_mode required"}, status=400
+            )
+
+        forecast_only = {
+            "solar_forecast_api_key",
+            "solar_forecast_latitude",
+            "solar_forecast_longitude",
+            "solar_forecast_string1_declination",
+            "solar_forecast_string1_azimuth",
+            "solar_forecast_string2_declination",
+            "solar_forecast_string2_azimuth",
+        }
+        solcast_only = {"solcast_api_key", "solcast_site_id"}
+        forbidden = forecast_only if provider == "solcast" else solcast_only
+        unexpected = sorted(key for key in forbidden if key in payload)
+        if unexpected:
+            return None, web.json_response(
+                {"error": "unexpected provider field", "fields": unexpected},
                 status=400,
             )
 
-        field_keys = [
-            f"solar_forecast_string{idx}_kwp",
-            f"solar_forecast_string{idx}_declination",
-            f"solar_forecast_string{idx}_azimuth",
-        ]
-        if not enabled:
-            present = [key for key in field_keys if key in payload]
-            if present:
-                return None, web.json_response(
-                    {"error": "inactive string fields must be omitted", "fields": present},
-                    status=400,
-                )
-            return None, None
+        for number in (1, 2):
+            enabled_key = f"solar_forecast_string{number}_enabled"
+            if payload.get(enabled_key, stored_options.get(enabled_key, False)) is False:
+                local_fields = [f"solar_forecast_string{number}_kwp"]
+                if provider == "forecast_solar":
+                    local_fields.extend(
+                        (
+                            f"solar_forecast_string{number}_declination",
+                            f"solar_forecast_string{number}_azimuth",
+                        )
+                    )
+                present = [field for field in local_fields if field in payload]
+                if present:
+                    return None, web.json_response(
+                        {"error": "inactive string fields must be omitted", "fields": present},
+                        status=400,
+                    )
 
-        kwp, kwp_error = self._required_number(payload, field_keys[0])
-        if kwp_error is not None:
-            return None, kwp_error
-        declination, declination_error = self._required_number(payload, field_keys[1])
-        if declination_error is not None:
-            return None, declination_error
-        azimuth, azimuth_error = self._required_number(payload, field_keys[2])
-        if azimuth_error is not None:
-            return None, azimuth_error
-        return {
-            "kwp": kwp,
-            "declination": declination,
-            "azimuth": azimuth,
-        }, None
-
-    def _parse_credentials(
-        self, payload: Dict[str, Any], provider: str
-    ) -> tuple[Optional[Dict[str, str]], Optional[web.Response]]:
-        if provider == "forecast_solar":
-            unexpected = sorted(
-                key for key in ("solcast_api_key", "solcast_site_id") if key in payload
-            )
-            if unexpected:
-                return None, web.json_response(
-                    {"error": "unexpected credential field", "fields": unexpected},
-                    status=400,
-                )
-            key = payload.get("solar_forecast_api_key")
-            if not isinstance(key, str) or not key.strip():
-                return None, web.json_response(
-                    {"error": "solar_forecast_api_key required"},
-                    status=400,
-                )
-            return {"solar_forecast_api_key": key.strip()}, None
-
-        if "solar_forecast_api_key" in payload:
+        patch = dict(payload)
+        patch["solar_forecast_provider"] = patch.pop("provider")
+        try:
+            return build_effective_solar_dto(
+                stored_options,
+                active_credentials,
+                patch,
+            ), None
+        except ValueError as err:
+            field = str(err).split(":", 1)[0]
             return None, web.json_response(
-                {
-                    "error": "unexpected credential field",
-                    "fields": ["solar_forecast_api_key"],
-                },
+                {"error": "invalid solar provider configuration", "field": field},
                 status=400,
             )
-
-        api_key = payload.get("solcast_api_key")
-        site_id = payload.get("solcast_site_id")
-        if not isinstance(api_key, str) or not api_key.strip():
-            return None, web.json_response(
-                {"error": "solcast_api_key required"},
-                status=400,
-            )
-        if not isinstance(site_id, str) or not site_id.strip():
-            return None, web.json_response(
-                {"error": "solcast_site_id required"},
-                status=400,
-            )
-        return {"solcast_api_key": api_key.strip(), "solcast_site_id": site_id.strip()}, None
-
-    def _required_number(
-        self, payload: Dict[str, Any], key: str
-    ) -> tuple[Optional[float], Optional[web.Response]]:
-        value = payload.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None, web.json_response(
-                {"error": f"{key} must be numeric"},
-                status=400,
-            )
-        return float(value), None
 
 
 class OIGCloudOnboardingView(HomeAssistantView):
@@ -2549,7 +2592,8 @@ def _build_boiler_blocks(slots: list, now: Any) -> list:
     current: Optional[dict] = None
     for slot in slots:
         cls = _boiler_slot_source_class(slot)
-        if current is None or current["source"] != cls:
+        source_changed = current is None or current.get("source") != cls
+        if source_changed:
             if current is not None:
                 blocks.append(current)
             current = {
@@ -2561,6 +2605,7 @@ def _build_boiler_blocks(slots: list, now: Any) -> list:
                 "_start_dt": slot.start,
                 "_end_dt": slot.end,
             }
+        assert current is not None
         current["end"] = _boiler_hhmm(slot.end)
         current["_end_dt"] = slot.end
         current["planned_kwh"] += _boiler_slot_float(slot, "heating_kwh")

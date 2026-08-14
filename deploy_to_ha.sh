@@ -90,18 +90,18 @@ echo ""
 SMB_AUTO_MOUNTED=0
 if ! mount | grep -q " ${SMB_MOUNT} "; then
     echo -e "${YELLOW}🔌 SMB mount not found, attempting auto-mount...${NC}"
-    
+
     SMB_HOST="${SMB_HOST:-${HA_HOST}}"
-    
+
     if [[ -z "${SMB_LOGIN}" ]] || [[ -z "${SMB_PASS}" ]] || [[ -z "${SMB_HOST}" ]]; then
         echo -e "${RED}❌ Missing SMB credentials in ${HA_CONFIG}${NC}" >&2
         echo "Required: SMB_LOGIN, SMB_PASS, and (SMB_HOST or HA_HOST)" >&2
         exit 1
     fi
-    
+
     SMB_SHARE="config"
     echo "Mounting: //${SMB_HOST}/${SMB_SHARE} → ${SMB_MOUNT}"
-    
+
     if mount_smbfs "//${SMB_LOGIN}:${SMB_PASS}@${SMB_HOST}/${SMB_SHARE}" "${SMB_MOUNT}" 2>/dev/null; then
         echo -e "${GREEN}✅ SMB mounted successfully${NC}"
         SMB_AUTO_MOUNTED=1
@@ -112,14 +112,14 @@ if ! mount | grep -q " ${SMB_MOUNT} "; then
             echo "Add SUDO_PASS=your_password to .ha_config" >&2
             exit 1
         fi
-        
+
         if ! [[ -d "${SMB_MOUNT}" ]]; then
             echo "${SUDO_PASS}" | sudo -S mkdir -p "${SMB_MOUNT}" 2>/dev/null || {
                 echo -e "${RED}❌ Cannot create mount point: ${SMB_MOUNT}${NC}" >&2
                 exit 1
             }
         fi
-        
+
         if echo "${SUDO_PASS}" | sudo -S mount_smbfs "//${SMB_LOGIN}:${SMB_PASS}@${SMB_HOST}/${SMB_SHARE}" "${SMB_MOUNT}" 2>/dev/null; then
             echo -e "${GREEN}✅ SMB mounted successfully (with sudo)${NC}"
             SMB_AUTO_MOUNTED=1

@@ -1,19 +1,28 @@
-# Testing dependencies
-pytest==8.3.4
-pytest-cov==6.0.0
-pytest-asyncio==0.24.0
-pytest-homeassistant-custom-component==0.13.205
+# Runtime constraints, including the canonical Home Assistant target.
+-r requirements.in
+
+# Canonical Home Assistant test harness; its metadata owns exact test versions.
+pytest-homeassistant-custom-component==0.13.355
+pylint==4.0.7
+pre-commit==4.6.1
+
+# Additional testing dependencies not provided by the canonical harness.
+pylint-per-file-ignores==1.4.0
+pytest-sugar==1.0.0
 openpyxl==3.1.5
+
+# Exact resolver used by the canonical lock generator and CI lock check.
+uv==0.11.31
 
 # Linting dependencies
 flake8==7.3.0
-black==25.11.0
+black==26.3.1
 isort==7.0.0
 pip-tools==7.5.2
 
 # Optional: Type checking
 mypy==1.18.2
 
-# Python-version compatibility for CI (3.12)
+# Python-version compatibility for the canonical Python 3.14 CI runtime.
 annotatedyaml==0.4.5; python_version < "3.13"
 annotatedyaml==1.0.2; python_version >= "3.13"

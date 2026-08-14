@@ -21,7 +21,7 @@ export function debounce<T extends (...args: any[]) => any>(
   delay: number
 ): (...args: Parameters<T>) => void {
   let timeoutId: number | null = null;
-  
+
   return function(this: any, ...args: Parameters<T>) {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
@@ -38,7 +38,7 @@ export function throttle<T extends (...args: any[]) => any>(
   delay: number
 ): (...args: Parameters<T>) => void {
   let lastCall = 0;
-  
+
   return function(this: any, ...args: Parameters<T>) {
     const now = Date.now();
     if (now - lastCall >= delay) {
@@ -79,7 +79,7 @@ export function waitForElement(selector: string, timeout: number = 5000): Promis
       resolve(element);
       return;
     }
-    
+
     const observer = new MutationObserver((_mutations, obs) => {
       const element = document.querySelector(selector);
       if (element) {
@@ -87,12 +87,12 @@ export function waitForElement(selector: string, timeout: number = 5000): Promis
         resolve(element);
       }
     });
-    
+
     observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
-    
+
     setTimeout(() => {
       observer.disconnect();
       reject(new Error(`Element ${selector} not found within ${timeout}ms`));

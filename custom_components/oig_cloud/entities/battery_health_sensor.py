@@ -37,7 +37,6 @@ if TYPE_CHECKING:
 
         def __init__(self, coordinator: Any) -> None: ...
         async def async_added_to_hass(self) -> None: ...
-        def async_write_ha_state(self) -> None: ...
 
 else:
     from homeassistant.helpers.update_coordinator import (
@@ -93,7 +92,8 @@ class BatteryHealthTracker:
         self._stats_backfill_until: Optional[datetime] = None
 
         _LOGGER.info(
-            f"BatteryHealthTracker initialized, nominal capacity: {nominal_capacity_kwh:.2f} kWh"
+            "BatteryHealthTracker initialized, nominal capacity: %.2f kWh",
+            nominal_capacity_kwh,
         )
 
     def is_analysis_due(self, now: Optional[datetime] = None) -> bool:
@@ -135,10 +135,10 @@ class BatteryHealthTracker:
                         data["stats_backfill_until"]
                     )
                 _LOGGER.info(
-                    f"Loaded {len(self._measurements)} measurements from storage"
+                    "Loaded %s measurements from storage", len(self._measurements)
                 )
         except Exception as e:
-            _LOGGER.error(f"Error loading from storage: {e}")
+            _LOGGER.error("Error loading from storage: %s", e)
 
     async def async_save_to_storage(self) -> None:  # pragma: no cover
         """Uložit měření do storage."""
@@ -158,9 +158,9 @@ class BatteryHealthTracker:
                 "nominal_capacity_kwh": self._nominal_capacity_kwh,
             }
             await self._store.async_save(data)
-            _LOGGER.debug(f"Saved {len(self._measurements)} measurements to storage")
+            _LOGGER.debug("Saved %s measurements to storage", len(self._measurements))
         except Exception as e:
-            _LOGGER.error(f"Error saving to storage: {e}")
+            _LOGGER.error("Error saving to storage: %s", e)
 
     async def analyze_last_10_days(
         self,
@@ -178,7 +178,9 @@ class BatteryHealthTracker:
         end_time = dt_util.now()
         start_time = end_time - timedelta(days=self._recorder_days)
 
-        _LOGGER.info(f"Analyzing {start_time} to {end_time} for clean charging cycles")
+        _LOGGER.info(
+            "Analyzing %s to %s for clean charging cycles", start_time, end_time
+        )
 
         # Entity IDs - batt_bat_c je správný název (ne bat_c)
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
@@ -192,7 +194,9 @@ class BatteryHealthTracker:
             recorder_instance_factory = getattr(
                 recorder_module, "get_instance", recorder_get_instance
             )
-            history = await recorder_instance_factory(self._hass).async_add_executor_job(
+            history = await recorder_instance_factory(
+                self._hass
+            ).async_add_executor_job(
                 get_significant_states,
                 self._hass,
                 start_time,
@@ -226,7 +230,7 @@ class BatteryHealthTracker:
             # Najít monotónní nabíjecí intervaly
             cycles = self._find_monotonic_charging_intervals(soc_states)
             _LOGGER.info(
-                f"Found {len(cycles)} monotonic charging intervals (ΔSoC ≥50%)"
+                "Found %s monotonic charging intervals (ΔSoC ≥50%%)", len(cycles)
             )
 
             # Pro každý interval spočítat kapacitu
@@ -253,12 +257,14 @@ class BatteryHealthTracker:
 
             await self.async_save_to_storage()
             if new_measurements:
-                _LOGGER.info(f"Found {len(new_measurements)} new clean charging cycles")
+                _LOGGER.info(
+                    "Found %s new clean charging cycles", len(new_measurements)
+                )
 
             return new_measurements
 
         except Exception as e:
-            _LOGGER.error(f"Error analyzing history: {e}", exc_info=True)
+            _LOGGER.error("Error analyzing history: %s", e, exc_info=True)
             return []
 
     async def backfill_from_statistics(
@@ -638,7 +644,7 @@ class BatteryHealthTracker:
 
         if charge_start is None or charge_end is None:
             _LOGGER.debug(
-                f"Missing charge values for interval {start_time} → {end_time}"
+                "Missing charge values for interval %s → %s", start_time, end_time
             )
             return None
 
@@ -962,7 +968,7 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
         self._refresh_entity_state()
 
         _LOGGER.info(
-            f"Battery Health sensor initialized for box {self._box_id}"
+            "Battery Health sensor initialized for box %s", self._box_id
         )  # pragma: no cover
 
     def _refresh_entity_state(self) -> None:
@@ -985,11 +991,7 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
         attrs: Dict[str, Any] = {
             "nominal_capacity_kwh": self._nominal_capacity_kwh,
             "measurement_count": len(measurements),
-            "last_analysis": (
-                last_analysis.isoformat()
-                if last_analysis
-                else None
-            ),
+            "last_analysis": (last_analysis.isoformat() if last_analysis else None),
         }
 
         capacity = (
@@ -1059,9 +1061,7 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
             "recorder_days": getattr(self._tracker, "_recorder_days", None),
             "stats_backfill_days": getattr(self._tracker, "_stats_backfill_days", None),
             "stats_backfill_until": (
-                stats_backfill_until.isoformat()
-                if stats_backfill_until
-                else None
+                stats_backfill_until.isoformat() if stats_backfill_until else None
             ),
         }
         attrs["measurement_history"] = [
@@ -1110,7 +1110,9 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
         actual_capacity = self._get_nominal_capacity_kwh()
         if actual_capacity != self._nominal_capacity_kwh:
             _LOGGER.info(
-                f"Battery nominal capacity updated from sensor: {actual_capacity} kWh (was {self._nominal_capacity_kwh} kWh)"
+                "Battery nominal capacity updated from sensor: %s kWh (was %s kWh)",
+                actual_capacity,
+                self._nominal_capacity_kwh,
             )
             self._nominal_capacity_kwh = actual_capacity
 

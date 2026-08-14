@@ -30,7 +30,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         self._device_info = device_info  # OPRAVA: použijeme předané device_info
 
         # Debug logování při inicializaci
-        _LOGGER.debug(f"💰 Initializing analytics sensor: {sensor_type}")
+        _LOGGER.debug("💰 Initializing analytics sensor: %s", sensor_type)
 
         # OPRAVA: Nastavit _box_id a entity_id podle vzoru z computed sensors
         self._box_id = resolve_box_id(coordinator)
@@ -58,12 +58,14 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         try:
             # OPRAVA: Kontrola dostupnosti na začátku
             if not self.available:
-                _LOGGER.debug(f"💰 [{self.entity_id}] Not available, returning None")
+                _LOGGER.debug("💰 [%s] Not available, returning None", self.entity_id)
                 return None
 
             # Debug - zkontrolujme coordinator data
             _LOGGER.debug(
-                f"💰 [{self.entity_id}] Coordinator data keys: {list(self.coordinator.data.keys()) if self.coordinator.data else 'None'}"
+                "💰 [%s] Coordinator data keys: %s",
+                self.entity_id,
+                list(self.coordinator.data.keys()) if self.coordinator.data else "None",
             )
 
             # Pro tarifní senzor
@@ -74,14 +76,18 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             if self.coordinator.data and "spot_prices" in self.coordinator.data:
                 spot_data = self.coordinator.data["spot_prices"]
                 _LOGGER.debug(
-                    f"💰 [{self.entity_id}] Spot data keys: {list(spot_data.keys()) if spot_data else 'None'}"
+                    "💰 [%s] Spot data keys: %s",
+                    self.entity_id,
+                    list(spot_data.keys()) if spot_data else "None",
                 )
                 return self._get_spot_price_value(spot_data)
 
-            _LOGGER.debug(f"💰 [{self.entity_id}] No spot_prices in coordinator data")
+            _LOGGER.debug("💰 [%s] No spot_prices in coordinator data", self.entity_id)
         except Exception as err:
             _LOGGER.error(
-                f"💰 [{self.entity_id}] Error getting native value: {err}",
+                "💰 [%s] Error getting native value: %s",
+                self.entity_id,
+                err,
                 exc_info=True,
             )
             return None
@@ -101,9 +107,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         """Calculate current tariff based on time and day."""
         return self._get_tariff_for_datetime(dt_util.now())
 
-    def _get_tariff_change_hours(
-        self, is_weekend: bool
-    ) -> Tuple[List[int], List[int]]:
+    def _get_tariff_change_hours(self, is_weekend: bool) -> Tuple[List[int], List[int]]:
         options = self._entry.options
         if is_weekend:
             nt_times = self._parse_tariff_times(
@@ -121,7 +125,9 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             )
         return nt_times, vt_times
 
-    def _build_tariff_changes(self, nt_times: List[int], vt_times: List[int]) -> List[Tuple[int, str]]:
+    def _build_tariff_changes(
+        self, nt_times: List[int], vt_times: List[int]
+    ) -> List[Tuple[int, str]]:
         changes: List[Tuple[int, str]] = []
         for hour in nt_times:
             changes.append((hour, "NT"))
@@ -209,7 +215,9 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
         return intervals
 
-    def _get_tariff_times_for_day(self, is_weekend: bool) -> Tuple[List[int], List[int]]:
+    def _get_tariff_times_for_day(
+        self, is_weekend: bool
+    ) -> Tuple[List[int], List[int]]:
         return self._get_tariff_change_hours(is_weekend)
 
     def _append_day_intervals(
@@ -234,7 +242,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
     @staticmethod
     def _iter_change_intervals(
-        changes: List[Tuple[int, str]]
+        changes: List[Tuple[int, str]],
     ) -> List[Tuple[int, int, str]]:
         result: List[Tuple[int, int, str]] = []
         for idx, (start_hour, tariff) in enumerate(changes):
@@ -319,7 +327,9 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
         vat_rate = self._entry.options.get("vat_rate", 21.0)
 
-        def calculate_fixed_final_price(target_datetime: Optional[datetime] = None) -> float:
+        def calculate_fixed_final_price(
+            target_datetime: Optional[datetime] = None,
+        ) -> float:
             return self._calculate_fixed_final_price(
                 target_datetime,
                 dual_tariff_enabled=dual_tariff_enabled,
@@ -358,9 +368,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         else:
             current_tariff = "VT"
 
-        commercial_price = (
-            fixed_price_vt if current_tariff == "VT" else fixed_price_nt
-        )
+        commercial_price = fixed_price_vt if current_tariff == "VT" else fixed_price_nt
         distribution_fee = (
             distribution_fee_vt_kwh
             if current_tariff == "VT"
@@ -425,9 +433,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         use_min: bool,
     ) -> float:
         if dual_tariff_enabled:
-            candidate = (
-                min if use_min else max
-            )(
+            candidate = (min if use_min else max)(
                 fixed_price_vt + distribution_fee_vt_kwh,
                 fixed_price_nt + distribution_fee_nt_kwh,
             )
@@ -562,9 +568,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                 )
                 commercial_price = spot_price_czk * (1 - fee_percent / 100.0)
         else:  # fixed
-            fee_mwh = (
-                fixed_fee_mwh_nt if current_tariff == "NT" else fixed_fee_mwh
-            )
+            fee_mwh = fixed_fee_mwh_nt if current_tariff == "NT" else fixed_fee_mwh
             fixed_fee_kwh = fee_mwh / 1000.0  # MWh -> kWh
             commercial_price = spot_price_czk + fixed_fee_kwh
 
@@ -683,7 +687,9 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             )
         return attrs
 
-    def _build_spot_hourly_attributes(self, spot_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_spot_hourly_attributes(
+        self, spot_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
         attrs: Dict[str, Any] = {}
         if pricing_model == "fixed_prices":
@@ -706,7 +712,10 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         return attrs
 
     def _build_pricing_metadata(self, pricing_model: str) -> Dict[str, Any]:
-        if "czk" not in self._sensor_type or self._sensor_type == "eur_czk_exchange_rate":
+        if (
+            "czk" not in self._sensor_type
+            or self._sensor_type == "eur_czk_exchange_rate"
+        ):
             return {}
 
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
@@ -760,12 +769,15 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         pricing_enabled = self._entry.options.get("enable_pricing", False)
 
         if not pricing_enabled:
-            _LOGGER.debug(f"💰 [{self.entity_id}] Unavailable - pricing disabled")
+            _LOGGER.debug("💰 [%s] Unavailable - pricing disabled", self.entity_id)
             return False  # Cenové senzory jsou vypnuté - senzor není dostupný
 
         is_available = self.coordinator.last_update_success
         _LOGGER.debug(
-            f"💰 [{self.entity_id}] Available check: coordinator_success={is_available}, pricing_enabled={pricing_enabled}"
+            "💰 [%s] Available check: coordinator_success=%s, pricing_enabled=%s",
+            self.entity_id,
+            is_available,
+            pricing_enabled,
         )
 
         return is_available
@@ -790,9 +802,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
                 time_key = hour_datetime.strftime("%Y-%m-%dT%H:00:00")
                 tariff = self._get_tariff_for_datetime(hour_datetime)
 
-                commercial_price = (
-                    fixed_price_vt if tariff == "VT" else fixed_price_nt
-                )
+                commercial_price = fixed_price_vt if tariff == "VT" else fixed_price_nt
                 distribution_fee = (
                     distribution_fee_vt_kwh
                     if tariff == "VT"

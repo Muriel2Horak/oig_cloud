@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node scripts/build-v2.mjs",
+    "build:verify": "node scripts/build-v2.mjs --verify-dist",
+    "build:install": "node scripts/build-v2.mjs --install",
     "preview": "vite preview",
     "tsc": "tsc --noEmit",
     "test:unit": "vitest run",

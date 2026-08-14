@@ -46,6 +46,13 @@ class AiKeyStore:
         await self._store.async_save(data)
         _LOGGER.debug("AI key stored for provider %s", provider)
 
+    async def async_set_fallback(self, provider: str, api_key: str) -> None:
+        """Store the cross-provider fallback key, leaving the primary untouched."""
+        data = await self._async_data()
+        data.update({"fallback_provider": provider, "fallback_api_key": api_key})
+        await self._store.async_save(data)
+        _LOGGER.debug("AI fallback key stored for provider %s", provider)
+
     async def async_clear(self) -> None:
         """Delete the per-entry private AI key store."""
         try:

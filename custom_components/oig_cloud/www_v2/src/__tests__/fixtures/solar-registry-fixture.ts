@@ -21,7 +21,7 @@ export const SOLAR_REGISTRY_FIXTURE: FieldRegistry = {
       label: 'field.solar_forecast_mode.label',
       hint: 'field.solar_forecast_mode.hint',
       default: 'hourly',
-      enum: ['hourly', 'four_hour'],
+      enum: ['hourly', 'every_4h', 'daily', 'daily_optimized'],
       show_if: { field: 'solar_forecast_provider', in: ['forecast_solar'] },
     },
     solcast_api_key: {
@@ -41,12 +41,14 @@ export const SOLAR_REGISTRY_FIXTURE: FieldRegistry = {
       label: 'field.solar_forecast_latitude.label',
       hint: 'field.solar_forecast_latitude.hint',
       min: -90, max: 90, step: 0.0001,
+      show_if: { field: 'solar_forecast_provider', in: ['forecast_solar'] },
     },
     solar_forecast_longitude: {
       section: 'solar', type: 'float', scope: 'premium',
       label: 'field.solar_forecast_longitude.label',
       hint: 'field.solar_forecast_longitude.hint',
       min: -180, max: 180, step: 0.0001,
+      show_if: { field: 'solar_forecast_provider', in: ['forecast_solar'] },
     },
     solar_forecast_string1_enabled: {
       section: 'solar', type: 'bool', scope: 'premium',
@@ -67,13 +69,15 @@ export const SOLAR_REGISTRY_FIXTURE: FieldRegistry = {
       hint: 'field.solar_forecast_string1_declination.hint',
       min: 0, max: 90,
       show_if: { field: 'solar_forecast_string1_enabled', in: [true] },
+      show_if_all: [{ field: 'solar_forecast_provider', in: ['forecast_solar'] }],
     },
     solar_forecast_string1_azimuth: {
       section: 'solar', type: 'int', scope: 'premium',
       label: 'field.solar_forecast_string1_azimuth.label',
       hint: 'field.solar_forecast_string1_azimuth.hint',
-      min: -180, max: 180,
+      min: 0, max: 360, step: 1,
       show_if: { field: 'solar_forecast_string1_enabled', in: [true] },
+      show_if_all: [{ field: 'solar_forecast_provider', in: ['forecast_solar'] }],
     },
     solar_forecast_string2_enabled: {
       section: 'solar', type: 'bool', scope: 'premium',
@@ -94,13 +98,15 @@ export const SOLAR_REGISTRY_FIXTURE: FieldRegistry = {
       hint: 'field.solar_forecast_string2_declination.hint',
       min: 0, max: 90,
       show_if: { field: 'solar_forecast_string2_enabled', in: [true] },
+      show_if_all: [{ field: 'solar_forecast_provider', in: ['forecast_solar'] }],
     },
     solar_forecast_string2_azimuth: {
       section: 'solar', type: 'int', scope: 'premium',
       label: 'field.solar_forecast_string2_azimuth.label',
       hint: 'field.solar_forecast_string2_azimuth.hint',
-      min: -180, max: 180,
+      min: 0, max: 360, step: 1,
       show_if: { field: 'solar_forecast_string2_enabled', in: [true] },
+      show_if_all: [{ field: 'solar_forecast_provider', in: ['forecast_solar'] }],
     },
   },
 };

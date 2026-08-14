@@ -55,7 +55,7 @@ export const SOLAR_PROVIDER_GUIDES: Record<string, SolarProviderGuide> = {
     registerUrl: 'https://forecast.solar/en/pricing.html',
     keysUrl: 'https://account.forecast.solar',
     steps: [
-      'Zdarma funguje i bez klíče — ale jen v režimu "Denně, optimalizovaně". Klíč je potřeba jen pro rychlejší aktualizace (každou hodinu / každé 4 hodiny).',
+      'Zdarma funguje bez klíče v režimu "Denně" i "Denně, optimalizovaně". Klíč je potřeba pro rychlejší aktualizace (každou hodinu / každé 4 hodiny).',
       'Otevři forecast.solar/en/pricing.html a vyber si placený tarif (Personal apod.) — platba probíhá přes PayPal.',
       'Po zaplacení přijdou na tvůj PayPal e-mail dva e-maily: jeden od PayPal, druhý od Forecast.Solar s API klíčem.',
       'Klíč kdykoliv najdeš nebo obnovíš na account.forecast.solar (přihlášení přes PayPal subscription ID + e-mail).',
@@ -69,6 +69,7 @@ export const SOLAR_PROVIDER_GUIDES: Record<string, SolarProviderGuide> = {
       'Solcast vyžaduje bezplatnou registraci — API klíč i Site ID najdete ve svém Toolkit účtu.',
       'Otevřete toolkit.solcast.com.au a zaregistrujte se (e-mail).',
       'API klíč najdete v nastavení účtu (API Key) — zkopírujte ho do pole níže.',
+      'Geometrii a výkon nastavte v Rooftop Site. Místní kWp v OIG slouží jen k rozdělení výstupu a jako záložní metadata; Solcastu se neposílá.',
     ],
     siteIdSteps: [
       'V Toolkitu přidejte svou střechu jako Rooftop Site (adresa, výkon a orientace panelů).',

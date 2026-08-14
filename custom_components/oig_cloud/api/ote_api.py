@@ -310,7 +310,7 @@ class OteApi:
         )
 
     async def _download_soap(self, body_xml: str, action: str) -> str:
-        _LOGGER.debug(f"Sending SOAP request to {OTE_PUBLIC_URL} action={action}")
+        _LOGGER.debug("Sending SOAP request to %s action=%s", OTE_PUBLIC_URL, action)
         try:
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -321,7 +321,7 @@ class OteApi:
                     ssl=await _get_ssl_context_async(),
                 ) as response:
                     text = await response.text()
-                    _LOGGER.debug(f"SOAP Response status: {response.status}")
+                    _LOGGER.debug("SOAP Response status: %s", response.status)
                     if response.status != 200:
                         raise aiohttp.ClientError(
                             f"HTTP {response.status}: {text[:500]}"
@@ -439,11 +439,11 @@ class OteApi:
                 rate_float = float(eur_rate)
                 self._eur_czk_rate = rate_float
                 self._rate_cache_time = datetime.now()
-                _LOGGER.info(f"Successfully fetched CNB rate: {rate_float}")
+                _LOGGER.info("Successfully fetched CNB rate: %s", rate_float)
                 return rate_float
             _LOGGER.warning("EUR rate not found in CNB response")
         except Exception as e:
-            _LOGGER.warning(f"Error fetching CNB rate: {e}")
+            _LOGGER.warning("Error fetching CNB rate: %s", e)
 
         return None
 
@@ -634,7 +634,7 @@ class OteApi:
         has_tomorrow = any(key.startswith(tomorrow_prefix) for key in prices.keys())
         if has_tomorrow:
             return data
-        _LOGGER.warning(
+        _LOGGER.info(
             "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
         )
         try:
@@ -644,7 +644,10 @@ class OteApi:
             qh_eur_kwh.update(qh_eur_kwh_tomorrow)
             return await self._build_spot_data(qh_eur_kwh, eur_czk_rate, date_value)
         except Exception as err:
-            _LOGGER.warning("Retry for tomorrow data failed: %s", err)
+            _LOGGER.warning(
+                "Retry for tomorrow data failed (error_class=%s)",
+                type(err).__name__,
+            )
             return data
 
     async def _persist_spot_cache(self, data: Dict[str, Any]) -> None:

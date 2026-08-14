@@ -57,18 +57,18 @@ import { ApiClient } from '@/data/api';
 
 describe('ApiClient', () => {
   let client: ApiClient;
-  
+
   beforeEach(() => {
     client = new ApiClient({ baseUrl: '/api' });
   });
-  
+
   describe('fetchWithAuth', () => {
     it('should include auth header', async () => {
       const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({}) });
       global.fetch = mockFetch;
-      
+
       await client.fetch('/test', { token: 'test-token' });
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/test',
         expect.objectContaining({
@@ -78,19 +78,19 @@ describe('ApiClient', () => {
         })
       );
     });
-    
+
     it('should deduplicate concurrent requests', async () => {
-      const mockFetch = vi.fn().mockImplementation(() => 
+      const mockFetch = vi.fn().mockImplementation(() =>
         new Promise(r => setTimeout(() => r({ ok: true, json: () => ({ data: 1 }) }), 100))
       );
       global.fetch = mockFetch;
-      
+
       const results = await Promise.all([
         client.fetch('/same', { token: 't' }),
         client.fetch('/same', { token: 't' }),
         client.fetch('/same', { token: 't' })
       ]);
-      
+
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(results).toHaveLength(3);
     });
@@ -127,25 +127,25 @@ describe('FlowFeature Integration', () => {
   it('should update nodes when entities change', async () => {
     const store = new EntityStore();
     const flow = await fixture<FlowFeature>(html`<oig-flow .store=${store}></oig-flow>`);
-    
+
     // Initial state
     expect(flow.shadowRoot?.querySelector('.battery-node .soc').textContent).toBe('0%');
-    
+
     // Update entity
     store.updateEntity('sensor.battery_soc', { state: '75' });
-    
+
     // Should reflect
     await flow.updateComplete;
     expect(flow.shadowRoot?.querySelector('.battery-node .soc').textContent).toBe('75%');
   });
-  
+
   it('should start particles when flow > 0', async () => {
     const store = new EntityStore();
     const flow = await fixture<FlowFeature>(html`<oig-flow .store=${store}></oig-flow>`);
-    
+
     store.updateEntity('sensor.solar_power', { state: '5000' });
     await flow.updateComplete;
-    
+
     expect(flow.particleEngine.isRunning).toBe(true);
   });
 });
@@ -191,54 +191,54 @@ test.describe('Dashboard', () => {
     await page.goto('/oig-cloud-v2');
     await page.waitForLoadState('networkidle');
   });
-  
+
   test('E2E-01: Dashboard loads successfully', async ({ page }) => {
     // Header visible
     await expect(page.locator('header')).toBeVisible();
     await expect(page.locator('header h1')).toContainText('Energetické Toky');
-    
+
     // Tabs visible
     await expect(page.locator('[role="tablist"]')).toBeVisible();
     await expect(page.locator('[role="tab"]')).toHaveCount(3);
-    
+
     // Default tab content
     await expect(page.locator('[role="tabpanel"].active')).toBeVisible();
   });
-  
+
   test('E2E-02: Tab navigation works', async ({ page }) => {
     const tabs = ['Toky', 'Predikce a statistiky', 'Bojler'];
-    
+
     for (const tabName of tabs) {
       await page.click(`[role="tab"]:text("${tabName}")`);
       await expect(page.locator(`[role="tabpanel"].active`)).toBeVisible();
       await expect(page.locator('[role="tab"][aria-selected="true"]')).toContainText(tabName);
     }
   });
-  
+
   test('E2E-03: Flow particles animate', async ({ page }) => {
     await page.click('[role="tab"]:text("Toky")');
-    
+
     // Wait for particles
     await page.waitForSelector('.particle', { timeout: 5000 });
-    
+
     // Check animation
     const particle = page.locator('.particle').first();
     const box1 = await particle.boundingBox();
     await page.waitForTimeout(500);
     const box2 = await particle.boundingBox();
-    
+
     expect(box1?.x).not.toBe(box2?.x);
   });
-  
+
   test('E2E-04: Pricing chart zoom', async ({ page }) => {
     await page.click('[role="tab"]:text("Predikce a statistiky")');
     await page.waitForSelector('canvas');
-    
+
     // Zoom with wheel
     const canvas = page.locator('canvas');
     await canvas.hover();
     await page.mouse.wheel(0, -100);
-    
+
     // Reset button should appear
     await expect(page.locator('button:has-text("Reset")')).toBeVisible();
   });
@@ -273,11 +273,11 @@ test.describe('Visual Regression', () => {
     await page.route('**/api/states/**', route => {
       route.fulfill({ json: { state: '5000' } });
     });
-    
+
     await page.goto('/oig-cloud-v2');
     await page.click('[role="tab"]:text("Toky")');
     await page.waitForSelector('.particle');
-    
+
     await expect(page).toHaveScreenshot('flow-solar.png', {
       maxDiffPixels: 100
     });
@@ -307,19 +307,19 @@ test('Initial load performance', async ({ page }) => {
   await page.goto('/oig-cloud-v2');
   await page.waitForSelector('[role="tabpanel"].active');
   const loadTime = Date.now() - start;
-  
+
   expect(loadTime).toBeLessThan(2000);
 });
 
 test('Tab switch performance', async ({ page }) => {
   await page.goto('/oig-cloud-v2');
-  
+
   for (let i = 0; i < 10; i++) {
     const start = Date.now();
     await page.click('[role="tab"]:nth-child(' + ((i % 3) + 1) + ')');
     await page.waitForSelector('[role="tabpanel"].active');
     const switchTime = Date.now() - start;
-    
+
     expect(switchTime).toBeLessThan(400);
   }
 });

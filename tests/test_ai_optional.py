@@ -5,6 +5,8 @@ from __future__ import annotations
 import builtins
 import importlib
 import inspect
+from pathlib import Path
+import re
 
 
 def test_integration_imports_without_ai_task(monkeypatch):
@@ -31,16 +33,45 @@ def test_integration_imports_without_ai_task(monkeypatch):
         "AI_TASK platform must not be forwarded on an HA without ai_task"
 
 
-def test_ai_task_platform_is_added_only_when_the_constant_exists():
-    """The guard at __init__.py:63 keys off hasattr(Platform, 'AI_TASK')."""
+def test_ai_task_platform_is_added_only_when_enum_and_module_exist():
+    """AI forwarding requires both the enum member and an importable module."""
     from homeassistant.const import Platform
 
     import custom_components.oig_cloud as oig
     importlib.reload(oig)
 
-    expected = hasattr(Platform, "AI_TASK")
+    expected = hasattr(Platform, "AI_TASK") and oig._ai_task_platform_available()
     got = any("ai_task" in str(p).lower() for p in oig.PLATFORMS)
     assert got is expected
+
+
+def test_ai_task_platform_is_unavailable_without_enum_member(monkeypatch):
+    """An older HA enum must disable AI discovery before importing its module."""
+    from homeassistant.const import Platform
+
+    import custom_components.oig_cloud as oig
+
+    class LegacyPlatform:
+        SENSOR = Platform.SENSOR
+        SWITCH = Platform.SWITCH
+
+    monkeypatch.setattr(oig, "Platform", LegacyPlatform)
+
+    assert oig._ai_task_platform_available() is False
+
+
+def test_home_assistant_dependency_pins_match_canonical_input():
+    """Runtime and development locks must use the canonical HP HA target."""
+    root = Path(__file__).parents[1]
+    files = ("requirements.in", "requirements.txt", "requirements-dev.txt")
+    versions = {}
+    for name in files:
+        content = (root / name).read_text(encoding="utf-8")
+        match = re.search(r"^homeassistant==([^\s\\]+)", content, re.MULTILINE)
+        assert match is not None, f"{name} must declare a Home Assistant version"
+        versions[name] = match.group(1)
+
+    assert versions == dict.fromkeys(files, "2026.8.1")
 
 
 def test_ai_backend_module_has_no_ai_task_dependency():

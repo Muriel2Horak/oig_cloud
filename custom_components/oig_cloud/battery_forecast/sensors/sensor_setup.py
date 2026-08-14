@@ -83,7 +83,13 @@ def initialize_sensor(
     sensor._auto_switch_retry_unsub = None
     sensor._auto_switch_watchdog_unsub = None
     sensor._auto_switch_watchdog_interval = timedelta(seconds=30)
+    sensor._forecast_retry_active = True
+    # Monotonic across repeated initialization: resetting to 0 on a second
+    # init call would let a stale pre-reinit closure's captured generation
+    # collide with a freshly-advanced one and pass its staleness guard.
+    sensor._forecast_retry_generation = getattr(sensor, "_forecast_retry_generation", 0)
     sensor._forecast_retry_unsub = None
+    sensor._forecast_retry_tasks = set()
 
     # Log throttling to prevent HA "logging too frequently" warnings.
     sensor._log_last_ts = sensor._GLOBAL_LOG_LAST_TS

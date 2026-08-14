@@ -106,7 +106,7 @@ class ChmuApi:
                     if not text or len(text) < 100:
                         raise ChmuApiError("Prázdný nebo neplatný CAP XML response")
 
-                    _LOGGER.debug(f"CAP XML úspěšně staženo ({len(text)} znaků)")
+                    _LOGGER.debug("CAP XML úspěšně staženo (%s znaků)", len(text))
                     return text
 
         except asyncio.TimeoutError:
@@ -172,7 +172,7 @@ class ChmuApi:
         try:
             root = ET.fromstring(xml_text)  # nosec B314
         except ET.ParseError as e:
-            _LOGGER.error(f"Chyba parsování CAP XML: {e}")
+            _LOGGER.error("Chyba parsování CAP XML: %s", e)
             return []
 
         alerts = []
@@ -189,10 +189,10 @@ class ChmuApi:
                     if alert_data:
                         alerts.append(alert_data)
                 except Exception as e:
-                    _LOGGER.warning(f"Chyba při parsování info bloku: {e}")
+                    _LOGGER.warning("Chyba při parsování info bloku: %s", e)
                     continue
 
-        _LOGGER.info(f"Naparsováno {len(alerts)} varování z CAP XML")
+        _LOGGER.info("Naparsováno %s varování z CAP XML", len(alerts))
         return alerts
 
     def _parse_info_block(
@@ -328,7 +328,7 @@ class ChmuApi:
 
             return points if len(points) >= 3 else None
         except (ValueError, IndexError):
-            _LOGGER.warning(f"Neplatný polygon formát: {polygon_text}")
+            _LOGGER.warning("Neplatný polygon formát: %s", polygon_text)
             return None
 
     def _parse_circle(self, circle_text: str) -> Optional[Dict[str, float]]:
@@ -354,7 +354,7 @@ class ChmuApi:
                 "radius_km": radius_km,
             }
         except (ValueError, IndexError):
-            _LOGGER.warning(f"Neplatný circle formát: {circle_text}")
+            _LOGGER.warning("Neplatný circle formát: %s", circle_text)
             return None
 
     def _get_text(self, elem: ET.Element, tag: str, default: str = "") -> str:

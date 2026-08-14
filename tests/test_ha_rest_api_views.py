@@ -1304,21 +1304,153 @@ async def test_module_config_post_rejects_disabling_every_string(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_module_config_post_normalises_a_legacy_unsigned_azimuth(monkeypatch):
-    """M2: the registry pins azimuth to -180..180 (config_registry.py:166) but the
-    flow's normalisation (steps.py:1662) never ran on the REST path — a stored
-    legacy 270 used to 400 on the next save."""
+@pytest.mark.parametrize("value", [0, 90, 138, 180, 270, 360])
+async def test_module_config_post_persists_compass_azimuth_unchanged(
+    monkeypatch, value
+):
     entry = _solar_entry()
     hass = DummyHass(DummyConfigEntries([entry]))
     monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
     view = api_module.OIGCloudModuleConfigView()
     req = _module_config_request(hass, {
-        "section": "solar", "values": {"solar_forecast_string1_azimuth": 270}})
+        "section": "solar", "values": {"solar_forecast_string1_azimuth": value}})
 
     resp = await view.post(req, "box1")
 
     assert resp.status == 200
+    assert entry.options["solar_forecast_string1_azimuth"] == value
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_renders_legacy_negative_with_exact_metadata(monkeypatch):
+    entry = _solar_entry(solar_forecast_string1_azimuth=-90)
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+
+    response = await api_module.OIGCloudModuleConfigView().get(
+        _module_config_request(hass, {}), "box1"
+    )
+    body = json.loads(response.text)
+
+    assert body["solar"]["solar_forecast_string1_azimuth"] == 90
+    assert body["_meta"]["legacy_fields"]["solar_forecast_string1_azimuth"] == {
+        "stored_value": -90,
+        "display_value": 90,
+        "legacy_provider_value": True,
+        "requires_adoption": True,
+    }
     assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("values", "adopt", "expected"),
+    [
+        ({"charge_rate_kw": 3.5}, [], -90),
+        ({"solar_forecast_string1_azimuth": 90}, [], -90),
+        ({"solar_forecast_string1_azimuth": 90}, ["solar_forecast_string1_azimuth"], 90),
+        ({"solar_forecast_string1_azimuth": 138}, [], 138),
+    ],
+)
+async def test_module_config_legacy_adoption_is_explicit_and_single_conversion(
+    monkeypatch, values, adopt, expected
+):
+    entry = _solar_entry(solar_forecast_string1_azimuth=-90)
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    section = "battery" if "charge_rate_kw" in values else "solar"
+    response = await api_module.OIGCloudModuleConfigView().post(
+        _module_config_request(
+            hass,
+            {"section": section, "values": values, "adopt_legacy_fields": adopt},
+        ),
+        "box1",
+    )
+    assert response.status == 200
+    assert entry.options["solar_forecast_string1_azimuth"] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adopt",
+    [["unknown"], ["solar_forecast_string2_azimuth"]],
+)
+async def test_module_config_rejects_unknown_or_nonlegacy_adoption_keys(
+    monkeypatch, adopt
+):
+    entry = _solar_entry(solar_forecast_string1_azimuth=-90)
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    response = await api_module.OIGCloudModuleConfigView().post(
+        _module_config_request(
+            hass,
+            {
+                "section": "solar",
+                "values": {"solar_forecast_string1_azimuth": 90},
+                "adopt_legacy_fields": adopt,
+            },
+        ),
+        "box1",
+    )
+    assert response.status == 400
+    assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad",
+    [-1, 361, 90.5, True, "90", "bad", float("nan"), 10**400],
+)
+async def test_module_config_rejects_invalid_compass_write_without_mutation(
+    monkeypatch, bad
+):
+    entry = _solar_entry(solar_forecast_string1_azimuth=138)
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    response = await api_module.OIGCloudModuleConfigView().post(
+        _module_config_request(
+            hass,
+            {
+                "section": "solar",
+                "values": {"solar_forecast_string1_azimuth": bad},
+            },
+        ),
+        "box1",
+    )
+    assert response.status == 400
+    assert entry.options["solar_forecast_string1_azimuth"] == 138
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [361, 720, 90.5, "NaN"])
+async def test_module_config_invalid_stored_azimuth_warns_and_waits_for_correction(
+    monkeypatch, stored
+):
+    entry = _solar_entry(solar_forecast_string1_azimuth=stored)
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+
+    response = await view.get(_module_config_request(hass, {}), "box1")
+    body = json.loads(response.text)
+    assert body["solar"]["solar_forecast_string1_azimuth"] == stored
+    assert body["_meta"]["legacy_fields"]["solar_forecast_string1_azimuth"][
+        "invalid_legacy_value"
+    ] is True
+    assert entry.options["solar_forecast_string1_azimuth"] == stored
+
+    corrected = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "solar",
+                "values": {"solar_forecast_string1_azimuth": 138},
+            },
+        ),
+        "box1",
+    )
+    assert corrected.status == 200
+    assert entry.options["solar_forecast_string1_azimuth"] == 138
 
 
 @pytest.mark.asyncio

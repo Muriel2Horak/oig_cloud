@@ -24,9 +24,9 @@ Tato podmínka zajišťuje, že HOME_UPS (mode=3) není přepsán HOME_III (mode
 ---
 
 ### Task P0.2: Opravit Negative Interval Index
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`  
-**Řádek:** 86  
-**Priorita:** 🔴 P0 - CRITICAL  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`
+**Řádek:** 86
+**Priorita:** 🔴 P0 - CRITICAL
 **Odhadovaný čas:** 10 minut
 
 **Problém:**
@@ -49,9 +49,9 @@ must_start_charging = max(0, interval - intervals_needed)
 ---
 
 ### Task P0.3: Přidat Logování do Exception Handleru
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`  
-**Řádek:** 392  
-**Priorita:** 🔴 P0 - HIGH  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`
+**Řádek:** 392
+**Priorita:** 🔴 P0 - HIGH
 **Odhadovaný čas:** 10 minut
 
 **Problém:**
@@ -80,8 +80,8 @@ except Exception as e:
 ## Vysoké Problémy (P1) - DO KONCE TÝDNE
 
 ### Task P1.1: Doplnit Input Validaci
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_types.py`  
-**Priorita:** 🟠 P1 - HIGH  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_types.py`
+**Priorita:** 🟠 P1 - HIGH
 **Odhadovaný čas:** 45 minut
 
 **Chybějící validace:**
@@ -98,31 +98,31 @@ def __post_init__(self) -> None:
     # Stávající validace
     if self.planning_min_kwh < self.hw_min_kwh:
         raise ValueError("Planning min < HW min")
-    
+
     # Nová validace
     if self.current_soc_kwh <= 0:
         raise ValueError("Current SOC must be positive")
-    
+
     if self.current_soc_kwh > self.max_capacity_kwh:
         raise ValueError("Current SOC exceeds capacity")
-    
+
     if self.max_capacity_kwh <= 0:
         raise ValueError("Max capacity must be positive")
-    
+
     if self.charge_rate_kw <= 0:
         raise ValueError("Charge rate must be positive")
-    
+
     if self.planning_min_percent > 100:
         raise ValueError("Planning min percent cannot exceed 100")
-    
+
     # Kontrola délek
     n = len(self.intervals)
     if len(self.prices) != n or len(self.solar_forecast) != n or len(self.load_forecast) != n:
         raise ValueError("Forecast lengths must match intervals count")
-    
+
     # Poznámka: Záporné ceny jsou povoleny (OTE trh má záporné ceny)
     # https://www.ote-cr.cz/cs/kratkodobe-trhy/energeticky-trh/denni-zaznamy-cenove-vyrovnani
-    
+
     # Kontrola negativních hodnot pouze pro forecasty (fyzikálně nemožné)
     if any(s < 0 for s in self.solar_forecast):
         raise ValueError("Solar forecast cannot be negative")
@@ -140,9 +140,9 @@ def __post_init__(self) -> None:
 ---
 
 ### Task P1.2: Opravit False Async Funkci
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_integration.py`  
-**Řádky:** 31-110  
-**Priorita:** 🟠 P1 - HIGH  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_integration.py`
+**Řádky:** 31-110
+**Priorita:** 🟠 P1 - HIGH
 **Odhadovaný čas:** 30 minut
 
 **Problém:**
@@ -180,9 +180,9 @@ async def load_planner_inputs(...) -> PlannerInputs:
 ## Střední Problémy (P2) - DO KONCE MĚSÍCE
 
 ### Task P2.1: Implementovat Reálné Forecasty
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_integration.py`  
-**Řádky:** 96-98  
-**Priorita:** 🟡 P2 - MEDIUM  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_integration.py`
+**Řádky:** 96-98
+**Priorita:** 🟡 P2 - MEDIUM
 **Odhadovaný čas:** 2-4 hodiny (vyžaduje integraci)
 
 **Problém:**
@@ -227,8 +227,8 @@ else:
 ---
 
 ### Task P2.2: Refaktorovat Duplicitní Simulaci
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`  
-**Priorita:** 🟡 P2 - MEDIUM  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner.py`
+**Priorita:** 🟡 P2 - MEDIUM
 **Odhadovaný čas:** 1 hodina
 
 **Problém:** Simulace HOME_I je duplikována ve 4 funkcích
@@ -260,9 +260,9 @@ def _simulate_interval(
 ## Minor Problémy (P3) - NÍZKÁ PRIORITA
 
 ### Task P3.1: Odstranit Mrtvý Kód
-**Soubor:** `custom_components/oig_cloud/__init__.py`  
-**Řádky:** 1350-1358  
-**Priorita:** 🟢 P3 - LOW  
+**Soubor:** `custom_components/oig_cloud/__init__.py`
+**Řádky:** 1350-1358
+**Priorita:** 🟢 P3 - LOW
 **Odhadovaný čas:** 5 minut
 
 **Akce:**
@@ -277,8 +277,8 @@ def _simulate_interval(
 ---
 
 ### Task P3.2: Zlepšit Type Safety
-**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_types.py`  
-**Priorita:** 🟢 P3 - LOW  
+**Soubor:** `custom_components/oig_cloud/battery_forecast/economic_planner_types.py`
+**Priorita:** 🟢 P3 - LOW
 **Odhadovaný čas:** 30 minut
 
 **Změny:**
@@ -303,8 +303,8 @@ mode: CBBMode
 ---
 
 ### Task P3.3: Standardizovat Komentáře
-**Soubory:** Všechny Python soubory  
-**Priorita:** 🟢 P3 - LOW  
+**Soubory:** Všechny Python soubory
+**Priorita:** 🟢 P3 - LOW
 **Odhadovaný čas:** 15 minut
 
 **Akce:** Přeložit české komentáře do angličtiny (nebo odstranit)

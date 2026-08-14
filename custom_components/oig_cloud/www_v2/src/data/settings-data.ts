@@ -53,6 +53,16 @@ export interface SolarConfig {
   solar_forecast_string2_kwp: number | null;
 }
 
+export interface LegacySolarField {
+  stored_value: unknown;
+  display_value: number | null;
+  legacy_provider_value: boolean;
+  requires_adoption: boolean;
+  invalid_legacy_value?: boolean;
+}
+
+export type LegacySolarFields = Record<string, LegacySolarField>;
+
 /** F5/Task B — Boiler config section (mirrors ha_rest_api _MODULE_CONFIG_FIELDS['boiler']). */
 export interface BoilerConfig {
   // Nádrž a čidla
@@ -138,6 +148,17 @@ export interface ModuleConfig {
   boiler: BoilerConfig;
   pricing?: PricingConfig;
   pricing_supplier?: PricingSupplierConfig;
+  _meta?: { legacy_fields?: LegacySolarFields };
+}
+
+export function legacyAdoptionsForChanges(
+  legacyFields: LegacySolarFields | undefined,
+  changedValues: Record<string, unknown>,
+): string[] {
+  if (!legacyFields) return [];
+  return Object.keys(changedValues)
+    .filter((key) => legacyFields[key]?.requires_adoption === true)
+    .sort((left, right) => left.localeCompare(right, 'en'));
 }
 
 export type SettingsSection =
@@ -200,6 +221,8 @@ export async function waitForModuleConfigAfterReload(
 
 export interface SaveResult {
   ok: boolean;
+  revision?: number;
+  verified?: boolean;
   /** Per-field validation errors from the backend, if any. */
   fields?: Record<string, string>;
 }
@@ -207,13 +230,21 @@ export interface SaveResult {
 export async function saveModuleConfig(
   section: SettingsSection,
   values: Record<string, unknown>,
+  adoptLegacyFields: string[] = [],
+  solarTestProof?: string,
 ): Promise<SaveResult> {
+  const body: Record<string, unknown> = {
+    section,
+    values,
+    adopt_legacy_fields: adoptLegacyFields,
+  };
+  if (solarTestProof) body.solar_test_proof = solarTestProof;
   const res = await haClient.fetchOIGAPI<any>(`/${INVERTER_SN}/module_config`, {
     method: 'POST',
-    body: JSON.stringify({ section, values }),
+    body: JSON.stringify(body),
   });
   if (res && (res.updated === true || res.updated === false)) {
-    return { ok: true };
+    return { ok: true, revision: res.revision, verified: res.verified };
   }
   return { ok: false, fields: res?.fields };
 }

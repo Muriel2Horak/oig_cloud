@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>OIG auth refresh browser harness</title>
+  </head>
+  <body>
+    <main id="result" aria-live="polite">ready</main>
+    <script type="module">
+      import { HaClient } from '../src/data/ha-client.ts';
+
+      window.runAuthHarness = async () => {
+        const client = new HaClient();
+        const read = await client.fetchOIGAPI('/browser/read?scope=expiry');
+        const mutation = await client.fetchOIGAPITyped('/browser/settings_test', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'test' }),
+        });
+        const output = { read, mutation };
+        document.querySelector('#result').textContent = mutation.ok
+          ? 'Authenticated requests completed'
+          : mutation.error;
+        return output;
+      };
+      window.authHarnessReady = true;
+    </script>
+  </body>
+</html>

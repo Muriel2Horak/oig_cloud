@@ -53,7 +53,7 @@ describe('color utils', () => {
     it('should mix two colors', () => {
       const red = { r: 255, g: 0, b: 0 };
       const blue = { r: 0, g: 0, b: 255 };
-      
+
       expect(mixColors(red, blue, 0)).toEqual(red);
       expect(mixColors(red, blue, 1)).toEqual(blue);
       expect(mixColors(red, blue, 0.5)).toEqual({ r: 128, g: 0, b: 128 });

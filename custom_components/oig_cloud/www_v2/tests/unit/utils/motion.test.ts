@@ -38,7 +38,7 @@ describe('motion utils', () => {
   describe('animate', () => {
     it('should call onUpdate with progress', async () => {
       const updates: number[] = [];
-      
+
       await new Promise<void>(resolve => {
         animate({
           duration: 50,
@@ -54,7 +54,7 @@ describe('motion utils', () => {
 
     it('should call onStart', async () => {
       let started = false;
-      
+
       await new Promise<void>(resolve => {
         animate({
           duration: 10,
@@ -68,7 +68,7 @@ describe('motion utils', () => {
 
     it('should be cancellable', () => {
       const onComplete = vi.fn();
-      
+
       const cancel = animate({
         duration: 1000,
         onComplete,

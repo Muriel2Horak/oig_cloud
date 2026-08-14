@@ -77,7 +77,13 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
-import { saveModuleConfig, waitForModuleConfigAfterReload, type SettingsSection } from '@/data/settings-data';
+import {
+  saveModuleConfig,
+  waitForModuleConfigAfterReload,
+  legacyAdoptionsForChanges,
+  type LegacySolarFields,
+  type SettingsSection,
+} from '@/data/settings-data';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
 import { fieldLabel } from '@/i18n/fields';
 
@@ -699,6 +705,7 @@ const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
 interface SolarTestResult {
   tomorrow_total_kwh: number;
   forecast_covers_tomorrow: boolean;
+  proof?: string;
 }
 
 /**
@@ -713,16 +720,16 @@ interface SolarTestResult {
 type BootstrapOutcome = 'pending' | 'success' | 'aborted' | 'failed';
 
 /**
- * Q1 wire schema (plan §Task 6): registry key names verbatim, with ONE fixed
- * rename — `solar_forecast_provider` → `provider` — plus one exclusion:
- * `solar_forecast_mode` is registry-visible but not part of the schema the
- * backend (`_SOLAR_TEST_ALLOWED_KEYS`, `ha_rest_api.py`) accepts.
+ * Solar candidate wire schema: registry key names verbatim, with one fixed
+ * rename — `solar_forecast_provider` → `provider`. Mode is always included,
+ * including for Solcast where provider-owned geometry hides the mode control.
  */
 const SOLAR_TEST_WIRE_RENAME: Readonly<Record<string, string>> = {
   solar_forecast_provider: 'provider',
 };
 const SOLAR_TEST_ALLOWED_WIRE_KEYS: ReadonlySet<string> = new Set([
   'provider',
+  'solar_forecast_mode',
   'solar_forecast_api_key',
   'solcast_api_key',
   'solcast_site_id',
@@ -755,7 +762,9 @@ function solarTestErrorMessage(code: string, lang: Lang): string | undefined {
 
 /** Shape of a `/module_config` GET — every registry section, keyed loosely
  * since not every section is populated in every fixture/response. */
-type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
+type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>> & {
+  _meta?: { legacy_fields?: LegacySolarFields };
+};
 
 /**
  * Flatten a `/module_config` response into one cross-section map, read two
@@ -771,7 +780,8 @@ type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
  */
 function flattenModuleConfig(doc: ModuleConfigDoc): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const section of Object.values(doc)) {
+  for (const [sectionName, section] of Object.entries(doc)) {
+    if (sectionName === '_meta') continue;
     if (!section) continue;
     for (const [key, value] of Object.entries(section)) {
       out[key] = value;
@@ -945,6 +955,8 @@ export class OigOnboardingWizard extends LitElement {
   private _registry: FieldRegistry | null = null;
   private _registryLoaded = false;
   @state() private solarDraft: Record<string, unknown> = {};
+  @state() private legacySolarFields: LegacySolarFields = {};
+  @state() private touchedLegacySolarFields: ReadonlySet<string> = new Set();
 
   /** Battery step (Task 18): draft form values, seeded alongside `solarDraft`
    * from the same shared `_registry` fetch — the registry is not fetched a
@@ -955,6 +967,8 @@ export class OigOnboardingWizard extends LitElement {
   @state() private solarTestLoading = false;
   @state() private solarTestResult: SolarTestResult | null = null;
   @state() private solarTestError: { code: string; message: string } | null = null;
+  private solarTestProof: string | null = null;
+  private solarTestEpoch = 0;
   /**
    * True only right after a successful test for the values currently in the
    * draft (Q2) — Task 8's `goNext` reads this to decide whether the solar
@@ -1865,6 +1879,12 @@ export class OigOnboardingWizard extends LitElement {
     };
 
     collectChanged('solar', this.solarDraft);
+    for (const key of this.touchedLegacySolarFields) {
+      if (this.legacySolarFields[key]?.requires_adoption !== true) continue;
+      const changed = changedBySection.get('solar') ?? {};
+      changed[key] = this.solarDraft[key];
+      changedBySection.set('solar', changed);
+    }
     collectChanged('pricing', this.pricingDraft);
     if (this._registry?.sections.includes('modules')) {
       collectChanged('modules', this.modulesDraft);
@@ -1883,12 +1903,35 @@ export class OigOnboardingWizard extends LitElement {
     for (const section of saveOrder) {
       const changed = changedBySection.get(section);
       if (!changed || Object.keys(changed).length === 0) continue;
-      const res = await saveModuleConfig(section, changed);
-      if (!res.ok && res.fields) {
-        for (const [key, message] of Object.entries(res.fields)) {
-          errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
-        }
+      const adoptions = section === 'solar'
+        ? legacyAdoptionsForChanges(this.legacySolarFields, changed)
+        : [];
+      const res = section === 'solar' && this.solarTestProof
+        ? await saveModuleConfig(section, changed, adoptions, this.solarTestProof)
+        : adoptions.length > 0
+          ? await saveModuleConfig(section, changed, adoptions)
+          : await saveModuleConfig(section, changed);
+      if (section === 'solar' && res.ok) this.solarTestProof = null;
+      if (section === 'solar' && res.ok && adoptions.length > 0) {
+        const remaining = new Set(this.touchedLegacySolarFields);
+        for (const key of adoptions) remaining.delete(key);
+        this.touchedLegacySolarFields = remaining;
       }
+      if (!res.ok) {
+        if (res.fields && Object.keys(res.fields).length > 0) {
+          for (const [key, message] of Object.entries(res.fields)) {
+            errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
+          }
+        } else {
+          errors.push({
+            step: this.currentStep,
+            key: section,
+            message: this.finishErrorMessage('finish_save_failed'),
+          });
+        }
+        break;
+      }
+      this.originalValues = Object.freeze({ ...this.originalValues, ...changed });
     }
     return errors;
   }
@@ -2075,6 +2118,7 @@ export class OigOnboardingWizard extends LitElement {
       const seeded = this.originalValues[f.key] ?? spec?.default;
       if (seeded !== undefined) draft[f.key] = seeded;
     }
+    this.clearSolarCandidateState();
     this.solarDraft = draft;
   }
 
@@ -2191,6 +2235,17 @@ export class OigOnboardingWizard extends LitElement {
     this.boilerDraft = {};
     this.tariffMatrixOverride = {};
     this.tariffMatrixError = {};
+    this.touchedLegacySolarFields = new Set();
+    this.clearSolarCandidateState();
+  }
+
+  private clearSolarCandidateState(): void {
+    this.solarTestEpoch += 1;
+    this.solarTestLoading = false;
+    this.solarTestProof = null;
+    this.solarTestResult = null;
+    this.solarTestError = null;
+    this.solarTestMatchesDraft = false;
   }
 
   private requestDiscardDrafts(): void {
@@ -2239,6 +2294,7 @@ export class OigOnboardingWizard extends LitElement {
       );
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
       if (data) {
+        this.legacySolarFields = data._meta?.legacy_fields ?? {};
         this.originalValues = Object.freeze(flattenModuleConfig(data));
         if (data.pricing || data.pricing_supplier) {
           // Supplier-step redesign: the Nakup/Prodej scenario cards must
@@ -2297,6 +2353,9 @@ export class OigOnboardingWizard extends LitElement {
     this.aiState = null;
     this.aiValidation = { kind: 'idle' };
     this.originalValues = {};
+    this.legacySolarFields = {};
+    this.touchedLegacySolarFields = new Set();
+    this.clearSolarCandidateState();
     this.pricing = null;
     this.pricingLoadFailed = false;
     this._pendingPrereqOff = null;
@@ -2416,8 +2475,14 @@ export class OigOnboardingWizard extends LitElement {
   private buildSolarTestBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {};
     if (!this._registry) return body;
+    body.solar_forecast_mode = this.solarDraft.solar_forecast_mode;
     const visible = STEP_SOLAR.visibleFields(this._registry, this.solarDraft);
     for (const f of visible) {
+      const legacy = this.legacySolarFields[f.key];
+      if (
+        legacy?.requires_adoption === true &&
+        !this.touchedLegacySolarFields.has(f.key)
+      ) continue;
       const wireKey = SOLAR_TEST_WIRE_RENAME[f.key] ?? f.key;
       if (!SOLAR_TEST_ALLOWED_WIRE_KEYS.has(wireKey)) continue;
       body[wireKey] = this.solarDraft[f.key];
@@ -2428,18 +2493,27 @@ export class OigOnboardingWizard extends LitElement {
   /** [Otestovat] — side-effect-free probe of the unsaved draft values (Task 6). */
   private async runSolarTest(): Promise<void> {
     if (!this.inverterSn || this.solarTestLoading) return;
+    const requestEpoch = ++this.solarTestEpoch;
     this.solarTestLoading = true;
     this.solarTestResult = null;
     this.solarTestError = null;
+    this.solarTestProof = null;
 
-    const result = await haClient.fetchOIGAPITyped<SolarTestResult>(
-      `/${this.inverterSn}/solar_test`,
-      { method: 'POST', body: JSON.stringify(this.buildSolarTestBody()) },
-    );
-
-    this.solarTestLoading = false;
+    let result;
+    try {
+      result = await haClient.fetchOIGAPITyped<SolarTestResult>(
+        `/${this.inverterSn}/solar_test`,
+        { method: 'POST', body: JSON.stringify(this.buildSolarTestBody()) },
+      );
+    } finally {
+      if (requestEpoch === this.solarTestEpoch) {
+        this.solarTestLoading = false;
+      }
+    }
+    if (requestEpoch !== this.solarTestEpoch) return;
     if (result.ok) {
       this.solarTestResult = result.data;
+      this.solarTestProof = result.data.proof ?? null;
       this.solarTestMatchesDraft = true;
     } else {
       this.solarTestError = {
@@ -2447,6 +2521,7 @@ export class OigOnboardingWizard extends LitElement {
         message: solarTestErrorMessage(result.code, this.wizardLang) ?? result.error ?? t('onboarding.solar_test.error.generic', this.wizardLang),
       };
       this.solarTestMatchesDraft = false;
+      this.solarTestProof = null;
     }
   }
 
@@ -2646,6 +2721,15 @@ export class OigOnboardingWizard extends LitElement {
     const rows = Object.entries(all)
       .filter(([key, value]) => !scheduleKeys.has(key) && String(this.originalValues[key]) !== String(value))
       .map(([key, value]) => ({ key, oldValue: this.originalValues[key], newValue: value }));
+
+    for (const key of this.touchedLegacySolarFields) {
+      if (rows.some((row) => row.key === key)) continue;
+      rows.push({
+        key,
+        oldValue: this.legacySolarFields[key]?.stored_value ?? this.originalValues[key],
+        newValue: all[key],
+      });
+    }
 
     for (const group of ['weekday', 'weekend'] as const) {
       const vtKey = `tariff_vt_start_${group}`;
@@ -3100,20 +3184,41 @@ export class OigOnboardingWizard extends LitElement {
                 secretRevealed: this.revealedSecretKeys.has(f.key),
                 onRevealSecret: () => this.revealSecret(f.key),
                 onChange: (v: unknown) => {
+                  if (this.legacySolarFields[f.key]?.requires_adoption === true) {
+                    this.touchedLegacySolarFields = new Set(
+                      this.touchedLegacySolarFields,
+                    ).add(f.key);
+                  }
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
-                  this.solarTestMatchesDraft = false;
+                  this.clearSolarCandidateState();
                 },
                 entityCatalog: [],
               });
+              const legacy = this.legacySolarFields[f.key];
+              const warning = legacy?.invalid_legacy_value
+                ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+                    ${t('onboarding.solar.legacy_invalid', this.wizardLang, {
+                      stored: String(legacy.stored_value),
+                    })}
+                  </p>`
+                : legacy?.requires_adoption
+                ? html`<p class="hint" role="status" data-testid=${`legacy-warning-${f.key}`}>
+                    ${t('onboarding.solar.legacy_adoption', this.wizardLang, {
+                      stored: String(legacy.stored_value),
+                      display: String(legacy.display_value),
+                    })}
+                  </p>`
+                : nothing;
               // Live-walk defect 3: guide card directly below the provider
               // select, before its credential field(s).
-              if (f.key === 'solar_forecast_provider') return [row, this.renderSolarProviderGuide()];
+              if (f.key === 'solar_forecast_provider') return [warning, row, this.renderSolarProviderGuide()];
               // Owner correction round 2 (UX-SPEC §Step 3): one-click action
               // directly below the GPS pair, wiring hass.config into the
               // fields the user could otherwise only type by hand — not a
               // new data source (steps.py:1687-1688 reads the same values).
-              if (f.key !== 'solar_forecast_longitude') return [row];
+              if (f.key !== 'solar_forecast_longitude') return [warning, row];
               return [
+                warning,
                 row,
                 html`<button
                   type="button"
@@ -3125,7 +3230,7 @@ export class OigOnboardingWizard extends LitElement {
                       solar_forecast_latitude: this.hass?.config?.latitude,
                       solar_forecast_longitude: this.hass?.config?.longitude,
                     };
-                    this.solarTestMatchesDraft = false;
+                    this.clearSolarCandidateState();
                   }}
                 >📍 Převzít z Home Assistanta</button>`,
               ];

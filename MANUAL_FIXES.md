@@ -27,10 +27,10 @@ Soubory mají read-only práva, Samba/SCP nefungují. Musíme použít HA File E
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         console.log('[Dashboard] Prefetching timeline data...');
-        
+
         const days = ['yesterday', 'today', 'tomorrow'];
         const sn = INVERTER_SN;
-        
+
         days.forEach(day => {
             fetchWithAuth(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
                     .then(r => r.ok ? r.json() : null)
@@ -55,11 +55,11 @@ Soubory mají read-only práva, Samba/SCP nefungují. Musíme použít HA File E
             setTimeout(prefetchTimelineData, 200);
             return;
         }
-        
+
         console.log('[Dashboard] Prefetching timeline data...');
         const days = ['yesterday', 'today', 'tomorrow'];
         const sn = INVERTER_SN;
-        
+
         days.forEach(day => {
             fetchWithAuth(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
                     .then(r => r.ok ? r.json() : null)
@@ -71,7 +71,7 @@ Soubory mají read-only práva, Samba/SCP nefungují. Musíme použít HA File E
                     .catch(err => console.warn(`[Dashboard] Prefetch ${day} failed:`, err));
         });
     }
-    
+
     setTimeout(prefetchTimelineData, 500);
 </script>
 ```
@@ -110,7 +110,7 @@ Najít:
 ```javascript
 async function buildExtendedTimeline() {
     const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=today`;
-    
+
     try {
         const response = await fetchWithAuth(apiUrl);
 ```
@@ -122,9 +122,9 @@ async function buildExtendedTimeline() {
         console.error('[Extended Timeline] fetchWithAuth is not available');
         return;
     }
-    
+
     const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=today`;
-    
+
     try {
         const response = await fetchWithAuth(apiUrl);
 ```
@@ -149,7 +149,7 @@ async function fetchTimelineFromAPI(plan, boxId) {
         console.error('[Pricing] fetchWithAuth is not available');
         return [];
     }
-    
+
     const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
     const fetchStart = performance.now();
     console.log(`[Pricing] Fetching ${plan} timeline from API...`);
@@ -178,7 +178,7 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
         console.error('[Cost Comparison] fetchWithAuth is not available');
         return { hybrid: null };
     }
-    
+
     try {
         console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
         const hybridRes = await fetchWithAuth(

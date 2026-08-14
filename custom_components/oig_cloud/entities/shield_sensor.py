@@ -93,13 +93,16 @@ class OigCloudShieldSensor(_ShieldBase):
         self._box_id: str = resolve_box_id(coordinator)
         if self._box_id == "unknown":
             _LOGGER.warning(
-                f"No coordinator data available for {sensor_type}, using fallback box_id"
+                "No coordinator data available for %s, using fallback box_id",
+                sensor_type,
             )
 
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"
 
         _LOGGER.debug(
-            f"✅ Properly initialized ServiceShield sensor: {sensor_type} with entity_id: {self.entity_id}"
+            "✅ Properly initialized ServiceShield sensor: %s with entity_id: %s",
+            sensor_type,
+            self.entity_id,
         )
 
     @property
@@ -123,7 +126,7 @@ class OigCloudShieldSensor(_ShieldBase):
         if shield and not self._shield_callback_registered:
             shield.register_state_change_callback(self._on_shield_state_changed)
             self._shield_callback_registered = True
-            _LOGGER.info(f"[Shield Sensor] Registrován callback pro {self.entity_id}")
+            _LOGGER.info("[Shield Sensor] Registrován callback pro %s", self.entity_id)
 
     async def async_will_remove_from_hass(self) -> None:
         """Když je senzor odstraněn z Home Assistant."""
@@ -132,14 +135,16 @@ class OigCloudShieldSensor(_ShieldBase):
         if shield and self._shield_callback_registered:
             shield.unregister_state_change_callback(self._on_shield_state_changed)
             self._shield_callback_registered = False
-            _LOGGER.info(f"[Shield Sensor] Odregistrován callback pro {self.entity_id}")
+            _LOGGER.info(
+                "[Shield Sensor] Odregistrován callback pro %s", self.entity_id
+            )
 
         # OPRAVA: Nevoláme super() protože už nejsme CoordinatorEntity
 
     def _on_shield_state_changed(self) -> None:
         """Callback volaný při změně shield stavu - THREAD-SAFE verze."""
         _LOGGER.debug(
-            f"[Shield Sensor] Shield stav změněn - aktualizuji {self.entity_id}"
+            "[Shield Sensor] Shield stav změněn - aktualizuji %s", self.entity_id
         )
         # KRITICKÁ OPRAVA: Callback může být volán z jiného vlákna
         # async_write_ha_state() NESMÍ být voláno z jiného vlákna - crashuje HA
@@ -189,7 +194,7 @@ class OigCloudShieldSensor(_ShieldBase):
             return _get_shield_state(self._sensor_type, shield)
 
         except Exception as e:
-            _LOGGER.error(f"Error getting shield sensor state: {e}")
+            _LOGGER.error("Error getting shield sensor state: %s", e)
             return translate_shield_state("error")
 
     @property
@@ -207,7 +212,7 @@ class OigCloudShieldSensor(_ShieldBase):
                 )
 
         except Exception as e:
-            _LOGGER.error(f"Error getting shield attributes: {e}")
+            _LOGGER.error("Error getting shield attributes: %s", e)
             attrs["error"] = str(e)
 
         return attrs
@@ -261,7 +266,9 @@ class OigCloudShieldSensor(_ShieldBase):
         return shield is not None
 
 
-def _get_shield_state(sensor_type: str, shield: Any) -> Optional[Union[str, int, float, datetime]]:
+def _get_shield_state(
+    sensor_type: str, shield: Any
+) -> Optional[Union[str, int, float, datetime]]:
     if sensor_type == "service_shield_status":
         return translate_shield_state("active")
     if sensor_type == "service_shield_queue":
@@ -303,9 +310,7 @@ def _compute_shield_activity(shield: Any) -> str:
     return service_short
 
 
-def _build_shield_attrs(
-    hass: Any, shield: Any, *, sensor_type: str
-) -> Dict[str, Any]:
+def _build_shield_attrs(hass: Any, shield: Any, *, sensor_type: str) -> Dict[str, Any]:
     queue = getattr(shield, "queue", [])
     running = getattr(shield, "running", None)
     pending = getattr(shield, "pending", {})
@@ -325,9 +330,7 @@ def _build_shield_attrs(
     if sensor_type == "mode_reaction_time" and shield.mode_tracker:
         stats = shield.mode_tracker.get_statistics()
         base_attrs["scenarios"] = stats
-        base_attrs["total_samples"] = sum(
-            s.get("samples", 0) for s in stats.values()
-        )
+        base_attrs["total_samples"] = sum(s.get("samples", 0) for s in stats.values())
         base_attrs["tracked_scenarios"] = len(stats)
 
     return base_attrs
@@ -420,7 +423,9 @@ def _build_targets(
         current_state = hass.states.get(entity_id)
         current_value = current_state.state if current_state else "unknown"
         original_value = (
-            original_states.get(entity_id, "unknown") if original_states else current_value
+            original_states.get(entity_id, "unknown")
+            if original_states
+            else current_value
         )
         targets.append(
             {
@@ -435,7 +440,9 @@ def _build_targets(
     return targets
 
 
-def _build_changes(targets: List[Dict[str, Any]], *, include_current: bool) -> List[str]:
+def _build_changes(
+    targets: List[Dict[str, Any]], *, include_current: bool
+) -> List[str]:
     changes = []
     for target in targets:
         entity_display = _format_entity_display(target["entity_id"])
@@ -459,7 +466,11 @@ def _format_entity_display(entity_id: str) -> str:
     return entity_id
 
 
-def _build_description(service_short: str, targets: List[Dict[str, Any]], params: Optional[Dict[str, Any]] = None) -> str:
+def _build_description(
+    service_short: str,
+    targets: List[Dict[str, Any]],
+    params: Optional[Dict[str, Any]] = None,
+) -> str:
     target_value = targets[0]["value"] if targets else None
     if target_value:
         # Add step indicator for grid delivery split flow

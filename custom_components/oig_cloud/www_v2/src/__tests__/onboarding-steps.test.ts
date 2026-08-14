@@ -12,7 +12,9 @@ import {
   EMPTY_SOLAR_REGISTRY,
 } from './fixtures/solar-registry-fixture';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() =>
+  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>(),
+);
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
 const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
@@ -58,6 +60,20 @@ describe('step ② solar (P3, as narrowed by SCOPE-REVISION #6)', () => {
     const shown = STEP_SOLAR.visibleFields(REGISTRY_FIXTURE, { solar_forecast_provider: 'solcast' });
     expect(shown.map((f) => f.key)).toContain('solcast_api_key');
     expect(shown.map((f) => f.key)).not.toContain('solar_forecast_api_key');
+  });
+
+  it('hides Forecast.Solar geometry for Solcast but keeps local enabled-string kWp', () => {
+    const values = {
+      ...DEFAULT_SOLAR_DRAFT,
+      solar_forecast_provider: 'solcast',
+    };
+    const keys = STEP_SOLAR.visibleFields(SOLAR_REGISTRY_FIXTURE, values)
+      .map((field) => field.key);
+    expect(keys).toContain('solar_forecast_string1_kwp');
+    expect(keys).not.toContain('solar_forecast_latitude');
+    expect(keys).not.toContain('solar_forecast_longitude');
+    expect(keys).not.toContain('solar_forecast_string1_declination');
+    expect(keys).not.toContain('solar_forecast_string1_azimuth');
   });
 
   it('[Otestovat] gates only the STEP, never the dashboard (#6)', () => {
@@ -311,6 +327,7 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
 describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
   const SOLAR_TEST_ALLOWED_WIRE_KEYS = new Set([
     'provider',
+    'solar_forecast_mode',
     'solar_forecast_api_key',
     'solcast_api_key',
     'solcast_site_id',
@@ -383,6 +400,101 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
     expect(btn).toBeTruthy();
   });
 
+  it('renders legacy azimuth adoption warning from module-config metadata', async () => {
+    const wizard = await openWizardOnSolarStep();
+    wizard.legacySolarFields = {
+      solar_forecast_string1_azimuth: {
+        stored_value: -90,
+        display_value: 90,
+        legacy_provider_value: true,
+        requires_adoption: true,
+      },
+    };
+    await wizard.updateComplete;
+    const warning = wizard.shadowRoot!.querySelector(
+      '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+    );
+    expect(warning).toBeTruthy();
+    expect(warning?.textContent).toContain('-90');
+    expect(warning?.textContent).toContain('90');
+  });
+
+  it.each([361, 720, 90.5])(
+    'renders a corrupt legacy azimuth warning for %s',
+    async (storedValue) => {
+      const wizard = await openWizardOnSolarStep();
+      wizard.legacySolarFields = {
+        solar_forecast_string1_azimuth: {
+          stored_value: storedValue,
+          display_value: null,
+          legacy_provider_value: false,
+          requires_adoption: false,
+          invalid_legacy_value: true,
+        },
+      };
+      await wizard.updateComplete;
+      const warning = wizard.shadowRoot!.querySelector(
+        '[data-testid="legacy-warning-solar_forecast_string1_azimuth"]',
+      );
+      expect(warning).toBeTruthy();
+      expect(warning?.textContent).toContain(String(storedValue));
+      expect(warning?.textContent).toContain('0');
+      expect(warning?.textContent).toContain('360');
+      expect(warning?.textContent).not.toMatch(/[−-]180\s*°?\s*(?:až|to)\s*360/);
+    },
+  );
+
+  it('keeps an untouched legacy azimuth out of the candidate DTO, then adopts a same-number touch once', async () => {
+    const wizard = await openWizardOnSolarStep();
+    wizard.originalValues = {
+      ...wizard.originalValues,
+      solar_forecast_string1_azimuth: 90,
+      unrelated_price: 'old',
+    };
+    wizard.solarDraft = {
+      ...wizard.solarDraft,
+      solar_forecast_string1_azimuth: 90,
+    };
+    wizard.legacySolarFields = {
+      solar_forecast_string1_azimuth: {
+        stored_value: -90,
+        display_value: 90,
+        legacy_provider_value: true,
+        requires_adoption: true,
+      },
+    };
+    await wizard.updateComplete;
+
+    expect(wizard.buildSolarTestBody()).not.toHaveProperty(
+      'solar_forecast_string1_azimuth',
+    );
+
+    const azimuthRow = Array.from(wizard.shadowRoot!.querySelectorAll('.row'))
+      .find((row) => row.textContent?.includes('String 1 azimut'));
+    const input = azimuthRow?.querySelector('input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = '90';
+    input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await wizard.updateComplete;
+
+    expect(wizard.buildSolarTestBody().solar_forecast_string1_azimuth).toBe(90);
+    wizard.solarTestProof = 'proof-for-touched-legacy-dto';
+    wizard.pricingDraft = { unrelated_price: 'new' };
+    fetchOIGAPI.mockClear();
+    await wizard.saveAllChangedSections();
+
+    const saveBodies = fetchOIGAPI.mock.calls
+      .filter((call) => call[1]?.method === 'POST')
+      .map((call) => JSON.parse(call[1]!.body as string));
+    expect(saveBodies[0]).toMatchObject({
+      section: 'solar',
+      values: { solar_forecast_string1_azimuth: 90 },
+      adopt_legacy_fields: ['solar_forecast_string1_azimuth'],
+      solar_test_proof: 'proof-for-touched-legacy-dto',
+    });
+    expect(saveBodies.filter((body) => body.section === 'solar')).toHaveLength(1);
+  });
+
   it('click posts the Q1 wire-schema body to /{sn}/solar_test — no extra keys', async () => {
     fetchOIGAPITyped.mockResolvedValueOnce({
       ok: true, status: 200,
@@ -406,11 +518,43 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
     // "solar_forecast_provider" (backend rejects unknown fields).
     expect(body.provider).toBe('forecast_solar');
     expect(body).not.toHaveProperty('solar_forecast_provider');
-    // solar_forecast_mode is registry-visible but NOT part of the Q1 schema.
-    expect(body).not.toHaveProperty('solar_forecast_mode');
+    expect(body.solar_forecast_mode).toBe('hourly');
     for (const key of Object.keys(body)) {
       expect(SOLAR_TEST_ALLOWED_WIRE_KEYS.has(key)).toBe(true);
     }
+  });
+
+  it('builds a Solcast DTO without local geometry but keeps allocation kWp', async () => {
+    const wizard = await openWizardOnSolarStep();
+    wizard.solarDraft = {
+      ...wizard.solarDraft,
+      solar_forecast_provider: 'solcast',
+      solar_forecast_mode: 'daily',
+      solcast_api_key: 'secret',
+      solcast_site_id: 'roof',
+      solar_forecast_latitude: 50.12,
+      solar_forecast_longitude: 13.94,
+      solar_forecast_string1_enabled: true,
+      solar_forecast_string1_kwp: 5.5,
+      solar_forecast_string1_declination: 35,
+      solar_forecast_string1_azimuth: 180,
+      solar_forecast_string2_enabled: false,
+    };
+
+    const body = wizard.buildSolarTestBody();
+    expect(body).toMatchObject({
+      provider: 'solcast',
+      solar_forecast_mode: 'daily',
+      solcast_api_key: 'secret',
+      solcast_site_id: 'roof',
+      solar_forecast_string1_enabled: true,
+      solar_forecast_string1_kwp: 5.5,
+      solar_forecast_string2_enabled: false,
+    });
+    expect(body).not.toHaveProperty('solar_forecast_latitude');
+    expect(body).not.toHaveProperty('solar_forecast_longitude');
+    expect(body).not.toHaveProperty('solar_forecast_string1_declination');
+    expect(body).not.toHaveProperty('solar_forecast_string1_azimuth');
   });
 
   it('success shows tomorrow_total_kwh and sets solarTestMatchesDraft', async () => {
