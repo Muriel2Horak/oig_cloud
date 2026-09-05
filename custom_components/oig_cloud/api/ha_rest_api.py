@@ -2713,7 +2713,9 @@ def _boiler_soc_from_temps(
     return {"now_kwh": now_kwh, "now_liters": now_liters, "now_pct": now_pct}, now_liters
 
 
-def _build_boiler_detail_tab(hass: HomeAssistant, runtime: Any, tab: str) -> dict:
+def _build_boiler_detail_tab(
+    hass: HomeAssistant, runtime: Any, tab: str, box_id: str
+) -> dict:
     """Assemble the CONTRACT payload for one tab from the live boiler plan + actuals."""
     now = dt_util.now()
     today = now.date()
@@ -2761,25 +2763,36 @@ def _build_boiler_detail_tab(hass: HomeAssistant, runtime: Any, tab: str) -> dic
     plan_fve = round(sum(_boiler_slot_float(s, "pv_kwh") for s in slots), 3)
     plan_ready_min = _plan_ready_liters_min(slots, volume_l, cold_inlet_c)
 
-    # Actual per-source kWh totals: today only, from the live daily accumulators.
+    # Actual per-source kWh totals: today only, and from the SAME reconciled
+    # source the canonical DTO uses. The raw runtime accumulators
+    # (`get_daily_source_kwh`) are NOT ground truth — `_read_energy_tracking`
+    # clamps them to the box's own day counter
+    # (sensor.oig_<box>_boiler_day_w), and reading them unclamped put two
+    # contradictory numbers for the same quantity on one screen: the tile
+    # reported 18.06 kWh from the grid on 2026-09-05 while the box itself had
+    # metered 10.498 kWh of boiler energy all day.
     actual_grid: Optional[float] = None
     actual_fve: Optional[float] = None
-    if tab == "today" and hasattr(runtime, "get_daily_source_kwh"):
-        daily = runtime.get_daily_source_kwh() or {}
-        actual_grid = round(float(daily.get("grid", 0.0) or 0.0), 3)
-        actual_fve = round(float(daily.get("fve", 0.0) or 0.0), 3)
+    if tab == "today":
+        try:
+            from ..boiler.api_views import _read_energy_tracking
 
-    # "actual" columns are only meaningful for today; a past/future tab has no
-    # live actual to compare against in v1.  SoC itself is current state and is
-    # reported regardless of tab.
-    metric_ready_actual = actual_ready_liters if tab == "today" else None
+            tracking = _read_energy_tracking(hass, box_id, config, runtime) or {}
+            actual_grid = round(float(tracking.get("grid_kwh", 0.0) or 0.0), 3)
+            actual_fve = round(float(tracking.get("fve_kwh", 0.0) or 0.0), 3)
+        except Exception:  # noqa: BLE001 - a missing actual must not fail the tab
+            _LOGGER.debug("Boiler detail tabs: energy tracking unavailable", exc_info=True)
 
     metrics = [
         # actual cost needs per-slot actual cost tracking (M2) -> null
         _boiler_metric("cost_czk", plan_cost, None, "lower"),
         _boiler_metric("grid_kwh", plan_grid, actual_grid, "lower"),
         _boiler_metric("fve_kwh", plan_fve, actual_fve, "higher"),
-        _boiler_metric("ready_liters_min", plan_ready_min, metric_ready_actual, "higher"),
+        # `plan_ready_min` is the day's MINIMUM ready volume; the only actual we
+        # have is the CURRENT level, which is a different quantity — pairing
+        # them read as "43 L planned, 200 L achieved". Tracking the day's actual
+        # minimum is M2; until then report no actual rather than a wrong one.
+        _boiler_metric("ready_liters_min", plan_ready_min, None, "higher"),
     ]
 
     return {
@@ -2826,7 +2839,9 @@ class OIGCloudBoilerDetailTabsView(HomeAssistantView):
             return web.json_response({"error": "Boiler not found"}, status=404)
 
         try:
-            return web.json_response(_build_boiler_detail_tab(hass, runtime, tab))
+            return web.json_response(
+                _build_boiler_detail_tab(hass, runtime, tab, box_id)
+            )
         except Exception as e:
             _LOGGER.error(
                 f"Error serving boiler detail_tabs for {box_id}: {e}", exc_info=True
