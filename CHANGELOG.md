@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2026-09-05
+
+Compatibility release for Home Assistant 2026.8. Every item below was observed
+on a live install, not inferred from code review.
+
+### Fixed
+- **53 entities failed to load on HA 2026.8** (boiler, ČHMÚ, computed energy,
+  ServiceShield). `DeviceInfo` dropped `via_device` in favour of `via_device_id`;
+  the obsolete key reached the device registry on a pure-core stack, where the
+  deprecation reporter raises instead of warning and aborts adding the entity.
+  Child devices now declare only their identifiers and are linked to the box
+  device after setup (`shared/device_links.py`). A guard test fails the build if
+  `via_device` reappears.
+- **Error storm on shutdown / needless thread churn** — the boiler activity
+  listener was not a `@callback`, so Home Assistant handed it *every*
+  `state_changed` event in the instance via the executor, and a restart produced
+  116 × `RuntimeError: Executor shutdown has been called`. The handler is pure
+  in-memory work and now runs on the event loop.
+- **Shield decision telemetry was silently discarded** whenever a duplicate of an
+  already-running service call was blocked: the reason was built as
+  `duplicate_in_{location}`, but the frozen contract enum spells the running case
+  `duplicate_running`. The queue case matched by coincidence, which is why only
+  the running path broke.
+- **Slow state updates** — `real_data_update` materialised every state in the
+  instance (1789 on the reference install) twice per update; HA measured a 2.8 s
+  update. The scan is memoised per sensor with a short TTL.
+
+### Diagnostics
+- Shield telemetry failures now log the exception message, not just its class
+  name. The previous log named no key and made the cause unidentifiable.
+
 ## [2.4.1] - 2026-08-13
 
 Maintenance release focused on upgrade safety, solar-forecast reliability, authenticated
