@@ -422,7 +422,7 @@ def test_groq_chain_matches_p10_order():
     # qwen/qwen3.6-27b is the live Groq id (the old "qwen3-32b" 404s), placed
     # first with two non-reasoning fallbacks. Verified against Groq 2026-08-01.
     assert ai_task.MODEL_CHAINS["groq"] == (
-        "qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+        "qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "groq/compound-mini",
     )
 
 
