@@ -129,21 +129,15 @@ class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):  # t
             self.entity_id = f"sensor.oig_{box_id}_boiler_{unique_id_suffix}"
         self._attr_name = name
         name_box = box_id if box_id != "unknown" else "neznámý"
-        if box_id != "unknown":
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{box_id}_boiler")},
-                name=f"OIG Bojler {name_box}",
-                manufacturer="OIG",
-                model="Boiler Control",
-                via_device=(DOMAIN, box_id),
-            )
-        else:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{box_id}_boiler")},
-                name=f"OIG Bojler {name_box}",
-                manufacturer="OIG",
-                model="Boiler Control",
-            )
+        # Both branches used to differ only by `via_device`, which HA 2026.8
+        # removed from DeviceInfo; the parent link is attached after setup
+        # instead (shared/device_links.py), so one assignment covers both.
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{box_id}_boiler")},
+            name=f"OIG Bojler {name_box}",
+            manufacturer="OIG",
+            model="Boiler Control",
+        )
 
 
 # ========== TEPLOTNÍ SENZORY ==========

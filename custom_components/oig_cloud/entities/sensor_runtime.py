@@ -114,7 +114,6 @@ class OigCloudSensorRuntimeMixin(_EntityBase):
                 name=f"ServiceShield {self._box_id}",
                 manufacturer="OIG",
                 model="Shield",
-                via_device=(DOMAIN, self._box_id),
             )
 
         if sensor_category in [
@@ -128,7 +127,6 @@ class OigCloudSensorRuntimeMixin(_EntityBase):
                 name=f"Analytics & Predictions {self._box_id}",
                 manufacturer="OIG",
                 model="Analytics Module",
-                via_device=(DOMAIN, self._box_id),
             )
 
         return DeviceInfo(

@@ -509,7 +509,6 @@ def _get_analytics_device_info(
         "name": f"Analytics & Predictions {inverter_sn}",
         "manufacturer": "OIG",
         "model": "Analytics Module",
-        "via_device": (DOMAIN, inverter_sn),
         "entry_type": "service",
     }
 

@@ -233,7 +233,6 @@ class OigCloudShieldSensor(_ShieldBase):
             "name": f"ServiceShield {box_id}",
             "manufacturer": "OIG",
             "model": "Shield",
-            "via_device": (DOMAIN, box_id),
         }
 
     def _resolve_box_id(self) -> str:

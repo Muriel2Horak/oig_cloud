@@ -1405,7 +1405,6 @@ def _build_analytics_device_info(
         "name": f"Analytics & Predictions {box_id_for_devices}",
         "manufacturer": "OIG",
         "model": "Analytics Module",
-        "via_device": (DOMAIN, box_id_for_devices),
         "entry_type": "service",
     }
 
@@ -1872,6 +1871,21 @@ async def async_setup_entry(
         # Vždy registrovat sensor + switch platform
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+        # Child devices (analytics/boiler/shield) can only be linked to the box
+        # device once they exist, i.e. after the platforms created them. See
+        # shared/device_links.py for why the link no longer travels in DeviceInfo.
+        try:
+            from .shared.device_links import async_link_child_devices
+
+            link_box_id = str(
+                (hass.data[DOMAIN][entry.entry_id].get("box_id") or "")
+                or (entry.options.get("box_id") or "")
+            ).strip()
+            if link_box_id.isdigit():
+                async_link_child_devices(hass, link_box_id, entry.entry_id)
+        except Exception:  # noqa: BLE001 — a cosmetic link must never break setup
+            _LOGGER.debug("Linking child devices failed", exc_info=True)
+
         # Hourly AI evaluation — OPTIONAL. Started right after the platforms so a
         # later setup step cannot skip it; self-schedules and no-ops when AI is
         # not configured; must NEVER break integration setup.
@@ -1962,7 +1976,6 @@ def _setup_service_shield_data(
         "name": f"ServiceShield {shield_box_id}",
         "manufacturer": "OIG",
         "model": "Shield",
-        "via_device": (DOMAIN, shield_box_id),
         "entry_type": "service",
     }
     hass.data[DOMAIN][entry.entry_id]["shield_device_info"] = shield_device_info

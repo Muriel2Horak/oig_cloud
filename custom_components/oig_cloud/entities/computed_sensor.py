@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Dict, Iterable, Optional, Union, cast
 
@@ -19,6 +20,10 @@ _LOGGER = logging.getLogger(__name__)
 # Key: oig_cloud.energy_data_{box_id}
 # Structure: {"energy": {...}, "last_save": "ISO timestamp", "version": 1}
 ENERGY_STORAGE_VERSION = 1
+# Latest-OIG-entity-update memo lives on the sensor instance, not at module
+# level: module state outlives a config entry (and a test), so a stale answer
+# would leak between instances.
+_LATEST_UPDATE_TTL_SECONDS = 10.0
 _energy_stores: Dict[str, Store] = {}
 _energy_data_cache: Dict[str, Dict[str, float]] = {}
 _energy_last_update_cache: Dict[str, datetime] = {}
@@ -224,6 +229,21 @@ class OigCloudComputedSensor(_ComputedBase):
         box = self._box_id
         if not (isinstance(box, str) and box.isdigit()):
             return None
+
+        # `async_all` materialises EVERY state in the instance (1789 on the
+        # owner's box) and we do it twice, then normalise a timestamp per match
+        # — once per state write of this sensor. HA measured a 2.8 s update on
+        # 2026-09-05. The answer only moves when box data arrives, so a short
+        # shared TTL collapses the repeats without changing what is reported.
+        cached = getattr(self, "_latest_update_memo", None)
+        now = time.monotonic()
+        if (
+            cached is not None
+            and cached[0] == box
+            and now - cached[1] < _LATEST_UPDATE_TTL_SECONDS
+        ):
+            return cached[2]
+
         latest: Optional[datetime] = None
         for domain in ("sensor", "binary_sensor"):
             for st in self._iter_oig_states(domain, box):
@@ -232,6 +252,7 @@ class OigCloudComputedSensor(_ComputedBase):
                     continue
                 dt_utc = self._normalize_timestamp(dt)
                 latest = dt_utc if latest is None else max(latest, dt_utc)
+        self._latest_update_memo = (box, now, latest)
         return latest
 
     def _get_energy_store(self) -> Optional[Store]:
