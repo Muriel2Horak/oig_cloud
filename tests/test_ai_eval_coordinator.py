@@ -173,7 +173,7 @@ LIDSKY:
 
 
 @pytest.mark.asyncio
-async def test_generate_eval_report_none_noops(monkeypatch):
+async def test_generate_eval_report_none_records_a_failed_attempt(monkeypatch):
     from custom_components.oig_cloud.ai_eval import coordinator
 
     box_id = "1234567890"
@@ -215,7 +215,17 @@ async def test_generate_eval_report_none_noops(monkeypatch):
 
     await coord._async_run_tick(now)
 
-    assert fake_store.saved == {}
+    # A provider that answers nothing must NOT look like a quiet hour: the
+    # deterministic ledger is kept, the attempt is timestamped, and the status
+    # says why. (It used to write nothing at all, so an AI that had stopped
+    # answering was invisible — the owner's install ran that way unnoticed.)
+    assert fake_store.saved, "a failed AI call must still record the attempt"
+    assert fake_store.saved["status"] == "ai_unavailable"
+    assert fake_store.saved["last_run"] == now.isoformat()
+    assert fake_store.saved["ledger"]
+    # …but it must not invent a report, and it must not notify the owner.
+    assert fake_store.saved["report_fakta"] == ""
+    assert fake_store.saved["report_lidsky"] == ""
     assert publish_called == []
 
 

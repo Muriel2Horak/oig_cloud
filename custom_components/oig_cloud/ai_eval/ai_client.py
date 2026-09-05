@@ -11,6 +11,7 @@ request body.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -19,6 +20,8 @@ from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore
 from ..ai.model_cache import get_ai_model_cache
 from ..ai_task import MODEL_CHAINS
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def generate_eval_report(
@@ -44,6 +47,14 @@ async def generate_eval_report(
         key = await store.async_get_key() if provider else None
 
     if not provider or provider not in PROVIDERS or not key:
+        # Returning None here is correct (AI is optional) but it used to be
+        # indistinguishable from a working provider with nothing to say, so a
+        # half-configured AI stayed invisible.
+        _LOGGER.debug(
+            "AI eval: no usable provider (provider=%s, key=%s)",
+            provider or "-",
+            "set" if key else "missing",
+        )
         return None
 
     base_url = options.get("ai_base_url") or PROVIDERS[provider]["base_url"]

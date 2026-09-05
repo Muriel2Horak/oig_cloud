@@ -275,6 +275,8 @@ class AiEvalCoordinator:
             hass, STORE_VERSION, f"oig_cloud.ai_eval_{self.entry_id}"
         )
         self._ledger_entries: List[Dict[str, Any]] = []
+        self._last_report_fakta: str = ""
+        self._last_report_lidsky: str = ""
         self._unsub_timer: Optional[Callable[[], None]] = None
         self._initial_task: asyncio.Task[None] | None = None
         self._tick_tasks: set[asyncio.Task[Any]] = set()
@@ -283,6 +285,8 @@ class AiEvalCoordinator:
     async def async_setup(self) -> None:
         stored = await self._store.async_load()
         if stored and isinstance(stored, dict):
+            self._last_report_fakta = str(stored.get("report_fakta", "") or "")
+            self._last_report_lidsky = str(stored.get("report_lidsky", "") or "")
             ledger_str = stored.get("ledger", "")
             if ledger_str and ledger_str != "(zatím prázdný)":
                 for line in ledger_str.split("\n"):
@@ -340,7 +344,10 @@ class AiEvalCoordinator:
 
     async def _async_run_tick(self, now: datetime) -> None:
         if not self.box_id:
-            _LOGGER.debug("AI eval: no box_id, skipping tick")
+            _LOGGER.warning(
+                "AI eval: no box_id resolved for entry %s — hourly evaluation "
+                "cannot run", self.entry_id
+            )
             return
 
         entity_ids_map = _build_entity_ids(self.box_id)
@@ -405,10 +412,29 @@ class AiEvalCoordinator:
             self.hass, self.config_entry, payload.SYSTEM_PROMPT, user_message
         )
         if report_md is None:
-            _LOGGER.debug("AI eval: generate_eval_report returned None, skipping")
+            # Silent-death guard: the previous code returned here without a
+            # trace — no log above DEBUG, no ledger save, no `last_run` bump —
+            # so a provider that had stopped answering looked exactly like a
+            # quiet hour. Keep the deterministic half and make the failure
+            # visible.
+            _LOGGER.warning(
+                "AI eval: provider returned no report for %s; keeping the "
+                "previous report and recording the failed attempt",
+                self.box_id,
+            )
+            await self._store.async_save({
+                "report_fakta": self._last_report_fakta,
+                "report_lidsky": self._last_report_lidsky,
+                "ledger": ledger_str,
+                "last_run": now.isoformat(),
+                "anomaly_count": len(notable_events),
+                "status": "ai_unavailable",
+            })
+            async_dispatcher_send(self.hass, f"oig_cloud_ai_eval_update_{self.entry_id}")
             return
 
         fakta, lidsky = _split_fakta_lidsky(report_md)
+        self._last_report_fakta, self._last_report_lidsky = fakta, lidsky
         await self._store.async_save({
             "report_fakta": fakta,
             "report_lidsky": lidsky,
