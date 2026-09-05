@@ -135,7 +135,6 @@ class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):  # t
                 name=f"OIG Bojler {name_box}",
                 manufacturer="OIG",
                 model="Boiler Control",
-                via_device=(DOMAIN, box_id),
             )
         else:
             self._attr_device_info = DeviceInfo(
