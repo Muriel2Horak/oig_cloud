@@ -47,11 +47,15 @@ class _SpyKeyStore:
     def __init__(self, hass, entry_id):
         self.entry_id = entry_id
         self.calls = []
+        self.fallback_calls = []
         self.clears = 0
         _SpyKeyStore.instances.append(self)
 
     async def async_set_key(self, provider, api_key):
         self.calls.append((provider, api_key))
+
+    async def async_set_fallback(self, provider, api_key):
+        self.fallback_calls.append((provider, api_key))
 
     async def async_clear(self):
         self.clears += 1
@@ -116,8 +120,17 @@ async def test_ai_step_form_contains_provider_connection_and_masked_key():
 
     schema = result["data_schema"].schema
     fields = {marker.schema: validator for marker, validator in schema.items()}
-    assert set(fields) == {"ai_provider", "ai_base_url", "ai_model", "ai_api_key"}
+    assert set(fields) == {
+        "ai_provider",
+        "ai_base_url",
+        "ai_model",
+        "ai_api_key",
+        "ai_fallback_provider",
+        "ai_fallback_api_key",
+        "ai_consent_cross_provider_fallback",
+    }
     assert fields["ai_api_key"].config["type"] == "password"
+    assert fields["ai_fallback_api_key"].config["type"] == "password"
 
 
 @pytest.mark.asyncio
@@ -161,6 +174,85 @@ async def test_ai_step_with_no_key_is_a_valid_submission(spy_key_store):
     )
 
     assert all(not store.calls for store in spy_key_store.instances)
+
+
+_FALLBACK_SECRET = "nvapi-FallbackSecretKey0123456789"
+
+
+@pytest.mark.asyncio
+async def test_ai_step_stores_fallback_when_supplied(spy_key_store):
+    """Registering a fallback must not disturb the primary setter."""
+    _, hass, flow = _flow({"charge_rate_kw": 2.8})
+
+    result = await flow.async_step_ai(
+        {
+            "ai_provider": "groq",
+            "ai_base_url": "",
+            "ai_model": "",
+            "ai_api_key": _SECRET,
+            "ai_fallback_provider": "nvidia",
+            "ai_fallback_api_key": _FALLBACK_SECRET,
+            "ai_consent_cross_provider_fallback": True,
+        }
+    )
+
+    store = spy_key_store.instances[-1]
+    assert store.calls == [("groq", _SECRET)]
+    assert store.fallback_calls == [("nvidia", _FALLBACK_SECRET)]
+
+    _, kwargs = hass.config_entries.async_update_entry.call_args
+    options = kwargs["options"]
+    assert options["ai_consent_cross_provider_fallback"] is True
+    assert "ai_fallback_provider" not in options
+    assert "ai_fallback_api_key" not in options
+    assert _FALLBACK_SECRET not in str(options)
+    assert result["type"] in ("create_entry", "form")
+
+
+@pytest.mark.asyncio
+async def test_ai_step_does_not_store_fallback_when_omitted(spy_key_store):
+    """No fallback fields filled in -> no fallback write, primary unaffected."""
+    _, hass, flow = _flow({"charge_rate_kw": 2.8})
+
+    await flow.async_step_ai(
+        {
+            "ai_provider": "groq",
+            "ai_base_url": "",
+            "ai_model": "",
+            "ai_api_key": _SECRET,
+            "ai_fallback_provider": "",
+            "ai_fallback_api_key": "",
+            "ai_consent_cross_provider_fallback": False,
+        }
+    )
+
+    store = spy_key_store.instances[-1]
+    assert store.calls == [("groq", _SECRET)]
+    assert store.fallback_calls == []
+
+    _, kwargs = hass.config_entries.async_update_entry.call_args
+    assert kwargs["options"]["ai_consent_cross_provider_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_ai_step_fallback_key_without_provider_stores_nothing(spy_key_store):
+    """A half-filled fallback pair (key but no provider chosen) must not write."""
+    _, _, flow = _flow({"charge_rate_kw": 2.8})
+
+    await flow.async_step_ai(
+        {
+            "ai_provider": "groq",
+            "ai_base_url": "",
+            "ai_model": "",
+            "ai_api_key": _SECRET,
+            "ai_fallback_provider": "",
+            "ai_fallback_api_key": _FALLBACK_SECRET,
+            "ai_consent_cross_provider_fallback": False,
+        }
+    )
+
+    store = spy_key_store.instances[-1]
+    assert store.fallback_calls == []
 
 
 @pytest.mark.asyncio

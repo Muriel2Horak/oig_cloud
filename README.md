@@ -252,9 +252,24 @@ Formátování baterie (⚠️ Vymaže data!).
 ### 📥 **Telemetry data source (cloud / local)**
 - Volba zdroje telemetrie: cloud-only nebo lokální proxy režim (pro rychlejší aktualizace a fallback)
 
-### 🧙‍♂️ **Wizard a planner**
-- Průvodce nastavením s modulárním výběrem funkcí
-- Hybrid/Autonomy preview planner: levná okna + DP tuning parametry pro simulaci
+### 🧙‍♂️ **Wizard a planner v2**
+
+Nový průvodce nastavením přímo v dashboardu — jeden souvislý tok přes konfigurační kroky
+**Moduly → AI → Solár → Distribuce → Nákup → Prodej → Baterie → Bojler → Připojení → Shrnutí**.
+
+- Každý krok (kromě Moduly a Shrnutí) se dá přeskočit — **AI je dobrovolné** a data z instalace jdou
+  z integrace ven jen jako anonymní čísla (výkon a orientace panelů, kapacita a nastavení baterie).
+- Nastavíte jím: **moduly** (Solár, Ceny, Baterie, Bojler, Statistiky, Rozšířené senzory, ČHMÚ),
+  **poskytovatele solární předpovědi** (forecast.solar / Solcast) a **GPS souřadnice** instalace,
+  **sazbu distributora** a **scénáře obchodních cen** od vašeho dodavatele (SPOT + procento,
+  SPOT + fixní poplatek, FIX cena — včetně VT/NT variant pro dvoutarifní sazby), **parametry
+  baterie a plánovače**, **fyzické nastavení bojleru** a **zdroj telemetrie** (OIG Cloud /
+  lokální proxy).
+- Wizard spustíte z karty **Nastavení** a můžete ho kdykoliv znovu otevřít — žádný krok vás
+  nezamkne; v režimu kontroly vidíte u každého pole, co se oproti stávajícímu nastavení změní.
+- Hybrid/Autonomy preview planner: levná okna + DP tuning parametry pro simulaci.
+
+📖 Co je nového ve verzi 2.4.0: [RELEASE_NOTES_v2.4.0.md](./RELEASE_NOTES_v2.4.0.md)
 
 ### 🛡️ **ServiceShield™**
 - Configurable timeout (5-60 minut) a monitoring externích změn

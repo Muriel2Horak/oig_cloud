@@ -251,7 +251,7 @@ describe('OigBoilerPlanRealitaTile', () => {
     const tiles = el.shadowRoot!.querySelectorAll('.metric-tile');
     expect(tiles.length).toBe(2);
     const costTile = Array.from(tiles).find((t) => t.textContent?.includes('Náklady'))!;
-    expect(costTile.querySelector('.metric-plan')?.textContent).toContain('15.50');
+    expect(costTile.querySelector('.metric-plan')?.textContent).toContain('15,50');
     expect(costTile.querySelector('.metric-actual')?.classList.contains('better')).toBe(true);
   });
 

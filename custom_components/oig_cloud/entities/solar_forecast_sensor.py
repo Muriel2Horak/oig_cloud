@@ -650,7 +650,8 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             azimuth=azimuth,
             kwp=kwp,
         )
-        _LOGGER.info("🌞 Calling forecast.solar API for %s: %s", label, url)
+        # Do not log the full URL — the forecast.solar API key is a path segment.
+        _LOGGER.info("🌞 Calling forecast.solar API for %s (lat=%s, lon=%s)", label, lat, lon)
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
             if response.status == 200:
                 data = await response.json()

@@ -119,6 +119,12 @@ async def test_forecast_solar_fallback_then_recovery(
         options={
             **dict(entry.options),
             "solar_forecast_provider": "forecast_solar",
+            # P7 removed the implicit author-GPS fallback: forecast_solar now
+            # returns `unavailable` (early return) without a configured location.
+            # Provide coords so the fetch actually runs and this test exercises
+            # the fallback/recovery path rather than the missing-GPS guard.
+            "solar_forecast_latitude": 50.08,
+            "solar_forecast_longitude": 14.43,
         },
         data=dict(entry.data),
     )

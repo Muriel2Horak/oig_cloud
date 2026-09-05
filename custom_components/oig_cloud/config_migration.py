@@ -29,7 +29,6 @@ from homeassistant.helpers.storage import Store
 from .const import (
     CONF_BOILER_ALT_SOURCE_MODE,
     CONF_BOILER_COMFORT_PROFILE_MODE,
-    CONF_BOILER_PLANNING_HORIZON_HOURS,
     CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
 )
 from .config_merge import merge_entry_options
@@ -309,9 +308,9 @@ def _coerce_transform_output(result: object) -> tuple[dict[str, Any], set[str]]:
     if not isinstance(updates, dict):
         raise TypeError("transform output must be dict or (dict, list[str])")
 
+    # set(...) both validates iterability (raising TypeError otherwise) and
+    # deduplicates; an explicit isinstance check afterwards is always true.
     normalized_removed = set(removed_keys)
-    if not isinstance(normalized_removed, set):
-        raise TypeError("removed_keys must be iterable of strings")
     return updates, {str(key) for key in normalized_removed}
 
 

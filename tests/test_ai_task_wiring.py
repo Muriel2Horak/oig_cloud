@@ -419,8 +419,10 @@ async def test_ai_task_failure_with_consent_and_fallback_backend_delegates(monke
 
 def test_groq_chain_matches_p10_order():
     from custom_components.oig_cloud import ai_task
+    # qwen/qwen3.6-27b is the live Groq id (the old "qwen3-32b" 404s), placed
+    # first with two non-reasoning fallbacks. Verified against Groq 2026-08-01.
     assert ai_task.MODEL_CHAINS["groq"] == (
-        "llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant",
+        "qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
     )
 
 
@@ -450,3 +452,39 @@ def test_nvidia_chain_tail_is_latency_sorted():
     tail = ai_task.MODEL_CHAINS["nvidia"][6:]
     assert tail[0] == "microsoft/phi-4-mini-instruct"
     assert tail[-1] == "meta/llama-3.3-70b-instruct"
+
+
+# --- F1 fallback: direct-provider primary can also carry a fallback ---------
+
+@pytest.mark.asyncio
+async def test_direct_provider_wires_fallback_when_consented(monkeypatch):
+    """Groq primary + a stored NVIDIA fallback + consent -> the entity carries
+    the fallback backend, so a direct-provider primary can fall back too."""
+    added = await _run_setup(
+        "groq", "gsk_secret0000000000", monkeypatch,
+        fallback_provider="nvidia", fallback_key="nvapi-secret00000000",
+        consent=True)
+    ent = added[0]
+    assert ent._provider == "groq"
+    assert ent._consent_cross_provider_fallback is True
+    assert isinstance(ent._fallback_backend, OpenAiCompatBackend)
+    assert ent._fallback_backend._provider == "nvidia"
+
+
+@pytest.mark.asyncio
+async def test_direct_provider_no_fallback_without_consent(monkeypatch):
+    added = await _run_setup(
+        "groq", "gsk_secret0000000000", monkeypatch,
+        fallback_provider="nvidia", fallback_key="nvapi-secret00000000",
+        consent=False)
+    assert added[0]._fallback_backend is None
+
+
+@pytest.mark.asyncio
+async def test_same_provider_fallback_is_ignored(monkeypatch):
+    """A fallback equal to the primary gives no resilience -> not wired."""
+    added = await _run_setup(
+        "groq", "gsk_secret0000000000", monkeypatch,
+        fallback_provider="groq", fallback_key="gsk_other0000000000",
+        consent=True)
+    assert added[0]._fallback_backend is None

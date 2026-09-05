@@ -210,6 +210,19 @@ def _validated_task(task: str) -> str:
     return task
 
 
+# Per-task output instruction appended to the anonymous prompt. Constant text
+# only (no installation data). Supplies the JSON keyword Groq's json_object
+# mode requires AND the target shape the response schema validates against.
+_TASK_OUTPUT_SPEC: Dict[str, str] = {
+    "validate_config": (
+        'Respond ONLY with a single valid JSON object of the form '
+        '{"findings":[{"severity":"info|warning|error","message":"..."}]}. '
+        "Each finding is one short observation about the config numbers above; "
+        "return an empty findings array if nothing is wrong."
+    ),
+}
+
+
 def build_anonymous_prompt(task: str, install: Mapping[str, Any]) -> str:
     """Render a task prompt from allow-listed anonymous numbers only.
 
@@ -223,7 +236,15 @@ def build_anonymous_prompt(task: str, install: Mapping[str, Any]) -> str:
         # Names only — a dropped field's VALUE is exactly what must not be logged.
         _LOGGER.debug("Prompt %s: dropped non-allow-listed fields %s", task, dropped)
     lines = [f"{k}={v}" for k, v in sorted(safe.items())]
-    return f"task={task}\n" + "\n".join(lines)
+    prompt = f"task={task}\n" + "\n".join(lines)
+    spec = _TASK_OUTPUT_SPEC.get(task)
+    if spec:
+        # Two jobs, both required for json_object mode: (1) Groq rejects
+        # response_format=json_object unless the word "json" appears in the
+        # messages (HTTP 400), (2) the model needs the target shape to satisfy
+        # the schema. Constant per-task text — carries NO installation data.
+        prompt += "\n\n" + spec
+    return prompt
 
 
 class OpenAiCompatBackend:
@@ -305,16 +326,61 @@ class OpenAiCompatBackend:
             last_code = code
         raise AiBackendError(last_code or "provider_unreachable", len(self._models))
 
-    async def _try_model(
-        self, model: str, content: str, schema: Any
-    ) -> tuple[Any | None, str | None]:
-        """Try a single model; return (parsed JSON, None) or (None, error code)."""
-        payload = {
+    async def async_generate_text(
+        self, system_prompt: str, user_message: str,
+    ) -> str | None:
+        """Text-output variant: no json_object, returns raw markdown.
+
+        Mirrors async_generate_data model-chain walk but WITHOUT
+        response_format=json_object. Groq qwen reasoning_effort=none is
+        preserved. Returns None only when every model in the chain fails.
+        """
+        last_code: str | None = None
+
+        if self._model_cache and self._entry_id and self._provider:
+            cached = self._model_cache.get(self._entry_id, self._provider)
+            if cached:
+                result, code = await self._try_model_text(
+                    cached, system_prompt, user_message,
+                )
+                if code is None:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, cached,
+                    )
+                    return result
+                last_code = code
+
+        for model in self._models:
+            result, code = await self._try_model_text(
+                model, system_prompt, user_message,
+            )
+            if code is None:
+                if self._model_cache and self._entry_id and self._provider:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, model,
+                    )
+                return result
+            last_code = code
+        return None
+
+    async def _try_model_text(
+        self, model: str, system_prompt: str, user_message: str,
+    ) -> tuple[str | None, str | None]:
+        """Try a single model for text output; return (text, None) or (None, error code)."""
+        payload: Dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": content}],
-            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
             "temperature": 0,
         }
+        if (
+            self._provider == "groq"
+            and "api.groq.com" in self._base_url
+            and model.startswith("qwen")
+        ):
+            payload["reasoning_effort"] = "none"
         try:
             async with self._session.post(
                 f"{self._base_url}/chat/completions", headers=self._headers,
@@ -327,6 +393,68 @@ class OpenAiCompatBackend:
                 except Exception:
                     return None, "invalid_response"
             msg_content = body["choices"][0]["message"]["content"]
+            if (
+                msg_content
+                and msg_content.lstrip().startswith("<think>")
+                and "</think>" in msg_content
+            ):
+                msg_content = msg_content.split("</think>", 1)[1]
+            return msg_content, None
+        except (asyncio.TimeoutError, TimeoutError):
+            return None, "timeout"
+        except (KeyError, TypeError):
+            return None, "invalid_response"
+        except (ConnectionError, OSError):
+            return None, "provider_unreachable"
+        except Exception:
+            return None, "provider_unreachable"
+
+    async def _try_model(
+        self, model: str, content: str, schema: Any
+    ) -> tuple[Any | None, str | None]:
+        """Try a single model; return (parsed JSON, None) or (None, error code)."""
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": content}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0,
+        }
+        # Reasoning models (e.g. Groq qwen3.x) emit a <think> block that breaks
+        # response_format=json_object with HTTP 400 ("Failed to validate JSON").
+        # Disabling reasoning yields a pure-JSON body. Verified 2026-08-01
+        # against Groq qwen/qwen3.6-27b: none -> valid JSON, absent -> 400.
+        # Scoped to the canonical Groq endpoint — not just the provider name:
+        # base_url is overridable, so a groq-labelled backend pointed at another
+        # host must not receive reasoning_effort (a Groq-specific field that
+        # another endpoint rejects with 400).
+        if (
+            self._provider == "groq"
+            and "api.groq.com" in self._base_url
+            and model.startswith("qwen")
+        ):
+            payload["reasoning_effort"] = "none"
+        try:
+            async with self._session.post(
+                f"{self._base_url}/chat/completions", headers=self._headers,
+                json=payload, timeout=DEFAULT_TIMEOUT_S,
+            ) as resp:
+                if resp.status != 200:
+                    return None, _classify_http_status(resp.status)
+                try:
+                    body = await resp.json()
+                except Exception:
+                    return None, "invalid_response"
+            msg_content = body["choices"][0]["message"]["content"]
+            # Belt-and-suspenders: a reasoning model may prepend a
+            # <think>…</think> block. Strip it only when the content actually
+            # begins with one, so a legitimate "</think>" inside a JSON string
+            # value is never touched.
+            if (
+                msg_content
+                and msg_content.lstrip().startswith("<think>")
+                and "</think>" in msg_content
+            ):
+                msg_content = msg_content.split("</think>", 1)[1]
             parsed = json.loads(msg_content)
             return _validate_response_schema(parsed, schema), None
         except (asyncio.TimeoutError, TimeoutError):

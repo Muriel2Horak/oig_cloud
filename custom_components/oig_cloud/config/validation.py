@@ -83,7 +83,12 @@ async def validate_solar_forecast_api_key(
         f"https://api.forecast.solar/{api_key.strip()}/estimate/{request_lat}/{request_lon}/35/0/1"
     )
 
-    _LOGGER.debug("🔑 Validating Solar Forecast API key: %s...", test_url[:50])
+    # Do not log test_url — the API key is embedded in it as a path segment.
+    _LOGGER.debug(
+        "🔑 Validating Solar Forecast API key for lat=%s lon=%s",
+        request_lat,
+        request_lon,
+    )
 
     try:
         async with aiohttp.ClientSession() as session:

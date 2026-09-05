@@ -741,9 +741,9 @@ describe('OigBoilerStatusPanel — full DTO coverage', () => {
     expect(html).toContain('boiler-status-degraded-flags');
     expect(html).toContain('FVE predikce není aktuální');
     expect(html).toContain('Horní teploměr není dostupný');
-    expect(html).toContain('45.2 °C');
-    expect(html).toContain('38.0 °C');
-    expect(html).toContain('1.23 kWh');
+    expect(html).toContain('45,2 °C');
+    expect(html).toContain('38,0 °C');
+    expect(html).toContain('1,23 kWh');
   });
   it('renders en strings when lang=en', async () => {
     const el = document.createElement('oig-boiler-status-panel') as any;
@@ -811,11 +811,11 @@ describe('OigBoilerPlanTimeline — per-slot detail', () => {
     expect(html).toContain('boiler-plan-timeline');
     expect(html).toContain('FVE');
     expect(html).toContain('Síť');
-    expect(html).toContain('48.5 °C');
+    expect(html).toContain('48,5 °C');
     expect(html).toContain('Komfort OK');
     expect(html).toContain('Komfort nesplněn');
-    expect(html).toContain('0.50 kWh');
-    expect(html).toContain('0.60 Kč');
+    expect(html).toContain('0,50 kWh');
+    expect(html).toContain('0,60 Kč');
     expect(html).toContain('80 %');
     expect(html).toContain('0 %');
   });
@@ -854,7 +854,7 @@ describe('OigBoilerSourceExplanation — split sections', () => {
     expect(html).toContain('Horní teploměr není dostupný');
     expect(html).toContain('Vybrán zdroj: FVE');
     expect(html).toContain('4.2');
-    expect(html).toContain('45.5 °C');
+    expect(html).toContain('45,5 °C');
     expect(html).toContain('2 min');
   });
   it('renders fresh-inputs label when no freshness reason present', async () => {
@@ -1247,11 +1247,11 @@ describe('i18n — new keys', () => {
 
 describe('format — new formatters', () => {
   it('formatTempTrendCPerMin formats positive trend', () => {
-    expect(formatTempTrendCPerMin(1.5)).toBe('+1.50 °C/min');
+    expect(formatTempTrendCPerMin(1.5)).toBe('+1,50 °C/min');
   });
 
   it('formatTempTrendCPerMin formats negative trend', () => {
-    expect(formatTempTrendCPerMin(-0.5)).toBe('-0.50 °C/min');
+    expect(formatTempTrendCPerMin(-0.5)).toBe('-0,50 °C/min');
   });
 
   it('formatTempTrendCPerMin returns dash for null', () => {
@@ -1267,7 +1267,7 @@ describe('format — new formatters', () => {
   });
 
   it('formatKw formats kilowatts', () => {
-    expect(formatKw(2.5)).toBe('2.50 kW');
+    expect(formatKw(2.5)).toBe('2,50 kW');
   });
 
   it('formatCompactTime formats minutes only', () => {
@@ -1951,7 +1951,7 @@ describe('OigBoilerV2Svg', () => {
     const el = new OigBoilerV2Svg();
     el.bottomTempC = 42;
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('dole 42.0 °C');
+    expect(json).toContain('dole 42,0 °C');
   });
 
   it('no pipe labels (Cirk./TUV/Vstup) in rendered output', () => {

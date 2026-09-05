@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-07-31
+
+Major user-facing release. Full Czech release notes: `RELEASE_NOTES_v2.4.0.md`.
+
+### Added
+- **V2 dashboard** as the default view — four tabs: Toky (flows), Ceny (prices),
+  Bojler (boiler), Nastavení (settings).
+- **Boiler tab rework** — hero energy-flow (source-coloured animated connectors →
+  tank/heater → draws), rolling 24h SoC/temperature chart with FVE overlay,
+  Plán & realita tile (Včera/Dnes/Zítra), Energie dnes, weekly water draw-map (P90).
+- **Onboarding wizard v2** in the dashboard (Nastavení), re-runnable: Moduly → AI →
+  Solár → Distribuce → Nákup → Prodej → Baterie → Bojler → Připojení → Shrnutí.
+- **ČHMÚ weather warnings** module (local + national, 5 severities, header badge).
+- **Telemetry source** choice: OIG Cloud or local OIG Proxy (Nastavení → Připojení).
+- **ServiceShield™** configurable timeout (5–60 min) + external-change monitoring.
+- Multi-device support via optional `device_id` service parameter.
+- Hybrid/Autonomy preview planner + optional AI assistant (anonymous numeric inputs only).
+
+### Fixed
+- **OIG portal write contract (2026-07-31)** — the portal tightened its write API:
+  `value` must be a JSON int, writes require the `X-Requested-With: XMLHttpRequest`
+  header, and `ToGrid.Toggle.php` requires `p_max_feed_grid`. Boiler-mode,
+  inverter-mode and grid-delivery writes work again.
+- Boiler-tab visual fidelity (comma decimals, compact draw-map, hero flow) matched to
+  the approved design.
+
 ## [2.3.36] - 2026-06-18
 
 Large feature release: a from-scratch Boiler V2 dashboard and planner, a redesigned

@@ -464,12 +464,12 @@ export class OigBoilerV2Svg extends LitElement {
     const fill = this.fillLevelPct ?? null;
 
     const topTempStr = this.topTempC != null
-      ? `${this.topTempC.toFixed(1)} °C`
+      ? `${this.topTempC.toFixed(1).replace('.', ',')} °C`
       : '— °C';
 
     const effectiveBottomTemp = this.bottomTempC ?? this.lowerZoneTempC ?? null;
     const bottomTempStr = effectiveBottomTemp != null
-      ? `dole ${effectiveBottomTemp.toFixed(1)} °C`
+      ? `dole ${effectiveBottomTemp.toFixed(1).replace('.', ',')} °C`
       : null;
 
     // Ready liters pill — use readyLiters prop; fall back to fill*volume

@@ -290,6 +290,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.hero.node_next_demand': 'Další očekávaný',
     'boiler.hero.node_circulation': 'Cirkulace',
     'boiler.hero.next_heating_dash': '—',
+    'boiler.hero.sub_plan': 'plán',
+    'boiler.hero.sub_active': 'aktivní',
+    'boiler.hero.sub_waiting': 'čeká',
+    'boiler.hero.sub_pricier_than_spot': 'dráž než spot',
+    'boiler.hero.sub_morning': 'ráno',
 
     // plan & realita tile
     'boiler.plan_realita.title': 'Bojler: plán & realita',
@@ -594,6 +599,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.hero.node_next_demand': 'Next expected',
     'boiler.hero.node_circulation': 'Circulation',
     'boiler.hero.next_heating_dash': '—',
+    'boiler.hero.sub_plan': 'plan',
+    'boiler.hero.sub_active': 'active',
+    'boiler.hero.sub_waiting': 'waiting',
+    'boiler.hero.sub_pricier_than_spot': 'pricier than spot',
+    'boiler.hero.sub_morning': 'morning',
 
     // plan & realita tile
     'boiler.plan_realita.title': 'Boiler: plan & reality',

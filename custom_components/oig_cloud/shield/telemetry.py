@@ -120,7 +120,8 @@ async def emit_shield_decision_event(
             render_shield_log_marker(
                 "WARNING",
                 correlation_id,
-                f"Shield decision telemetry emit failed: {err.__class__.__name__}",
+                "Shield decision telemetry emit failed: "
+                f"{err.__class__.__name__}: {err}",
             )
         )
         return False

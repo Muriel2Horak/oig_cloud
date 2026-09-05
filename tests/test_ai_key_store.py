@@ -68,9 +68,44 @@ async def test_key_never_reaches_config_entry_options(store):
     assert _SECRET not in str(entry.options)
 
 
+_FALLBACK_SECRET = "nvapi-ThisIsAFallbackSecretKey0123456789"
+
+
 @pytest.mark.asyncio
-async def test_setting_a_key_logs_only_a_redacted_fingerprint(store, caplog):
+async def test_set_fallback_leaves_primary_intact(store):
+    await store.async_set_key("groq", _SECRET)
+    await store.async_set_fallback("nvidia", _FALLBACK_SECRET)
+    assert await store.async_get_key() == _SECRET
+    assert await store.async_get_provider() == "groq"
+    assert await store.async_get_fallback_key() == _FALLBACK_SECRET
+    assert await store.async_get_fallback_provider() == "nvidia"
+
+
+@pytest.mark.asyncio
+async def test_set_fallback_without_a_primary_key(store):
+    """A fallback may be registered even before/without a primary key."""
+    await store.async_set_fallback("nvidia", _FALLBACK_SECRET)
+    assert await store.async_get_provider() is None
+    assert await store.async_get_key() is None
+    assert await store.async_get_fallback_provider() == "nvidia"
+    assert await store.async_get_fallback_key() == _FALLBACK_SECRET
+
+
+@pytest.mark.asyncio
+async def test_setting_fallback_never_logs_the_secret(store, caplog):
+    with caplog.at_level(logging.DEBUG):
+        await store.async_set_fallback("nvidia", _FALLBACK_SECRET)
+    assert _FALLBACK_SECRET not in caplog.text
+    assert "nvapi-" not in caplog.text
+    assert "nvidia" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_setting_a_key_never_logs_the_secret(store, caplog):
     with caplog.at_level(logging.DEBUG):
         await store.async_set_key("groq", _SECRET)
+    # No key material (not even a redacted fragment) is logged — only the
+    # provider name — so CodeQL's clear-text-logging dataflow has no sink.
     assert _SECRET not in caplog.text
-    assert "gsk_…6789" in caplog.text
+    assert "gsk_" not in caplog.text
+    assert "groq" in caplog.text

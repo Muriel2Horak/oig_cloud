@@ -306,6 +306,10 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
             "Connection": "keep-alive",
+            # Portal write scripts route AJAX requests by this header; the
+            # 2026-07-31 portal update serves an HTML error page (HTTP 500) to
+            # requests that omit it. Reads (json.php) don't require it, writes do.
+            "X-Requested-With": "XMLHttpRequest",
             "Referer": "https://portal.oigpower.cz/",
             "Origin": "https://portal.oigpower.cz",
             "Sec-Ch-Ua": '"Not)A;Brand";v="99", "Google Chrome";v="141", "Chromium";v="141"',
@@ -535,12 +539,19 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
     ) -> bool:
         """Internal method to set box parameters."""
         async with self.get_session() as session:
+            # Portal AJAX writes (setSwitch) send numeric toggle/mode values as
+            # JSON ints. The 2026-07-31 portal update rejects string values on
+            # these columns with HTTP 500 ("Nastala chyba"), so coerce a numeric
+            # string back to int to match the browser payload exactly.
+            coerced_value = value
+            if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+                coerced_value = int(value.strip())
             data: str = json.dumps(
                 {
                     "id_device": self.box_id,
                     "table": table,
                     "column": column,
-                    "value": value,
+                    "value": coerced_value,
                 }
             )
             _nonce: int = int(time.time() * 1000)
@@ -581,10 +592,15 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 raise OigCloudApiError("Box ID not available, fetch stats first")
 
             async with self.get_session() as session:
+                # 2026-07-31 portal contract: ToGrid.Toggle.php expects
+                # p_max_feed_grid on every call (null for off/on; the export
+                # cap in W only for the "limited" mode). Omitting it yields the
+                # HTTP 500 error page. off/on send null to match the browser.
                 data: str = json.dumps(
                     {
                         "id_device": self.box_id,
                         "value": mode,
+                        "p_max_feed_grid": None,
                     }
                 )
 

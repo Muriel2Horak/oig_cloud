@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,6 +14,16 @@ from custom_components.oig_cloud.shield import validation as validation_module
 
 
 INSTALL_ID_HASH = hashlib.sha256(b"core-uuid").hexdigest()
+# Read the shipped version dynamically so a version bump does not break the
+# telemetry-shape tests (integration_version comes from manifest.json).
+_MANIFEST_VERSION = json.loads(
+    (
+        Path(__file__).resolve().parent.parent
+        / "custom_components"
+        / "oig_cloud"
+        / "manifest.json"
+    ).read_text()
+)["version"]
 COMMON_SHIELD_KEYS = {
     "schema_version",
     "source_product",
@@ -122,7 +134,7 @@ def _assert_event_shape(
     assert event["event_name"] == event_name
     assert event["device_id"] == "123"
     assert event["install_id_hash"] == INSTALL_ID_HASH
-    assert event["integration_version"] == "2.3.36"
+    assert event["integration_version"] == _MANIFEST_VERSION
     assert event["run_id"] == "na"
     assert event["correlation_id"] == correlation_id
     assert event["result"] == result
@@ -305,6 +317,56 @@ def test_intercept_service_call_emits_duplicate_blocked_event(monkeypatch):
     assert event["detail_result_reason"] == "duplicate_in_queue"
     assert event["detail_duplicate_location"] == "queue"
     assert event["metric_queue_depth"] == 1
+
+
+def test_intercept_service_call_emits_duplicate_blocked_event_for_running_call(
+    monkeypatch,
+):
+    """A duplicate of a RUNNING call must emit a contract-valid event.
+
+    Regression: the reason used to be derived as f"duplicate_in_{location}",
+    which yields "duplicate_in_running" — not a frozen enum value, so the whole
+    event was rejected with CloudContractError and the shield decision went
+    unrecorded. The queue case happened to match the enum, which is why only
+    the running path broke.
+    """
+    emitter = RecordingEmitter()
+    shield = DummyShield(
+        DummyHass(DummyStates([DummyState("sensor.oig_123_box_prms_mode", "Home")])),
+        _entry(),
+        expected_entities={"sensor.oig_123_box_prms_mode": "Home 1"},
+        emitter=emitter,
+    )
+    shield.pending["oig_cloud.set_box_mode"] = {
+        "entities": {"sensor.oig_123_box_prms_mode": "Home 1"},
+    }
+
+    monkeypatch.setattr(dispatch_module.uuid, "uuid4", lambda: "dupe5678")
+
+    asyncio.run(
+        dispatch_module.intercept_service_call(
+            shield,
+            "oig_cloud",
+            "set_box_mode",
+            {"params": {"mode": "home_1"}},
+            AsyncMock(),
+            False,
+            None,
+        )
+    )
+
+    assert len(emitter.cloud_events) == 1
+
+    event = emitter.cloud_events[0]
+    _assert_event_shape(
+        event,
+        event_name="shield_duplicate_blocked",
+        result="duplicate",
+        service_name="oig_cloud.set_box_mode",
+        correlation_id="dupe5678",
+    )
+    assert event["detail_result_reason"] == "duplicate_running"
+    assert event["detail_duplicate_location"] == "running"
 
 
 def test_handle_timeout_emits_timeout_cloud_event_and_warning_marker(caplog):

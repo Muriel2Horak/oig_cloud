@@ -604,10 +604,13 @@ class TestOigCloudApi:
         assert result is True
 
         expected_url = f"https://portal.oigpower.cz/inc/php/scripts/ToGrid.Toggle.php?_nonce={nonce}"
+        # 2026-07-31 portal contract: ToGrid.Toggle.php requires p_max_feed_grid
+        # on every call (null for off/on).
         expected_data = json.dumps(
             {
                 "id_device": "test_box_id",
                 "value": 1,
+                "p_max_feed_grid": None,
             }
         )
 
