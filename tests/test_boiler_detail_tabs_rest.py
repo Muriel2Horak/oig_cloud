@@ -49,12 +49,28 @@ class _ConfigEntries:
         return None
 
 
+class _State:
+    def __init__(self, state):
+        self.state = state
+        self.attributes: dict = {}
+
+
+class _States:
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def get(self, entity_id):
+        value = self._mapping.get(entity_id)
+        return _State(value) if value is not None else None
+
+
 class _Hass:
-    def __init__(self):
+    def __init__(self, states=None):
         self.data: dict = {}
         self.config_entries = _ConfigEntries([_Entry()])
-        # No `states` attribute -> temperature reads degrade to None (soc null),
-        # keeping the tests deterministic without wiring live sensors.
+        # Only the box day counter is wired; temperature reads still degrade to
+        # None (soc null), keeping the tests deterministic.
+        self.states = _States(states or {})
 
 
 class _Request:
@@ -106,8 +122,12 @@ def _day_slots(day_date):
     ]
 
 
-def _hass_with_plan(slots, daily=None):
-    hass = _Hass()
+def _hass_with_plan(slots, daily=None, day_wh=None):
+    # `day_wh` is the box's own metered boiler energy for today. It is the
+    # ground truth `_read_energy_tracking` clamps the accumulators to; default
+    # 6900 Wh = the 2.8 + 4.1 kWh the accumulators below claim, so the split
+    # survives unchanged unless a test asks otherwise.
+    hass = _Hass({f"sensor.oig_{_BOX_ID}_boiler_day_w": str(6900 if day_wh is None else day_wh)})
     plan = SimpleNamespace(slots=slots) if slots is not None else None
     runtime = SimpleNamespace(
         coordinator=SimpleNamespace(
@@ -154,6 +174,9 @@ async def test_detail_tabs_today_shape():
     assert by_key["grid_kwh"]["actual"] == pytest.approx(4.1)
     assert by_key["fve_kwh"]["actual"] == pytest.approx(2.8)
     assert by_key["cost_czk"]["actual"] is None  # pending M2 actual cost
+    # the day's MINIMUM ready volume has no live actual (current level is a
+    # different quantity) -> null until M2 tracks it
+    assert by_key["ready_liters_min"]["actual"] is None
 
     # blocks cover the two slots, valid source classes and statuses.
     assert payload["blocks"], payload
@@ -249,3 +272,29 @@ async def test_detail_tabs_defaults_to_today_when_tab_absent():
     payload = json.loads(response.text)
     assert response.status == 200, payload
     assert payload["tab"] == "today"
+
+
+async def test_actuals_are_clamped_to_the_box_day_counter():
+    """The tile must never claim more energy than the box itself metered.
+
+    Regression (owner's install, 2026-09-05): the tab read the RAW runtime
+    accumulators, which had drifted to 18.06 kWh of grid energy while the box's
+    own day counter said the boiler had used 10.498 kWh all day. "Energie dnes"
+    (reconciled) and "Plán & realita" (raw) then showed 10.1 vs 18.06 kWh for
+    the same quantity, side by side on one screen.
+    """
+    hass = _hass_with_plan(
+        _day_slots(dt_util.now().date()),
+        daily={'fve': 0.72, 'grid': 18.06},  # drifted accumulators
+        day_wh=10498,  # what the box actually metered
+    )
+    payload = json.loads(
+        (await _view().get(_Request(hass, "today"), _ENTRY_ID, _BOX_ID)).text
+    )
+    by_key = {m["key"]: m for m in payload["metrics"]}
+
+    grid = by_key["grid_kwh"]["actual"]
+    fve = by_key["fve_kwh"]["actual"]
+    assert grid is not None and fve is not None
+    assert grid + fve == pytest.approx(10.498, abs=0.002)
+    assert grid < 18.06, "raw accumulator leaked into the tab again"
