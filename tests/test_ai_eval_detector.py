@@ -75,3 +75,36 @@ def test_event_snapshot_indices_merge_overlapping_windows():
     events = [{"i": 3}, {"i": 5}]
     idx = det.event_snapshot_indices(events, n=20, win=2)
     assert idx == [1, 2, 3, 4, 5, 6, 7]
+
+
+def test_imbalance_event_names_the_backup_circuit_and_shows_the_other_terms():
+    """The imbalance event must make mis-attribution impossible.
+
+    Owner's complaint (2026-09-05): the model kept insisting that uneven
+    consumption drove the higher grid draw, when the data plainly showed the
+    draw sitting on "nezáloha" — outside the inverter's reach. The metric is
+    computed from zal_r/s/t ALONE, so it says nothing about grid draw; the event
+    text now says so and carries the terms that do explain it.
+    """
+    n = 6
+    grid = {
+        "zal_r": [0, 0, 2081, 2081, 2081, 2081],
+        "zal_s": [0] * n,
+        "zal_t": [0] * n,
+        "zal": [0, 0, 2081, 2081, 2081, 2081],
+        "nez": [16400] * n,
+        "grid": [16500, 16500, 17900, 17900, 17900, 17900],
+        "fve": [0] * n,
+        "bat": [0] * n,
+        "soc": [60] * n,
+    }
+    events = det.detect_events(grid, n, lambda i: f"19:5{i}")
+    imbalance = [e for e in events if e["kind"] == "nerovnovaha"]
+    assert imbalance, events
+
+    detail = imbalance[0]["detail"]
+    assert "ZALOHY" in detail, "the event must say which circuit is uneven"
+    assert "2081/0/0" in detail, "per-phase split must be visible"
+    # the terms that DO explain the grid draw travel with the event
+    assert "nez 16400" in detail
+    assert "sit 17900" in detail
