@@ -28,7 +28,35 @@ def _load_integration_version() -> str:
         return "unknown"
 
 
-_INTEGRATION_VERSION = _load_integration_version()
+# Resolved lazily, off the event loop. Reading the manifest at import time is a
+# blocking file read inside the loop (HA logs "Detected blocking call to
+# read_text ... by custom integration 'oig_cloud'"), because importing this
+# module is itself part of loading the integration.
+_INTEGRATION_VERSION: str | None = None
+
+
+async def _async_integration_version(hass: Any) -> str:
+    """Resolve (and memoise) the integration version without blocking the loop.
+
+    Only a real ``str`` is ever cached: a stubbed/mocked ``hass`` returns a Mock
+    from ``async_add_executor_job``, and caching that would poison every later
+    caller in the same process.
+    """
+    global _INTEGRATION_VERSION
+    if _INTEGRATION_VERSION is not None:
+        return _INTEGRATION_VERSION
+    executor = getattr(hass, "async_add_executor_job", None)
+    if callable(executor):
+        try:
+            resolved = await executor(_load_integration_version)
+            if isinstance(resolved, str):
+                _INTEGRATION_VERSION = resolved
+                return resolved
+        except Exception:  # noqa: BLE001 — version is diagnostic only
+            pass
+    resolved = _load_integration_version()
+    _INTEGRATION_VERSION = resolved
+    return resolved
 
 
 def render_shield_log_marker(level: str, correlation_id: str | None, message: str) -> str:
@@ -103,7 +131,9 @@ async def emit_shield_decision_event(
             occurred_at=dt_now().isoformat(),
             device_id=device_id,
             install_id_hash=install_id_hash,
-            integration_version=_INTEGRATION_VERSION,
+            integration_version=await _async_integration_version(
+                getattr(shield, "hass", None)
+            ),
             run_id=_SHIELD_RUN_ID,
             correlation_id=correlation_id or "na",
             diagnostics=_build_shield_diagnostics(

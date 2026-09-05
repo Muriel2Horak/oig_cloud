@@ -120,7 +120,6 @@ class BoilerWrapperSwitch(SwitchEntity):
             name=f"OIG Bojler {box_id}",
             manufacturer="OIG",
             model="Boiler Control",
-            via_device=(DOMAIN, box_id),
         )
 
     @property
