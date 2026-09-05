@@ -319,6 +319,56 @@ def test_intercept_service_call_emits_duplicate_blocked_event(monkeypatch):
     assert event["metric_queue_depth"] == 1
 
 
+def test_intercept_service_call_emits_duplicate_blocked_event_for_running_call(
+    monkeypatch,
+):
+    """A duplicate of a RUNNING call must emit a contract-valid event.
+
+    Regression: the reason used to be derived as f"duplicate_in_{location}",
+    which yields "duplicate_in_running" — not a frozen enum value, so the whole
+    event was rejected with CloudContractError and the shield decision went
+    unrecorded. The queue case happened to match the enum, which is why only
+    the running path broke.
+    """
+    emitter = RecordingEmitter()
+    shield = DummyShield(
+        DummyHass(DummyStates([DummyState("sensor.oig_123_box_prms_mode", "Home")])),
+        _entry(),
+        expected_entities={"sensor.oig_123_box_prms_mode": "Home 1"},
+        emitter=emitter,
+    )
+    shield.pending["oig_cloud.set_box_mode"] = {
+        "entities": {"sensor.oig_123_box_prms_mode": "Home 1"},
+    }
+
+    monkeypatch.setattr(dispatch_module.uuid, "uuid4", lambda: "dupe5678")
+
+    asyncio.run(
+        dispatch_module.intercept_service_call(
+            shield,
+            "oig_cloud",
+            "set_box_mode",
+            {"params": {"mode": "home_1"}},
+            AsyncMock(),
+            False,
+            None,
+        )
+    )
+
+    assert len(emitter.cloud_events) == 1
+
+    event = emitter.cloud_events[0]
+    _assert_event_shape(
+        event,
+        event_name="shield_duplicate_blocked",
+        result="duplicate",
+        service_name="oig_cloud.set_box_mode",
+        correlation_id="dupe5678",
+    )
+    assert event["detail_result_reason"] == "duplicate_running"
+    assert event["detail_duplicate_location"] == "running"
+
+
 def test_handle_timeout_emits_timeout_cloud_event_and_warning_marker(caplog):
     emitter = RecordingEmitter()
     shield = DummyShield(

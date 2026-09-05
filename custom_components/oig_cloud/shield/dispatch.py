@@ -65,6 +65,17 @@ def _split_box_mode_params(params: Dict[str, Any]) -> Optional[list[Dict[str, An
     return None
 
 
+# `_is_duplicate` reports WHERE the duplicate sits ("queue" / "running"), but the
+# telemetry contract froze the two reasons with different shapes:
+# "duplicate_in_queue" vs "duplicate_running" (no "in_"). Deriving the reason with
+# an f-string produced "duplicate_in_running", which the contract rejects — the
+# whole shield-decision event was then dropped with a bare CloudContractError.
+_DUPLICATE_RESULT_REASONS = {
+    "queue": "duplicate_in_queue",
+    "running": "duplicate_running",
+}
+
+
 def _is_duplicate(
     shield: Any,
     service_name: str,
@@ -265,7 +276,7 @@ async def _handle_duplicate(
         service_name=service_name,
         correlation_id=correlation_id,
         expected_entities=expected_entities,
-        detail_result_reason=f"duplicate_in_{duplicate_location}",
+        detail_result_reason=_DUPLICATE_RESULT_REASONS.get(duplicate_location),
         detail_duplicate_location=duplicate_location,
     )
 
