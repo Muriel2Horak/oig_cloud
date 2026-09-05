@@ -1882,7 +1882,7 @@ async def async_setup_entry(
                 or (entry.options.get("box_id") or "")
             ).strip()
             if link_box_id.isdigit():
-                async_link_child_devices(hass, link_box_id)
+                async_link_child_devices(hass, link_box_id, entry.entry_id)
         except Exception:  # noqa: BLE001 — a cosmetic link must never break setup
             _LOGGER.debug("Linking child devices failed", exc_info=True)
 

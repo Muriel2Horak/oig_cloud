@@ -30,14 +30,23 @@ _LOGGER = logging.getLogger(__name__)
 CHILD_DEVICE_SUFFIXES: tuple[str, ...] = ("_analytics", "_boiler", "_shield")
 
 
-def _resolve_parent_id(registry: Any, box_id: str) -> str | None:
-    parent = registry.async_get_device(identifiers={(DOMAIN, box_id)})
-    return getattr(parent, "id", None) if parent else None
+def _lookup_device(registry: Any, identifier: tuple[str, str], entry_id: str | None) -> Any:
+    """Find a device by identifier, preferring the non-deprecated API.
+
+    HA 2026.8 deprecated ``async_get_device`` (identifiers are no longer unique
+    across config entries) in favour of ``async_get_device_by_identifier``,
+    which needs the owning entry. Fall back only when the new API is absent.
+    """
+    by_identifier = getattr(registry, "async_get_device_by_identifier", None)
+    if callable(by_identifier) and entry_id:
+        return by_identifier(identifier, entry_id)
+    return registry.async_get_device(identifiers={identifier})
 
 
 def async_link_child_devices(
     hass: Any,
     box_id: str,
+    entry_id: str | None = None,
     suffixes: Iterable[str] = CHILD_DEVICE_SUFFIXES,
 ) -> int:
     """Point every child device at the box device. Returns how many were linked.
@@ -54,14 +63,15 @@ def async_link_child_devices(
         _LOGGER.debug("Device registry unavailable, skipping child links: %s", err)
         return 0
 
-    parent_id = _resolve_parent_id(registry, box_id)
+    parent = _lookup_device(registry, (DOMAIN, box_id), entry_id)
+    parent_id = getattr(parent, "id", None) if parent else None
     if not parent_id:
         _LOGGER.debug("Box device %s not in registry yet; child links skipped", box_id)
         return 0
 
     linked = 0
     for suffix in suffixes:
-        child = registry.async_get_device(identifiers={(DOMAIN, f"{box_id}{suffix}")})
+        child = _lookup_device(registry, (DOMAIN, f"{box_id}{suffix}"), entry_id)
         if child is None or getattr(child, "via_device_id", None) == parent_id:
             continue
         try:
