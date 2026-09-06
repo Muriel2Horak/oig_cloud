@@ -176,12 +176,12 @@ def _solar_forecast_summary(hass: HomeAssistant, box_id: str) -> str:
         state = hass.states.get(f"sensor.oig_{box_id}_solar_forecast")
         if state is None:
             return ""
-        attrs = state.attributes or {}
+        attrs: Dict[str, Any] = dict(state.attributes or {})
         today = attrs.get("today_total_kwh")
         tomorrow = attrs.get("string1_tomorrow_kwh")
         if today is None and tomorrow is None:
             return ""
-        parts = []
+        parts: List[str] = []
         if today is not None:
             parts.append(f"dnes {float(today):.1f} kWh")
         if tomorrow is not None:

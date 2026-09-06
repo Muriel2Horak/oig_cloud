@@ -80,3 +80,106 @@ def test_solar_summary_is_optional():
         states = _States()
 
     assert coordinator._solar_forecast_summary(_Hass(), "2206237016") == ""
+
+
+class _SolarState:
+    def __init__(self, attributes):
+        self.attributes = attributes
+
+
+class _SolarStates:
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def get(self, entity_id):
+        return self._mapping.get(entity_id)
+
+
+class _SolarHass:
+    def __init__(self, mapping):
+        self.states = _SolarStates(mapping)
+
+
+_SOLAR_ENTITY = "sensor.oig_2206237016_solar_forecast"
+
+
+def test_solar_summary_reports_today_and_tomorrow():
+    hass = _SolarHass({
+        _SOLAR_ENTITY: _SolarState(
+            {"today_total_kwh": 19.824, "string1_tomorrow_kwh": 33.159}
+        )
+    })
+    line = coordinator._solar_forecast_summary(hass, "2206237016")
+    assert line == "Předpověď FVE: dnes 19.8 kWh, zítra 33.2 kWh"
+
+
+def test_solar_summary_survives_a_half_populated_sensor():
+    hass = _SolarHass({_SOLAR_ENTITY: _SolarState({"today_total_kwh": 5.0})})
+    assert coordinator._solar_forecast_summary(hass, "2206237016") == (
+        "Předpověď FVE: dnes 5.0 kWh"
+    )
+    # attributes present but none of the two keys -> no line at all
+    hass = _SolarHass({_SOLAR_ENTITY: _SolarState({"unrelated": 1})})
+    assert coordinator._solar_forecast_summary(hass, "2206237016") == ""
+
+
+async def test_plan_block_is_built_from_the_precomputed_store(monkeypatch):
+    """The success path: the store is the source, no HTTP is involved."""
+    captured = {}
+
+    class _Store:
+        def __init__(self, hass, version, key):
+            captured["key"] = key
+
+        async def async_load(self):
+            return {"unified_cost_tile": TILE, "timeline": TIMELINE}
+
+    monkeypatch.setattr(coordinator, "Store", _Store)
+
+    hass = _SolarHass({
+        _SOLAR_ENTITY: _SolarState(
+            {"today_total_kwh": 19.824, "string1_tomorrow_kwh": 33.159}
+        )
+    })
+    block = await coordinator._fetch_plan_block(hass, "2206237016")
+
+    assert captured["key"] == "oig_cloud.precomputed_data_2206237016"
+    assert "(nedostupné)" not in block
+    assert "plán 35.54 Kč" in block
+    assert "Předpověď FVE: dnes 19.8 kWh" in block
+    assert "Plánované nabíjení ze sítě: 16:45–17:00" in block
+
+
+async def test_plan_block_falls_back_to_the_hybrid_payloads(monkeypatch):
+    class _Store:
+        def __init__(self, hass, version, key):
+            pass
+
+        async def async_load(self):
+            # only the *_hybrid variants exist in the store
+            return {"unified_cost_tile_hybrid": TILE, "timeline_hybrid": TIMELINE}
+
+    monkeypatch.setattr(coordinator, "Store", _Store)
+    block = await coordinator._fetch_plan_block(_SolarHass({}), "2206237016")
+    assert "plán 35.54 Kč" in block
+
+
+async def test_plan_block_handles_a_store_holding_something_else(monkeypatch):
+    class _Store:
+        def __init__(self, hass, version, key):
+            pass
+
+        async def async_load(self):
+            return ["not", "a", "dict"]
+
+    monkeypatch.setattr(coordinator, "Store", _Store)
+    block = await coordinator._fetch_plan_block(_SolarHass({}), "2206237016")
+    assert block == "PLÁN A CENY: (nedostupné)"
+
+
+def test_solar_summary_never_raises_on_a_junk_value():
+    """The forecast line is a diagnostic extra — a bad value must not kill the tick."""
+    hass = _SolarHass(
+        {_SOLAR_ENTITY: _SolarState({"today_total_kwh": "not a number"})}
+    )
+    assert coordinator._solar_forecast_summary(hass, "2206237016") == ""
