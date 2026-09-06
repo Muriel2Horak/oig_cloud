@@ -40,7 +40,13 @@ from .ai.model_cache import get_ai_model_cache
 # OK models from the 2026-07-09 NIM probe sorted by ascending latency_s
 # (docs/redesign_2026_07/nim-model-test-2026-07-09.json).
 MODEL_CHAINS: dict[str, tuple[str, ...]] = {
-    "groq": ("qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
+    # Fallbacks verified against the live Groq catalogue 2026-09-05: the two
+    # llama entries this chain used to carry are gone (404 model_not_found),
+    # so the "chain" was a single model with no failover — one hiccup and the
+    # whole call returned nothing. The gpt-oss models answer 200 with EMPTY
+    # content, which is worse than a 404 (a silent non-answer), so they are
+    # deliberately not used here.
+    "groq": ("qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "groq/compound-mini"),
     "nvidia": (
         # 6 named flagships (DECISIONS P1 order)
         "z-ai/glm-5.2",

@@ -57,6 +57,14 @@ def derive_series(grid: Dict[str, List[Optional[Any]]], n: int) -> Dict[str, Lis
     return {
         "zpeak": [max(p) for p in zphase],
         "imbalance": [max(p) - min(p) for p in zphase],
+        # Per-phase BACKUP load. The imbalance above is computed from these and
+        # from nothing else — it is a property of the backup circuit, which the
+        # inverter feeds. It is NOT a driver of grid draw; that is `nez` plus
+        # uncovered `zal` plus battery grid-charging. The event text spells this
+        # out because the reader kept inferring the wrong causal direction.
+        "zal_r": [p[0] for p in zphase],
+        "zal_s": [p[1] for p in zphase],
+        "zal_t": [p[2] for p in zphase],
         "grid": [g("grid", i) for i in range(n)],
         "zal": [g("zal", i) for i in range(n)],
         "nez": [g("nez", i) for i in range(n)],
@@ -102,10 +110,14 @@ def detect_events(
                        f"zal {d['zal'][i]:.0f} nez {d['nez'][i]:.0f} fve {d['fve'][i]:.0f} "
                        f"bat {d['bat'][i]:+.0f} soc {d['soc'][i]:.0f}")
         edge("faze_limit", d["zpeak"][i] >= PHASE_NEAR_LIMIT_W, i,
-             lambda i: f"spicka faze {d['zpeak'][i]:.0f}W (limit {BACKUP_PHASE_LIMIT_W}), "
-                       f"imbalance {d['imbalance'][i]:.0f}")
+             lambda i: f"spicka faze ZALOHY {d['zpeak'][i]:.0f}W (limit {BACKUP_PHASE_LIMIT_W}), "
+                       f"nerovnomernost {d['imbalance'][i]:.0f} "
+                       f"(R/S/T {d['zal_r'][i]:.0f}/{d['zal_s'][i]:.0f}/{d['zal_t'][i]:.0f})")
         edge("nerovnovaha", d["imbalance"][i] > IMBALANCE_W, i,
-             lambda i: f"imbalance naskocila na {d['imbalance'][i]:.0f}W, zpeak {d['zpeak'][i]:.0f}")
+             lambda i: f"nerovnomerne zatizeni ZALOHY {d['imbalance'][i]:.0f}W "
+                       f"(R/S/T {d['zal_r'][i]:.0f}/{d['zal_s'][i]:.0f}/{d['zal_t'][i]:.0f}, "
+                       f"zpeak {d['zpeak'][i]:.0f}); soucasne nez {d['nez'][i]:.0f} "
+                       f"sit {d['grid'][i]:.0f} fve {d['fve'][i]:.0f}")
         b = grid.get("byp", [None] * n)[i]
         edge("bypass", isinstance(b, str) and b.lower() in ("on", "1", "true"), i,
              lambda i: f"bypass ON, batT {_num(grid.get('batT', [None]*n)[i]):.1f} "

@@ -6,17 +6,17 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 
 
-def test_release_metadata_targets_version_2_4_2() -> None:
+def test_release_metadata_targets_version_2_4_3() -> None:
     """The integration manifest and release documents must name the same release."""
     manifest = json.loads(
         (ROOT / "custom_components/oig_cloud/manifest.json").read_text(encoding="utf-8")
     )
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    release_notes = (ROOT / "RELEASE_NOTES_v2.4.2.md").read_text(encoding="utf-8")
+    release_notes = (ROOT / "RELEASE_NOTES_v2.4.3.md").read_text(encoding="utf-8")
 
-    assert manifest["version"] == "2.4.2"
-    assert "## [2.4.2]" in changelog
-    assert "vydání 2.4.2" in release_notes
+    assert manifest["version"] == "2.4.3"
+    assert "## [2.4.3]" in changelog
+    assert "vydání 2.4.3" in release_notes
 
 
 def test_sonar_classifies_e2e_and_tooling_outside_product_coverage() -> None:

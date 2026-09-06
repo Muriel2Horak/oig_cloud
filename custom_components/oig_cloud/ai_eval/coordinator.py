@@ -143,54 +143,122 @@ async def _fetch_history(
 
 
 async def _fetch_plan_block(hass: HomeAssistant, box_id: str) -> str:
+    """Build the PLÁN A CENY block from the precomputed store.
+
+    This used to call the REST views over HTTP with a path-only URL
+    (``session.get("/api/oig_cloud/...")``), which aiohttp rejects outright with
+    InvalidUrlClientError — every tick since the feature shipped fell into the
+    except below and handed the model the literal string "(nedostupné)". The
+    model has therefore never seen a price or a plan. The same payloads are in
+    the precomputed store the REST views themselves read, so take them from
+    there: no HTTP, no auth, no URL to get wrong.
+    """
     try:
-        from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
-        session = async_get_clientsession(hass)
-        base = f"/api/oig_cloud/battery_forecast/{box_id}"
-
-        tile_url = f"{base}/unified_cost_tile"
-        timeline_url = f"{base}/timeline?type=active"
-
-        async with session.get(tile_url) as resp:
-            tile_data = await resp.json() if resp.status == 200 else {}
-
-        async with session.get(timeline_url) as resp:
-            timeline_data = await resp.json() if resp.status == 200 else {}
-
-        return _format_plan_block(tile_data, timeline_data)
+        store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+        data = await store.async_load()
+        if not isinstance(data, dict):
+            return "PLÁN A CENY: (nedostupné)"
+        tile = data.get("unified_cost_tile") or data.get("unified_cost_tile_hybrid") or {}
+        timeline = data.get("timeline") or data.get("timeline_hybrid") or []
+        return _format_plan_block(
+            tile if isinstance(tile, dict) else {},
+            timeline if isinstance(timeline, list) else [],
+            _solar_forecast_summary(hass, box_id),
+        )
     except Exception as err:
-        _LOGGER.debug("Failed to fetch plan block: %s", err)
+        _LOGGER.debug("Failed to build plan block: %s", err)
         return "PLÁN A CENY: (nedostupné)"
 
 
-def _format_plan_block(tile_data: Dict[str, Any], timeline_data: Dict[str, Any]) -> str:
-    today = tile_data.get("today", {})
-    plan_cost = today.get("plan_total_cost", 0)
-    actual_cost = today.get("actual_total_cost", 0)
-    delta = today.get("delta", 0)
+def _solar_forecast_summary(hass: HomeAssistant, box_id: str) -> str:
+    """One line of solar forecast, or '' when the sensor is absent."""
+    try:
+        state = hass.states.get(f"sensor.oig_{box_id}_solar_forecast")
+        if state is None:
+            return ""
+        attrs: Dict[str, Any] = dict(state.attributes or {})
+        today = attrs.get("today_total_kwh")
+        tomorrow = attrs.get("string1_tomorrow_kwh")
+        if today is None and tomorrow is None:
+            return ""
+        parts: List[str] = []
+        if today is not None:
+            parts.append(f"dnes {float(today):.1f} kWh")
+        if tomorrow is not None:
+            parts.append(f"zítra {float(tomorrow):.1f} kWh")
+        return "Předpověď FVE: " + ", ".join(parts)
+    except Exception:  # noqa: BLE001 — diagnostic extra, never fatal
+        return ""
 
-    active = timeline_data.get("active", [])
-    charge_windows = []
-    export_windows = []
-    for interval in active:
-        if interval.get("grid_charge_kwh", 0) > 0:
-            charge_windows.append(interval)
-        if interval.get("grid_export", 0) > 0:
-            export_windows.append(interval)
 
+def _fmt_time(value: Any) -> str:
+    text = str(value or "")
+    return text[11:16] if "T" in text else text[:5]
+
+
+def _format_plan_block(
+    tile_data: Dict[str, Any],
+    timeline: List[Dict[str, Any]],
+    solar_line: str = "",
+) -> str:
+    today = tile_data.get("today", {}) or {}
     lines = ["PLÁN A CENY:"]
-    lines.append(f"Dnes: plán {plan_cost:.2f} Kč, skutečnost {actual_cost:.2f} Kč, rozdíl {delta:+.2f} Kč")
 
-    if charge_windows:
-        total_charge = sum(w.get("grid_charge_kwh", 0) for w in charge_windows)
-        avg_price = sum(w.get("spot_price", 0) for w in charge_windows) / len(charge_windows)
-        lines.append(f"Nabíjení ze sítě: {len(charge_windows)} oken, celkem {total_charge:.2f} kWh, průměrná cena {avg_price:.2f} Kč/kWh")
+    plan_cost = today.get("plan_total_cost")
+    actual_cost = today.get("actual_total_cost")
+    delta = today.get("delta")
+    if plan_cost is not None:
+        line = f"Dnes: plán {float(plan_cost):.2f} Kč"
+        if actual_cost is not None:
+            line += f", zatím utraceno {float(actual_cost):.2f} Kč"
+        if delta is not None:
+            line += f", rozdíl {float(delta):+.2f} Kč"
+        lines.append(line)
+    eod = today.get("eod_prediction") or {}
+    if eod.get("predicted_total") is not None:
+        lines.append(
+            f"Odhad konce dne: {float(eod['predicted_total']):.2f} Kč "
+            f"({eod.get('confidence', 'n/a')} jistota)"
+        )
+    if solar_line:
+        lines.append(solar_line)
 
-    if export_windows:
-        total_export = sum(w.get("grid_export", 0) for w in export_windows)
-        avg_price = sum(w.get("spot_price", 0) for w in export_windows) / len(export_windows)
-        lines.append(f"Export do sítě: {len(export_windows)} oken, celkem {total_export:.2f} kWh, průměrná cena {avg_price:.2f} Kč/kWh")
+    # Forward-looking plan. The detector fires on the hour just gone, but the
+    # owner-relevant question is almost always "was that planned, and what
+    # comes next" — so the model needs the upcoming intervals, not only today's
+    # totals it cannot act on.
+    upcoming = [i for i in timeline if str(i.get("status", "")) != "completed"][:24]
+    charge = [i for i in upcoming if (i.get("grid_charge_kwh") or 0) > 0]
+    export = [i for i in upcoming if (i.get("grid_export") or 0) > 0]
+
+    if charge:
+        kwh = sum(float(i.get("grid_charge_kwh") or 0) for i in charge)
+        prices = [float(i.get("spot_price") or 0) for i in charge]
+        lines.append(
+            f"Plánované nabíjení ze sítě: {_fmt_time(charge[0].get('time'))}–"
+            f"{_fmt_time(charge[-1].get('time'))}, {kwh:.2f} kWh, "
+            f"{min(prices):.2f}–{max(prices):.2f} Kč/kWh"
+        )
+    else:
+        lines.append("Plánované nabíjení ze sítě: žádné")
+
+    if export:
+        kwh = sum(float(i.get("grid_export") or 0) for i in export)
+        lines.append(f"Plánovaný export: {kwh:.2f} kWh")
+
+    if upcoming:
+        lines.append("Nejbližší intervaly (čas, režim, cena Kč/kWh, FVE kWh, spotřeba kWh, SoC %):")
+        for interval in upcoming[:8]:
+            lines.append(
+                "  {t} {mode} {price} {solar} {load} {soc}".format(
+                    t=_fmt_time(interval.get("time")),
+                    mode=str(interval.get("mode_name") or "-")[:10],
+                    price=f"{float(interval.get('spot_price') or 0):.2f}",
+                    solar=f"{float(interval.get('solar_kwh') or 0):.2f}",
+                    load=f"{float(interval.get('load_kwh') or 0):.2f}",
+                    soc=f"{float(interval.get('battery_soc') or 0):.0f}",
+                )
+            )
 
     return "\n".join(lines)
 
@@ -207,6 +275,8 @@ class AiEvalCoordinator:
             hass, STORE_VERSION, f"oig_cloud.ai_eval_{self.entry_id}"
         )
         self._ledger_entries: List[Dict[str, Any]] = []
+        self._last_report_fakta: str = ""
+        self._last_report_lidsky: str = ""
         self._unsub_timer: Optional[Callable[[], None]] = None
         self._initial_task: asyncio.Task[None] | None = None
         self._tick_tasks: set[asyncio.Task[Any]] = set()
@@ -215,6 +285,8 @@ class AiEvalCoordinator:
     async def async_setup(self) -> None:
         stored = await self._store.async_load()
         if stored and isinstance(stored, dict):
+            self._last_report_fakta = str(stored.get("report_fakta", "") or "")
+            self._last_report_lidsky = str(stored.get("report_lidsky", "") or "")
             ledger_str = stored.get("ledger", "")
             if ledger_str and ledger_str != "(zatím prázdný)":
                 for line in ledger_str.split("\n"):
@@ -272,7 +344,10 @@ class AiEvalCoordinator:
 
     async def _async_run_tick(self, now: datetime) -> None:
         if not self.box_id:
-            _LOGGER.debug("AI eval: no box_id, skipping tick")
+            _LOGGER.warning(
+                "AI eval: no box_id resolved for entry %s — hourly evaluation "
+                "cannot run", self.entry_id
+            )
             return
 
         entity_ids_map = _build_entity_ids(self.box_id)
@@ -337,10 +412,29 @@ class AiEvalCoordinator:
             self.hass, self.config_entry, payload.SYSTEM_PROMPT, user_message
         )
         if report_md is None:
-            _LOGGER.debug("AI eval: generate_eval_report returned None, skipping")
+            # Silent-death guard: the previous code returned here without a
+            # trace — no log above DEBUG, no ledger save, no `last_run` bump —
+            # so a provider that had stopped answering looked exactly like a
+            # quiet hour. Keep the deterministic half and make the failure
+            # visible.
+            _LOGGER.warning(
+                "AI eval: provider returned no report for %s; keeping the "
+                "previous report and recording the failed attempt",
+                self.box_id,
+            )
+            await self._store.async_save({
+                "report_fakta": self._last_report_fakta,
+                "report_lidsky": self._last_report_lidsky,
+                "ledger": ledger_str,
+                "last_run": now.isoformat(),
+                "anomaly_count": len(notable_events),
+                "status": "ai_unavailable",
+            })
+            async_dispatcher_send(self.hass, f"oig_cloud_ai_eval_update_{self.entry_id}")
             return
 
         fakta, lidsky = _split_fakta_lidsky(report_md)
+        self._last_report_fakta, self._last_report_lidsky = fakta, lidsky
         await self._store.async_save({
             "report_fakta": fakta,
             "report_lidsky": lidsky,

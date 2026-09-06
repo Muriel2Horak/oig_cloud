@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2026-09-06
+
+The hourly AI evaluation had never once received the data it reasons about, and
+the boiler tab showed two different numbers for the same quantity. Both were
+found on a live install, not in review.
+
+### Fixed
+- **The AI evaluation never saw prices or the plan.** The block was fetched over
+  HTTP with a path-only URL (`session.get("/api/oig_cloud/...")`), which aiohttp
+  rejects outright; a broad `except` swallowed it and handed the model the
+  literal string "(nedostupné)" on every tick since the feature shipped. The
+  data now comes from the precomputed store the REST views themselves read — no
+  HTTP, no auth, no URL to get wrong — and carries today's planned vs spent cost,
+  the end-of-day estimate, the solar forecast, the planned grid-charging window
+  with its price range, and the upcoming 15-minute intervals (mode, spot price,
+  expected solar and load, battery SoC).
+- **A dead AI provider looked exactly like a quiet hour.** Three paths ended the
+  tick without a trace and without updating `last_run`, so a broken evaluation
+  was indistinguishable from an hour with nothing to report — which is how the
+  bug above survived unnoticed. A failed call now keeps the previous report and
+  the ledger, timestamps the attempt, sets status `ai_unavailable` and logs a
+  warning.
+- **Two of the three Groq fallback models no longer exist** (`llama-3.3-70b-versatile`
+  and `llama-3.1-8b-instant` both answer 404), so the chain was a single model
+  with no failover. Replaced with `qwen/qwen3.8-27b` and `groq/compound-mini`,
+  both verified against the live catalogue. The gpt-oss models are deliberately
+  excluded: they answer 200 with empty content, a silent non-answer.
+- **The report blamed uneven phase load for grid draw.** The prompt itself
+  prescribed that (non-existent) causality, and the event carried no data to
+  reason with. Phase imbalance is measured on the backup circuit alone and never
+  raises grid draw by itself; the prompt now states how grid draw is actually
+  composed, and the event names the circuit, the per-phase split and the
+  concurrent non-backup and grid figures.
+- **Boiler "Plán & realita" reported more energy than the boiler ever used.** It
+  read the raw runtime accumulators instead of the reconciled source the rest of
+  the screen uses, which clamps them to the box's own day counter: 18.06 kWh
+  from the grid against 10.498 kWh actually metered, shown side by side with
+  the correct figure. It also stops pairing the day's planned MINIMUM ready
+  volume with the CURRENT level, which are different quantities.
+
 ## [2.4.2] - 2026-09-05
 
 Compatibility release for Home Assistant 2026.8. Every item below was observed
