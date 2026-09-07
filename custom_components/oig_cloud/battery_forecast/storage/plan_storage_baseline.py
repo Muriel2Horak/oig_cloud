@@ -14,9 +14,10 @@ from .plan_storage_io import plan_exists_in_storage, save_plan_to_storage
 
 DATE_FMT = "%Y-%m-%d"
 MODE_HOME_I = "HOME I"
-# A profile-driven day plan carries roughly one value per hour; anything
-# flatter than this is the coarse fallback or a collapsed constant.
-MIN_DISTINCT_CONSUMPTIONS = 6
+# A profile-driven day plan carries roughly one value per hour (24), the coarse
+# load_avg fallback at most six (five windows plus a boundary - 29. 8. really
+# was stored that way). Ten sits safely between the two.
+MIN_DISTINCT_CONSUMPTIONS = 10
 MIN_CONSUMPTION_SPREAD_KWH = 0.01
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,10 +69,10 @@ def is_baseline_plan_invalid(plan: Optional[Dict[str, Any]]) -> bool:
 def _is_consumption_degenerate(consumptions: List[float]) -> bool:
     """A day plan that repeats a handful of numbers is not a day plan.
 
-    Six distinct values is the widest coarse ``load_avg`` shape we have seen in
-    the field (five windows plus a boundary), and a single value means the
-    adaptive profile never reached the planner at all. Both mean the plan needs
-    rebuilding rather than locking in for the day.
+    The coarse ``load_avg`` fallback produces at most six distinct values across
+    the day, and a single value means the adaptive profile never reached the
+    planner at all. Both mean the plan needs rebuilding rather than locking in
+    for the day.
     """
     if len(set(round(value, 4) for value in consumptions)) < MIN_DISTINCT_CONSUMPTIONS:
         return True

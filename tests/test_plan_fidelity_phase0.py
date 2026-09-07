@@ -205,6 +205,19 @@ def test_a_coarse_five_window_plan_is_rejected():
     assert baseline_module.is_baseline_plan_invalid(_plan(intervals)) is True
 
 
+def test_a_six_value_plan_is_rejected_too():
+    """29. 8. really was stored with six distinct values, straight from the
+    coarse windows plus a boundary - so six is not a safe cut-off. A
+    profile-driven plan carries roughly one value per hour."""
+    windows = [0.0795, 0.4313, 0.4644, 0.5108, 0.167, 0.0902]
+    assert (
+        baseline_module.is_baseline_plan_invalid(
+            _plan([windows[i % 6] for i in range(96)])
+        )
+        is True
+    )
+
+
 def test_a_plan_carrying_the_adaptive_shape_stays_valid():
     intervals = [TOMORROW_HOURLY[i // 4] / 4.0 for i in range(96)]
     plan = _plan(intervals)
