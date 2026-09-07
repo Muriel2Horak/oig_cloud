@@ -33,6 +33,12 @@ _COST_IMPROVEMENT_EPS_CZK = 1e-4
 # it is needed. On five of nine days observed in the field the night had zero
 # eligible slots and the first one landed after the dip.
 _COMFORT_MIN_PRICE_ADVANTAGE = 0.90
+# Width of the band above the planning floor in which a projected low counts as
+# exposed, as a fraction of usable capacity. The greedy defends the floor itself
+# at any price; this band is the room a forecast miss needs. Sized from the
+# field: the plan read 24 %, reality came in at 22 %, and the BOX acted — so
+# five points is a little over twice the observed miss.
+_COMFORT_EXPOSURE_BAND = 0.05
 
 
 def _simulate_interval(
@@ -328,6 +334,19 @@ def _global_greedy_charge_intervals(inputs: PlannerInputs) -> List[int]:
     return sorted(ups_intervals)
 
 
+def _is_inside_exposure_band(low_soc_kwh: float, inputs: PlannerInputs) -> bool:
+    """True when the projected low sits close enough to the floor that a normal
+    forecast miss would hand control to the BOX.
+
+    The planning floor is defended at any price by the greedy, so the danger is
+    not below it but just above it: the plan reads a safe 24 %, reality comes in
+    at 22 %, and the box — which watches its own bat_min — force-charges at
+    whatever the morning costs.
+    """
+    band_top = inputs.planning_min_kwh + _COMFORT_EXPOSURE_BAND * inputs.max_capacity_kwh
+    return low_soc_kwh <= band_top
+
+
 def _exposure_index(
     states: List[SimulatedState], moment_idx: int, n: int
 ) -> int:
@@ -397,12 +416,22 @@ def _comfort_charge_intervals(
         # on its own, this dip is transient — don't grid-charge for it (comfort is
         # a soft "descend & wait" target, the hard floor still protects). Avoids
         # buying grid for a morning dip that the day's solar refills anyway.
-        deficit_kwh = target - states[moment_idx].soc_kwh
-        future_solar_kwh = _estimate_future_storable_surplus_kwh(
-            inputs, start_idx=moment_idx, end_idx=n
-        )
-        if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
-            break
+        #
+        # But only while the low point itself stays clear of the trigger band.
+        # The sum below counts every kWh of solar to the end of the horizon,
+        # including all of it that arrives AFTER the low point — and solar at
+        # noon cannot stop the box force-charging at seven in the morning. On
+        # 7. 9. the plan read the pre-dawn drain two points light, the battery
+        # reached 22 % against a 20 % trigger, and the box bought 0.974 kWh at
+        # 7.87 CZK/kWh in slots the plan had left empty. Inside the band the
+        # excuse does not apply and comfort buys its buffer from the night.
+        if not _is_inside_exposure_band(states[exposure_idx].soc_kwh, inputs):
+            deficit_kwh = target - states[moment_idx].soc_kwh
+            future_solar_kwh = _estimate_future_storable_surplus_kwh(
+                inputs, start_idx=moment_idx, end_idx=n
+            )
+            if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
+                break
 
         picked: int | None = None
         for candidate_idx in candidates:

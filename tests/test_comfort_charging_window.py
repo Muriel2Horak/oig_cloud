@@ -229,3 +229,84 @@ def test_comfort_disabled_leaves_the_plan_untouched():
 
     assert set(off).issubset(set(on))
     assert len(off) < len(on)
+
+
+# --------------------------------------------------------------------------
+# "the sun will fix it" must not excuse a dip that comes before the sun
+# --------------------------------------------------------------------------
+
+# A bright day whose PV only starts at 08:00, drained overnight so that floor
+# defense alone leaves the battery at 23 % — three points above the BOX
+# trigger. The day's total solar surplus dwarfs the comfort deficit, so the
+# PV-first guard is satisfied and comfort buys nothing; but none of that solar
+# exists yet at 07:00, which is where the box takes over at the morning peak.
+SUNRISE_PRICES = [
+    6.10, 6.05, 6.00, 6.02, 6.08, 6.15, 6.60, 8.40,   # 00-07
+    8.90, 8.20, 5.40, 4.60, 3.60, 3.10, 3.00, 3.20,   # 08-15
+    4.10, 5.80, 7.90, 9.20, 9.90, 9.10, 8.00, 7.00,   # 16-23
+]
+SUNRISE_SOLAR = [0.0] * 8 + [2.6, 3.2, 3.6, 3.8, 3.8, 3.6, 3.0, 2.2, 1.2, 0.5] + [0.0] * 6
+SUNRISE_LOAD = [0.45] * 8 + [1.0] * 10 + [1.1] * 6
+
+#: 20 % of capacity is the BOX trigger; the band just above it is where a
+#: forecast miss of a couple of points hands control to the box.
+EXPOSURE_BAND_KWH = 3.07 + 0.05 * 15.36
+
+
+def _sunrise_day(comfort_soc_kwh: float) -> PlannerInputs:
+    return _build_inputs(
+        current_soc_kwh=6.4,
+        prices=SUNRISE_PRICES,
+        solar_forecast=SUNRISE_SOLAR,
+        load_forecast=SUNRISE_LOAD,
+        comfort_soc_kwh=comfort_soc_kwh,
+    )
+
+
+def test_solar_arriving_after_the_low_point_does_not_excuse_the_dip():
+    """The day's surplus is large, but all of it lands after 08:00. Skipping
+    the cheap night on that basis leaves the battery on the trigger through the
+    morning peak, where the box buys at 8+ CZK."""
+    bare = set(_ups_indices(plan_battery_schedule(_sunrise_day(0.0))))
+    with_comfort = _ups_indices(plan_battery_schedule(_sunrise_day(7.68)))
+
+    added = sorted(set(with_comfort) - bare)
+    assert added, (
+        "comfort bought nothing; the plan is relying on solar that has not "
+        f"arrived yet (floor defense alone charged at {sorted(bare)})"
+    )
+    assert all(idx < 8 for idx in added), (
+        f"comfort charged after sunrise instead of before it: {added}"
+    )
+    assert all(SUNRISE_PRICES[idx] < 7.0 for idx in added), (
+        f"night charging landed in expensive slots: "
+        f"{[(i, SUNRISE_PRICES[i]) for i in added]}"
+    )
+
+
+def test_the_pre_dawn_low_leaves_the_exposure_band():
+    inputs = _sunrise_day(7.68)
+    result = plan_battery_schedule(inputs)
+
+    low = min(state.soc_kwh for state in result.states)
+    assert low > EXPOSURE_BAND_KWH, (
+        f"low {low:.2f} kWh ({low / 15.36 * 100:.0f} %) still inside the "
+        f"exposure band above the {inputs.hw_min_kwh:.2f} kWh trigger"
+    )
+
+
+def test_a_transient_dip_well_clear_of_the_trigger_still_defers_to_solar():
+    """The restraint that must survive: a battery that dips below the comfort
+    target but stays far above the trigger, with solar on the way, must not buy
+    grid for it."""
+    result = plan_battery_schedule(
+        _build_inputs(
+            current_soc_kwh=11.0,
+            prices=[3.0] * 24,
+            solar_forecast=[0.0] * 9 + [3.0] * 9 + [0.0] * 6,
+            load_forecast=[0.5] * 9 + [0.9] * 15,
+            comfort_soc_kwh=13.0,
+        )
+    )
+
+    assert _ups_indices(result) == [], _ups_indices(result)
