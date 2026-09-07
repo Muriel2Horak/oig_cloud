@@ -89,11 +89,13 @@ def test_is_baseline_plan_invalid():
 @pytest.mark.asyncio
 async def test_create_baseline_plan_with_hybrid_timeline(monkeypatch):
     sensor = DummySensor()
+    # A full day of shaped intervals: a two-slot timeline would leave 94 slots
+    # on the default constant, which is refused as degenerate.
     sensor._timeline_data = [
         {
-            "time": "00:00",
+            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
             "solar_kwh": 0.1,
-            "load_kwh": 0.2,
+            "load_kwh": round(0.05 + 0.01 * (i // 4), 4),
             "battery_soc": 50.0,
             "battery_capacity_kwh": 7.68,
             "grid_import": 0.1,
@@ -102,20 +104,8 @@ async def test_create_baseline_plan_with_hybrid_timeline(monkeypatch):
             "mode_name": "HOME III",
             "spot_price": 3.0,
             "net_cost": 0.2,
-        },
-        {
-            "time": "00:15",
-            "solar_kwh": 0.1,
-            "load_kwh": 0.2,
-            "battery_soc": 50.0,
-            "battery_capacity_kwh": 7.68,
-            "grid_import": 0.1,
-            "grid_export": 0.0,
-            "mode": 2,
-            "mode_name": "HOME III",
-            "spot_price": 3.0,
-            "net_cost": 0.2,
-        },
+        }
+        for i in range(96)
     ]
 
     async def fake_fetch(*_args, **_kwargs):

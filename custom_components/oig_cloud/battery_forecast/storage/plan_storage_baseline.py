@@ -370,6 +370,23 @@ async def _save_baseline_plan(
     intervals: List[Dict[str, Any]],
     filled_intervals_str: Optional[str],
 ) -> bool:
+    candidate = {"intervals": intervals, "filled_intervals": filled_intervals_str}
+    if is_baseline_plan_invalid(candidate):
+        # A repair fired during startup runs before the adaptive profile and the
+        # load_avg sensors exist, so every slot falls back to the same constant.
+        # Writing that would replace a coarse plan with a flat one — strictly
+        # worse, and it would then be archived as the record of the day. Leave
+        # what is there; the midnight run rebuilds it with real inputs.
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Refusing to save a degenerate baseline for %s "
+            "(%s intervals, %s distinct consumptions) - keeping the existing plan",
+            date_str,
+            len(intervals),
+            len({round(float(i.get("consumption_kwh", 0) or 0), 4) for i in intervals}),
+        )
+        return False
+
     success = await save_plan_to_storage(
         sensor,
         date_str,

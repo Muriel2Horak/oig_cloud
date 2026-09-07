@@ -237,3 +237,89 @@ def test_logging_stays_quiet_for_a_healthy_plan(caplog):
     with caplog.at_level(logging.WARNING, logger=baseline_module.__name__):
         baseline_module.is_baseline_plan_invalid(_plan(intervals))
     assert not caplog.records
+
+
+# --------------------------------------------------------------------------
+# a rebuild must never replace a plan with a worse one
+# --------------------------------------------------------------------------
+
+
+class _RebuildSensor:
+    """Stands in for the forecast sensor during a mid-day repair."""
+
+    def __init__(self, timeline):
+        self._plans_store = _RebuildStore()
+        self._timeline_data = timeline
+        self._daily_plan_state = None
+        self._hass = None
+
+
+class _RebuildStore:
+    def __init__(self):
+        self.saved = None
+
+    async def async_load(self):
+        return {}
+
+    async def async_save(self, data):
+        self.saved = data
+
+
+def _flat_hybrid_timeline(load_kwh: float) -> list[dict]:
+    return [
+        {
+            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
+            "solar_kwh": 0.0,
+            "load_kwh": load_kwh,
+            "battery_soc": 50.0,
+            "battery_capacity_kwh": 7.68,
+            "grid_import": 0.0,
+            "grid_export": 0.0,
+            "mode": 0,
+            "mode_name": "HOME I",
+            "spot_price": 6.0,
+            "net_cost": 0.0,
+        }
+        for i in range(96)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_rebuild_that_would_be_degenerate_is_not_saved(monkeypatch):
+    """A repair triggered during startup runs before the adaptive profile and
+    the load_avg sensors exist, so every slot falls back to the same constant.
+    Persisting that replaces a coarse plan with a flat one — strictly worse."""
+    sensor = _RebuildSensor(_flat_hybrid_timeline(0.125))
+    saved = []
+
+    async def _fake_save(_sensor, date_str, intervals, meta):
+        saved.append(date_str)
+        return True
+
+    monkeypatch.setattr(baseline_module, "save_plan_to_storage", _fake_save)
+
+    ok = await baseline_module.create_baseline_plan(sensor, "2026-09-07")
+
+    assert ok is False
+    assert saved == []
+
+
+@pytest.mark.asyncio
+async def test_a_shaped_rebuild_is_saved(monkeypatch):
+    timeline = [
+        {**row, "load_kwh": TOMORROW_HOURLY[i // 4] / 4.0}
+        for i, row in enumerate(_flat_hybrid_timeline(0.125))
+    ]
+    sensor = _RebuildSensor(timeline)
+    saved = []
+
+    async def _fake_save(_sensor, date_str, intervals, meta):
+        saved.append(date_str)
+        return True
+
+    monkeypatch.setattr(baseline_module, "save_plan_to_storage", _fake_save)
+
+    ok = await baseline_module.create_baseline_plan(sensor, "2026-09-07")
+
+    assert ok is True
+    assert saved == ["2026-09-07"]

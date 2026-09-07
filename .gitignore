@@ -193,6 +193,8 @@ custom_components/oig_cloud/sensor_dump.json
 .DS_Store
 .npmrc
 node_modules/
+# also match a node_modules symlink (the trailing slash above is dirs only)
+node_modules
 /.opencode/
 
 # Development and deployment scripts (local only)
