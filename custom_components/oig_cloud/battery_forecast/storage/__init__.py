@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .plan_revisions import maybe_record_plan_revision
 from .plan_storage_aggregate import (
     aggregate_daily,
     aggregate_weekly,
@@ -28,6 +29,7 @@ __all__ = [
     "is_baseline_plan_invalid",
     "load_plan_from_storage",
     "maybe_fix_daily_plan",
+    "maybe_record_plan_revision",
     "plan_exists_in_storage",
     "save_plan_to_storage",
 ]
