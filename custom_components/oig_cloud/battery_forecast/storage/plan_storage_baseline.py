@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import statistics
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,10 @@ from .plan_storage_io import plan_exists_in_storage, save_plan_to_storage
 
 DATE_FMT = "%Y-%m-%d"
 MODE_HOME_I = "HOME I"
+# A profile-driven day plan carries roughly one value per hour; anything
+# flatter than this is the coarse fallback or a collapsed constant.
+MIN_DISTINCT_CONSUMPTIONS = 6
+MIN_CONSUMPTION_SPREAD_KWH = 0.01
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,15 +55,27 @@ def is_baseline_plan_invalid(plan: Optional[Dict[str, Any]]) -> bool:
     if filled_intervals in ("00:00-23:45", "00:00-23:59"):
         return True
 
-    nonzero_consumption = sum(
-        1
-        for interval in intervals
-        if abs(float(interval.get("consumption_kwh", 0) or 0)) > 1e-6
-    )
+    consumptions = [
+        float(interval.get("consumption_kwh", 0) or 0) for interval in intervals
+    ]
+    nonzero_consumption = sum(1 for value in consumptions if abs(value) > 1e-6)
     if nonzero_consumption < max(4, len(intervals) // 24):
         return True
 
-    return False
+    return _is_consumption_degenerate(consumptions)
+
+
+def _is_consumption_degenerate(consumptions: List[float]) -> bool:
+    """A day plan that repeats a handful of numbers is not a day plan.
+
+    Six distinct values is the widest coarse ``load_avg`` shape we have seen in
+    the field (five windows plus a boundary), and a single value means the
+    adaptive profile never reached the planner at all. Both mean the plan needs
+    rebuilding rather than locking in for the day.
+    """
+    if len(set(round(value, 4) for value in consumptions)) < MIN_DISTINCT_CONSUMPTIONS:
+        return True
+    return statistics.pstdev(consumptions) < MIN_CONSUMPTION_SPREAD_KWH
 
 
 async def create_baseline_plan(sensor: Any, date_str: str) -> bool:
