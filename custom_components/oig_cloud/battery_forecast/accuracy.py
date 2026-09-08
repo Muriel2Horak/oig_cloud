@@ -28,6 +28,12 @@ SLOTS_PER_DAY = 96
 #: It still counts towards absolute error and the daily totals.
 MAPE_FLOOR_KWH = 0.01
 
+#: A percentage needs a denominator worth dividing by. An archive whose plan
+#: side covered only the evening was once scored against 0.05 kWh of actual
+#: solar and reported +575 % bias — arithmetic, not information. Below this the
+#: ratio is withheld; the kWh totals are still reported.
+BIAS_FLOOR_KWH = 0.5
+
 _LOGGER = logging.getLogger(__name__)
 
 _EMPTY_COMPARISON: Dict[str, Any] = {
@@ -104,7 +110,7 @@ def compare_series(
         "mae_kwh": round(sum(abs_errors) / len(abs_errors), 4),
         "bias_pct": (
             round((planned_total - actual_total) / actual_total * 100.0, 1)
-            if actual_total
+            if actual_total >= BIAS_FLOOR_KWH
             else None
         ),
         "planned_kwh": round(planned_total, 3),

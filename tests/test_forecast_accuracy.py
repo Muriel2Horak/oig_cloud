@@ -236,3 +236,48 @@ def test_rolling_summary_without_data_reports_nothing_rather_than_zero():
 
     assert summary["days"] == 0
     assert summary["consumption_mape_pct"] is None
+
+
+# --------------------------------------------------------------------------
+# a percentage against a near-zero denominator is not a measurement
+# --------------------------------------------------------------------------
+
+
+def test_bias_is_withheld_when_the_measured_total_is_negligible():
+    """Field case: an archive whose plan side covered only the evening was
+    scored against actual solar of ~0.05 kWh and reported +575 % bias. The
+    ratio is arithmetic, not information."""
+    planned = _series([0.08] * 24 + [None] * 72)
+    actual = _series([0.002] * 24 + [None] * 72)
+
+    result = module.compare_series(planned, actual, field="consumption_kwh")
+
+    assert result["bias_pct"] is None
+    assert result["planned_kwh"] > 0
+    assert result["actual_kwh"] > 0
+    assert result["slots"] == 24
+
+
+def test_bias_is_reported_once_the_total_is_meaningful():
+    planned = _series([0.10] * 24 + [None] * 72)
+    actual = _series([0.15] * 24 + [None] * 72)
+
+    result = module.compare_series(planned, actual)
+
+    assert result["bias_pct"] == pytest.approx(-33.3, abs=0.5)
+
+
+def test_a_rolling_summary_ignores_days_whose_bias_is_withheld():
+    archive = {
+        "2026-09-05": {
+            "date": "2026-09-05",
+            "plan": _series([0.08] * 24 + [None] * 72),
+            "actual": _series([0.002] * 24 + [None] * 72),
+            "locked": False,
+        },
+    }
+
+    summary = module.rolling_summary(archive, window_days=7, today=date(2026, 9, 7))
+
+    assert summary["days"] == 1
+    assert summary["consumption_bias_pct"] is None
