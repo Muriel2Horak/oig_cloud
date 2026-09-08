@@ -36,7 +36,11 @@ import type {
   BoilerProgressData,
   BoilerProgressSlot,
 } from '@/ui/features/boiler/types';
-import { OigBoilerV2Shell } from '@/ui/features/boiler/boiler-shell';
+// Side-effect import: the class below is only referenced in type position, and a
+// type-only reference is elided at build time — which would leave the custom
+// element unregistered and every shell fixture un-upgraded.
+import '@/ui/features/boiler/boiler-shell';
+import type { OigBoilerV2Shell } from '@/ui/features/boiler/boiler-shell';
 import { t } from '@/i18n/boiler';
 
 const DASH = '—';
