@@ -1,17 +1,27 @@
 """Storage for the boiler day record: baseline frozen once, actual accumulated.
 
 Exercises the real ``day_store`` module against a fake HA ``Store`` and a
-minimal ``hass`` stand-in (``hass.data`` is all it needs).
+minimal ``hass`` stand-in (``hass.data`` is all it needs — the real
+``homeassistant.helpers.storage.Store`` is never constructed here, since that
+needs a real ``hass.config``; these tests seed the module's state bucket
+directly with a fake store instead).
 """
 
 from __future__ import annotations
 
+import asyncio
+import copy
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 from freezegun import freeze_time
 
 from custom_components.oig_cloud.boiler import day_record, day_store
+from custom_components.oig_cloud.boiler.runtime import (
+    BoilerRuntime,
+    _boiler_plan_slots_for_day_store,
+)
 
 
 class _FakeStore:
@@ -26,10 +36,15 @@ class _FakeStore:
 
     async def async_save(self, data):
         self.save_count += 1
-        # Store persists a real (deep-ish) snapshot, not the live in-memory dict.
-        import copy
+        self._data = copy.deepcopy(data)  # Store persists a snapshot, not the live dict
 
-        self._data = copy.deepcopy(data)
+
+class _BrokenStore:
+    async def async_load(self):
+        raise RuntimeError("disk is on fire")
+
+    async def async_save(self, data):
+        raise RuntimeError("disk is on fire")
 
 
 def _hass():
@@ -39,6 +54,17 @@ def _hass():
     hass = _Hass()
     hass.data = {}
     return hass
+
+
+def _install_store(hass, entry_id, box_id, store):
+    """Seed the module's state bucket directly with the given store.
+
+    Bypasses ``_state_entry``'s own Store construction so these tests never
+    need a real Home Assistant instance.
+    """
+    bucket = hass.data.setdefault(day_store._STATE_KEY, {})
+    bucket[(entry_id, box_id)] = {"store": store, "record": None, "last_save": None}
+    return store
 
 
 def _plan_slots(day: str, *, start_slot: int = 0, count: int = 96, kwh: float = 0.5):
@@ -54,19 +80,6 @@ def _plan_slots(day: str, *, start_slot: int = 0, count: int = 96, kwh: float = 
     ]
 
 
-def _install_fake_store(hass, entry_id, box_id, data=None):
-    """Seed the module's state bucket directly with a fake store.
-
-    Bypasses ``_state_entry``'s own Store construction (which needs a real
-    ``hass.config``) — the point of these tests is the day_store logic, not
-    Home Assistant's storage helper.
-    """
-    store = _FakeStore(data)
-    bucket = hass.data.setdefault(day_store._STATE_KEY, {})
-    bucket[(entry_id, box_id)] = {"store": store, "record": None, "last_save": None}
-    return store
-
-
 # --------------------------------------------------------------------------
 # baseline: frozen once, never rewritten
 # --------------------------------------------------------------------------
@@ -75,6 +88,7 @@ def _install_fake_store(hass, entry_id, box_id, data=None):
 @pytest.mark.asyncio
 async def test_baseline_frozen_once_and_not_rewritten():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-08 08:00:00"):
         today = date(2026, 9, 8)
         first = await day_store.async_ensure_baseline(
@@ -97,6 +111,7 @@ async def test_baseline_frozen_once_and_not_rewritten():
 @pytest.mark.asyncio
 async def test_baseline_leaves_unreached_slots_none():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-08 08:00:00"):
         today = date(2026, 9, 8)
         await day_store.async_ensure_baseline(
@@ -118,6 +133,7 @@ async def test_baseline_leaves_unreached_slots_none():
 @pytest.mark.asyncio
 async def test_measurement_lands_in_right_slot():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-08 10:07:00"):
         when = datetime(2026, 9, 8, 10, 7, 0)
         await day_store.async_record(
@@ -140,7 +156,7 @@ async def test_measurement_lands_in_right_slot():
 @pytest.mark.asyncio
 async def test_measurement_survives_reload():
     hass = _hass()
-    fake_store = _install_fake_store(hass, "entry1", "box1")
+    fake_store = _install_store(hass, "entry1", "box1", _FakeStore())
 
     with freeze_time("2026-09-08 10:07:00"):
         when = datetime(2026, 9, 8, 10, 7, 0)
@@ -156,9 +172,9 @@ async def test_measurement_survives_reload():
 
     assert fake_store.save_count >= 1  # first write of the day is never throttled
 
-    # Simulate a restart: fresh hass, same backing store's persisted data.
+    # Simulate a restart: fresh hass, same backing store (i.e. the same disk).
     new_hass = _hass()
-    day_store._state_entry(new_hass, "entry1", "box1")["store"] = fake_store
+    _install_store(new_hass, "entry1", "box1", fake_store)
     with freeze_time("2026-09-08 10:08:00"):
         reloaded = await day_store.async_load(new_hass, "entry1", "box1")
     index = day_record.slot_index(when)
@@ -168,7 +184,7 @@ async def test_measurement_survives_reload():
 @pytest.mark.asyncio
 async def test_writes_are_debounced_to_once_per_minute():
     hass = _hass()
-    fake_store = _install_fake_store(hass, "entry1", "box1")
+    fake_store = _install_store(hass, "entry1", "box1", _FakeStore())
 
     with freeze_time("2026-09-08 10:00:00"):
         await day_store.async_record(
@@ -200,6 +216,7 @@ async def test_writes_are_debounced_to_once_per_minute():
 @pytest.mark.asyncio
 async def test_roll_over_archives_finished_day_and_starts_fresh():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-07 09:00:00"):
         today = date(2026, 9, 7)
         await day_store.async_ensure_baseline(
@@ -230,7 +247,7 @@ async def test_roll_over_archives_finished_day_and_starts_fresh():
 @pytest.mark.asyncio
 async def test_roll_over_prunes_archive_to_seven_days():
     hass = _hass()
-    day_n = 1
+    _install_store(hass, "entry1", "box1", _FakeStore())
     for day_n in range(1, 9):  # 8 days of history, one roll-over each
         with freeze_time(f"2026-09-{day_n:02d} 12:00:00"):
             await day_store.async_record(
@@ -256,6 +273,7 @@ async def test_roll_over_prunes_archive_to_seven_days():
 @pytest.mark.asyncio
 async def test_roll_over_is_a_noop_when_already_current():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-08 12:00:00"):
         await day_store.async_record(
             hass, "entry1", "box1", datetime(2026, 9, 8, 12, 0, 0),
@@ -286,7 +304,7 @@ async def test_async_load_archives_stale_day_left_by_a_restart():
         "locked": False,
         "archive": {},
     }
-    _install_fake_store(hass, "entry1", "box1", data=stale_data)
+    _install_store(hass, "entry1", "box1", _FakeStore(data=stale_data))
 
     with freeze_time("2026-09-08 06:00:00"):
         record = await day_store.async_load(hass, "entry1", "box1")
@@ -304,6 +322,7 @@ async def test_async_load_archives_stale_day_left_by_a_restart():
 @pytest.mark.asyncio
 async def test_locked_only_when_both_plan_and_actual_carry_96_slots():
     hass = _hass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
     with freeze_time("2026-09-08 00:05:00"):
         today = date(2026, 9, 8)
         await day_store.async_ensure_baseline(
@@ -317,8 +336,8 @@ async def test_locked_only_when_both_plan_and_actual_carry_96_slots():
         assert record["locked"] is False  # plan doesn't reach all 96 slots
 
     with freeze_time("2026-09-08 00:10:00"):
-        # Fill the rest of the plan via a fresh baseline is not allowed (frozen);
-        # simulate a fully-reached plan directly to isolate the locked check.
+        # A second ensure_baseline would be refused (frozen); mutate directly
+        # to isolate the locked check from the freeze-once rule.
         record["plan"] = day_record.snapshot_plan(
             _plan_slots("2026-09-08", start_slot=0, count=96), today
         )
@@ -339,18 +358,10 @@ async def test_locked_only_when_both_plan_and_actual_carry_96_slots():
 # --------------------------------------------------------------------------
 
 
-class _BrokenStore:
-    async def async_load(self):
-        raise RuntimeError("disk is on fire")
-
-    async def async_save(self, data):
-        raise RuntimeError("disk is on fire")
-
-
 @pytest.mark.asyncio
 async def test_load_failure_does_not_propagate():
     hass = _hass()
-    day_store._state_entry(hass, "entry1", "box1")["store"] = _BrokenStore()
+    _install_store(hass, "entry1", "box1", _BrokenStore())
 
     with freeze_time("2026-09-08 08:00:00"):
         record = await day_store.async_load(hass, "entry1", "box1")
@@ -361,7 +372,7 @@ async def test_load_failure_does_not_propagate():
 @pytest.mark.asyncio
 async def test_save_failure_does_not_propagate_from_record():
     hass = _hass()
-    day_store._state_entry(hass, "entry1", "box1")["store"] = _BrokenStore()
+    _install_store(hass, "entry1", "box1", _BrokenStore())
 
     with freeze_time("2026-09-08 08:00:00"):
         # Must not raise even though the underlying save blows up.
@@ -374,7 +385,7 @@ async def test_save_failure_does_not_propagate_from_record():
 @pytest.mark.asyncio
 async def test_ensure_baseline_failure_does_not_propagate():
     hass = _hass()
-    day_store._state_entry(hass, "entry1", "box1")["store"] = _BrokenStore()
+    _install_store(hass, "entry1", "box1", _BrokenStore())
 
     with freeze_time("2026-09-08 08:00:00"):
         # Must not raise even though the underlying save blows up — the
@@ -388,9 +399,148 @@ async def test_ensure_baseline_failure_does_not_propagate():
 @pytest.mark.asyncio
 async def test_roll_over_failure_does_not_propagate():
     hass = _hass()
-    day_store._state_entry(hass, "entry1", "box1")["store"] = _BrokenStore()
+    _install_store(hass, "entry1", "box1", _BrokenStore())
 
     with freeze_time("2026-09-08 08:00:00"):
         await day_store.async_roll_over(
             hass, "entry1", "box1", datetime(2026, 9, 8, 0, 0, 5)
         )
+
+
+# --------------------------------------------------------------------------
+# runtime wiring: _update_daily_source_accumulators feeds day_store
+# --------------------------------------------------------------------------
+
+
+class _RuntimeHass:
+    """hass.data for day_store's state bucket + async_create_task for the
+    fire-and-forget scheduling _schedule_day_store_task does."""
+
+    def __init__(self):
+        self.data = {}
+        self.created_tasks: list[asyncio.Task] = []
+
+    def async_create_task(self, coro):
+        task = asyncio.ensure_future(coro)
+        self.created_tasks.append(task)
+        return task
+
+
+def _runtime_stub(hass, *, current_plan=None):
+    stub = SimpleNamespace(
+        hass=hass,
+        entry_id="entry1",
+        box_id="box1",
+        _daily_source_kwh={"fve": 0.0, "grid": 0.0, "alternative": 0.0},
+        _daily_source_cost_czk={"fve": 0.0, "grid": 0.0},
+        _daily_source_date=None,
+        _daily_source_last_update_at=None,
+        _daily_source_reseeded=False,
+    )
+    stub._read_current_grid_price_czk = lambda: None
+    stub._schedule_daily_source_save = lambda: None
+    stub.get_current_plan = lambda: current_plan
+    stub._schedule_day_store_task = (
+        lambda coro: BoilerRuntime._schedule_day_store_task(stub, coro)
+    )
+    return stub
+
+
+async def _drain(hass: _RuntimeHass) -> None:
+    """Await every task _schedule_day_store_task queued, in creation order."""
+    tasks, hass.created_tasks[:] = list(hass.created_tasks), []
+    for task in tasks:
+        await task
+
+
+def test_boiler_plan_slots_for_day_store_converts_slot_dataclass_shape():
+    slot = SimpleNamespace(
+        start=datetime(2026, 9, 8, 10, 0, 0),
+        recommended_source=SimpleNamespace(value="fve"),
+        heating_kwh=0.4,
+        estimated_cost_czk=1.2,
+        predicted_top_temp_c=48.0,
+    )
+    plan = SimpleNamespace(slots=[slot])
+
+    converted = _boiler_plan_slots_for_day_store(plan)
+
+    assert converted == [
+        {
+            "start": "2026-09-08T10:00:00",
+            "heating_kwh": 0.4,
+            "recommended_source": "fve",
+            "estimated_cost_czk": 1.2,
+            "predicted_top_temp_c": 48.0,
+        }
+    ]
+    assert _boiler_plan_slots_for_day_store(None) == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_accumulator_records_measurement_into_day_store():
+    hass = _RuntimeHass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
+    stub = _runtime_stub(hass)
+
+    activity = SimpleNamespace(state="charging_fve", source="fve")
+    snapshot = SimpleNamespace(power_w=2000.0, power_kw=None)
+
+    with freeze_time("2026-09-08 10:00:00"):
+        BoilerRuntime._update_daily_source_accumulators(
+            stub, activity, snapshot, datetime(2026, 9, 8, 10, 0, 0), top_temp_c=46.5
+        )
+        # First call only warms up the interval clock — nothing to accumulate yet.
+        assert hass.created_tasks == []
+
+        BoilerRuntime._update_daily_source_accumulators(
+            stub, activity, snapshot, datetime(2026, 9, 8, 10, 15, 0), top_temp_c=47.0
+        )
+        await _drain(hass)
+
+        record = await day_store.async_load(hass, "entry1", "box1")
+
+    index = day_record.slot_index(datetime(2026, 9, 8, 10, 15, 0))
+    slot = record["actual"][index]
+    assert slot["heating_kwh"] == pytest.approx(0.5, rel=1e-3)  # 2 kW * 0.25 h
+    assert slot["source"] == "fve"
+    assert slot["top_temp_c"] == 47.0
+
+
+@pytest.mark.asyncio
+async def test_runtime_accumulator_rolls_over_and_freezes_baseline_at_midnight():
+    hass = _RuntimeHass()
+    _install_store(hass, "entry1", "box1", _FakeStore())
+
+    plan_slot = SimpleNamespace(
+        start=datetime(2026, 9, 8, 0, 0, 0),
+        recommended_source=SimpleNamespace(value="fve"),
+        heating_kwh=0.4,
+        estimated_cost_czk=0.0,
+        predicted_top_temp_c=48.0,
+    )
+    plan = SimpleNamespace(slots=[plan_slot])
+    stub = _runtime_stub(hass, current_plan=plan)
+
+    activity = SimpleNamespace(state="charging_fve", source="fve")
+    snapshot = SimpleNamespace(power_w=1000.0, power_kw=None)
+
+    with freeze_time("2026-09-07 23:00:00"):
+        BoilerRuntime._update_daily_source_accumulators(
+            stub, activity, snapshot, datetime(2026, 9, 7, 23, 0, 0), top_temp_c=45.0
+        )
+
+    with freeze_time("2026-09-08 00:05:00"):
+        BoilerRuntime._update_daily_source_accumulators(
+            stub, activity, snapshot, datetime(2026, 9, 8, 0, 5, 0), top_temp_c=45.5
+        )
+        await _drain(hass)  # roll_over, then ensure_baseline, then record
+
+        record = await day_store.async_load(hass, "entry1", "box1")
+
+    assert record["date"] == "2026-09-08"
+    assert record["plan"] is not None
+    assert record["plan"][0]["heating_kwh"] == 0.4
+    index = day_record.slot_index(datetime(2026, 9, 8, 0, 5, 0))
+    assert record["actual"][index]["heating_kwh"] is not None
+    assert record["actual"][index]["source"] == "fve"
