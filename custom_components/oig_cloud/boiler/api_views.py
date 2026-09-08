@@ -1663,7 +1663,7 @@ async def _load_day_record(
     """
     key = f"oig_cloud.boiler_day_{entry_id}_{box_id}"
     try:
-        store = Store(hass, _PROGRESS_STORE_VERSION, key)
+        store: Store[dict[str, Any]] = Store(hass, _PROGRESS_STORE_VERSION, key)
         data = await store.async_load()
     except Exception as err:  # pragma: no cover - defensive
         _LOGGER.debug("Boiler day record store load failed for %s: %s", key, err)

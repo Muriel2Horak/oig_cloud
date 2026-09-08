@@ -342,7 +342,11 @@ def _boiler_plan_slots_for_day_store(plan: Optional[BoilerPlan]) -> list[dict[st
         source = getattr(slot, "recommended_source", None)
         slots.append(
             {
-                "start": start.isoformat() if hasattr(start, "isoformat") else start,
+                "start": (
+                    start.isoformat()
+                    if isinstance(start, datetime)
+                    else start
+                ),
                 "heating_kwh": getattr(slot, "heating_kwh", None),
                 "recommended_source": getattr(source, "value", source),
                 "estimated_cost_czk": getattr(slot, "estimated_cost_czk", None),
