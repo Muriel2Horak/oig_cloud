@@ -3,9 +3,6 @@ name: Create Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version'
-        required: true
       create-tag:
         description: 'Create tag'
         required: true
@@ -34,50 +31,98 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           BYPASS: ${{ inputs.bypass-required-checks }}
+          ACTOR: ${{ github.actor }}
+          REQUIRED_WORKFLOWS: test.yml quality.yml security.yml sonarcloud.yml secret-scanning.yml pre-commit.yml
         run: |
-          set -eu
-          # Workflows that must be green on the exact commit being released.
-          # Rationale (see CI_CD.md): test = pytest suite; quality = flake8/Pylint/Mypy + frontend lint;
-          # security = CodeQL/Bandit/Safety; sonarcloud = quality gate + coverage.
-          # Excluded: maintainability (Radon/Vulture advisory report), secret-scanning (Snyk is
-          # continue-on-error by design, and CodeQL runs in security.yml), pre-commit (local lint
-          # discipline, duplicated by quality.yml in CI).
-          REQUIRED="test.yml quality.yml security.yml sonarcloud.yml"
-          verdict="pass"
-          : > "$GITHUB_STEP_SUMMARY"
-          echo "## CI Gate — required checks for ${SHA:0:12}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Workflow | Run | Conclusion |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          : "${REPO:?REPO must name the repository to inspect}"
+          : "${SHA:?SHA must name the commit to inspect}"
+          : "${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY must name the summary file}"
+          : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must name the output file}"
+          BYPASS="${BYPASS:-false}"
+          ACTOR="${ACTOR:-unknown}"
+          REQUIRED_WORKFLOWS="${REQUIRED_WORKFLOWS:-test.yml quality.yml security.yml sonarcloud.yml secret-scanning.yml pre-commit.yml}"
 
-          for wf in $REQUIRED; do
-            # headSha filter guarantees we judge THIS commit, not "latest run on main"
-            runs=$(gh api --paginate -H "Accept: application/vnd.github+json" \
-              "repos/${REPO}/actions/workflows/${wf}/runs?head_sha=${SHA}&status=completed" \
-              --jq '.workflow_runs[].conclusion' || echo "")
-            n=$(printf '%s' "$runs" | grep -c . || true)
-            if [ "$n" -eq 0 ]; then
-              echo "| ${wf} | — (no completed run) | **BLOCK: not run** |" >> "$GITHUB_STEP_SUMMARY"
+          # Required workflows already run for github.sha. Wait for an in-flight
+          # run to finish so a newer rerun cannot be masked by an older result.
+          MAX_POLLS="${RELEASE_GATE_MAX_POLLS:-40}"
+          POLL_SECONDS="${RELEASE_GATE_POLL_SECONDS:-15}"
+          verdict="pass"
+
+          : > "$GITHUB_STEP_SUMMARY"
+          {
+            printf '## CI Gate - required checks for %.12s\n\n' "$SHA"
+            printf '| Workflow | Run | Attempt | Conclusion |\n'
+            printf '|---|---:|---:|---|\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for workflow in $REQUIRED_WORKFLOWS; do
+            latest=""
+            pending=1
+            poll=0
+
+            while :; do
+              # Keep all attempts and statuses. Latest-wins is correct because GitHub
+              # reruns supersede an earlier attempt for the same workflow and SHA; the
+              # cost is that an older failure is intentionally hidden by the rerun's
+              # conclusion, so the gate depends on GitHub's attempt metadata being right.
+              runs="$(gh api --paginate --slurp -H 'Accept: application/vnd.github+json' \
+                "repos/${REPO}/actions/workflows/${workflow}/runs?head_sha=${SHA}&per_page=100")"
+
+              pending="$(jq --arg sha "$SHA" \
+                '[.[].workflow_runs[] | select(.head_sha == $sha and .status != "completed")] | length' \
+                <<< "$runs")"
+              latest="$(jq -r --arg sha "$SHA" '
+                [.[].workflow_runs[]
+                 | select(.head_sha == $sha and .status == "completed")]
+                | max_by([(.run_attempt // 1), .created_at])
+                | if . == null then ""
+                  else [.id, (.run_attempt // 1), (.conclusion // "unknown"), .created_at, .head_sha] | @tsv
+                  end
+              ' <<< "$runs")"
+
+              if [ "$pending" -eq 0 ]; then
+                break
+              fi
+              if [ "$poll" -ge "$MAX_POLLS" ]; then
+                break
+              fi
+              poll=$((poll + 1))
+              if [ "$POLL_SECONDS" -gt 0 ]; then
+                sleep "$POLL_SECONDS"
+              fi
+            done
+
+            if [ -z "$latest" ]; then
+              printf '| `%s` | - | - | **BLOCK: no completed run** |\n' "$workflow" >> "$GITHUB_STEP_SUMMARY"
               verdict="block"
-            elif printf '%s' "$runs" | grep -qv '^success$'; then
-              echo "| ${wf} | ${n} run(s) | **BLOCK: $(printf '%s' "$runs" | grep -v '^success$' | head -1)** |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            IFS=$'\t' read -r run_id attempt conclusion created_at run_sha <<< "$latest"
+            if [ "$run_sha" != "$SHA" ]; then
+              printf '| `%s` | %s | %s | **BLOCK: SHA mismatch** |\n' "$workflow" "$run_id" "$attempt" >> "$GITHUB_STEP_SUMMARY"
+              verdict="block"
+            elif [ "$conclusion" != "success" ]; then
+              printf '| `%s` | %s | %s | **BLOCK: %s** |\n' "$workflow" "$run_id" "$attempt" "$conclusion" >> "$GITHUB_STEP_SUMMARY"
               verdict="block"
             else
-              echo "| ${wf} | ${n} run(s) | success |" >> "$GITHUB_STEP_SUMMARY"
+              printf '| `%s` | %s | %s | success |\n' "$workflow" "$run_id" "$attempt" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
           if [ "$BYPASS" = "true" ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "⚠️ **OVERRIDE**: \`bypass-required-checks\` was set to true by ${{ github.actor }}. Release proceeds despite gate verdict: ${verdict}. This line is the audit record." >> "$GITHUB_STEP_SUMMARY"
-            echo "decision=override" >> "$GITHUB_OUTPUT"
-            echo "report=CI gate ${verdict}; OVERRIDE by ${{ github.actor }}" >> "$GITHUB_OUTPUT"
+            {
+              printf '\n**OVERRIDE**: `bypass-required-checks` was set to true by `%s`. Release proceeds despite gate verdict: `%s`.\n' "$ACTOR" "$verdict"
+              printf 'This is the audit record for the explicit override.\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+            printf 'decision=override\n' >> "$GITHUB_OUTPUT"
+            printf 'report=CI gate %s; OVERRIDE by %s\n' "$verdict" "$ACTOR" >> "$GITHUB_OUTPUT"
           else
-            echo "decision=${verdict}" >> "$GITHUB_OUTPUT"
-            echo "report=CI gate ${verdict}" >> "$GITHUB_OUTPUT"
+            printf 'decision=%s\n' "$verdict" >> "$GITHUB_OUTPUT"
+            printf 'report=CI gate %s\n' "$verdict" >> "$GITHUB_OUTPUT"
             if [ "$verdict" = "block" ]; then
-              echo "" >> "$GITHUB_STEP_SUMMARY"
-              echo "Refusing to release: required checks are failing or absent for ${SHA:0:12}. Fix them, or re-run the release with the documented override input \`bypass-required-checks\`." >> "$GITHUB_STEP_SUMMARY"
+              printf '\nRefusing to release: required checks are failing or absent for %.12s.\n' "$SHA" >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
           fi
@@ -91,72 +136,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      # No release commit is created here. The tag is always made from the
+      # exact SHA evaluated by gate; bypass remains the explicit audited escape hatch.
+      - name: Checkout the gated release commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
-      - name: Validate version input
-        id: validate_version
+      - name: Derive release version from the gated commit
+        id: version
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          if [ "$VERSION" != "dev" ] && ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version: $VERSION"
+          VERSION="$(jq -er '.version | strings' custom_components/oig_cloud/manifest.json)"
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)*(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version in gated manifest: $VERSION"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Replace version and service in release_const.py
-        working-directory: ./custom_components/oig_cloud
-        run: |
-          VERSION="${{ steps.validate_version.outputs.version }}"
-          echo "COMPONENT_VERSION = \"$VERSION\"" > release_const.py
-          if [ "$VERSION" == "dev" ]; then
-            echo 'SERVICE_NAME = "oig_cloud_dev"' >> release_const.py
-          else
-            echo 'SERVICE_NAME = "oig_cloud"' >> release_const.py
-          fi
-
-      - name: Update version property in manifest.json
-        working-directory: ./custom_components/oig_cloud
-        run: |
-          VERSION="${{ steps.validate_version.outputs.version }}"
-          if [ "$VERSION" == "dev" ]; then
-            jq --arg version '0.0.0' '.version = $version' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
-          else
-            jq --arg version "$VERSION" '.version = $version' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
-          fi
-
-
-      - name: Commit changes
-        working-directory: ./custom_components/oig_cloud
-        run: |
-          git config --global user.name "Pavel Simsa"
-          git config --global user.email "pavel@simsa.cz"
-          git add release_const.py manifest.json
-          git commit -m "Setting release variables to ${{ steps.validate_version.outputs.version }}"
-
-      - name: Push changes
-        working-directory: ./custom_components/oig_cloud
-        if: ${{ github.event.inputs.create-tag != 'true' }}
-        run: |
-          git push
-
       - name: Create tag
         if: ${{ github.event.inputs.create-tag == 'true' }}
-        working-directory: ./custom_components/oig_cloud
         run: |
-          git tag -a v${{ steps.validate_version.outputs.version }} -m "Version ${{ steps.validate_version.outputs.version }}"
-          git push --tags
+          if [ "$(git rev-parse HEAD)" != "${{ github.sha }}" ]; then
+            echo "Checkout is not the gated release commit"
+            exit 1
+          fi
+          git tag -a "v${{ steps.version.outputs.version }}" -m "Version ${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Extract release notes from CHANGELOG.md
         id: changelog
         if: ${{ github.event.inputs.create-tag == 'true' }}
         run: |
-          VERSION="${{ steps.validate_version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
           if [ ! -f CHANGELOG.md ]; then
             {
               echo "notes<<EOF"
@@ -188,7 +199,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ steps.validate_version.outputs.version }}
-          release_name: Release ${{ steps.validate_version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          release_name: Release ${{ steps.version.outputs.version }}
           body: ${{ steps.changelog.outputs.notes }}
           draft: true

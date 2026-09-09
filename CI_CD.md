@@ -2,37 +2,44 @@
 
 Tento dokumentace popisuje všechny CI/CD workflow, konfigurace a nastavení pro security, quality, maintainability a code coverage.
 
-## Co (a co ne) gate'uje release
+## What gates release
 
-Release workflow (`release.yml`, spouštěný ručně přes workflow_dispatch) je od 2026-09-09
-**gated** na výsledcích CI checků pro **přesný commit, který je released** (ne "poslední run
-na main"). Před touto změnou vedla release cesta vedle CI — release bylo možné vytvořit i
-s červenými nebo vůbec nespuštěnými testy.
+The manually triggered release workflow gates `github.sha` and the release job
+checks out that same SHA. The version is read from `manifest.json` on the gated
+commit; no version-bump commit is created by the release workflow. This keeps
+the candidate and tagged commit identical and avoids depending on a
+workflow-created push to trigger CI. The cost is that a version change must be
+merged as its own CI-green commit before starting the release.
 
-**Required** (musí být zelené na released sha, jinak release neproběhne):
+Required workflows (the latest completed attempt for each must be successful on
+the gated SHA):
 
-| Workflow | Proč je required |
+| Workflow | Why it is required |
 |---|---|
-| `test.yml` | pytest test suite — jediný check, který skutečně spouští kód |
-| `quality.yml` | flake8/Pylint/Mypy + frontend lint — zachytí type/broken kód |
-| `security.yml` | CodeQL/Bandit/Safety — security defekty nesmí jít k uživatelům |
-| `sonarcloud.yml` | SonarCloud quality gate + coverage |
+| `test.yml` | Runs the Python test suite. |
+| `quality.yml` | Runs flake8, Pylint, and the frontend quality job. The Mypy report is uploaded, but its command is currently advisory. |
+| `security.yml` | Runs CodeQL and publishes Bandit/Safety reports. Bandit and Safety command failures are currently advisory. |
+| `sonarcloud.yml` | Runs the SonarCloud quality gate and coverage analysis. |
+| `secret-scanning.yml` | Includes the blocking Gitleaks secret scan; Trivy and Snyk reports are advisory. |
+| `pre-commit.yml` | Runs the repository's blocking formatting, lint, and type-check hooks. |
 
-**Není required** (běží, ale negatečí):
+These workflows are not required:
 
-| Workflow | Proč není required |
+| Workflow | Why it is not required |
 |---|---|
-| `maintainability.yml` | Radon/Vulture — advisory report složitosti, ne korektnost |
-| `secret-scanning.yml` | Snyk je `continue-on-error` by design; CodeQL už pokrývá `security.yml` |
-| `pre-commit.yml` | lokální lint disciplína, duplikovaná `quality.yml` v CI |
-| `hacs.yml`, `hassfest.yml`, `build-frontend.yml`, `dependency-check.yml` | HA validation, build, Dependabot — nesouvisí s korektností releasovaného kódu |
+| `maintainability.yml` | Radon/Vulture reports are advisory. |
+| `hacs.yml`, `hassfest.yml`, `build-frontend.yml`, `dependency-check.yml` | Validation, build, or dependency jobs outside the release gate's required checks. |
 
-**Neznámý stav blokuje**: required check, který pro dané sha **neproběhl** (žádný dokončený
-run), blokuje release stejně jako selhání — "no result" není pass.
+An absent completed run blocks the release just like a failed conclusion.
+For a workflow with multiple attempts, a newer completed attempt supersedes an
+older one; this permits the normal failed-then-rerun-green recovery path while
+still blocking on the latest result.
 
-**Override**: input `bypass-required-checks` (default `false`). Když ho operátor nastaví,
-release proběhne i při červeném/absent gate — a override je zaznamenán actor + verdiktem
-gate v run summary (audit trail). Únikový poklop, ne tlačítko na každodenní použití.
+Invariant on the ordinary path: **no tag is created on a commit whose required
+checks were not evaluated and green**. The explicit
+`bypass-required-checks` input defaults to `false`; when set to `true`, the
+workflow records the actor and gate verdict in the run summary as the audited
+exception to that invariant.
 
 
 ## Přehled CI/CD
