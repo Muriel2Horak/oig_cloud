@@ -2,6 +2,39 @@
 
 Tento dokumentace popisuje všechny CI/CD workflow, konfigurace a nastavení pro security, quality, maintainability a code coverage.
 
+## Co (a co ne) gate'uje release
+
+Release workflow (`release.yml`, spouštěný ručně přes workflow_dispatch) je od 2026-09-09
+**gated** na výsledcích CI checků pro **přesný commit, který je released** (ne "poslední run
+na main"). Před touto změnou vedla release cesta vedle CI — release bylo možné vytvořit i
+s červenými nebo vůbec nespuštěnými testy.
+
+**Required** (musí být zelené na released sha, jinak release neproběhne):
+
+| Workflow | Proč je required |
+|---|---|
+| `test.yml` | pytest test suite — jediný check, který skutečně spouští kód |
+| `quality.yml` | flake8/Pylint/Mypy + frontend lint — zachytí type/broken kód |
+| `security.yml` | CodeQL/Bandit/Safety — security defekty nesmí jít k uživatelům |
+| `sonarcloud.yml` | SonarCloud quality gate + coverage |
+
+**Není required** (běží, ale negatečí):
+
+| Workflow | Proč není required |
+|---|---|
+| `maintainability.yml` | Radon/Vulture — advisory report složitosti, ne korektnost |
+| `secret-scanning.yml` | Snyk je `continue-on-error` by design; CodeQL už pokrývá `security.yml` |
+| `pre-commit.yml` | lokální lint disciplína, duplikovaná `quality.yml` v CI |
+| `hacs.yml`, `hassfest.yml`, `build-frontend.yml`, `dependency-check.yml` | HA validation, build, Dependabot — nesouvisí s korektností releasovaného kódu |
+
+**Neznámý stav blokuje**: required check, který pro dané sha **neproběhl** (žádný dokončený
+run), blokuje release stejně jako selhání — "no result" není pass.
+
+**Override**: input `bypass-required-checks` (default `false`). Když ho operátor nastaví,
+release proběhne i při červeném/absent gate — a override je zaznamenán actor + verdiktem
+gate v run summary (audit trail). Únikový poklop, ne tlačítko na každodenní použití.
+
+
 ## Přehled CI/CD
 
 ### Testování

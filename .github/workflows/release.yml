@@ -10,12 +10,84 @@ on:
         description: 'Create tag'
         required: true
         default: 'false'
+      bypass-required-checks:
+        description: 'Override: release even if required CI checks are failing or have not run (recorded in the run)'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
+  gate:
+    name: CI Gate (required checks on the sha being released)
+    runs-on: ubuntu-latest
+    outputs:
+      decision: ${{ steps.gate.outputs.decision }}
+      report: ${{ steps.gate.outputs.report }}
+    steps:
+      - name: Evaluate required CI checks for ${{ github.sha }}
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BYPASS: ${{ inputs.bypass-required-checks }}
+        run: |
+          set -eu
+          # Workflows that must be green on the exact commit being released.
+          # Rationale (see CI_CD.md): test = pytest suite; quality = flake8/Pylint/Mypy + frontend lint;
+          # security = CodeQL/Bandit/Safety; sonarcloud = quality gate + coverage.
+          # Excluded: maintainability (Radon/Vulture advisory report), secret-scanning (Snyk is
+          # continue-on-error by design, and CodeQL runs in security.yml), pre-commit (local lint
+          # discipline, duplicated by quality.yml in CI).
+          REQUIRED="test.yml quality.yml security.yml sonarcloud.yml"
+          verdict="pass"
+          : > "$GITHUB_STEP_SUMMARY"
+          echo "## CI Gate — required checks for ${SHA:0:12}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Workflow | Run | Conclusion |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          for wf in $REQUIRED; do
+            # headSha filter guarantees we judge THIS commit, not "latest run on main"
+            runs=$(gh api --paginate -H "Accept: application/vnd.github+json" \
+              "repos/${REPO}/actions/workflows/${wf}/runs?head_sha=${SHA}&status=completed" \
+              --jq '.workflow_runs[].conclusion' || echo "")
+            n=$(printf '%s' "$runs" | grep -c . || true)
+            if [ "$n" -eq 0 ]; then
+              echo "| ${wf} | — (no completed run) | **BLOCK: not run** |" >> "$GITHUB_STEP_SUMMARY"
+              verdict="block"
+            elif printf '%s' "$runs" | grep -qv '^success$'; then
+              echo "| ${wf} | ${n} run(s) | **BLOCK: $(printf '%s' "$runs" | grep -v '^success$' | head -1)** |" >> "$GITHUB_STEP_SUMMARY"
+              verdict="block"
+            else
+              echo "| ${wf} | ${n} run(s) | success |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          if [ "$BYPASS" = "true" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ **OVERRIDE**: \`bypass-required-checks\` was set to true by ${{ github.actor }}. Release proceeds despite gate verdict: ${verdict}. This line is the audit record." >> "$GITHUB_STEP_SUMMARY"
+            echo "decision=override" >> "$GITHUB_OUTPUT"
+            echo "report=CI gate ${verdict}; OVERRIDE by ${{ github.actor }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "decision=${verdict}" >> "$GITHUB_OUTPUT"
+            echo "report=CI gate ${verdict}" >> "$GITHUB_OUTPUT"
+            if [ "$verdict" = "block" ]; then
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "Refusing to release: required checks are failing or absent for ${SHA:0:12}. Fix them, or re-run the release with the documented override input \`bypass-required-checks\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          fi
+
+      - name: Gate verdict
+        run: echo "${{ steps.gate.outputs.report }}"
+
   release:
+    needs: gate
+    if: ${{ needs.gate.outputs.decision == 'pass' || needs.gate.outputs.decision == 'override' }}
     runs-on: ubuntu-latest
 
     steps:
