@@ -93,6 +93,23 @@ jobs:
               fi
             done
 
+            # The loop exits with pending > 0 only when the poll budget is
+            # exhausted. That must never fall through to judging completed
+            # runs: a newer in-flight attempt could still fail, and "could
+            # not determine the result" must not read as "the result was
+            # green". Block and name what we are still waiting on.
+            if [ "$pending" -ne 0 ]; then
+              waiting_on="$(jq -r --arg sha "$SHA" '
+                [.[].workflow_runs[]
+                 | select(.head_sha == $sha and .status != "completed")]
+                | map("run \(.id), attempt \(.run_attempt // 1) (\(.status))")
+                | join("; ")
+              ' <<< "$runs")"
+              printf '| `%s` | - | - | **BLOCK: poll budget exhausted, still in flight: %s** |\n' "$workflow" "$waiting_on" >> "$GITHUB_STEP_SUMMARY"
+              verdict="block"
+              continue
+            fi
+
             if [ -z "$latest" ]; then
               printf '| `%s` | - | - | **BLOCK: no completed run** |\n' "$workflow" >> "$GITHUB_STEP_SUMMARY"
               verdict="block"

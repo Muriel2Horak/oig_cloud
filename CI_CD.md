@@ -33,13 +33,22 @@ These workflows are not required:
 An absent completed run blocks the release just like a failed conclusion.
 For a workflow with multiple attempts, a newer completed attempt supersedes an
 older one; this permits the normal failed-then-rerun-green recovery path while
-still blocking on the latest result.
+still blocking on the latest result. If the poll budget is exhausted while a
+newer attempt is still in flight, the gate blocks and names the workflow and
+the attempt it is waiting on — an exhausted budget is never judged as green.
 
 Invariant on the ordinary path: **no tag is created on a commit whose required
 checks were not evaluated and green**. The explicit
 `bypass-required-checks` input defaults to `false`; when set to `true`, the
 workflow records the actor and gate verdict in the run summary as the audited
 exception to that invariant.
+
+Scope limit: this gate governs only a release started through the release
+workflow. A human-pushed tag bypasses the gate entirely — nothing in the
+repository prevents `git push origin vX.Y.Z` from creating a release tag that
+never passed these checks. Closing that path requires a repository
+tag-protection ruleset (an operator setting, not code). Do not read this gate
+as more than it is: it is not a substitute for tag protection.
 
 
 ## Přehled CI/CD
