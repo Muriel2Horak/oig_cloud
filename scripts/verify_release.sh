@@ -57,6 +57,21 @@ git diff --exit-code FETCH_HEAD -- . >/dev/null || {
   exit 1
 }
 
+# 2b. Untracked files are invisible to the diff above (review finding
+# F-3, attack C): `git diff FETCH_HEAD -- .` compares tracked bytes only,
+# so verify used to PASS with arbitrary untracked content in the tree
+# while claiming "the tree on disk equals the tag". That claim is the
+# contract (deployed == declared), so the gap is closed here, not
+# accepted: any untracked (non-ignored) file means the on-disk tree is
+# not exactly the tagged tree, and verify fails closed. The operator
+# commits the content and re-verifies, or removes it. Tracked
+# modifications are already covered by check 2; this adds the rest of
+# `git status --porcelain`'s surface.
+[ -z "$(git status --porcelain --untracked-files=normal)" ] || {
+  echo "verify_release: on-disk tree is not exactly ${TAG} (untracked files present)" >&2
+  exit 1
+}
+
 # 3. A GitHub Release object must exist (release.yml creates it as a
 # DRAFT; draft or published both satisfy this — publishing the draft is
 # the human step that makes the release notes page visible; the tag push
