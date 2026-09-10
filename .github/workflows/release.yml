@@ -14,12 +14,15 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   gate:
     name: CI Gate (required checks on the sha being released)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       decision: ${{ steps.gate.outputs.decision }}
       report: ${{ steps.gate.outputs.report }}
@@ -151,6 +154,8 @@ jobs:
     needs: gate
     if: ${{ needs.gate.outputs.decision == 'pass' || needs.gate.outputs.decision == 'override' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       # No release commit is created here. The tag is always made from the
