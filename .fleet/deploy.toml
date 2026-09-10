@@ -32,9 +32,10 @@
 # step that refuses unconditionally — no override env var exists, and no
 # release command (tag, push, release create) appears anywhere in this
 # file. Why, in prose: this release is public, one tag push is served to
-# every HACS installation, and rollback is NOT SYMMETRIC (see [[rollback]]
-# — deleting or re-pointing the tag changes what FUTURE installs get; it
-# cannot downgrade homes that already updated). A wrongly published
+# every HACS installation, and rollback is UNAVAILABLE (see [[rollback]]
+# — the v* release tag is immutable by an active repository ruleset, and
+# even a moved tag could only change what FUTURE installs get, never
+# downgrade homes that already updated). A wrongly published
 # release cannot be un-served, so the only publish path is the human-run
 # release.yml, never the executor. This is a current policy of the
 # operator, not an aspiration.
@@ -57,7 +58,9 @@
 #   - publish: refuse (see the standing decision above).
 #   - verify: after the human release, prove the tag exists on origin and
 #     names exactly the tree on disk, and that the release object exists.
-#   - rollback: the guarded, honest tag-repoint lever for the operator.
+#   - rollback: UNAVAILABLE — the stage below refuses, with the reason
+#     (immutable release tag by ruleset; un-ship by publishing a newer
+#     version).
 #
 # [targets]: deliberately ABSENT (§7b decision, justified). Every step in
 # this manifest runs locally against the source tree; git and gh appear
@@ -229,28 +232,52 @@ params = { shell = "scripts/verify_release.sh", reason = "no typed assertion can
 on_failure = "abort"
 
 # ===========================================================================
-# rollback — restore prior state on demand
+# rollback — UNAVAILABLE, declared with the reason. FAILS CLOSED.
 # ===========================================================================
 
-# HONEST ANSWER for a HACS release: rollback is NOT symmetric. The only
-# lever is re-pointing the tag (delete it on origin, re-create it at an
-# earlier commit, push). That changes what FUTURE installs get; it does
-# NOT roll back users who already updated — their Home Assistant
-# downloaded the archive at update time and keeps running it — and HACS
-# caches release metadata, so even the re-pointed tag propagates slowly.
-# There is no stronger rollback story and this manifest does not pretend
-# otherwise.
+# ROLLBACK IS NOT AVAILABLE FOR THIS RELEASE, and this stage says so in
+# the manifest itself rather than letting an executor discover it by
+# aborting mid-sequence. Three facts, in order:
 #
-# Guarded: OIG_CLOUD_CONFIRM_ROLLBACK=1 required, and
-# OIG_CLOUD_ROLLBACK_TARGET_SHA names the commit the tag must point at.
-# The tag name is derived from manifest.json exactly like release.yml
-# (OIG_CLOUD_RELEASE_VERSION overrides). Note the schema gap: rollback
-# normally runs against state the publish stage captured, but this
-# manifest's publish never publishes — the state being rolled back was
-# created by the human-run release.yml, and the schema has no way to say
-# "this rollback acts on state an external actor created".
+# 1. THE RELEASE TAG IS IMMUTABLE BY REPOSITORY POLICY. As of 2026-09-10 a
+#    ruleset on this repository restricts tags matching v* with the
+#    update and deletion rules, enforcement active, no bypass actors —
+#    moving or deleting a v* tag is refused outright. The release tag is
+#    v<version>, so it always matches. The tag-repoint sequence this
+#    section used to contain cannot execute: its very first mutation (the
+#    deletion push) is refused, and worse, a delete-then-recreate that
+#    ever aborts between the two pushes would leave the release tag
+#    deleted — the release in a WORSE state than before rollback was
+#    attempted. A step that cannot run must not sit in the manifest
+#    pretending it can.
+# 2. EVEN IF THE TAG COULD MOVE, THAT IS NOT A ROLLBACK. Rewinding the
+#    tag changes what FUTURE installs get; it does not downgrade homes
+#    that already updated — their Home Assistant downloaded the archive
+#    at update time and keeps running it — and HACS caches release
+#    metadata, so even a moved tag propagates slowly.
+# 3. WHAT AN OPERATOR SHOULD ACTUALLY DO: a public HACS release is
+#    un-shipped by publishing a NEWER version, not by rewinding a tag.
+#    Land the fix on main, bump custom_components/oig_cloud/manifest.json,
+#    and dispatch .github/workflows/release.yml in the normal way; the new
+#    tag is what HACS users update to. If the bad release must also stop
+#    being offered, that is a HACS-side delisting decision for the
+#    operator, not a git operation.
+#
+# Contract note (schema gap, stated not papered over): the v1 contract
+# has no "unavailable / disabled" stage marker. Its canonical way to say
+# "no rollback path is published" is to OMIT [[rollback]] entirely, and
+# an executor asked to roll back such a manifest refuses with "no
+# rollback available" (docs/specs/deploy-manifest.md, rollback section).
+# This manifest keeps the stage instead, in the same shape as the
+# publish stop above — a single step that always fails, loudly, and says
+# why — because the reason belongs in the manifest, not only in a
+# commit message or the contract doc. It fails closed either way: an
+# omitted stage is refused by the executor, a declared one aborts here.
+# (The related gap the old step exposed — rollback acting on state the
+# publish stage never captured, because publish refuses — disappears
+# with the step; nothing here acts on remote state at all.)
 [[rollback]]
 kind = "command"
-name = "repoint-release-tag-to-earlier-commit"
-shell = '[ "${OIG_CLOUD_CONFIRM_ROLLBACK:-0}" = "1" ] || { echo "refused: OIG_CLOUD_CONFIRM_ROLLBACK is not 1" >&2; exit 1; }; TARGET="${OIG_CLOUD_ROLLBACK_TARGET_SHA:?set OIG_CLOUD_ROLLBACK_TARGET_SHA to the commit the tag must name}"; VERSION="${OIG_CLOUD_RELEASE_VERSION:-$(jq -er ".version | strings" custom_components/oig_cloud/manifest.json)}"; [ -n "${VERSION}" ] || { echo "could not derive release version from manifest.json" >&2; exit 1; }; TAG="v${VERSION}"; git push origin ":refs/tags/${TAG}"; git tag -d "${TAG}" 2>/dev/null || true; git tag -a "${TAG}" "${TARGET}" -m "Rollback: ${TAG} repointed to ${TARGET}"; git push origin "${TAG}"; echo "tag repointed; users who already updated are NOT rolled back" >&2'
+name = "rollback-unavailable-tag-immutable"
+shell = "echo 'REFUSED: rollback is not available. v* tags on this repository are non-updatable and non-deletable by an active repository ruleset (tag rules update + deletion, enforcement active, no bypass actors, 2026-09-10), so the release tag cannot be moved or deleted. A public HACS release is un-shipped by publishing a NEWER version (move forward), not by re-pointing a tag; homes that already updated are never rolled back either way. Operator action: land the fix on main, bump the version in custom_components/oig_cloud/manifest.json, and dispatch release.yml in the normal way.' >&2; exit 1"
 on_failure = "abort"
