@@ -23,6 +23,20 @@ the gated SHA):
 | `secret-scanning.yml` | Includes the blocking Gitleaks secret scan; Trivy and Snyk reports are advisory. |
 | `pre-commit.yml` | Runs the repository's blocking formatting, lint, and type-check hooks. |
 
+### SonarCloud is a scan, deliberately
+
+Decided 2026-09-10 by the repository operator: `sonarcloud.yml` stays **advisory**. It uploads the
+analysis and does not set `sonar.qualitygate.wait`, so it cannot fail on a red quality gate.
+
+This is a choice, not an oversight. Do not "fix" it by adding `sonar.qualitygate.wait=true` without
+asking the operator: that would make every pull request in this repository blocking on the
+SonarCloud quality gate, which is a change of regime, not a correction. The gate requiring this
+workflow therefore proves the scan ran — nothing more, and the table above says so.
+
+What this leaves open, stated plainly: a release can pass the CI gate with a red SonarCloud quality
+gate. The blocking security signal for a release is `secret-scanning.yml` (gitleaks) and
+`pre-commit.yml`; SonarCloud findings are read by a human.
+
 These workflows are not required:
 
 | Workflow | Why it is not required |
