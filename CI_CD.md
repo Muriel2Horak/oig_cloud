@@ -19,7 +19,7 @@ the gated SHA):
 | `test.yml` | Runs the Python test suite. |
 | `quality.yml` | Runs flake8, Pylint, and the frontend quality job. The Mypy report is uploaded, but its command is currently advisory. |
 | `security.yml` | Runs CodeQL and publishes Bandit/Safety reports. Bandit and Safety command failures are currently advisory. |
-| `sonarcloud.yml` | Runs the SonarCloud quality gate and coverage analysis. |
+| `sonarcloud.yml` | Uploads coverage and the SonarCloud analysis. **It does not fail on a red SonarCloud quality gate** (no `sonar.qualitygate.wait`), so requiring this workflow proves the scan ran, not that the quality gate passed. The gate reads workflow conclusions; the SonarCloud app's own PR status check is separate and is not part of the release gate. |
 | `secret-scanning.yml` | Includes the blocking Gitleaks secret scan; Trivy and Snyk reports are advisory. |
 | `pre-commit.yml` | Runs the repository's blocking formatting, lint, and type-check hooks. |
 
