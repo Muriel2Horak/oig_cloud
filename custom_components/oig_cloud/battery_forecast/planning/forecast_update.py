@@ -924,6 +924,23 @@ def _resolve_load_kwh(
     return hourly_kwh / 4.0
 
 
+def _profile_covers_hour(profile: Any, hour: int) -> bool:
+    """True when the profile carries a real value for this hour of the day."""
+    if not isinstance(profile, dict):
+        return False
+    hourly_consumption = profile.get("hourly_consumption")
+    start_hour = profile.get("start_hour", 0)
+    if isinstance(hourly_consumption, list):
+        index = hour - start_hour
+        return 0 <= index < len(hourly_consumption)
+    if isinstance(hourly_consumption, dict):
+        return (
+            hourly_consumption.get(hour) is not None
+            or hourly_consumption.get(hour - start_hour) is not None
+        )
+    return False
+
+
 def _select_adaptive_profile(
     adaptive_profiles: dict[str, Any],
     timestamp: datetime,
@@ -932,8 +949,18 @@ def _select_adaptive_profile(
     today_profile = adaptive_profiles.get("today_profile")
     tomorrow_profile = adaptive_profiles.get("tomorrow_profile")
     if timestamp.date() == today:
-        return today_profile or tomorrow_profile
-    return tomorrow_profile or today_profile
+        preference = (today_profile, tomorrow_profile)
+    else:
+        preference = (tomorrow_profile, today_profile)
+
+    # today_profile is a *remaining hours of today* window (start_hour =
+    # current_hour), so at 00:00 it still holds yesterday's tail. Asking it for
+    # hour 14 used to miss and collapse the whole day plan to one number, so
+    # prefer whichever profile actually covers the hour being planned.
+    for profile in preference:
+        if _profile_covers_hour(profile, timestamp.hour):
+            return profile
+    return next((profile for profile in preference if profile), None)
 
 
 def _profile_has_hourly_series(profile: Any) -> bool:
@@ -984,26 +1011,21 @@ def _hourly_kwh_from_profile(
             except (TypeError, ValueError):
                 pass
 
-    avg_kwh_h = _profile_avg_kwh_h(profile)
-    if avg_kwh_h is not None:
-        sensor._log_rate_limited(
-            "adaptive_profile_oob",
-            "debug",
-            "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
-            hour,
-            start_hour,
-            len(hourly_consumption) if isinstance(hourly_consumption, (list, dict)) else 0,
-            cooldown_s=900.0,
-        )
-        return avg_kwh_h
-
+    # No avg_kwh_h fallback here on purpose: one scalar stretched across 96
+    # slots is exactly what turned a stored day plan into a flat 592 W line
+    # that nothing in the logs ever mentioned. The load_avg windows the caller
+    # falls back to are coarse, but at least they have a shape - and the miss
+    # is now loud enough to be caught in production.
     sensor._log_rate_limited(
-        "adaptive_profile_missing_data",
-        "debug",
-        "Adaptive profile missing usable data: hour=%s start=%s (falling back to load_avg)",
+        "adaptive_profile_window_miss",
+        "warning",
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        "Adaptive profile does not cover hour=%s (start_hour=%s, hours=%s) - "
+        "falling back to load_avg windows",
         hour,
         start_hour,
-        cooldown_s=900.0,
+        len(hourly_consumption) if isinstance(hourly_consumption, (list, dict)) else 0,
+        cooldown_s=60.0,
     )
     return None
 

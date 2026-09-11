@@ -50,6 +50,24 @@ export { OigBoilerTimelineChart, resolveTimelineNowMs, minutesSinceMidnightInTim
 export { OigBoilerHeroFlow } from './boiler-hero-flow';
 
 export {
+  OigBoilerProgress,
+  PROGRESS_SLOT_COUNT,
+  progressPct,
+  slotSideKwh,
+  slotSideSource,
+  sumSideCostCzk,
+  sumSideSourceKwh,
+  minSideReadyLiters,
+  confidenceKey,
+  isProgressEmpty,
+  formatPct100,
+  formatCostCzkStrict,
+  formatKwh1,
+  formatKwh2,
+  formatLiters0,
+} from './boiler-progress';
+
+export {
   OigBoilerPlanRealitaTile,
   adherenceColor,
   blockSourceColor,

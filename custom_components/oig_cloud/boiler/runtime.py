@@ -81,6 +81,7 @@ from .demand_profiler import (
 from .planner_core import PlanResult, plan_comfort_core
 from .planner import plan_result_to_boiler_plan
 from .actuator import ActuatorSerializerState
+from . import day_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -329,6 +330,30 @@ def _append_trigger_reason(
 def _append_unique_flag(flags: list[str], flag: str) -> None:
     if flag not in flags:
         flags.append(flag)
+
+
+def _boiler_plan_slots_for_day_store(plan: Optional[BoilerPlan]) -> list[dict[str, Any]]:
+    """The rolling plan's slots in the raw-dict shape day_record.snapshot_plan reads."""
+    if plan is None:
+        return []
+    slots: list[dict[str, Any]] = []
+    for slot in plan.slots:
+        start = getattr(slot, "start", None)
+        source = getattr(slot, "recommended_source", None)
+        slots.append(
+            {
+                "start": (
+                    start.isoformat()
+                    if isinstance(start, datetime)
+                    else start
+                ),
+                "heating_kwh": getattr(slot, "heating_kwh", None),
+                "recommended_source": getattr(source, "value", source),
+                "estimated_cost_czk": getattr(slot, "estimated_cost_czk", None),
+                "predicted_top_temp_c": getattr(slot, "predicted_top_temp_c", None),
+            }
+        )
+    return slots
 
 
 def _copy_activity_dto(
@@ -1599,7 +1624,9 @@ class BoilerRuntime:
             classifier_flags=activity.stale_flags,
         )
         self._current_activity = _copy_activity_dto(activity, stale_flags=flags)
-        self._update_daily_source_accumulators(activity, snapshot, event_timestamp)
+        self._update_daily_source_accumulators(
+            activity, snapshot, event_timestamp, top_temp_c=curr.top_temp_c
+        )
         self._record_timeline_entry(
             reading=curr,
             activity=activity,
@@ -1612,6 +1639,8 @@ class BoilerRuntime:
         activity: BoilerActivityDTO,
         snapshot: BoilerSourceHeaterSnapshot,
         now: datetime,
+        *,
+        top_temp_c: Optional[float] = None,
     ) -> None:
         """Accumulate per-source electric energy into daily buckets.
 
@@ -1630,6 +1659,18 @@ class BoilerRuntime:
             self._daily_source_kwh = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
             self._daily_source_cost_czk = {"fve": 0.0, "grid": 0.0}
             self._daily_source_reseeded = False  # allow reseed on new day
+            self._schedule_day_store_task(
+                day_store.async_roll_over(self.hass, self.entry_id, self.box_id, now)
+            )
+            self._schedule_day_store_task(
+                day_store.async_ensure_baseline(
+                    self.hass,
+                    self.entry_id,
+                    self.box_id,
+                    _boiler_plan_slots_for_day_store(self.get_current_plan()),
+                    local_date,
+                )
+            )
         self._daily_source_date = local_date
 
         prev_update = self._daily_source_last_update_at
@@ -1667,6 +1708,7 @@ class BoilerRuntime:
         if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
             self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + energy_kwh
             # Solar/overflow is free — no cost added.
+            day_store_source = "fve"
         else:
             self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + energy_kwh
             price = self._read_current_grid_price_czk()
@@ -1674,9 +1716,44 @@ class BoilerRuntime:
                 self._daily_source_cost_czk["grid"] = (
                     self._daily_source_cost_czk.get("grid", 0.0) + energy_kwh * price
                 )
+            day_store_source = "grid"
 
         # Persist (throttled) so the day's attribution survives a restart.
         self._schedule_daily_source_save()
+        self._schedule_day_store_task(
+            day_store.async_record(
+                self.hass,
+                self.entry_id,
+                self.box_id,
+                now,
+                heating_kwh=energy_kwh,
+                source=day_store_source,
+                top_temp_c=top_temp_c,
+            )
+        )
+
+    def _schedule_day_store_task(self, coro: Any) -> None:
+        """Hand a day_store coroutine to the HA loop without awaiting it.
+
+        _update_daily_source_accumulators runs on the event loop (it is
+        driven by a @callback listener — see _handle_activity_state_changed),
+        so a plain async_create_task is enough; no cross-thread handoff.
+        """
+        hass = getattr(self, "hass", None)
+        create_task = getattr(hass, "async_create_task", None) if hass is not None else None
+        if not callable(create_task):
+            coro.close()
+            return
+        try:
+            create_task(coro)
+        except Exception as err:  # pragma: no cover - defensive
+            coro.close()
+            _LOGGER.warning(
+                "Boiler day store task scheduling failed for %s/%s (error_class=%s)",
+                getattr(self, "entry_id", "?"),
+                getattr(self, "box_id", "?"),
+                err.__class__.__name__,
+            )
 
     def _read_current_grid_price_czk(self) -> Optional[float]:
         """Current all-in grid price (Kč/kWh) for the active 15-min interval.

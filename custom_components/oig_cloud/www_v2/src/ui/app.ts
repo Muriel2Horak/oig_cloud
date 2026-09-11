@@ -1451,6 +1451,12 @@ export class OigApp extends LitElement {
 
       <oig-boiler-plan-realita-tile .lang=${lang}></oig-boiler-plan-realita-tile>
 
+      <oig-boiler-progress
+        .progress=${v2.progress ?? null}
+        .altSourceType=${v2.altSourceType ?? null}
+        .lang=${lang}
+      ></oig-boiler-progress>
+
       <div class="boiler-model-row">
         <oig-boiler-energy-today
           .energy=${v2.energyToday ?? null}

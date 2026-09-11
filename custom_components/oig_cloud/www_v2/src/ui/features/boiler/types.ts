@@ -210,6 +210,67 @@ export interface EnergyToday {
   savingsVsAltCzk?: number | null;
 }
 
+// --- Day record: plan versus actual (boiler day-record contract, `progress` block) ---
+//
+// These mirror the canonical payload VERBATIM (snake_case), because the contract
+// is shared with the BE and the FE must not silently rename its keys.
+// `adherence_pct`, `delta_kwh` and every percentage are null when not computable —
+// never 0 as a stand-in for unknown.
+
+/**
+ * One side of a progress slot.  The contract's baseline slot is
+ * `{time, heating_kwh, source, cost_czk, predicted_top_temp_c}` and its actual slot
+ * is `{time, heating_kwh, source, top_temp_c, by_source_kwh}`.  A BE that emits the
+ * bare kWh number instead is tolerated by the readers in `boiler-progress.ts`.
+ */
+export interface BoilerProgressSlotSide {
+  time?: string | null;
+  heating_kwh?: number | null;
+  source?: string | null;
+  cost_czk?: number | null;
+  predicted_top_temp_c?: number | null;
+  top_temp_c?: number | null;
+  by_source_kwh?: Record<string, number> | null;
+  /** Not in the contract today; read when a future BE adds it, never invented. */
+  ready_liters?: number | null;
+}
+
+export interface BoilerProgressSlot {
+  time: string;
+  status?: string | null;
+  planned?: BoilerProgressSlotSide | number | null;
+  actual?: BoilerProgressSlotSide | number | null;
+  source_match?: boolean | null;
+  delta_kwh?: number | null;
+}
+
+export interface BoilerProgressEnergy {
+  planned_kwh?: number | null;
+  actual_kwh?: number | null;
+  delta_kwh?: number | null;
+}
+
+export interface BoilerProgressEod {
+  actual_so_far_kwh?: number | null;
+  remaining_planned_kwh?: number | null;
+  estimated_total_kwh?: number | null;
+  planned_total_kwh?: number | null;
+}
+
+export interface BoilerProgressData {
+  date?: string | null;
+  slots?: BoilerProgressSlot[] | null;
+  completed_slots?: number | null;
+  adherence_pct?: number | null;
+  energy?: BoilerProgressEnergy | null;
+  eod?: BoilerProgressEod | null;
+  /** Measured energy with no source — MUST be shown, never folded into the electric totals. */
+  unattributed_kwh?: number | null;
+  /** Gas / alternative — separate from electric, never summed into it. */
+  alt_kwh?: number | null;
+  yesterday?: BoilerProgressData | null;
+}
+
 export interface BoilerV2Data {
   status: BoilerV2Status | null;
   planSlots: BoilerV2PlanSlot[];
@@ -233,6 +294,9 @@ export interface BoilerV2Data {
   /** M2b: battery-forecast timeline for the FVE-production chart overlay. Additive, optional
    *  so existing BoilerV2Data literals across the codebase stay valid. */
   batteryForecast?: BatteryForecastEntry[];
+  /** Day record `progress` block — plan versus actual. Additive and optional so every
+   *  existing BoilerV2Data literal stays valid while the BE slice lands. */
+  progress?: BoilerProgressData | null;
 }
 
 // --- State ---

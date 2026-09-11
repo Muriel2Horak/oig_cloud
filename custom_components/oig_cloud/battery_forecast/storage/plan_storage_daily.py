@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 from homeassistant.util import dt as dt_util
 
+from .plan_archive import build_archive_entry
+from .plan_revisions import maybe_record_plan_revision
 from .plan_storage_baseline import create_baseline_plan
 from .plan_storage_io import get_plans_store_lock, plan_exists_in_storage
 
@@ -46,7 +48,13 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
     if not sensor._daily_plan_state:
         return
     yesterday_date = sensor._daily_plan_state.get("date")
-    sensor._daily_plans_archive[yesterday_date] = sensor._daily_plan_state.copy()
+    # The in-memory state holds a forward snapshot and an actual list nothing
+    # ever filled; the archive gets the midnight baseline and the measured day.
+    sensor._daily_plans_archive[yesterday_date] = await build_archive_entry(
+        sensor,
+        yesterday_date,
+        fallback_plan=sensor._daily_plan_state.get("plan") or [],
+    )
 
     cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
     sensor._daily_plans_archive = {
@@ -134,6 +142,11 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         sensor._daily_plan_state = None
 
     await _ensure_baseline(sensor, today_str, now)
+
+    # Before the locked-plan short circuit below: for most of the day that
+    # return is the path we take, so a revision hook placed after it would
+    # never fire.
+    await maybe_record_plan_revision(sensor, now)
 
     if _should_keep_locked_plan(sensor._daily_plan_state, today_str):
         _LOGGER.debug(
