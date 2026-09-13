@@ -15,12 +15,14 @@ NC='\033[0m'
 FORCE=0
 DRY_RUN=0
 VERBOSE=0
+SELECTED_FILES=()
 
 usage() {
-    echo "Usage: $0 [--force] [--dry-run] [--verbose]"
+    echo "Usage: $0 [--force] [--dry-run] [--verbose] [--file <tracked-python-path>]"
     echo "  --force       Copy all tracked files (ignore manifest)"
     echo "  --dry-run     Show actions only (no changes)"
     echo "  --verbose     Show file-level operations"
+    echo "  --file PATH   Deploy only one tracked backend Python file (repeatable)"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -36,6 +38,14 @@ while [[ $# -gt 0 ]]; do
         --verbose|-v)
             VERBOSE=1
             shift
+            ;;
+        --file)
+            if [[ $# -lt 2 ]] || [[ -z "${2}" ]]; then
+                echo "--file requires a path" >&2
+                exit 1
+            fi
+            SELECTED_FILES+=("${2}")
+            shift 2
             ;;
         --help|-h)
             usage
@@ -60,9 +70,79 @@ SMB_MOUNT="${SMB_MOUNT:-/Volumes/config}"
 MANIFEST_FILE="${MANIFEST_FILE:-${REPO_ROOT}/.deploy_manifest.json}"
 HA_SSH_ALIAS="${HA_SSH_ALIAS:-ha}"
 HA_CONFIG="${HA_CONFIG:-${REPO_ROOT}/.ha_config}"
+SELECTED_MODE=0
+if [[ ${#SELECTED_FILES[@]} -gt 0 ]]; then
+    SELECTED_MODE=1
+fi
+
+if [[ "${SELECTED_MODE}" -eq 1 ]]; then
+    if [[ "${FORCE}" -eq 1 ]]; then
+        echo "--force cannot be used with --file" >&2
+        exit 1
+    fi
+    for selected_file in "${SELECTED_FILES[@]}"; do
+        if [[ ! "${selected_file}" =~ ^custom_components/oig_cloud/[A-Za-z0-9_./-]+\.py$ ]] \
+            || [[ "${selected_file}" == *"//"* ]] \
+            || [[ "${selected_file}" =~ (^|/)\.{1,2}(/|$) ]]; then
+            echo "Invalid --file path: ${selected_file}" >&2
+            exit 1
+        fi
+        if ! python3 - "${REPO_ROOT}" "${selected_file}" <<'PY'
+import os
+import sys
+
+repo_root, relative_path = sys.argv[1:]
+candidate = os.path.join(repo_root, relative_path)
+current = repo_root
+for segment in relative_path.split("/"):
+    current = os.path.join(current, segment)
+    if os.path.islink(current):
+        raise SystemExit(1)
+if not os.path.isfile(candidate):
+    raise SystemExit(1)
+PY
+        then
+            echo "Invalid --file path: ${selected_file}" >&2
+            exit 1
+        fi
+        tracked_file=$(git -C "${REPO_ROOT}" ls-files --error-unmatch -- "${selected_file}" 2>/dev/null) || {
+            echo "Invalid --file path: ${selected_file}" >&2
+            exit 1
+        }
+        if [[ "${tracked_file}" != "${selected_file}" ]]; then
+            echo "Invalid --file path: ${selected_file}" >&2
+            exit 1
+        fi
+    done
+fi
+
+validate_remote_path() {
+    local candidate_path="$1"
+
+    python3 - "${SMB_MOUNT}" "${candidate_path}" <<'PY'
+import os
+import sys
+
+mount_root, candidate = (os.path.abspath(value) for value in sys.argv[1:])
+try:
+    if os.path.commonpath((mount_root, candidate)) != mount_root:
+        raise ValueError
+except ValueError:
+    raise SystemExit(1)
+
+current = mount_root
+if os.path.islink(current):
+    raise SystemExit(1)
+for segment in os.path.relpath(candidate, mount_root).split(os.sep):
+    current = os.path.join(current, segment)
+    if os.path.lexists(current) and os.path.islink(current):
+        raise SystemExit(1)
+PY
+}
 
 # Load HA config if exists
 if [[ -f "${HA_CONFIG}" ]]; then
+    # shellcheck source=/dev/null
     source "${HA_CONFIG}"
 fi
 
@@ -75,7 +155,7 @@ if [[ "${LOCAL_PATH}" != "${REPO_ROOT}"/* ]]; then
     exit 1
 fi
 
-RELATIVE_PATH="${LOCAL_PATH#${REPO_ROOT}/}"
+RELATIVE_PATH="${LOCAL_PATH#"${REPO_ROOT}/"}"
 REMOTE_ROOT="${SMB_MOUNT}/${RELATIVE_PATH}"
 
 echo -e "${BLUE}🚀 Starting SMB deploy...${NC}"
@@ -88,7 +168,7 @@ echo ""
 
 # Auto-mount SMB if not already mounted
 SMB_AUTO_MOUNTED=0
-if ! mount | grep -q " ${SMB_MOUNT} "; then
+if [[ "${SELECTED_MODE}" -eq 0 || "${DRY_RUN}" -eq 0 ]] && ! mount | grep -q " ${SMB_MOUNT} "; then
     echo -e "${YELLOW}🔌 SMB mount not found, attempting auto-mount...${NC}"
 
     SMB_HOST="${SMB_HOST:-${HA_HOST}}"
@@ -131,7 +211,7 @@ if ! mount | grep -q " ${SMB_MOUNT} "; then
     fi
 fi
 
-if ! mount | grep -q " ${SMB_MOUNT} "; then
+if [[ "${SELECTED_MODE}" -eq 0 || "${DRY_RUN}" -eq 0 ]] && ! mount | grep -q " ${SMB_MOUNT} "; then
     echo -e "${RED}❌ SMB mount not accessible: ${SMB_MOUNT}${NC}" >&2
     exit 1
 fi
@@ -141,52 +221,58 @@ if [[ ! -d "${LOCAL_PATH}" ]]; then
     exit 1
 fi
 
-echo -e "${YELLOW}🔨 Building V2...${NC}"
 WWW_V2_DIR="${REPO_ROOT}/${RELATIVE_PATH}/www_v2"
-if [[ ! -d "${WWW_V2_DIR}" ]]; then
-    echo -e "${RED}❌ www_v2 directory not found: ${WWW_V2_DIR}${NC}" >&2
-    exit 1
-fi
-if ! command -v npm >/dev/null 2>&1; then
-    echo -e "${RED}❌ npm not found${NC}" >&2
-    exit 1
-fi
-pushd "${WWW_V2_DIR}" >/dev/null
-npx vite build
-BUILD_RESULT=$?
-popd >/dev/null
-if [[ ${BUILD_RESULT} -ne 0 ]]; then
-    echo -e "${RED}❌ V2 build failed${NC}" >&2
-    exit 1
-fi
-echo -e "${GREEN}✅ V2 build complete${NC}"
+if [[ "${SELECTED_MODE}" -eq 0 ]]; then
+    echo -e "${YELLOW}🔨 Building V2...${NC}"
+    if [[ ! -d "${WWW_V2_DIR}" ]]; then
+        echo -e "${RED}❌ www_v2 directory not found: ${WWW_V2_DIR}${NC}" >&2
+        exit 1
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+        echo -e "${RED}❌ npm not found${NC}" >&2
+        exit 1
+    fi
+    pushd "${WWW_V2_DIR}" >/dev/null
+    npx vite build
+    BUILD_RESULT=$?
+    popd >/dev/null
+    if [[ ${BUILD_RESULT} -ne 0 ]]; then
+        echo -e "${RED}❌ V2 build failed${NC}" >&2
+        exit 1
+    fi
+    echo -e "${GREEN}✅ V2 build complete${NC}"
 
-# Regenerate pre-compressed siblings.
-# nginx on the HA host has gzip_static ON: it serves assets/index.js.gz to every
-# browser (they all send Accept-Encoding: gzip). Building index.js WITHOUT
-# refreshing index.js.gz therefore pins browsers to the previous bundle forever,
-# while curl (no gzip) sees the new one — a silent no-op deploy.
-# Found 2026-07-18: the FE had been frozen on a 2026-06-26 build across several
-# deploys because of exactly this. Do not remove.
-echo -e "${YELLOW}🗜  Regenerating .gz siblings (gzip_static)...${NC}"
-GZ_COUNT=0
-while IFS= read -r asset; do
-    gzip -9 -k -f "${asset}" && GZ_COUNT=$((GZ_COUNT + 1))
-done < <(find "${WWW_V2_DIR}/dist" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' \) 2>/dev/null)
-echo -e "${GREEN}✅ ${GZ_COUNT} .gz souborů přegenerováno${NC}"
+    # Regenerate pre-compressed siblings.
+    # nginx on the HA host has gzip_static ON: it serves assets/index.js.gz to every
+    # browser (they all send Accept-Encoding: gzip). Building index.js WITHOUT
+    # refreshing index.js.gz therefore pins browsers to the previous bundle forever,
+    # while curl (no gzip) sees the new one — a silent no-op deploy.
+    # Found 2026-07-18: the FE had been frozen on a 2026-06-26 build across several
+    # deploys because of exactly this. Do not remove.
+    echo -e "${YELLOW}🗜  Regenerating .gz siblings (gzip_static)...${NC}"
+    GZ_COUNT=0
+    while IFS= read -r asset; do
+        gzip -9 -k -f "${asset}" && GZ_COUNT=$((GZ_COUNT + 1))
+    done < <(find "${WWW_V2_DIR}/dist" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' \) 2>/dev/null)
+    echo -e "${GREEN}✅ ${GZ_COUNT} .gz souborů přegenerováno${NC}"
+fi
 
-TRACKED_FILES=()
-while IFS= read -r line; do
-    # Skip www_v2/src/ — only dist/ is needed on the server
-    [[ "${line}" == *"/www_v2/src/"* ]] && continue
-    [[ -n "${line}" ]] && TRACKED_FILES+=("${line}")
-done < <(git -C "${REPO_ROOT}" ls-files "${RELATIVE_PATH}")
-
-DIST_DIR="${WWW_V2_DIR}/dist"
-if [[ -d "${DIST_DIR}" ]]; then
+if [[ "${SELECTED_MODE}" -eq 1 ]]; then
+    TRACKED_FILES=("${SELECTED_FILES[@]}")
+else
+    TRACKED_FILES=()
     while IFS= read -r line; do
-        [[ -n "${line}" ]] && TRACKED_FILES+=("${RELATIVE_PATH}/www_v2/dist/${line}")
-    done < <(cd "${DIST_DIR}" && find . -type f | sed 's|^\./||')
+        # Skip www_v2/src/ — only dist/ is needed on the server
+        [[ "${line}" == *"/www_v2/src/"* ]] && continue
+        [[ -n "${line}" ]] && TRACKED_FILES+=("${line}")
+    done < <(git -C "${REPO_ROOT}" ls-files "${RELATIVE_PATH}")
+
+    DIST_DIR="${WWW_V2_DIR}/dist"
+    if [[ -d "${DIST_DIR}" ]]; then
+        while IFS= read -r line; do
+            [[ -n "${line}" ]] && TRACKED_FILES+=("${RELATIVE_PATH}/www_v2/dist/${line}")
+        done < <(cd "${DIST_DIR}" && find . -type f | sed 's|^\./||')
+    fi
 fi
 
 if [[ ${#TRACKED_FILES[@]} -eq 0 ]]; then
@@ -202,6 +288,7 @@ ACTIONS_OUTPUT=$(REPO_ROOT="${REPO_ROOT}" \
     MANIFEST_FILE="${MANIFEST_FILE}" \
     MANIFEST_OUT="${NEW_MANIFEST}" \
     FORCE="${FORCE}" \
+    SELECTED_MODE="${SELECTED_MODE}" \
     FILES_LIST="${FILES_LIST}" \
     python3 - <<'PY'
 import hashlib
@@ -212,6 +299,7 @@ repo_root = os.environ["REPO_ROOT"]
 manifest_file = os.environ["MANIFEST_FILE"]
 manifest_out = os.environ["MANIFEST_OUT"]
 force = os.environ.get("FORCE") == "1"
+selected_mode = os.environ.get("SELECTED_MODE") == "1"
 files_list = os.environ["FILES_LIST"]
 
 with open(files_list, "r", encoding="utf-8") as f:
@@ -233,7 +321,7 @@ if os.path.exists(manifest_file):
         manifest = {"files": {}, "deployed_at": None}
 
 prev = manifest.get("files", {})
-new_files = {}
+new_files = dict(prev) if selected_mode else {}
 actions = []
 
 for rel in files:
@@ -245,9 +333,10 @@ for rel in files:
     if force or prev.get(rel) != h:
         actions.append(("COPY", rel))
 
-for rel in prev.keys():
-    if rel not in new_files:
-        actions.append(("DELETE", rel))
+if not selected_mode:
+    for rel in prev.keys():
+        if rel not in new_files:
+            actions.append(("DELETE", rel))
 
 for action, rel in sorted(actions):
     print(f"{action}\t{rel}")
@@ -265,6 +354,63 @@ PY
 
 COPY_COUNT=0
 DELETE_COUNT=0
+SELECTED_BACKUP_LOCAL=""
+SELECTED_BACKUP_REMOTE=""
+SELECTED_COPY_FILES=()
+
+prepare_selected_backups() {
+    local action relative_path destination backup_root backup_path
+
+    while IFS=$'\t' read -r action relative_path; do
+        [[ "${action}" == "COPY" ]] && SELECTED_COPY_FILES+=("${relative_path}")
+    done <<< "${ACTIONS_OUTPUT}"
+
+    [[ ${#SELECTED_COPY_FILES[@]} -eq 0 ]] && return
+
+    # Validate every destination before creating a backup or changing any source
+    # file. A later missing file must not leave an earlier one partially deployed.
+    if ! validate_remote_path "${SMB_MOUNT}/custom_components/oig_cloud_backups"; then
+        echo "Selected deployment refused: backup path escapes or traverses a symlink" >&2
+        exit 1
+    fi
+    for relative_path in "${SELECTED_COPY_FILES[@]}"; do
+        destination="${SMB_MOUNT}/${relative_path}"
+        if ! validate_remote_path "${destination}"; then
+            echo "Selected deployment refused: remote path escapes or traverses a symlink: ${relative_path}" >&2
+            exit 1
+        fi
+        if [[ ! -f "${destination}" || -L "${destination}" || ! -r "${destination}" ]]; then
+            echo "Selected deployment refused: remote file is missing or unreadable: ${relative_path}" >&2
+            exit 1
+        fi
+    done
+
+    backup_root="${SMB_MOUNT}/custom_components/oig_cloud_backups"
+    if [[ -n "${SUDO_PASS}" ]]; then
+        echo "${SUDO_PASS}" | sudo -S mkdir -p "${backup_root}" 2>/dev/null
+        SELECTED_BACKUP_LOCAL=$(echo "${SUDO_PASS}" | sudo -S mktemp -d "${backup_root}/selected.XXXXXXXX")
+    else
+        mkdir -p "${backup_root}"
+        SELECTED_BACKUP_LOCAL=$(mktemp -d "${backup_root}/selected.XXXXXXXX")
+    fi
+    SELECTED_BACKUP_REMOTE="/config/custom_components/oig_cloud_backups/$(basename "${SELECTED_BACKUP_LOCAL}")"
+
+    for relative_path in "${SELECTED_COPY_FILES[@]}"; do
+        destination="${SMB_MOUNT}/${relative_path}"
+        backup_path="${SELECTED_BACKUP_LOCAL}/${relative_path}"
+        if [[ -n "${SUDO_PASS}" ]]; then
+            echo "${SUDO_PASS}" | sudo -S mkdir -p "$(dirname "${backup_path}")" 2>/dev/null
+            echo "${SUDO_PASS}" | sudo -S cp -p "${destination}" "${backup_path}" 2>/dev/null
+        else
+            mkdir -p "$(dirname "${backup_path}")"
+            cp -p "${destination}" "${backup_path}"
+        fi
+    done
+}
+
+if [[ "${SELECTED_MODE}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then
+    prepare_selected_backups
+fi
 
 while IFS=$'\t' read -r action rel; do
     [[ -z "${action}" ]] && continue
@@ -323,8 +469,9 @@ fi
 mv "${NEW_MANIFEST}" "${MANIFEST_FILE}"
 rm -f "${FILES_LIST}"
 
-# Prune empty directories in target
-if [[ -d "${REMOTE_ROOT}" ]]; then
+# Prune empty directories in target. Selected deployments must not alter paths
+# outside the explicit file list.
+if [[ "${SELECTED_MODE}" -eq 0 && -d "${REMOTE_ROOT}" ]]; then
     find "${REMOTE_ROOT}" -type d -empty -delete 2>/dev/null || true
 fi
 
@@ -332,6 +479,9 @@ echo ""
 echo -e "${GREEN}✅ Deployment completed${NC}"
 echo "  Files copied: ${COPY_COUNT}"
 echo "  Files deleted: ${DELETE_COUNT}"
+if [[ -n "${SELECTED_BACKUP_REMOTE}" ]]; then
+    echo "  Selected-file backup: ${SELECTED_BACKUP_REMOTE}"
+fi
 
 # ---------------------------------------------------------------------------
 # Reality check: fetch the bundle THE WAY A BROWSER DOES (Accept-Encoding: gzip)
@@ -339,7 +489,7 @@ echo "  Files deleted: ${DELETE_COUNT}"
 # different file (index.js vs index.js.gz) and will happily report success while
 # every real browser gets a stale bundle. Verify like the real client, always.
 # ---------------------------------------------------------------------------
-if [[ -n "${HA_URL}" ]]; then
+if [[ "${SELECTED_MODE}" -eq 0 && -n "${HA_URL}" ]]; then
     echo ""
     echo -e "${YELLOW}🔍 Ověřuji nasazený FE jako prohlížeč (gzip)...${NC}"
     LOCAL_JS="${WWW_V2_DIR}/dist/assets/index.js"
@@ -367,7 +517,7 @@ echo "🔄 Restarting Home Assistant..."
 RESTARTED=0
 
 if [[ "${RESTARTED}" -eq 0 ]] && [[ -n "${HA_TOKEN}" ]] && [[ -n "${HA_URL}" ]]; then
-    if curl -sS -X POST \
+    if curl -fsS --max-time 30 -X POST \
         -H "Authorization: Bearer ${HA_TOKEN}" \
         -H "Content-Type: application/json" \
         "${HA_URL}/api/services/homeassistant/restart" >/dev/null 2>&1; then
