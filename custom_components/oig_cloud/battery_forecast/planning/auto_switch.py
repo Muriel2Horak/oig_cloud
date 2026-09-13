@@ -42,7 +42,8 @@ except Exception:  # pragma: no cover
 
 
 _LOGGER = logging.getLogger(__name__)
-MIN_AUTO_SWITCH_INTERVAL_MINUTES = 30
+# Operator-selected anti-flapping policy for all automatic/manual mode changes.
+MIN_AUTO_SWITCH_INTERVAL_MINUTES = 5
 WATCHDOG_WARNING_COOLDOWN_SECONDS = 300.0
 
 

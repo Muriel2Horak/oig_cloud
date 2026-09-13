@@ -129,7 +129,8 @@ TRANSITION_COSTS: Dict[tuple, Dict[str, Any]] = {
 
 # Minimum mode duration (in 15-min intervals)
 MIN_MODE_DURATION: Dict[str, int] = {
-    MODE_LABEL_HOME_UPS: 2,  # UPS must run at least 30 minutes (2×15min)
+    # The five-minute execution guard fits inside one 15-minute planning slot.
+    MODE_LABEL_HOME_UPS: 1,
     MODE_LABEL_HOME_I: 1,
     MODE_LABEL_HOME_II: 1,
     MODE_LABEL_HOME_III: 1,

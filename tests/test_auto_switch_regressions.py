@@ -14,7 +14,7 @@ def switch_runtime(monkeypatch):
     """Run the real switching functions with a controllable clock and timers."""
     now = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
     clock = SimpleNamespace(now=now)
-    state = SimpleNamespace(state="HOME I", last_changed=now - timedelta(minutes=25))
+    state = SimpleNamespace(state="HOME I", last_changed=now)
     calls, timers, retries, tasks = [], [], [], []
 
     async def call(domain, service, data, blocking=False):
@@ -122,9 +122,9 @@ async def test_all_automatic_paths_defer_then_retry_valid_window(switch_runtime,
 
 
 @pytest.mark.asyncio
-async def test_scheduled_exit_holds_ups_30_minutes_from_confirmation(switch_runtime):
+async def test_scheduled_exit_holds_ups_five_minutes_from_confirmation(switch_runtime):
     runtime = switch_runtime
-    confirmed = runtime.clock.now - timedelta(minutes=14)
+    confirmed = runtime.clock.now - timedelta(minutes=4)
     runtime.state.state = "HOME UPS"
     runtime.state.last_changed = confirmed
     runtime.sensor._timeline_data = [
@@ -137,13 +137,13 @@ async def test_scheduled_exit_holds_ups_30_minutes_from_confirmation(switch_runt
     await runtime.timers[-1][1](runtime.clock.now)
     assert runtime.calls == []
     delay, retry = runtime.retries[0]
-    assert delay == 16 * 60
-    runtime.clock.now = confirmed + timedelta(minutes=30)
+    assert delay == 60
+    runtime.clock.now = confirmed + timedelta(minutes=5)
     retry(runtime.clock.now)
     for function, args in runtime.tasks:
         await function(*args)
     assert runtime.calls[0][3]["mode"] == "Home 1"
-    assert runtime.calls[0][0] - confirmed == timedelta(minutes=30)
+    assert runtime.calls[0][0] - confirmed == timedelta(minutes=5)
 
 
 @pytest.mark.asyncio
@@ -203,7 +203,7 @@ async def test_retry_honors_intervening_manual_change(switch_runtime):
     for function, args in runtime.tasks:
         await function(*args)
     assert runtime.calls == []
-    assert runtime.retries[-1][0] == 27 * 60
+    assert runtime.retries[-1][0] == 2 * 60
 
 
 @pytest.mark.asyncio
@@ -227,12 +227,14 @@ async def test_final_charge_slot_expires_without_following_mode(switch_runtime, 
     runtime = switch_runtime
     sensor, start = runtime.sensor, runtime.clock.now
     sensor._timeline_data = [{"time": start.isoformat(), "mode_name": "HOME UPS"}]
-    runtime.state.last_changed = start - timedelta(minutes=10)
     if source == "retry":
+        # The final forecast slot ends in three minutes, before guard expiry.
+        sensor._timeline_data[0]["time"] = (start - timedelta(minutes=12)).isoformat()
+        runtime.state.last_changed = start
         await auto_switch.update_auto_switch_schedule(sensor)
         assert runtime.calls == []
         delay, retry = runtime.retries[0]
-        assert delay == 20 * 60
+        assert delay == 5 * 60
         runtime.clock.now += timedelta(seconds=delay)
         retry(runtime.clock.now)
         for function, args in runtime.tasks:

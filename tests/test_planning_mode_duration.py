@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
+from custom_components.oig_cloud.battery_forecast.planning import forecast_update, mode_guard
 from custom_components.oig_cloud.battery_forecast.planning.mode_guard import (
     enforce_min_mode_duration,
 )
@@ -16,9 +19,9 @@ from custom_components.oig_cloud.battery_forecast.types import (
 @pytest.mark.parametrize(
     ("modes", "expected"),
     [
-        pytest.param([3, 0, 0], [3, 3, 0], id="extend-initial-ups"),
-        pytest.param([0, 3, 0, 0], [0, 3, 3, 0], id="extend-later-ups"),
-        pytest.param([3, 0, 3, 0], [3, 3, 3, 3], id="extend-repeated-ups"),
+        pytest.param([3, 0, 0], [3, 0, 0], id="keep-single-initial-ups-slot"),
+        pytest.param([0, 3, 0, 0], [0, 3, 0, 0], id="keep-single-later-ups-slot"),
+        pytest.param([3, 0, 3, 0], [3, 0, 3, 0], id="keep-separate-ups-slots"),
         pytest.param([3, 3, 0, 1, 2], [3, 3, 0, 1, 2], id="keep-valid-durations"),
         pytest.param([0, 1, 2], [0, 1, 2], id="keep-other-single-slot-modes"),
         pytest.param([0, 3], [0, 3], id="keep-forecast-horizon"),
@@ -26,7 +29,7 @@ from custom_components.oig_cloud.battery_forecast.types import (
     ],
 )
 def test_production_duration_policy(modes: list[int], expected: list[int]) -> None:
-    """Production labels must enforce UPS dwell without changing other modes."""
+    """A five-minute guard must not stretch 15-minute UPS slots to 30 minutes."""
     original = modes.copy()
 
     result = enforce_min_mode_duration(
@@ -40,6 +43,13 @@ def test_production_duration_policy(modes: list[int], expected: list[int]) -> No
 @pytest.mark.parametrize(
     ("mode_names", "durations", "modes", "expected"),
     [
+        pytest.param(
+            CBB_MODE_NAMES,
+            {"Home UPS": 2},
+            [3, 0, 0],
+            [3, 3, 0],
+            id="mixed-case-custom-policy",
+        ),
         pytest.param(
             {3: "Charging", 0: "Idle"},
             {"Charging": 3},
@@ -82,3 +92,19 @@ def test_custom_duration_policy_is_preserved(
     )
 
     assert result == expected
+
+
+def test_default_plan_lock_allows_replanning_after_five_minutes():
+    start = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+    prices = [{"time": start.isoformat()}]
+    until, modes = mode_guard.build_plan_lock(
+        now=start, spot_prices=prices, modes=[3],
+        mode_guard_minutes=forecast_update.MODE_GUARD_MINUTES,
+        plan_lock_until=None, plan_lock_modes=None,
+    )
+    _, revised = mode_guard.build_plan_lock(
+        now=start + timedelta(minutes=5), spot_prices=prices, modes=[0],
+        mode_guard_minutes=forecast_update.MODE_GUARD_MINUTES,
+        plan_lock_until=until, plan_lock_modes=modes,
+    )
+    assert revised == {start.isoformat(): 0}

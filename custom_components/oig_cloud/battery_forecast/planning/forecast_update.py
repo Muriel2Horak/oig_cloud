@@ -44,7 +44,8 @@ from . import mode_guard as mode_guard_module
 
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
-MODE_GUARD_MINUTES = 60
+# Default plan-stability window; configurable with mode_guard_minutes.
+MODE_GUARD_MINUTES = 5
 # Hardware safety floor as a fraction of max capacity — fallback only, used
 # when the box's live bat_min sensor (_resolve_proxy_bat_min_pct) is
 # unavailable or implausible. Typically ~20% for CBB 3F Home Plus Premium.

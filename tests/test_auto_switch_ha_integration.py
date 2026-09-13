@@ -18,12 +18,13 @@ from custom_components.oig_cloud.const import CONF_AUTO_MODE_SWITCH, DOMAIN
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("user_id", ["manual-user", None], ids=["manual", "restart"])
 async def test_real_ha_timers_retry_guarded_charge_and_preserve_confirmed_ups_dwell(
-    hass, freezer
+    hass, freezer, user_id
 ):
     """Guard expiry recovers a valid charge window and protects delayed confirmation."""
     await hass.config.async_set_time_zone("Europe/Prague")
-    start = datetime(2026, 9, 13, 12, 0, tzinfo=ZoneInfo("Europe/Prague"))
+    start = datetime(2026, 9, 13, 12, 10, tzinfo=ZoneInfo("Europe/Prague"))
     entity_id = "sensor.oig_123_box_prms_mode"
     calls: list[tuple[datetime, str, bool]] = []
 
@@ -36,8 +37,8 @@ async def test_real_ha_timers_retry_guarded_charge_and_preserve_confirmed_ups_dw
         async_fire_time_changed(hass, moment)
         await hass.async_block_till_done(wait_background_tasks=True)
 
-    freezer.move_to(start - timedelta(minutes=25))
-    hass.states.async_set(entity_id, "HOME I", context=Context(user_id="manual-user"))
+    freezer.move_to(start - timedelta(minutes=2))
+    hass.states.async_set(entity_id, "HOME I", context=Context(user_id=user_id))
     await hass.async_block_till_done()
     freezer.move_to(start)
     hass.services.async_register(DOMAIN, "set_box_mode", record_hardware_request)
@@ -58,9 +59,9 @@ async def test_real_ha_timers_retry_guarded_charge_and_preserve_confirmed_ups_dw
         _auto_switch_watchdog_interval=timedelta(seconds=30),
         _auto_switch_ready_at=None,
         _timeline_data=[
-            {"time": start.isoformat(), "mode_name": "HOME UPS"},
+            {"time": (start - timedelta(minutes=10)).isoformat(), "mode_name": "HOME UPS"},
             {
-                "time": (start + timedelta(minutes=30)).isoformat(),
+                "time": (start + timedelta(minutes=5)).isoformat(),
                 "mode_name": "HOME I",
             },
         ],
@@ -75,11 +76,11 @@ async def test_real_ha_timers_retry_guarded_charge_and_preserve_confirmed_ups_dw
 
         # Exercise the periodic watchdog before the five-minute guard expires.
         await advance_to(start + timedelta(seconds=30))
-        await advance_to(start + timedelta(minutes=4, seconds=59))
+        await advance_to(start + timedelta(minutes=2, seconds=59))
         assert calls == []
 
         # The guard-expiry timer dispatches the real refresh, while UPS is valid.
-        requested_at = start + timedelta(minutes=5)
+        requested_at = start + timedelta(minutes=3)
         await advance_to(requested_at)
         assert calls == [(requested_at, "Home UPS", True)]
         assert sensor._auto_switch_retry_unsub is None
@@ -93,13 +94,13 @@ async def test_real_ha_timers_retry_guarded_charge_and_preserve_confirmed_ups_dw
         await hass.async_block_till_done(wait_background_tasks=True)
         assert hass.states.get(entity_id).last_changed == confirmed_at
 
-        # The scheduled exit at 12:30 cannot shorten the actual UPS dwell.
-        await advance_to(start + timedelta(minutes=29, seconds=59))
-        await advance_to(start + timedelta(minutes=30))
+        # The scheduled exit at 12:15 cannot shorten the five-minute UPS dwell.
+        await advance_to(start + timedelta(minutes=4, seconds=59))
+        await advance_to(start + timedelta(minutes=5))
         assert calls == [(requested_at, "Home UPS", True)]
         assert sensor._auto_switch_retry_unsub is not None
 
-        eligible_exit = confirmed_at + timedelta(minutes=30)
+        eligible_exit = confirmed_at + timedelta(minutes=5)
         await advance_to(eligible_exit - timedelta(seconds=1))
         assert calls == [(requested_at, "Home UPS", True)]
         await advance_to(eligible_exit)

@@ -468,7 +468,7 @@ async def test_ensure_current_mode_min_interval(monkeypatch):
     monkeypatch.setattr(auto_switch, "execute_mode_change", _execute)
     await auto_switch.ensure_current_mode(sensor, "Home 1", "reason")
     assert "ok" not in called
-    assert retries == [1800]
+    assert retries == [300]
 
 
 def test_get_mode_switch_timeline():
