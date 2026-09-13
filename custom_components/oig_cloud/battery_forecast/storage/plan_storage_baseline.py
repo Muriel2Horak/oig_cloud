@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import statistics
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,11 @@ from .plan_storage_io import plan_exists_in_storage, save_plan_to_storage
 
 DATE_FMT = "%Y-%m-%d"
 MODE_HOME_I = "HOME I"
+# A profile-driven day plan carries roughly one value per hour (24), the coarse
+# load_avg fallback at most six (five windows plus a boundary - 29. 8. really
+# was stored that way). Ten sits safely between the two.
+MIN_DISTINCT_CONSUMPTIONS = 10
+MIN_CONSUMPTION_SPREAD_KWH = 0.01
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,15 +56,27 @@ def is_baseline_plan_invalid(plan: Optional[Dict[str, Any]]) -> bool:
     if filled_intervals in ("00:00-23:45", "00:00-23:59"):
         return True
 
-    nonzero_consumption = sum(
-        1
-        for interval in intervals
-        if abs(float(interval.get("consumption_kwh", 0) or 0)) > 1e-6
-    )
+    consumptions = [
+        float(interval.get("consumption_kwh", 0) or 0) for interval in intervals
+    ]
+    nonzero_consumption = sum(1 for value in consumptions if abs(value) > 1e-6)
     if nonzero_consumption < max(4, len(intervals) // 24):
         return True
 
-    return False
+    return _is_consumption_degenerate(consumptions)
+
+
+def _is_consumption_degenerate(consumptions: List[float]) -> bool:
+    """A day plan that repeats a handful of numbers is not a day plan.
+
+    The coarse ``load_avg`` fallback produces at most six distinct values across
+    the day, and a single value means the adaptive profile never reached the
+    planner at all. Both mean the plan needs rebuilding rather than locking in
+    for the day.
+    """
+    if len(set(round(value, 4) for value in consumptions)) < MIN_DISTINCT_CONSUMPTIONS:
+        return True
+    return statistics.pstdev(consumptions) < MIN_CONSUMPTION_SPREAD_KWH
 
 
 async def create_baseline_plan(sensor: Any, date_str: str) -> bool:
@@ -352,6 +370,23 @@ async def _save_baseline_plan(
     intervals: List[Dict[str, Any]],
     filled_intervals_str: Optional[str],
 ) -> bool:
+    candidate = {"intervals": intervals, "filled_intervals": filled_intervals_str}
+    if is_baseline_plan_invalid(candidate):
+        # A repair fired during startup runs before the adaptive profile and the
+        # load_avg sensors exist, so every slot falls back to the same constant.
+        # Writing that would replace a coarse plan with a flat one — strictly
+        # worse, and it would then be archived as the record of the day. Leave
+        # what is there; the midnight run rebuilds it with real inputs.
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Refusing to save a degenerate baseline for %s "
+            "(%s intervals, %s distinct consumptions) - keeping the existing plan",
+            date_str,
+            len(intervals),
+            len({round(float(i.get("consumption_kwh", 0) or 0), 4) for i in intervals}),
+        )
+        return False
+
     success = await save_plan_to_storage(
         sensor,
         date_str,

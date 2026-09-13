@@ -172,7 +172,7 @@ async def test_no_race_between_guard_and_watchdog():
 
     Race condition prevention mechanisms:
     1. 90-second duplicate request window in execute_mode_change
-    2. 30-minute min interval in ensure_current_mode
+    2. Five-minute min interval in ensure_current_mode
     3. ServiceShield pending change check
     """
     sensor = DummySensor({CONF_AUTO_MODE_SWITCH: True})
@@ -226,13 +226,14 @@ async def test_no_race_between_guard_and_watchdog():
 
 
 @pytest.mark.asyncio
-async def test_min_interval_prevents_rapid_mode_changes():
+async def test_min_interval_prevents_rapid_mode_changes(monkeypatch):
     """
     Verify that ensure_current_mode respects the MIN_AUTO_SWITCH_INTERVAL_MINUTES
     to prevent rapid mode oscillation.
     """
     sensor = DummySensor({CONF_AUTO_MODE_SWITCH: True})
     now = dt_util.now()
+    monkeypatch.setattr(auto_switch.dt_util, "now", lambda: now)
 
     # Simulate a recent mode change state
     states = DummyStates(
@@ -240,6 +241,11 @@ async def test_min_interval_prevents_rapid_mode_changes():
     )
     sensor._hass = DummyHass(states=states)
     sensor._config_entry.entry_id = "test_entry"
+    retries = []
+    monkeypatch.setattr(
+        auto_switch, "async_call_later",
+        lambda _hass, delay, _callback: retries.append(delay) or (lambda: None),
+    )
 
     # Patch get_current_box_mode to return a different mode
     original_get_mode = auto_switch.get_current_box_mode
@@ -257,7 +263,7 @@ async def test_min_interval_prevents_rapid_mode_changes():
             decision_source="auto_switch",
         )
 
-        # Try to switch within the 30-minute window
+        # Try to switch within the five-minute window
         result = await auto_switch.ensure_current_mode(
             sensor, "Home 1", "current planned block", context=context
         )
@@ -265,6 +271,7 @@ async def test_min_interval_prevents_rapid_mode_changes():
         # Context returned but NO service call (min interval not met)
         assert result is not None
         assert len(sensor._hass.services.calls) == 0
+        assert retries == [300]
     finally:
         auto_switch.get_current_box_mode = original_get_mode
 

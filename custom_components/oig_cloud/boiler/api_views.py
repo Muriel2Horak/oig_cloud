@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from aiohttp import web
 from homeassistant.helpers.http import HomeAssistantView
+from homeassistant.helpers.storage import Store
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -57,6 +58,7 @@ from ..const import (
 )
 from .const import BOILER_READY_TEMP_C
 from .classifier import compute_ready_fraction
+from . import day_record as day_record_module
 from .models import BoilerProfile
 from .planner_contract import (
     BoilerBatterySignals,
@@ -109,7 +111,7 @@ class BoilerCanonicalView(HomeAssistantView):
 
     async def get(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
         try:
-            dto = _assemble_canonical_dto(self.hass, entry_id, box_id)
+            dto = await _assemble_canonical_dto(self.hass, entry_id, box_id)
             if isinstance(dto, web.Response):
                 return dto
             return web.json_response(dto)
@@ -1332,7 +1334,7 @@ def _read_draw_map_dto(runtime: Any) -> Optional[dict[str, Any]]:
         return None
 
 
-def _assemble_canonical_dto(
+async def _assemble_canonical_dto(
     hass: HomeAssistant, entry_id: str, box_id: str
 ) -> dict[str, Any] | web.Response:
     ok, entry, runtime = _validate_identity(hass, entry_id, box_id)
@@ -1551,6 +1553,10 @@ def _assemble_canonical_dto(
     _activity_state = getattr(_activity_now, "state", None) if _activity_now is not None else None
     is_heating_now = isinstance(_activity_state, str) and _activity_state.startswith("charging_")
 
+    progress_dto = await _build_progress_dto(
+        hass, entry_id, box_id, energy_tracking, now
+    )
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -1605,6 +1611,162 @@ def _assemble_canonical_dto(
         "sparklines": sparklines,
         "energy_today": energy_today_dto,
         "plan_summary": plan_summary_dto,
+        "progress": progress_dto,
+    }
+
+
+_PROGRESS_STORE_VERSION = 1
+_PROGRESS_EMPTY_SLOTS: list[dict[str, Any]] = [
+    {
+        "time": day_record_module.slot_time(i),
+        "status": "planned",
+        "planned": {
+            "time": day_record_module.slot_time(i),
+            "heating_kwh": None,
+            "source": None,
+            "cost_czk": None,
+            "predicted_top_temp_c": None,
+        },
+        "actual": None,
+        "source_match": None,
+        "delta_kwh": None,
+    }
+    for i in range(day_record_module.SLOTS_PER_DAY)
+]
+
+
+def _progress_safe_float(value: Any) -> float:
+    """Best-effort float coercion for energy values from `energy_tracking`.
+
+    Missing/unknown numbers degrade to 0.0; the brief distinguishes unknown
+    from 0 elsewhere (percentages, deltas), but the energy meters are
+    counters that are inherently 0 when no measurement exists.
+    """
+    if value is None:
+        return 0.0
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(out):
+        return 0.0
+    return max(0.0, round(out, 3))
+
+
+async def _load_day_record(
+    hass: HomeAssistant, entry_id: str, box_id: str
+) -> Optional[dict[str, Any]]:
+    """Read the stored day record. Returns None for any failure or absence.
+
+    Any exception (Store unavailable, key missing, malformed payload) is
+    swallowed — the API still serves 200 with an empty progress block.
+    """
+    key = f"oig_cloud.boiler_day_{entry_id}_{box_id}"
+    try:
+        store: Store[dict[str, Any]] = Store(hass, _PROGRESS_STORE_VERSION, key)
+        data = await store.async_load()
+    except Exception as err:  # pragma: no cover - defensive
+        _LOGGER.debug("Boiler day record store load failed for %s: %s", key, err)
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _build_yesterday_dto(
+    archive: dict[str, Any], now: datetime
+) -> Optional[dict[str, Any]]:
+    """Pick the most recent archived day and build the same progress shape for it."""
+    if not isinstance(archive, dict) or not archive:
+        return None
+    try:
+        latest_date = max(archive.keys())
+    except (TypeError, ValueError):
+        return None
+    entry = archive.get(latest_date)
+    if not isinstance(entry, dict):
+        return None
+
+    yday_plan = entry.get("plan") or []
+    yday_actual = entry.get("actual") or []
+    comparison = day_record_module.compare(yday_plan, yday_actual)
+    eod = day_record_module.eod_estimate(yday_plan, yday_actual, now)
+
+    return {
+        "date": entry.get("date") or latest_date,
+        "slots": comparison["slots"],
+        "completed_slots": comparison["completed_slots"],
+        "adherence_pct": comparison["adherence_pct"],
+        "energy": comparison["energy"],
+        "eod": eod,
+        # Archive is a finished day; the energy tracking that produced
+        # unattributed/alt lives in the live `energy_today` block, not here.
+        "unattributed_kwh": None,
+        "alt_kwh": None,
+    }
+
+
+async def _build_progress_dto(
+    hass: HomeAssistant,
+    entry_id: str,
+    box_id: str,
+    energy_tracking: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    """Assemble the `progress` block for the canonical payload.
+
+    Reads the day record persisted by the writer slice, runs
+    `day_record.compare()` and `day_record.eod_estimate()`, and overlays
+    the live `unattributed_kwh` and `alt_kwh` from `energy_tracking`.
+    Falls back to an empty block (96 unmeasured slots, null aggregates)
+    on any failure or missing data — never 500, never a fabricated day.
+    """
+    today_iso = now.date().isoformat()
+    unattributed = _progress_safe_float(energy_tracking.get("unattributed_kwh"))
+    alt = _progress_safe_float(energy_tracking.get("alt_kwh"))
+
+    data = await _load_day_record(hass, entry_id, box_id)
+    if data is None:
+        return {
+            "date": today_iso,
+            "slots": [
+                {key: slot[key] for key in slot}
+                for slot in _PROGRESS_EMPTY_SLOTS
+            ],
+            "completed_slots": 0,
+            "adherence_pct": None,
+            "energy": {
+                "planned_kwh": None,
+                "actual_kwh": None,
+                "delta_kwh": None,
+            },
+            "eod": {
+                "actual_so_far_kwh": None,
+                "remaining_planned_kwh": None,
+                "estimated_total_kwh": None,
+                "planned_total_kwh": None,
+            },
+            "unattributed_kwh": unattributed,
+            "alt_kwh": alt,
+            "yesterday": None,
+        }
+
+    plan = data.get("plan") or []
+    actual = data.get("actual") or []
+    comparison = day_record_module.compare(plan, actual)
+    eod = day_record_module.eod_estimate(plan, actual, now)
+    yesterday = _build_yesterday_dto(data.get("archive") or {}, now)
+
+    return {
+        "date": data.get("date") or today_iso,
+        "slots": comparison["slots"],
+        "completed_slots": comparison["completed_slots"],
+        "adherence_pct": comparison["adherence_pct"],
+        "energy": comparison["energy"],
+        "eod": eod,
+        "unattributed_kwh": unattributed,
+        "alt_kwh": alt,
+        "yesterday": yesterday,
     }
 
 

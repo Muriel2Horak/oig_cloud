@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from ...const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..types import (
     CBB_MODE_SERVICE_MAP,
+    INTERVAL_MINUTES,
     SERVICE_MODE_HOME_1,
     SERVICE_MODE_HOME_2,
     SERVICE_MODE_HOME_3,
@@ -41,7 +42,8 @@ except Exception:  # pragma: no cover
 
 
 _LOGGER = logging.getLogger(__name__)
-MIN_AUTO_SWITCH_INTERVAL_MINUTES = 30
+# Operator-selected anti-flapping policy for all automatic/manual mode changes.
+MIN_AUTO_SWITCH_INTERVAL_MINUTES = 5
 WATCHDOG_WARNING_COOLDOWN_SECONDS = 300.0
 
 
@@ -313,19 +315,14 @@ def get_planned_mode_for_time(
     """Return planned mode for the interval covering reference_time."""
     planned_mode: Optional[str] = None
 
+    entries = _iter_timeline_entries(sensor, timeline)
+    # Each forecast row covers one planning interval, including the final row.
+    # A restored/expired timeline must not authorize charging indefinitely.
+    if not entries or reference_time >= entries[-1][0] + timedelta(minutes=INTERVAL_MINUTES):
+        return None
+
     first_mode: Optional[str] = None
-    for interval in timeline:
-        timestamp = interval.get("time") or interval.get("timestamp")
-        mode_label = normalize_service_mode(
-            sensor, interval.get("mode_name")
-        ) or normalize_service_mode(sensor, interval.get("mode"))
-        if not timestamp or not mode_label:
-            continue
-
-        start_dt = parse_timeline_timestamp(timestamp)
-        if not start_dt:
-            continue
-
+    for start_dt, mode_label in entries:
         if first_mode is None:
             first_mode = mode_label
 
@@ -528,12 +525,16 @@ async def ensure_current_mode(
     last_changed = _get_last_mode_change_time(sensor)
     if last_changed:
         now = dt_util.now()
-        if (now - last_changed) < timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES):
+        eligible_at = last_changed + timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES)
+        if now < eligible_at:
             _LOGGER.info(
-                "[AutoModeSwitch] Skipping mode change to %s (%s) - min interval not met",
+                "[AutoModeSwitch] Deferring mode change to %s (%s) until %s - min interval not met",
                 desired_mode,
                 reason,
+                eligible_at.isoformat(),
             )
+            # Rebuild from the current plan at expiry, never replay a stale target.
+            schedule_auto_switch_retry(sensor, (eligible_at - now).total_seconds())
             return context
     return await execute_mode_change(sensor, desired_mode, reason, context=context)
 
@@ -575,16 +576,13 @@ def _build_schedule_events(
     current_mode: Optional[str] = None
     last_mode: Optional[str] = None
     scheduled_events: List[Tuple[datetime, str, Optional[str]]] = []
-    last_switch_time = last_mode_change or now
-    min_interval = timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES)
+    # Guard eligibility depends on the box's actual confirmation time, which
+    # can change after these events are built. Enforce it at execution, keeping
+    # every plan transition available for a retry while its window is valid.
+    _ = last_mode_change
 
     for start_dt, mode_label in _iter_timeline_entries(sensor, timeline):
         if start_dt <= now:
-            current_mode = mode_label
-            last_mode = mode_label
-            continue
-
-        if last_mode_change and start_dt < (last_mode_change + min_interval):
             current_mode = mode_label
             last_mode = mode_label
             continue
@@ -593,23 +591,12 @@ def _build_schedule_events(
             continue
 
         previous_mode = last_mode
-        if not _is_min_interval_elapsed(start_dt, last_switch_time, min_interval):
-            continue
-
         last_mode = mode_label
-        last_switch_time = start_dt
         scheduled_events.append((start_dt, mode_label, previous_mode))
 
+    if current_mode:
+        current_mode = get_planned_mode_for_time(sensor, now, timeline)
     return current_mode, scheduled_events
-
-
-def _is_min_interval_elapsed(
-    start_dt: datetime, last_switch_time: datetime, min_interval: timedelta
-) -> bool:
-    try:
-        return (start_dt - last_switch_time) >= min_interval
-    except Exception:
-        return True
 
 
 def _startup_delay_seconds(sensor: Any, now: datetime) -> Optional[float]:
@@ -720,7 +707,15 @@ def _schedule_auto_switch_events(
             else now_dt + timedelta(seconds=1)
         )
 
-        async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
+        async def _callback(event_time: datetime) -> None:
+            if not _auto_switch_is_ready(sensor):
+                return
+            # A timer can already be queued when the plan is replaced, or run
+            # late. Only the latest plan at the actual execution time is valid.
+            timeline, _ = get_mode_switch_timeline(sensor)
+            desired_mode = get_planned_mode_for_time(sensor, dt_util.now(), timeline)
+            if not desired_mode:
+                return
             context = SwitchContext(
                 reason_code=REASON_SCHEDULED_SWITCH,
                 precedence_level=PrecedenceLevel.AUTO_SWITCH,
@@ -728,7 +723,7 @@ def _schedule_auto_switch_events(
                 decision_source="auto_switch",
                 details={"scheduled_time": event_time.isoformat()},
             )
-            await execute_mode_change(
+            await ensure_current_mode(
                 sensor,
                 desired_mode,
                 f"scheduled {event_time.isoformat()}",

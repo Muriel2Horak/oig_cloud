@@ -679,8 +679,13 @@ async def test_module_config_post_uses_shared_merge(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_canonical_dto_includes_alt_source_type():
-    """_assemble_canonical_dto emits top-level alt_source_type from config."""
+@pytest.mark.asyncio
+async def test_canonical_dto_includes_alt_source_type():
+    """_assemble_canonical_dto emits top-level alt_source_type from config.
+
+    The helper became a coroutine when the progress block was added: building
+    the DTO now reads the stored day record, which is async.
+    """
     from custom_components.oig_cloud.boiler.api_views import _assemble_canonical_dto
 
     _config = {
@@ -738,7 +743,7 @@ def test_canonical_dto_includes_alt_source_type():
         states=_DummyStates(),
     )
 
-    result = _assemble_canonical_dto(hass, "eid", "testbox")
+    result = await _assemble_canonical_dto(hass, "eid", "testbox")
     # Should be a dict (not a web.Response)
     assert isinstance(result, dict), f"Expected dict, got {type(result)}: {result}"
     assert result.get("alt_source_type") == "heat_pump"

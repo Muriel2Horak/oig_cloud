@@ -21,11 +21,24 @@ _PRICE_EPS_CZK = 1e-9
 # for round-trip losses, so pre-charging is rejected unless cheap/η < expensive
 # actually pays off — no pointless charging on flat-price days.
 _COST_IMPROVEMENT_EPS_CZK = 1e-4
-# Comfort top-up charges ONLY in windows at or below this price percentile of the
-# planning horizon ("the cheapest windows"). Above it the battery is allowed to
-# keep descending toward the hard floor — comfort is never bought with expensive
-# grid (that would re-create the over-charge problem). 0.30 = cheapest ~third.
-_COMFORT_CHEAP_PERCENTILE = 0.30
+# A comfort top-up is only worth buying if it is meaningfully cheaper than what
+# the exposure itself would cost — the price at the battery's projected low
+# point, which is where the BOX force-charges at whatever the price happens to
+# be. 0.90 = at least 10 % cheaper, so near-flat days buy nothing and descend.
+#
+# This deliberately replaced a percentile of the WHOLE horizon. That measure
+# asked the wrong population: on a day whose cheap tier sits in the afternoon,
+# no night slot could ever qualify, and the buffer that exists to keep the
+# battery off the trigger was never built for the morning — the one time of day
+# it is needed. On five of nine days observed in the field the night had zero
+# eligible slots and the first one landed after the dip.
+_COMFORT_MIN_PRICE_ADVANTAGE = 0.90
+# Width of the band above the planning floor in which a projected low counts as
+# exposed, as a fraction of usable capacity. The greedy defends the floor itself
+# at any price; this band is the room a forecast miss needs. Sized from the
+# field: the plan read 24 %, reality came in at 22 %, and the BOX acted — so
+# five points is a little over twice the observed miss.
+_COMFORT_EXPOSURE_BAND = 0.05
 
 
 def _simulate_interval(
@@ -321,21 +334,50 @@ def _global_greedy_charge_intervals(inputs: PlannerInputs) -> List[int]:
     return sorted(ups_intervals)
 
 
+def _is_inside_exposure_band(low_soc_kwh: float, inputs: PlannerInputs) -> bool:
+    """True when the projected low sits close enough to the floor that a normal
+    forecast miss would hand control to the BOX.
+
+    The planning floor is defended at any price by the greedy, so the danger is
+    not below it but just above it: the plan reads a safe 24 %, reality comes in
+    at 22 %, and the box — which watches its own bat_min — force-charges at
+    whatever the morning costs.
+    """
+    band_top = inputs.planning_min_kwh + _COMFORT_EXPOSURE_BAND * inputs.max_capacity_kwh
+    return low_soc_kwh <= band_top
+
+
+def _exposure_index(
+    states: List[SimulatedState], moment_idx: int, n: int
+) -> int:
+    """Interval where the projected SoC bottoms out from this dip onwards.
+
+    That is the moment the BOX takes over and force-charges at whatever the
+    price is, so its price is what a comfort top-up is competing against.
+    """
+    end = min(n, len(states))
+    return min(range(moment_idx, end), key=lambda idx: states[idx].soc_kwh)
+
+
 def _comfort_charge_intervals(
     modes: List[int],
     inputs: PlannerInputs,
     comfort_kwh: float,
-    cheap_threshold: float,
 ) -> List[int]:
     """Opportunistically top up toward the comfort SoC using ONLY cheap windows.
 
     Runs on top of the floor-defense + displacement modes. For each interval
     where the projected SoC would dip below ``comfort_kwh``, it places HOME_UPS in
-    the cheapest earlier window whose price is at/below ``cheap_threshold`` and
-    that has headroom. It NEVER charges from an expensive window: if no cheap
-    window is available the battery is allowed to keep descending toward the hard
-    floor (which the greedy defends at any price). This keeps a buffer above the
-    BOX bat_min trigger cheaply, so the box never force-charges to ~80%.
+    the cheapest window that can still lift the low point, provided that window
+    is meaningfully cheaper than the low point's own price. If nothing cheap
+    enough is reachable the battery is allowed to keep descending toward the
+    hard floor (which the greedy defends at any price). This keeps a buffer
+    above the BOX bat_min trigger cheaply, so the box never force-charges to
+    ~80%.
+
+    "Cheap" is judged against the exposure, not against the day: the afternoon
+    being cheap says nothing about a morning dip, which can only be served from
+    the night before it.
     """
     n = len(inputs.intervals)
     if n == 0 or inputs.charge_rate_per_interval <= 0.0 or comfort_kwh <= 0.0:
@@ -357,29 +399,46 @@ def _comfort_charge_intervals(
             break
 
         soc_traj = _compute_soc_trajectory(modes, inputs)
-        # Cheapest CHEAP window up to AND INCLUDING the dip interval (charging at
-        # the dip itself lifts its end-of-interval SoC), so a battery that already
-        # starts below comfort can still top up from the earliest cheap window.
+        exposure_idx = _exposure_index(states, moment_idx, n)
+        # Anything up to and including the low point lifts it, so the whole
+        # reachable window competes on price — not just the slots before the
+        # first dip. A battery already below comfort at 00:00 should wait for
+        # the cheapest hour of the night rather than buy the first one.
         candidates = sorted(
-            range(0, min(moment_idx + 1, n)), key=lambda idx: inputs.prices[idx]
+            range(0, min(exposure_idx + 1, n)), key=lambda idx: inputs.prices[idx]
+        )
+        # What the exposure costs if we do nothing: the box force-charges at the
+        # low point's price. A top-up has to beat that by a real margin.
+        price_ceiling = (
+            max(0.0, inputs.prices[exposure_idx]) * _COMFORT_MIN_PRICE_ADVANTAGE
         )
         # PV-first: if upcoming solar will lift the SoC back to the comfort target
         # on its own, this dip is transient — don't grid-charge for it (comfort is
         # a soft "descend & wait" target, the hard floor still protects). Avoids
         # buying grid for a morning dip that the day's solar refills anyway.
-        deficit_kwh = target - states[moment_idx].soc_kwh
-        future_solar_kwh = _estimate_future_storable_surplus_kwh(
-            inputs, start_idx=moment_idx, end_idx=n
-        )
-        if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
-            break
+        #
+        # But only while the low point itself stays clear of the trigger band.
+        # The sum below counts every kWh of solar to the end of the horizon,
+        # including all of it that arrives AFTER the low point — and solar at
+        # noon cannot stop the box force-charging at seven in the morning. On
+        # 7. 9. the plan read the pre-dawn drain two points light, the battery
+        # reached 22 % against a 20 % trigger, and the box bought 0.974 kWh at
+        # 7.87 CZK/kWh in slots the plan had left empty. Inside the band the
+        # excuse does not apply and comfort buys its buffer from the night.
+        if not _is_inside_exposure_band(states[exposure_idx].soc_kwh, inputs):
+            deficit_kwh = target - states[moment_idx].soc_kwh
+            future_solar_kwh = _estimate_future_storable_surplus_kwh(
+                inputs, start_idx=moment_idx, end_idx=n
+            )
+            if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
+                break
 
         picked: int | None = None
         for candidate_idx in candidates:
             if modes[candidate_idx] == CBBMode.HOME_UPS.value:
                 continue
-            if inputs.prices[candidate_idx] > cheap_threshold + _PRICE_EPS_CZK:
-                continue  # not cheap → don't force; let the battery descend
+            if inputs.prices[candidate_idx] > price_ceiling + _PRICE_EPS_CZK:
+                continue  # no real saving → don't force; let the battery descend
             # PV-first: never add grid in an interval where solar already produces
             # a net surplus — the battery is charging from the sun there for free.
             solar_c = (
@@ -658,16 +717,12 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
         comfort_kwh = max(0.0, getattr(inputs, "comfort_soc_kwh", 0.0) or 0.0)
         comfort_intervals: List[int] = []
         if comfort_kwh > inputs.planning_min_kwh and inputs.prices:
-            prices_nonneg = [max(0.0, p) for p in inputs.prices]
-            cheap_threshold = _percentile_threshold(prices_nonneg, _COMFORT_CHEAP_PERCENTILE)
-            mean_price = sum(prices_nonneg) / len(prices_nonneg)
-            # Only top up for comfort when a genuinely cheap tier exists (spread).
-            # On a flat/all-expensive day there is no cheap window → descend and
-            # wait (the hard floor still protects against the box takeover).
-            if cheap_threshold < mean_price - _PRICE_EPS_CZK:
-                comfort_intervals = _comfort_charge_intervals(
-                    modes, inputs, comfort_kwh, cheap_threshold
-                )
+            # No whole-horizon spread gate here: a flat or all-expensive day is
+            # already handled inside, where every candidate is measured against
+            # the price at the battery's own low point. A day-wide gate asked
+            # the wrong question and silently disabled the buffer on days whose
+            # cheap tier fell after the dip it was supposed to protect.
+            comfort_intervals = _comfort_charge_intervals(modes, inputs, comfort_kwh)
 
         ups_intervals = sorted(
             set(floor_intervals) | set(displacement_intervals) | set(comfort_intervals)

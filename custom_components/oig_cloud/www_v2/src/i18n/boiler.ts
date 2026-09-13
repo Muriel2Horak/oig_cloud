@@ -250,6 +250,23 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.panel.grid_label': '🔌 ze sítě',
     'boiler.panel.unattributed_label': '⚡ el. (nerozlišený zdroj)',
     'boiler.panel.alt_label': '🔥 z plynu',
+
+    // Progress strip „plán & realita" — labels copied VERBATIM from
+    // docs/redesign_2026_07/rework/BOILER-TAB-MOCK-rev3.html lines 267-279.
+    'boiler.progress.adherence': 'Soulad',
+    'boiler.progress.progress': 'Průběh',
+    'boiler.progress.actual': 'Skutečné',
+    'boiler.progress.plan': 'plán',
+    'boiler.progress.forecast': 'Predikce',
+    'boiler.progress.confidence_high': 'vysoká jistota',
+    'boiler.progress.confidence_medium': 'střední jistota',
+    'boiler.progress.confidence_low': 'nízká jistota',
+    'boiler.progress.metric_cost': 'Náklady',
+    'boiler.progress.metric_grid': 'Síť',
+    'boiler.progress.metric_fve': 'FVE',
+    'boiler.progress.metric_ready': 'Min. připraveno',
+    'boiler.progress.empty': 'Plán a realita zatím nejsou k dispozici.',
+
     'boiler.panel.battery_label': '🔋→🔥 z baterie',
     'boiler.panel.savings_label': 'Ušetřeno vs. plyn',
     'boiler.panel.current_source': 'Aktuální zdroj',
@@ -559,6 +576,22 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.panel.grid_label': '🔌 from grid',
     'boiler.panel.unattributed_label': '⚡ electric (unattributed)',
     'boiler.panel.alt_label': '🔥 from gas',
+
+    // Progress strip "plan & actual" — English side of the rev3 mock labels.
+    'boiler.progress.adherence': 'Adherence',
+    'boiler.progress.progress': 'Progress',
+    'boiler.progress.actual': 'Actual',
+    'boiler.progress.plan': 'plan',
+    'boiler.progress.forecast': 'Forecast',
+    'boiler.progress.confidence_high': 'high confidence',
+    'boiler.progress.confidence_medium': 'medium confidence',
+    'boiler.progress.confidence_low': 'low confidence',
+    'boiler.progress.metric_cost': 'Cost',
+    'boiler.progress.metric_grid': 'Grid',
+    'boiler.progress.metric_fve': 'PV',
+    'boiler.progress.metric_ready': 'Min. ready',
+    'boiler.progress.empty': 'Plan versus actual is not available yet.',
+
     'boiler.panel.battery_label': '🔋→🔥 from battery',
     'boiler.panel.savings_label': 'Saved vs. gas',
     'boiler.panel.current_source': 'Current source',

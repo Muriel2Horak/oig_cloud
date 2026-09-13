@@ -99,6 +99,7 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
                 "battery_efficiency",
                 "planner_status",
                 "adaptive_profiles",
+                "forecast_accuracy",
             }
             and battery_prediction_enabled
         ):
@@ -1098,6 +1099,11 @@ def _create_battery_support_sensors(
             coordinator, entry, analytics_device_info, hass
         )
     )
+    sensors.extend(
+        _create_forecast_accuracy_sensors(
+            coordinator, entry, analytics_device_info, hass
+        )
+    )
 
     return sensors
 
@@ -1289,6 +1295,36 @@ def _create_adaptive_profiles_sensors(
             "Registering %d adaptive load profiles sensors", len(adaptive_sensors)
         )
     return adaptive_sensors
+
+
+def _create_forecast_accuracy_sensors(
+    coordinator: Any,
+    entry: ConfigEntry,
+    analytics_device_info: Dict[str, Any],
+    hass: Optional[HomeAssistant] = None,
+) -> List[Any]:
+    try:
+        from .entities.forecast_accuracy_sensor import (
+            OigCloudForecastAccuracySensor,
+        )
+    except Exception as e:
+        _LOGGER.error("Error creating forecast accuracy sensor: %s", e)
+        return []
+
+    accuracy_sensors: List[Any] = []
+    for sensor_type, config in SENSOR_TYPES.items():
+        if config.get("sensor_type_category") != "forecast_accuracy":
+            continue
+        accuracy_sensors.append(
+            OigCloudForecastAccuracySensor(
+                coordinator,
+                sensor_type,
+                entry,
+                analytics_device_info,
+                hass,
+            )
+        )
+    return accuracy_sensors
 
 
 def _create_pricing_sensors(

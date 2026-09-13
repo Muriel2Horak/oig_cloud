@@ -37,6 +37,13 @@ def test_coerce_bool():
         coerce_value(f, "banana")
 
 
+def test_mode_guard_accepts_five_minutes_but_rejects_shorter_windows():
+    field = FIELD_REGISTRY["mode_guard_minutes"]
+    assert coerce_value(field, 5) == 5
+    with pytest.raises(ValueError):
+        coerce_value(field, 4)
+
+
 def test_coerce_float_bounds():
     f = Field(key="r", section="battery", type=float, default=2.8, min=0.5, max=10.0)
     assert coerce_value(f, 3.5) == 3.5
