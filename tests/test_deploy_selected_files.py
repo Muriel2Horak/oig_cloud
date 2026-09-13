@@ -361,3 +361,48 @@ def test_selected_file_rejects_symlinked_backup_root_before_source_overwrite(
     assert result.returncode != 0
     assert target.read_text(encoding="utf-8") == "VALUE = 'original'\n"
     assert not any(external.iterdir())
+
+
+def test_selected_preflight_uses_cached_sudo_for_remote_validation(tmp_path: Path) -> None:
+    """Using the caller UID for a root-mounted share would reject a safe deploy."""
+    repo = _make_repo(tmp_path)
+    mount = tmp_path / "mounted-config"
+    target = mount / SELECTED_FILE
+    target.parent.mkdir(parents=True)
+    target.write_text("VALUE = 'original'\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "sudo.log"
+    for command, body in {
+        "mount": 'printf "mount %s present\\n" "$SMB_MOUNT"\n',
+        "ssh": "exit 0\n",
+        "sudo": (
+            'printf "%s\\n" "$*" >> "$DEPLOY_TEST_MARKER"\n'
+            'if [ "$1" = "-S" ]; then read -r password; shift; fi\n'
+            'if [ "$1" = "-v" ]; then exit 0; fi\n'
+            'if [ "$1" = "-n" ]; then shift; exec "$@"; fi\n'
+            'exec "$@"\n'
+        ),
+    }.items():
+        executable = bin_dir / command
+        executable.write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
+        executable.chmod(0o755)
+
+    result = _run(
+        repo,
+        bin_dir,
+        log,
+        "--file",
+        SELECTED_FILE,
+        extra_env={"SMB_MOUNT": str(mount), "SUDO_PASS": "test-only"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    sudo_calls = log.read_text(encoding="utf-8")
+    assert "-S -v" in sudo_calls
+    assert "-n python3 -" in sudo_calls
+    assert "test-only" not in sudo_calls
+    assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
+    backups = list((mount / "custom_components/oig_cloud_backups").glob("selected.*"))
+    assert len(backups) == 1
+    assert (backups[0] / SELECTED_FILE).read_text(encoding="utf-8") == "VALUE = 'original'\n"

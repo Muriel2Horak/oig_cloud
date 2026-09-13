@@ -118,12 +118,19 @@ fi
 
 validate_remote_path() {
     local candidate_path="$1"
+    local require_regular_file="${2:-0}"
+    local -a validator=(python3)
 
-    python3 - "${SMB_MOUNT}" "${candidate_path}" <<'PY'
+    if [[ -n "${SUDO_PASS}" ]]; then
+        validator=(sudo -n python3)
+    fi
+
+    "${validator[@]}" - "${SMB_MOUNT}" "${candidate_path}" "${require_regular_file}" <<'PY'
 import os
 import sys
 
-mount_root, candidate = (os.path.abspath(value) for value in sys.argv[1:])
+mount_root, candidate = (os.path.abspath(value) for value in sys.argv[1:3])
+require_regular_file = sys.argv[3] == "1"
 try:
     if os.path.commonpath((mount_root, candidate)) != mount_root:
         raise ValueError
@@ -137,6 +144,8 @@ for segment in os.path.relpath(candidate, mount_root).split(os.sep):
     current = os.path.join(current, segment)
     if os.path.lexists(current) and os.path.islink(current):
         raise SystemExit(1)
+if require_regular_file and (not os.path.isfile(candidate) or not os.access(candidate, os.R_OK)):
+    raise SystemExit(1)
 PY
 }
 
@@ -367,6 +376,12 @@ prepare_selected_backups() {
 
     [[ ${#SELECTED_COPY_FILES[@]} -eq 0 ]] && return
 
+    if [[ -n "${SUDO_PASS}" ]]; then
+        # Authenticate once through stdin, then use non-interactive sudo for all
+        # selected-file preflight checks. Never combine the password with a heredoc.
+        printf '%s\n' "${SUDO_PASS}" | sudo -S -v >/dev/null 2>&1
+    fi
+
     # Validate every destination before creating a backup or changing any source
     # file. A later missing file must not leave an earlier one partially deployed.
     if ! validate_remote_path "${SMB_MOUNT}/custom_components/oig_cloud_backups"; then
@@ -375,12 +390,8 @@ prepare_selected_backups() {
     fi
     for relative_path in "${SELECTED_COPY_FILES[@]}"; do
         destination="${SMB_MOUNT}/${relative_path}"
-        if ! validate_remote_path "${destination}"; then
+        if ! validate_remote_path "${destination}" 1; then
             echo "Selected deployment refused: remote path escapes or traverses a symlink: ${relative_path}" >&2
-            exit 1
-        fi
-        if [[ ! -f "${destination}" || -L "${destination}" || ! -r "${destination}" ]]; then
-            echo "Selected deployment refused: remote file is missing or unreadable: ${relative_path}" >&2
             exit 1
         fi
     done
