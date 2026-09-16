@@ -903,6 +903,46 @@ async def _get_recent_solar_ratio(
         return None
 
 
+async def _maybe_apply_adaptive_correction(
+    sensor: Any,
+    solar_kwh_list: list[float],
+) -> None:
+    """Apply adaptive correction based on historical forecast accuracy.
+
+    Uses stored forecast vs actual data to compute a correction factor
+    that compensates for systematic Solcast over/under-forecasting.
+    """
+    try:
+        from ..forecast_accuracy import (
+            apply_correction_to_forecast,
+            compute_correction_factor,
+        )
+        from ..storage.plan_storage_io import get_plans_store_lock
+
+        if not hasattr(sensor, "_plans_store") or not sensor._plans_store:
+            return
+
+        async with get_plans_store_lock(sensor):
+            storage_data = await sensor._plans_store.async_load() or {}
+
+        factor = compute_correction_factor(storage_data)
+        if factor != 1.0:
+            corrected = apply_correction_to_forecast(solar_kwh_list, factor)
+            solar_kwh_list[:] = corrected
+            sensor._log_rate_limited(
+                "adaptive_forecast_correction",
+                "info",
+                "[ForecastAccuracy] Applied adaptive correction factor %.3f "
+                "(original=%.1f kWh, corrected=%.1f kWh)",
+                factor,
+                sum(solar_kwh_list) / factor if factor else 0,
+                sum(solar_kwh_list),
+                cooldown_s=3600.0,
+            )
+    except Exception as err:
+        _LOGGER.debug("Adaptive forecast correction failed: %s", err)
+
+
 async def _maybe_apply_solar_correction(
     sensor: Any,
     adaptive_helper: AdaptiveConsumptionHelper,
@@ -1607,6 +1647,11 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
 
         # Build load forecast list (kWh/15min for each interval)
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
+
+        # Adaptive forecast correction: apply monthly bias correction based on
+        # historical forecast accuracy (learns from past forecast vs actual data).
+        await _maybe_apply_adaptive_correction(sensor, solar_kwh_list)
+
         # Same-day reality correction: damp solar drift (sunnier/cloudier than
         # forecast) into the near-term solar list before planning.
         await _maybe_apply_solar_correction(

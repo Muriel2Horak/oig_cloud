@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from homeassistant.util import dt as dt_util
 
+from ..forecast_accuracy import record_forecast_accuracy
 from .plan_storage_baseline import create_baseline_plan
 from .plan_storage_io import get_plans_store_lock, plan_exists_in_storage
 
@@ -66,6 +67,10 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
             async with get_plans_store_lock(sensor):
                 storage_data = await sensor._plans_store.async_load() or {}
                 storage_data["daily_archive"] = sensor._daily_plans_archive
+
+                # Record forecast accuracy for adaptive correction
+                _record_daily_accuracy(storage_data, sensor._daily_plan_state)
+
                 await sensor._plans_store.async_save(storage_data)
             _LOGGER.info(
                 "Saved daily plans archive to storage (%s days)",
@@ -78,6 +83,36 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
                 err,
                 exc_info=True,
             )
+
+
+def _record_daily_accuracy(storage_data: Dict[str, Any], daily_plan: Dict[str, Any]) -> None:
+    """Record forecast vs actual solar for the day."""
+    date_str = daily_plan.get("date")
+    if not date_str:
+        return
+
+    plan_intervals = daily_plan.get("plan", [])
+    actual_intervals = daily_plan.get("actual", [])
+
+    if not plan_intervals or not actual_intervals:
+        return
+
+    forecast_solar = sum(
+        iv.get("solar_kwh", 0) for iv in plan_intervals
+    )
+    actual_solar = sum(
+        iv.get("solar_kwh", 0) for iv in actual_intervals
+    )
+
+    if forecast_solar > 0 and actual_solar > 0:
+        record_forecast_accuracy(storage_data, date_str, forecast_solar, actual_solar)
+        _LOGGER.info(
+            "[ForecastAccuracy] Recorded %s: forecast=%.1f kWh, actual=%.1f kWh, ratio=%.3f",
+            date_str,
+            forecast_solar,
+            actual_solar,
+            actual_solar / forecast_solar,
+        )
 
 
 def _collect_today_timeline(
