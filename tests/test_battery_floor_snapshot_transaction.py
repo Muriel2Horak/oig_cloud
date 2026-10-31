@@ -23,6 +23,9 @@ from typing import Any
 
 import pytest
 
+from custom_components.oig_cloud.battery_forecast.forecast_accuracy import (
+    DEFAULT_CORRECTION_FACTOR,
+)
 from custom_components.oig_cloud.battery_forecast.planning import (
     forecast_update as forecast_update_module,
 )
@@ -567,3 +570,33 @@ async def test_stable_cloud_only_snapshot_commits_once(hass, planner_env):
     assert planner_env.spies["_dispatch_forecast_updated"].calls == 1
     assert sensor._mode_optimization_result["target_kwh"] == pytest.approx(2.2)
     assert sensor._last_forecast_bucket is not None, "a stable cloud plan commits the bucket"
+
+
+# ---------------------------------------------------------------------------
+# 7. The historical solar correction reaches the planner
+# ---------------------------------------------------------------------------
+
+
+class _EmptyPlansStore:
+    async def async_load(self):
+        return {}
+
+
+async def test_planner_receives_solar_scaled_by_the_historical_factor(
+    hass, planner_env, monkeypatch
+):
+    sensor = _PlannerSensor(hass, _cloud_only())
+    sensor._plans_store = _EmptyPlansStore()
+    await hass.async_block_till_done()
+
+    planned_solar = []
+
+    def capture_inputs(inputs):
+        planned_solar.append(inputs.solar_forecast)
+        return _PlanResult()
+
+    monkeypatch.setattr(forecast_update_module, "plan_battery_schedule", capture_inputs)
+
+    await forecast_update_module.async_update(sensor)
+
+    assert planned_solar == [[pytest.approx(0.1 * DEFAULT_CORRECTION_FACTOR)]]

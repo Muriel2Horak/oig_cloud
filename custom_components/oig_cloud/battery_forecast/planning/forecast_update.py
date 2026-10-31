@@ -33,6 +33,8 @@ from ..economic_planner import (
     simulate_home_i_detailed,
 )
 from ..economic_planner_types import DEFAULT_ROUND_TRIP_EFFICIENCY, PlannerInputs
+from ..forecast_accuracy import apply_correction_to_forecast, compute_correction_factor
+from ..storage.plan_storage_io import get_plans_store_lock
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
     attach_planner_reasons,
@@ -1104,19 +1106,58 @@ async def _get_recent_solar_ratio(
         return None
 
 
+async def _maybe_apply_adaptive_correction(
+    sensor: Any,
+    solar_kwh_list: list[float],
+) -> float:
+    """Scale the solar list by the bias learned from finished days.
+
+    Returns the factor that was applied, 1.0 when the plans store is unavailable.
+    """
+    store = getattr(sensor, "_plans_store", None)
+    if not store:
+        return 1.0
+
+    try:
+        async with get_plans_store_lock(sensor):
+            storage_data = await store.async_load() or {}
+    except Exception as err:
+        _LOGGER.debug("Could not load solar accuracy history: %s", err)
+        return 1.0
+
+    factor = compute_correction_factor(storage_data)
+    solar_kwh_list[:] = apply_correction_to_forecast(solar_kwh_list, factor)
+    sensor._log_rate_limited(
+        "adaptive_forecast_correction",
+        "info",
+        "[ForecastAccuracy] Applied solar correction factor %.3f",
+        factor,
+        cooldown_s=3600.0,
+    )
+    return factor
+
+
 async def _maybe_apply_solar_correction(
     sensor: Any,
     adaptive_helper: AdaptiveConsumptionHelper,
     solar_forecast: Any,
     solar_kwh_list: list[float],
+    *,
+    applied_factor: float = 1.0,
 ) -> None:
     """Damp same-day solar drift into the forward solar list (dead band 0.85–1.15),
     mirroring the consumption boost. Prevents an under-forecast (sunnier than
     Solcast) from forcing unnecessary grid-charging, and lets a cloudier-than-
-    forecast day pull in protective charging earlier."""
+    forecast day pull in protective charging earlier.
+
+    The drift is measured against the raw forecast, so the factor already applied
+    to the list is taken out of it: otherwise the same bias is corrected twice."""
     ratio = await _get_recent_solar_ratio(sensor, solar_forecast)
-    if ratio and (ratio > 1.15 or ratio < 0.85):
-        adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, ratio)
+    if not ratio:
+        return
+    remaining = ratio / applied_factor
+    if remaining > 1.15 or remaining < 0.85:
+        adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, remaining)
 
 
 def _interval_day_indices(
@@ -1835,10 +1876,16 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
 
         # Build load forecast list (kWh/15min for each interval)
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
+        # Historical correction: remove the forecast's systematic bias.
+        solar_factor = await _maybe_apply_adaptive_correction(sensor, solar_kwh_list)
         # Same-day reality correction: damp solar drift (sunnier/cloudier than
         # forecast) into the near-term solar list before planning.
         await _maybe_apply_solar_correction(
-            sensor, adaptive_helper, solar_forecast, solar_kwh_list
+            sensor,
+            adaptive_helper,
+            solar_forecast,
+            solar_kwh_list,
+            applied_factor=solar_factor,
         )
         # _run_planner() writes _plan_lock_until, _plan_lock_modes and
         # _charging_metrics onto the sensor as it runs -- on both the success
