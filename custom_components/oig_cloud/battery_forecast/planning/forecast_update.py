@@ -11,7 +11,11 @@ from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from ...const import DOMAIN
+from ...const import (
+    CONF_BOILER_BATTERY_CYCLE_COST,
+    DEFAULT_BOILER_BATTERY_CYCLE_COST,
+    DOMAIN,
+)
 from ...core.data_source import (
     DATA_SOURCE_CLOUD_ONLY,
     DEFAULT_PROXY_STALE_MINUTES,
@@ -568,9 +572,8 @@ def _derive_planning_min_percent(
 ) -> float:
     """Planning floor = box trigger + safety margin (never below hw floor).
 
-    Prevention by construction: the existing proactive floor defense
-    (cheapest-window pre-charging) keeps the trajectory above this floor, so
-    "drain to the box trigger and wait" can never appear in a plan. No box
+    Prevention by construction: the optimizer treats this floor as a hard limit,
+    so "drain to the box trigger and wait" can never appear in a plan. No box
     behavior emulation, no post-hoc plan patching.
     """
     trigger_pct = proxy_bat_min_pct if proxy_bat_min_pct is not None else hw_min_percent
@@ -1160,26 +1163,28 @@ async def _maybe_apply_solar_correction(
         adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, remaining)
 
 
-def _interval_day_indices(
-    spot_prices: list[dict[str, Any]],
-) -> Optional[List[int]]:
-    """0-based day index (0=first day, 1=next, …) per interval from the price
-    timestamps. Returns None on any parse failure so the planner falls back to a
-    whole-horizon percentile."""
-    days: List[int] = []
-    first_date: Optional[date] = None
-    for point in spot_prices:
-        ts = point.get("time")
-        if not ts:
-            return None
-        try:
-            point_date = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).date()
-        except (ValueError, TypeError):
-            return None
-        if first_date is None:
-            first_date = point_date
-        days.append((point_date - first_date).days)
-    return days or None
+def _battery_wear_czk_per_kwh(opts: Any) -> float:
+    """One battery, one wear figure: the option the boiler planner already uses
+    for the same thing. A bad stored value must not cost the plan."""
+    try:
+        wear = float(
+            opts.get(CONF_BOILER_BATTERY_CYCLE_COST, DEFAULT_BOILER_BATTERY_CYCLE_COST)
+        )
+    except (TypeError, ValueError):
+        return DEFAULT_BOILER_BATTERY_CYCLE_COST
+    return wear if math.isfinite(wear) and wear >= 0 else DEFAULT_BOILER_BATTERY_CYCLE_COST
+
+
+def _with_slot_times(
+    trace: list[dict[str, Any]], spot_prices: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Name the clock time of each entry's first UPS slot: a slot index means
+    nothing to someone reading the trace an hour after the plan was made."""
+    for entry in trace:
+        slots = entry.get("charge_intervals") or []
+        if slots and slots[0] < len(spot_prices):
+            entry["charge_start"] = spot_prices[slots[0]].get("time")
+    return trace
 
 
 def _run_planner(
@@ -1208,10 +1213,9 @@ def _run_planner(
         # (~99%) from the battery's own charge/discharge energy counters — it is
         # NOT the AC round-trip (grid -> house) the planner economics need, which
         # also pays the inverter conversion losses both ways (~84% total). Use the
-        # planner's AC round-trip constant consistently for the η-gate, the
-        # displayed timeline and the mode guard so they all agree with the cost
-        # simulation (_simulate_interval). The DC sensor stays a battery-health
-        # metric only.
+        # planner's AC round-trip constant consistently for the displayed timeline
+        # and the mode guard so they agree with the cost simulation
+        # (_simulate_interval). The DC sensor stays a battery-health metric only.
         directional_efficiency = _round_trip_to_directional(
             DEFAULT_ROUND_TRIP_EFFICIENCY
         )
@@ -1238,13 +1242,13 @@ def _run_planner(
             reason_class=bat_min_reason_class,
         )
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
-        # Floor defense protects the hardware safety minimum PLUS a small
-        # margin above the BOX bat_min trigger: dwelling at the trigger makes
-        # the box force-balance from grid uncontrolled, so the plan must never
-        # aim at it (see _derive_planning_min_percent). Any reserve above this
-        # floor is still built purely by cost-gated displacement — no fixed
-        # backup that forces uneconomic grid charging. The legacy
-        # `min_capacity_percent` option no longer raises this floor.
+        # The hard minimum is the hardware safety minimum PLUS a small margin
+        # above the BOX bat_min trigger: dwelling at the trigger makes the box
+        # force-balance from grid uncontrolled, so the plan must never aim at it
+        # (see _derive_planning_min_percent). Any reserve above this floor is
+        # there only where the optimizer finds it pays — no fixed backup that
+        # forces uneconomic grid charging. The legacy `min_capacity_percent`
+        # option no longer raises this floor.
         planning_min_percent = _derive_planning_min_percent(
             hw_min_percent,
             proxy_bat_min_pct,
@@ -1253,18 +1257,16 @@ def _run_planner(
             ),
         )
 
-        # Comfort SoC target: keep a buffer well above the hard floor so the BOX
-        # never force-charges to ~80% at any price when the battery dwells near
-        # bat_min. Maintained ONLY from cheap windows (never expensive grid);
-        # configurable %, default 50. 0 disables it.
-        comfort_pct = float(opts.get("battery_comfort_soc_percent", 50.0))
-        comfort_pct = max(0.0, min(95.0, comfort_pct))
-        comfort_soc_kwh = max_capacity * (comfort_pct / 100.0)
-
-        # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
-        # so the expensive-price percentile is computed per day, not blended
-        # across a cheap day + an expensive day.
-        interval_days = _interval_day_indices(spot_prices)
+        # Same index rule as the displayed timeline (build_planner_timeline).
+        export_price_list = [
+            float(export_prices[i].get("price", 0.0) or 0.0)
+            if i < len(export_prices)
+            else 0.0
+            for i in range(len(spot_prices))
+        ]
+        # The box's own mode: leaving it costs a switch, so that a rerun on a
+        # close call does not flip the box for nothing.
+        get_current_mode = getattr(sensor, "_get_current_mode", None)
 
         planner_inputs = PlannerInputs(
             current_soc_kwh=current_capacity,
@@ -1276,19 +1278,16 @@ def _run_planner(
             prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
             solar_forecast=list(solar_kwh_list),
             load_forecast=list(load_forecast),
-            expensive_percentile=float(opts.get("expensive_percentile", 0.70)),
-            # round_trip_efficiency defaults to the AC round-trip constant
-            # (DEFAULT_ROUND_TRIP_EFFICIENCY), matching _simulate_interval — see
-            # the directional_efficiency note above.
-            interval_days=interval_days,
-            comfort_soc_kwh=comfort_soc_kwh,
+            export_prices=export_price_list,
+            current_mode=get_current_mode() if callable(get_current_mode) else None,
+            battery_wear_czk_per_kwh=_battery_wear_czk_per_kwh(opts),
         )
 
         result = plan_battery_schedule(planner_inputs)
         charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
         charging_metrics.pop("planner_failure_class", None)
-        charging_metrics["planner_decision_trace"] = build_planner_decision_trace(
-            result.decisions, planner_inputs
+        charging_metrics["planner_decision_trace"] = _with_slot_times(
+            build_planner_decision_trace(result.decisions, planner_inputs), spot_prices
         )
         sensor._charging_metrics = charging_metrics
 
@@ -1380,7 +1379,7 @@ def _run_planner(
             "target_kwh": planning_min_kwh,
             # Emergent dynamic reserve: the peak SoC the plan deliberately builds
             # (via cheap grid pre-charging) to bridge upcoming expensive/low-PV
-            # windows — higher than the static floor when displacement kicks in.
+            # windows — higher than the static floor when that pays.
             "dynamic_reserve_kwh": round(
                 max(
                     (s.soc_kwh for s in (getattr(result, "states", None) or [])),

@@ -155,6 +155,42 @@ def test_attach_planner_reasons():
     planner.attach_planner_reasons(timeline, decisions + [Decision("x")])
 
 
+def test_attach_planner_reasons_follows_the_charge_intervals():
+    """A plan has one decision per run of UPS slots, so the position of a
+    decision in the list says nothing about which slot it belongs to."""
+    timeline = [{"spot_price": float(i)} for i in range(6)]
+
+    class Decision:
+        def __init__(self, reason, charge_intervals):
+            self.reason = reason
+            self.charge_intervals = charge_intervals
+
+    planner.attach_planner_reasons(
+        timeline,
+        [Decision("FIRST", [2, 3]), Decision("SECOND", [5]), Decision("BEYOND", [99])],
+    )
+
+    assert timeline[2]["decision_metrics"]["planner_reason_code"] == "FIRST"
+    assert timeline[3]["decision_metrics"]["planner_reason_code"] == "FIRST"
+    assert timeline[5]["decision_metrics"]["planner_reason_code"] == "SECOND"
+    assert "decision_metrics" not in timeline[0]
+    assert "decision_metrics" not in timeline[1]
+    assert "decision_metrics" not in timeline[4]
+
+
+def test_attach_planner_reasons_decision_without_slots_keeps_its_position():
+    timeline = [{"spot_price": 1.0}, {"spot_price": 2.0}]
+
+    class Decision:
+        reason = "BATTERY_SUFFICIENT"
+        charge_intervals = []
+
+    planner.attach_planner_reasons(timeline, [Decision()])
+
+    assert timeline[0]["decision_metrics"]["planner_reason_code"] == "BATTERY_SUFFICIENT"
+    assert "decision_metrics" not in timeline[1]
+
+
 def test_add_decision_reasons_to_timeline():
     timeline = [
         {

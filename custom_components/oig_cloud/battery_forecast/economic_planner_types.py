@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, TypedDict
+from typing import Dict, List, Optional, Tuple, TypedDict
 
 from .types import (
     DEFAULT_CHARGE_EFFICIENCY,
@@ -9,15 +9,11 @@ from .types import (
     INTERVAL_MINUTES,
 )
 
-# Default daily-price percentile above which a baseline grid import is
-# considered "expensive" and worth displacing with pre-charging. Configurable
-# per the LOCKED design (F1); full wiring from config_entry.options happens in
-# a later phase (F2).
+# Default for the retired expensive_percentile input, see PlannerInputs.
 DEFAULT_EXPENSIVE_PERCENTILE: float = 0.70
 
-# Default round-trip efficiency used by the economic (η-)gate. This mirrors the
-# global simulation constants: storing then re-extracting energy incurs both the
-# charge and discharge losses.
+# Storing then re-extracting energy incurs both the charge and discharge losses.
+# This mirrors the global simulation constants.
 DEFAULT_ROUND_TRIP_EFFICIENCY: float = DEFAULT_EFFICIENCY * DEFAULT_CHARGE_EFFICIENCY
 
 
@@ -44,22 +40,22 @@ class PlannerInputs:
     prices: List[float]
     solar_forecast: List[float]
     load_forecast: List[float]
-    # Daily-price percentile threshold P for the EXPENSIVE_IMPORT classifier.
-    # Safe default per LOCKED design; wired from options in a later phase.
+    # Inputs of the layers the optimizer replaced. They no longer change the plan;
+    # they stay accepted and validated so the simulator API and stored options
+    # remain valid until those options are retired.
     expensive_percentile: float = DEFAULT_EXPENSIVE_PERCENTILE
-    # Round-trip efficiency η for the economic gate (cheap/η < expensive).
     round_trip_efficiency: float = DEFAULT_ROUND_TRIP_EFFICIENCY
-    # Optional per-interval day index (0=today, 1=tomorrow, ...). When set, the
-    # EXPENSIVE_IMPORT percentile threshold is computed per day instead of over
-    # the whole horizon, so a cheap day and an expensive day are judged
-    # independently. Falls back to a whole-horizon percentile when None.
     interval_days: Optional[List[int]] = None
-    # Comfort SoC target (kWh, 0 = disabled). The planner opportunistically tops
-    # up toward this level using ONLY cheap windows (never expensive grid), so the
-    # battery keeps a buffer well above the hard floor and the BOX never
-    # force-charges to ~80% at any price. Distinct from the hard floor, which is
-    # still defended at any price as the last resort.
     comfort_soc_kwh: float = 0.0
+    # Export price per interval (CZK/kWh, may be negative). Exported solar earns
+    # this in the objective; None treats export as worthless.
+    export_prices: Optional[List[float]] = None
+    # Mode the box is in right now (live sensor). Leaving it costs a switch; any
+    # mode other than Home 1 / Home UPS has to be left anyway, so it costs none.
+    current_mode: Optional[int] = None
+    # Wear per kWh taken out of the battery (CZK/kWh). Fed from the battery cycle
+    # cost option; 0 leaves wear out of the objective.
+    battery_wear_czk_per_kwh: float = 0.0
 
     @property
     def planning_min_kwh(self) -> float:
@@ -101,6 +97,12 @@ class PlannerInputs:
 
         if any(load < 0 for load in self.load_forecast):
             raise ValueError("Load forecast cannot be negative")
+
+        if self.export_prices is not None and len(self.export_prices) != n_intervals:
+            raise ValueError("Forecast lengths must match intervals count")
+
+        if not (0.0 <= self.battery_wear_czk_per_kwh < float("inf")):
+            raise ValueError("Battery wear must be a finite, non-negative cost")
 
         if not (0.0 < self.expensive_percentile <= 1.0):
             raise ValueError("Expensive percentile must be in (0, 1]")
@@ -148,6 +150,8 @@ class Decision:
     charge_intervals: List[int] = field(default_factory=list)
     alternatives: Optional[List[Tuple[str, float]]] = None
     reason: Optional[str] = None
+    # The figures behind the reason, published as they are in the decision trace.
+    evidence: Dict[str, Optional[float]] = field(default_factory=dict)
 
 
 @dataclass

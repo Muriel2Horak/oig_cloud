@@ -33,6 +33,7 @@ from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 from ..battery_forecast.economic_planner import plan_battery_schedule
 from ..battery_forecast.economic_planner_types import PlannerInputs
 from ..battery_forecast.types import CBB_MODE_NAMES
+from ..const import DEFAULT_BOILER_BATTERY_CYCLE_COST
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +98,9 @@ def _build_planner_inputs(
         expensive_percentile=float(cfg["expensive_percentile"]),
         round_trip_efficiency=float(cfg["round_trip_efficiency"]),
         comfort_soc_kwh=float(cfg.get("comfort_soc_kwh", 0.0)),
+        battery_wear_czk_per_kwh=float(
+            cfg.get("battery_wear_czk_per_kwh", DEFAULT_BOILER_BATTERY_CYCLE_COST)
+        ),
     )
 
 

@@ -143,32 +143,37 @@ def attach_planner_reasons(
     timeline: List[Dict[str, Any]],
     decisions: List[Any],
 ) -> None:
-    """Attach planner reasons and decision metrics to timeline entries."""
-    for idx, decision in enumerate(decisions):
-        if idx >= len(timeline):
-            break
-        reason_code = getattr(decision, "reason", None)
-        metrics = timeline[idx].get("decision_metrics") or {}
-        if reason_code:
-            metrics.setdefault("planner_reason_code", reason_code)
-            metrics.setdefault("planner_reason", reason_code)
-        metrics.setdefault(
-            "planner_is_balancing", bool(getattr(decision, "is_balancing", False))
-        )
-        metrics.setdefault(
-            "planner_is_holding", bool(getattr(decision, "is_holding", False))
-        )
-        metrics.setdefault(
-            "planner_is_negative_price",
-            bool(getattr(decision, "is_negative_price", False)),
-        )
-        timeline[idx]["decision_metrics"] = metrics
+    """Attach planner reasons and decision metrics to timeline entries.
 
-        reason_text = format_planner_reason(
-            reason_code, spot_price=timeline[idx].get("spot_price")
-        )
-        if reason_text:
-            timeline[idx]["decision_reason"] = reason_text
+    A decision belongs to the slots it charges in; one without any (a plan with
+    no UPS slot) falls back to its position in the list.
+    """
+    for idx, decision in enumerate(decisions):
+        reason_code = getattr(decision, "reason", None)
+        for slot in getattr(decision, "charge_intervals", None) or [idx]:
+            if slot >= len(timeline):
+                continue
+            metrics = timeline[slot].get("decision_metrics") or {}
+            if reason_code:
+                metrics.setdefault("planner_reason_code", reason_code)
+                metrics.setdefault("planner_reason", reason_code)
+            metrics.setdefault(
+                "planner_is_balancing", bool(getattr(decision, "is_balancing", False))
+            )
+            metrics.setdefault(
+                "planner_is_holding", bool(getattr(decision, "is_holding", False))
+            )
+            metrics.setdefault(
+                "planner_is_negative_price",
+                bool(getattr(decision, "is_negative_price", False)),
+            )
+            timeline[slot]["decision_metrics"] = metrics
+
+            reason_text = format_planner_reason(
+                reason_code, spot_price=timeline[slot].get("spot_price")
+            )
+            if reason_text:
+                timeline[slot]["decision_reason"] = reason_text
 
 
 def add_decision_reasons_to_timeline(

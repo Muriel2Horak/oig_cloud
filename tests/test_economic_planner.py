@@ -341,7 +341,7 @@ def test_plan_battery_schedule_preserves_headroom_before_strong_solar_surplus() 
     )
 
 
-def test_plan_battery_schedule_emits_trace_for_each_greedy_pick() -> None:
+def test_plan_battery_schedule_traces_every_ups_slot() -> None:
     intervals_count = 96
     prices = [4.0] * 4 + [12.0] * (intervals_count - 4)
     inputs = _build_inputs(
@@ -360,9 +360,8 @@ def test_plan_battery_schedule_emits_trace_for_each_greedy_pick() -> None:
     trace = build_planner_decision_trace(result.decisions, inputs)
 
     assert len(ups_intervals) > 1
-    assert len(trace) == len(ups_intervals)
-    assert [entry["charge_intervals"] for entry in trace] == [[idx] for idx in ups_intervals]
-    assert all(entry["reason"] == "GLOBAL_GREEDY" for entry in trace)
+    assert sorted(idx for entry in trace for idx in entry["charge_intervals"]) == ups_intervals
+    assert all(entry["reason"] != "GLOBAL_GREEDY" for entry in trace)
 
 
 def test_plan_battery_schedule_emergency_mode_falls_back_when_planning_fails() -> None:
