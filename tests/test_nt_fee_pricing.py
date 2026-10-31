@@ -192,8 +192,7 @@ def _make_spot15_sensor(options):
 def test_spot_price_15min_positive_fee_nt_dual_tariff_splits():
     sensor = _make_spot15_sensor(
         {
-            "dual_tariff_enabled": True,
-            "vt_hours": "6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21",
+            **TARIFF_SCHEDULE,
             "spot_pricing_model": "percentage",
             "spot_positive_fee_percent": 15.0,
             "spot_positive_fee_percent_nt": 5.0,
@@ -241,8 +240,7 @@ def _make_export15_sensor(options):
 def test_export_fixed_fee_czk_nt_dual_tariff_splits():
     sensor = _make_export15_sensor(
         {
-            "dual_tariff_enabled": True,
-            "vt_hours": "6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21",
+            **TARIFF_SCHEDULE,
             "export_pricing_model": "fixed",
             "export_fixed_fee_czk": 0.20,
             "export_fixed_fee_czk_nt": 0.10,
@@ -276,8 +274,7 @@ def test_export_fee_percent_nt_dual_tariff_splits_export_sensor():
     """export_fee_percent_nt wired at the primary export sensor site too."""
     sensor = _make_export15_sensor(
         {
-            "dual_tariff_enabled": True,
-            "vt_hours": "6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21",
+            **TARIFF_SCHEDULE,
             "export_pricing_model": "percentage",
             "export_fee_percent": 15.0,
             "export_fee_percent_nt": 5.0,
