@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.7] - 2026-11-01
+
+### Fixed
+- **The first plan recompute after a restart re-read every past interval.** Closed
+  intervals are now kept in storage, so a restart does not lose them.
+- **Grid voltage and power in the extended sensors stayed unknown** where the extended
+  data leaves them empty. They now come from the live grid values.
+- **The box mode reaction time stayed unknown** until the next mode change, although
+  its history had loaded. It is published as soon as the history arrives.
+
+### Removed
+- **The "Adjusted Spot Electricity Prices" sensor.** It had no implementation and could
+  never have a value. The entity is removed from the registry on update.
+
 ## [2.4.6] - 2026-11-01
 
 ### Fixed
