@@ -268,30 +268,17 @@ def _prevailing_mode(
     end: datetime,
 ) -> Optional[dict[str, Any]]:
     """The mode that held longest in [start, end); a tie goes to the later one."""
-    active = None
-    for change in mode_changes:
-        if change["time"] <= start:
-            active = change
-        else:
-            break
+    earlier = [change for change in mode_changes if change["time"] <= start]
+    within = [change for change in mode_changes if start < change["time"] < end]
+    held = earlier[-1:] + within
+    if not held:
+        return None
 
-    best = None
-    best_seconds = -1.0
-    cursor = start
-    for change in mode_changes:
-        if change["time"] <= start:
-            continue
-        if change["time"] >= end:
-            break
-        if active:
-            seconds = (change["time"] - cursor).total_seconds()
-            if seconds >= best_seconds:
-                best, best_seconds = active, seconds
-        active, cursor = change, change["time"]
-
-    if active and (end - cursor).total_seconds() >= best_seconds:
-        best = active
-    return best
+    starts = ([start] if earlier else []) + [change["time"] for change in within]
+    ends = starts[1:] + [end]
+    durations = [stop - begin for begin, stop in zip(starts, ends)]
+    longest = max(reversed(range(len(held))), key=lambda index: durations[index])
+    return held[longest]
 
 
 def _expand_modes_to_intervals(

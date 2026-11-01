@@ -21,6 +21,33 @@ function blocksLabel(n: number): string {
   return `${n} ${czPlural(n, 'blok', 'bloky', 'bloků')}`;
 }
 
+function modeConfig(modeName: string) {
+  return TIMELINE_MODE_CONFIG[modeName] ?? { icon: '❓', color: '#666', label: modeName };
+}
+
+function renderModeTile(block: ModeBlock) {
+  const cfg = modeConfig(blockDisplayMode(block));
+  const isCurrent = block.status === 'current';
+  const cost = blockDisplayCost(block);
+  const planNote = block.modeMatch ? '' : ` | Plán: ${modeConfig(block.modePlanned).label}`;
+
+  return html`
+    <div
+      class="mode-block ${isCurrent ? 'current' : ''}"
+      style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
+      title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
+    >
+      ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
+      <span class="mode-icon">${cfg.icon}</span>
+      <span class="mode-name">${cfg.label}</span>
+      <span class="mode-time">${block.startTime}–${block.endTime}</span>
+      ${cost != null ? html`
+        <span class="mode-cost">${formatCurrency(cost)}</span>
+      ` : null}
+    </div>
+  `;
+}
+
 /** "1 přepnutí" / "3 přepnutí" — neuter, invariant across plural forms */
 function switchesLabel(n: number): string {
   return `${n} přepnutí`;
@@ -391,31 +418,8 @@ export class OigTimelineDialog extends LitElement {
 
   // ---- Mode block rendering ----
 
-  private getModeConfig(modeName: string) {
-    return TIMELINE_MODE_CONFIG[modeName] ?? { icon: '❓', color: '#666', label: modeName };
-  }
-
   private renderModeBlock(block: ModeBlock) {
-    const cfg = this.getModeConfig(blockDisplayMode(block));
-    const isCurrent = block.status === 'current';
-    const cost = blockDisplayCost(block);
-    const planNote = block.modeMatch ? '' : ` | Plán: ${this.getModeConfig(block.modePlanned).label}`;
-
-    return html`
-      <div
-        class="mode-block ${isCurrent ? 'current' : ''}"
-        style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
-        title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
-      >
-        ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
-        <span class="mode-icon">${cfg.icon}</span>
-        <span class="mode-name">${cfg.label}</span>
-        <span class="mode-time">${block.startTime}–${block.endTime}</span>
-        ${cost != null ? html`
-          <span class="mode-cost">${formatCurrency(cost)}</span>
-        ` : null}
-      </div>
-    `;
+    return renderModeTile(block);
   }
 
   // ---- Metric tile rendering ----
@@ -932,31 +936,8 @@ export class OigTimelineTile extends LitElement {
     return '#f44336';
   }
 
-  private getModeConfig(modeName: string) {
-    return TIMELINE_MODE_CONFIG[modeName] ?? { icon: '❓', color: '#666', label: modeName };
-  }
-
   private renderModeBlock(block: ModeBlock) {
-    const cfg = this.getModeConfig(blockDisplayMode(block));
-    const isCurrent = block.status === 'current';
-    const cost = blockDisplayCost(block);
-    const planNote = block.modeMatch ? '' : ` | Plán: ${this.getModeConfig(block.modePlanned).label}`;
-
-    return html`
-      <div
-        class="mode-block ${isCurrent ? 'current' : ''}"
-        style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
-        title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
-      >
-        ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
-        <span class="mode-icon">${cfg.icon}</span>
-        <span class="mode-name">${cfg.label}</span>
-        <span class="mode-time">${block.startTime}–${block.endTime}</span>
-        ${cost != null ? html`
-          <span class="mode-cost">${formatCurrency(cost)}</span>
-        ` : null}
-      </div>
-    `;
+    return renderModeTile(block);
   }
 
   private renderMetricTile(label: string, tile: MetricTile) {
