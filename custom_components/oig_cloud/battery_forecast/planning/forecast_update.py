@@ -1746,6 +1746,56 @@ def _post_update_housekeeping(
     _schedule_precompute(sensor)
 
 
+# Longer than the slowest measured start of a loaded Home Assistant: the data
+# appeared 8.5 minutes after the first planner run on 1. 11. 2026.
+LOAD_DATA_GRACE_MINUTES = 20
+
+# Each attempt reads the sensors only, and the profile sensor's own signal wakes
+# the planner within seconds, so this is just the backstop for the load_avg path.
+LOAD_DATA_RETRY_SECONDS = 30.0
+
+
+def _should_defer_for_load_data(
+    sensor: Any, load_avg_sensors: Any, adaptive_profiles: Any
+) -> bool:
+    """Wait, rather than plan on a guess, while no consumption data exists.
+
+    Without the adaptive profile and the load_avg sensors every interval falls
+    back to a flat 500 W. Such a plan is published and can steer the box, so
+    after a restart the box keeps its last mode until real data arrives.
+
+    The wait is bounded: an install that never gets the data still needs a plan.
+    """
+    if load_avg_sensors or _has_usable_adaptive_profiles(adaptive_profiles):
+        sensor._load_data_wait_started_at = None
+        return False
+
+    now_aware = dt_util.now()
+    started = getattr(sensor, "_load_data_wait_started_at", None)
+    if started is None:
+        started = now_aware
+        sensor._load_data_wait_started_at = started
+
+    if (now_aware - started).total_seconds() < LOAD_DATA_GRACE_MINUTES * 60:
+        sensor._log_rate_limited(
+            "load_data_not_ready",
+            "info",
+            "No consumption data yet; deferring the plan",
+            cooldown_s=300.0,
+        )
+        sensor._schedule_forecast_retry(LOAD_DATA_RETRY_SECONDS)
+        return True
+
+    sensor._log_rate_limited(
+        "load_data_absent_after_grace",
+        "warning",
+        "No consumption data after %s min; planning on the flat fallback load",
+        LOAD_DATA_GRACE_MINUTES,
+        cooldown_s=3600.0,
+    )
+    return False
+
+
 async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optional[
     tuple[
         float,
@@ -1771,10 +1821,6 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         min_capacity,
     )
 
-    current_interval_naive = bucket_start.replace(tzinfo=None)
-    spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
-
-    solar_forecast = sensor._get_solar_forecast()
     load_avg_sensors = sensor._get_load_avg_sensors()
 
     adaptive_helper = AdaptiveConsumptionHelper(
@@ -1783,6 +1829,14 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         ISO_TZ_OFFSET,
     )
     adaptive_profiles = await adaptive_helper.get_adaptive_load_prediction()
+
+    if _should_defer_for_load_data(sensor, load_avg_sensors, adaptive_profiles):
+        return None
+
+    current_interval_naive = bucket_start.replace(tzinfo=None)
+    spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
+
+    solar_forecast = sensor._get_solar_forecast()
 
     if not spot_prices:
         _LOGGER.warning(

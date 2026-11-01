@@ -110,7 +110,7 @@ class _PlannerSensor:
         return {}
 
     def _get_load_avg_sensors(self):
-        return {}
+        return {"sensor.load_avg_test": {"value": 500.0}}
 
     def _get_balancing_plan(self):
         return None
