@@ -1347,6 +1347,8 @@ async def _init_notification_manager(
 
                 service_shield.mode_tracker = ModeTransitionTracker(hass, device_id)
                 await service_shield.mode_tracker.async_setup()
+                # The reaction time sensor was added before this history arrived.
+                service_shield._notify_state_change()
                 _LOGGER.info(
                     "Mode Transition Tracker inicializován pro box %s", device_id
                 )

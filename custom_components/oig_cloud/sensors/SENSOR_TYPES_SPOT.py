@@ -151,17 +151,4 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "device_mapping": "analytics",
         "description": "Aktuální výkupní cena elektřiny s 15minutovým intervalem BEZ distribuce a BEZ DPH",
     },
-    "adjusted_spot_electricity_prices": {
-        "name": "Adjusted Spot Electricity Prices",
-        "name_cs": "Upravené spotové ceny elektřiny",
-        "icon": "mdi:chart-line-variant",
-        "unit_of_measurement": UNIT_CZK_KWH,
-        "device_class": SensorDeviceClass.MONETARY,
-        "state_class": None,
-        "category": "spot_price",
-        "pricing_type": "spot_price",
-        "sensor_type_category": "pricing",
-        "device_mapping": "analytics",
-        "description": "Spotové ceny s peak/off-peak označením pro optimalizaci nabíjení",
-    },
 }

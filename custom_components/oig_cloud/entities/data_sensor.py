@@ -489,11 +489,25 @@ class OigCloudDataSensor(_DataSensorBase):
             else:
                 return self._get_extended_value("extended_fve", sensor_type)
         elif "grid" in sensor_type:
-            return self._get_extended_value("extended_grid", sensor_type)
+            value = self._get_extended_value("extended_grid", sensor_type)
+            return self._live_grid_value(sensor_type) if value is None else value
         elif "load" in sensor_type:
             return self._get_extended_value("extended_load", sensor_type)
 
         return None
+
+    def _live_grid_value(self, sensor_type: str) -> Optional[float]:
+        """Voltage and power the extended data leaves empty, from live grid values."""
+        data = self.coordinator.data or {}
+        ac_in = (data.get(self._box_id) or {}).get("ac_in") or {}
+        if sensor_type == "extended_grid_voltage":
+            keys, combine = ("aci_vr", "aci_vs", "aci_vt"), lambda v: round(sum(v) / 3, 1)
+        elif sensor_type == "extended_grid_power":
+            keys, combine = ("aci_wr", "aci_ws", "aci_wt"), sum
+        else:
+            return None
+        values = [ac_in.get(key) for key in keys]
+        return None if None in values else combine(values)
 
     def _get_extended_value(
         self, extended_key: str, sensor_type: str
