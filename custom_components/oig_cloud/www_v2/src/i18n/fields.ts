@@ -199,7 +199,7 @@ const CS_HINTS: Record<string, string> = {
   'field.boiler_alt_cost_kwh.hint': 'Cena tepla z alternativního zdroje v Kč/kWh',
   'field.boiler_alt_energy_sensor.hint': 'ID entity senzoru energie (kWh)',
   'field.boiler_alt_energy_daily.hint': 'Zapni, pokud senzor měří denní (ne celkový) přírůstek',
-  'field.box_has_home56.hint': 'Aktivuje Home 5/6 (OIG CBB) — umožňuje 🔋→🔥 ohřev z baterie',
+  'field.box_has_home56.hint': 'Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru',
   'field.boiler_home5_maneuver_enabled.hint': 'Plánovač může použít baterii k ohřevu (vyžaduje Home 5/6)',
   'field.boiler_battery_cycle_cost_czk_kwh.hint': 'Degradace baterie za kWh; plánovač porovná s cenou sítě',
   'field.boiler_circulation_enabled.hint': 'Zapnutí cirkulačního čerpadla TUV',

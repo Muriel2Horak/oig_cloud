@@ -189,7 +189,7 @@ describe('fieldLabel / fieldHint catalog', () => {
 const ALL_REGISTRY_KEYS: Record<string, string[]> = {
   modules: [
     'enable_solar_forecast', 'enable_battery_prediction', 'enable_pricing', 'enable_boiler',
-    'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
+    'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings', 'box_has_home56',
   ],
   battery: [
     'auto_mode_switch_enabled', 'charge_rate_kw', 'balancing_enabled', 'balancing_interval_days',
@@ -211,7 +211,7 @@ const ALL_REGISTRY_KEYS: Record<string, string[]> = {
     'boiler_has_alternative_heating', 'boiler_target_temp_c', 'boiler_deadline_time',
     'boiler_alt_source_type', 'boiler_battery_cycle_cost_czk_kwh',
     'boiler_thermal_arbitrage_enabled', 'boiler_max_temp_c', 'boiler_alt_power_kw',
-    'box_has_home56', 'boiler_home5_maneuver_enabled', 'boiler_circulation_enabled',
+    'boiler_home5_maneuver_enabled', 'boiler_circulation_enabled',
     'boiler_circulation_lead_minutes', 'boiler_circulation_run_minutes',
     'boiler_circulation_max_runs_per_day', 'boiler_circulation_min_gap_minutes',
     'boiler_legionella_interval_days', 'boiler_legionella_target_temp_c',

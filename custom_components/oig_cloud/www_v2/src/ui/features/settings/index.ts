@@ -732,7 +732,7 @@ export class OigSettings extends LitElement {
     const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
     const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
     const altCostKwh = this.current(section, 'boiler_alt_cost_kwh') as number | null;
-    const hasHome56 = !!this.current(section, 'box_has_home56');
+    const hasHome56 = !!this.currentCrossSection(section, 'box_has_home56');
     const home5Enabled = !!this.current(section, 'boiler_home5_maneuver_enabled');
     const circEnabled = !!this.current(section, 'boiler_circulation_enabled');
     const legInterval = Number(this.current(section, 'boiler_legionella_interval_days') ?? 0);
@@ -750,7 +750,7 @@ export class OigSettings extends LitElement {
       ...home5Field,
       hint: hasHome56
         ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
-        : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
+        : 'Vyžaduje zapnutí „Box má Home 5/6" v kartě Moduly',
     } : undefined;
 
     // Section badges
@@ -791,10 +791,6 @@ export class OigSettings extends LitElement {
               ${renderBoilerField('boiler_thermal_arbitrage_enabled')}
               ${this.current(section, 'boiler_thermal_arbitrage_enabled') ? renderBoilerField('boiler_max_temp_c') : nothing}
             ` : nothing}
-            ${renderBoilerField('box_has_home56')}
-            <div class="note" style="margin-top:6px;margin-bottom:2px">
-              Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
-            </div>
             ${home5FieldWithHint ? this.renderFieldDisableable(section, home5FieldWithHint, !hasHome56) : nothing}
             ${hasHome56 ? renderBoilerField('boiler_battery_cycle_cost_czk_kwh') : nothing}
           </div>

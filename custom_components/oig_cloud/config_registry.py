@@ -308,6 +308,9 @@ _register(
     Field("enable_statistics", "modules", bool, default=True, reload_on_change=True),
     Field("enable_extended_sensors", "modules", bool, default=True, reload_on_change=True),
     Field("enable_chmu_warnings", "modules", bool, default=False, reload_on_change=True),
+    # A capability of the box, not of the boiler: it decides whether the control
+    # panel offers the Home 5 and Home 6 toggles.
+    Field("box_has_home56", "modules", bool, default=False, reload_on_change=True),
 )
 
 # --- section: battery -------------------------------------------------------
@@ -410,7 +413,6 @@ _register(
           reload_on_change=True),
     Field("boiler_alt_power_kw", "boiler", float, default=0.0, min=0.0, max=50.0,
           reload_on_change=True),
-    Field("box_has_home56", "boiler", bool, default=False, reload_on_change=True),
     Field("boiler_home5_maneuver_enabled", "boiler", bool, default=False,
           reload_on_change=True),
     Field("boiler_circulation_enabled", "boiler", bool, default=False, reload_on_change=True),

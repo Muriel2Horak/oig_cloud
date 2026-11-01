@@ -228,7 +228,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ I want to go back (check + click Submit)"
+          "go_back": "⬅️ I want to go back (check + click Submit)",
+          "box_has_home56": "🔀 Box has Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimental - smart charging based on prices",
@@ -243,7 +244,8 @@
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
           "telemetry_mqtt_port": "The standard MQTT port is 1883",
           "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
-          "go_back": "Check this box and press 'Submit' - you will go back one step"
+          "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "box_has_home56": "Enables the Home 5 and Home 6 toggles in the control panel. Does not depend on the boiler module."
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
         "title": "📦 Module and Feature Selection"
@@ -624,7 +626,6 @@
           "boiler_has_alternative_heating": "Alternative heat source (gas, heat pump, fireplace…)",
           "boiler_alt_source_type": "Type of alternative source",
           "boiler_alt_cost_kwh": "Heat cost (CZK/kWh)",
-          "box_has_home56": "Box has Home 5/6",
           "boiler_home5_maneuver_enabled": "🔋→🔥 Heating from battery",
           "boiler_battery_cycle_cost_czk_kwh": "Battery cycle cost (CZK/kWh)",
           "go_back": "⬅️ I want to go back (check + click Submit)"
@@ -633,7 +634,6 @@
           "boiler_has_alternative_heating": "Enable if the boiler can be heated by another source (gas boiler, heat pump, fireplace…)",
           "boiler_alt_source_type": "Used only for labels; does not affect calculations. Gas: include boiler efficiency in the price.",
           "boiler_alt_cost_kwh": "Cost per kWh of heat from the alternative source (e.g. 1.5 CZK/kWh for gas incl. efficiency). Electric heating is used only when cheaper.",
-          "box_has_home56": "Enables Home 5/6 (OIG CBB) toggles on the dashboard and allows battery-to-boiler heating",
           "boiler_home5_maneuver_enabled": "Planner may use battery (Home 5) to heat the boiler when cheaper than the grid. Requires Home 5/6.",
           "boiler_battery_cycle_cost_czk_kwh": "Battery degradation cost per kWh (recommended 0.40–0.60 CZK/kWh). Planner compares this with spot price.",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
@@ -735,7 +735,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ I want to go back (check + click Submit)"
+          "go_back": "⬅️ I want to go back (check + click Submit)",
+          "box_has_home56": "🔀 Box has Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimental - smart charging based on prices",
@@ -750,7 +751,8 @@
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
           "telemetry_mqtt_port": "The standard MQTT port is 1883",
           "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
-          "go_back": "Check this box and press 'Submit' - you will go back one step"
+          "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "box_has_home56": "Enables the Home 5 and Home 6 toggles in the control panel. Does not depend on the boiler module."
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
         "title": "📦 Module and Feature Selection"

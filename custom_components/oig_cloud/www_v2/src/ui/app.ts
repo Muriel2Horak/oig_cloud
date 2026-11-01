@@ -101,7 +101,7 @@ export class OigApp extends LitElement {
   @state() private boilerConfig: BoilerConfig | null = null;
   private boilerRefreshTimer: number | null = null;
 
-  // R7: box_has_home56 flag — loaded from module_config boiler section.
+  // R7: box_has_home56 flag — loaded from module_config modules section.
   // Default false = Home 5/6 toggles hidden until user enables in Nastavení.
   @state() private boxHasHome56 = false;
 
@@ -1028,14 +1028,14 @@ export class OigApp extends LitElement {
   }
 
   /**
-   * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
+   * R7 + Unit A-FE: load box_has_home56 and the pricing/
    * boiler/statistics/battery_prediction module enable flags (modules section)
    * from module_config in one request (best-effort).
    */
   private async loadBoxHasHome56(): Promise<void> {
     try {
       const cfg = await loadModuleConfig();
-      this.boxHasHome56 = cfg?.boiler?.box_has_home56 === true;
+      this.boxHasHome56 = cfg?.modules?.box_has_home56 === true;
       if (cfg?.modules) {
         this.enablePricing = cfg.modules.enable_pricing !== false;
         this.enableBoiler = cfg.modules.enable_boiler !== false;

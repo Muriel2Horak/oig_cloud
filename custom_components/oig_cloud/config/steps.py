@@ -390,6 +390,7 @@ class WizardMixin:
             "enable_chmu_warnings",
             "enable_statistics",
             "enable_extended_sensors",
+            "box_has_home56",
         ):
             options[key] = wizard_data.get(key, modules[key].default)
 
@@ -540,7 +541,6 @@ class WizardMixin:
             "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
                 "boiler_battery_cycle_cost_czk_kwh", BATTERY_CYCLE_COST_CZK_PER_KWH
             ),
-            "box_has_home56": wizard_data.get("box_has_home56", False),
             "boiler_home5_maneuver_enabled": wizard_data.get(
                 "boiler_home5_maneuver_enabled", False
             ),
@@ -1055,6 +1055,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 ): bool,
                 vol.Optional(
                     "enable_boiler", default=defaults.get("enable_boiler", False)
+                ): bool,
+                vol.Optional(
+                    "box_has_home56", default=defaults.get("box_has_home56", False)
                 ): bool,
                 vol.Optional("go_back", default=False): bool,
             }

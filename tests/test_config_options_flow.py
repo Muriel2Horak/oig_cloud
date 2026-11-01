@@ -251,6 +251,7 @@ async def test_options_flow_summary_form():
         "enable_battery_prediction": False,
         "enable_pricing": False,
         "enable_extended_sensors": False,
+        "box_has_home56": False,
         "enable_dashboard": False,
         "standard_scan_interval": 30,
         "extended_scan_interval": 300,
@@ -297,6 +298,7 @@ async def test_options_flow_summary_flags():
         "enable_battery_prediction": True,
         "enable_pricing": True,
         "enable_extended_sensors": True,
+        "box_has_home56": False,
         "enable_dashboard": True,
         "standard_scan_interval": 30,
         "extended_scan_interval": 300,
@@ -327,6 +329,7 @@ async def test_options_flow_summary_maps_selected_fields():
         "enable_battery_prediction": True,
         "enable_pricing": True,
         "enable_extended_sensors": True,
+        "box_has_home56": False,
         "enable_dashboard": True,
         "data_source_mode": "hybrid",
         "solar_forecast_provider": "solcast",
@@ -1629,6 +1632,7 @@ EMPTY_BASE_EXPECTED = {
     "enable_battery_prediction": False,
     "enable_pricing": False,
     "enable_extended_sensors": True,
+    "box_has_home56": False,
     "enable_chmu_warnings": False,
     "enable_dashboard": False,
 }
@@ -1645,6 +1649,7 @@ FULL_BASE_EXPECTED = {
     "enable_battery_prediction": True,
     "enable_pricing": True,
     "enable_extended_sensors": False,
+    "box_has_home56": False,
     "enable_chmu_warnings": True,
     "enable_dashboard": True,
 }
@@ -1666,6 +1671,7 @@ def test_build_base_options_full_parity():
         "enable_battery_prediction": True,
         "enable_pricing": True,
         "enable_extended_sensors": False,
+        "box_has_home56": False,
         "enable_chmu_warnings": True,
         "enable_dashboard": True,
     }) == FULL_BASE_EXPECTED

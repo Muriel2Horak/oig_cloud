@@ -668,7 +668,7 @@ const MODULES_GROUP_HLAVNI = [
   'enable_solar_forecast', 'enable_pricing', 'enable_battery_prediction', 'enable_boiler',
 ] as const;
 const MODULES_GROUP_DOPLNKOVE = [
-  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
+  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings', 'box_has_home56',
 ] as const;
 
 /**

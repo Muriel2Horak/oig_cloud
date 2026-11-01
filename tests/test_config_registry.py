@@ -92,7 +92,7 @@ def test_modules_and_battery_sections_ported():
     assert set(modules) == {
         "enable_solar_forecast", "enable_battery_prediction", "enable_pricing",
         "enable_boiler", "enable_statistics", "enable_extended_sensors",
-        "enable_chmu_warnings",
+        "enable_chmu_warnings", "box_has_home56",
     }
     assert {"charge_rate_kw", "balancing_enabled", "cheap_window_percentile"} <= set(battery)
     assert battery["charge_rate_kw"].mirror == "home_charge_rate"

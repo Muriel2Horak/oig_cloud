@@ -136,10 +136,6 @@ const BOILER_REGISTRY_FIXTURE: FieldRegistry = {
       section: 'boiler', type: 'float', scope: 'premium', default: 0, min: 0, max: 50,
       label: 'field.boiler_alt_power_kw.label', hint: 'field.boiler_alt_power_kw.hint',
     },
-    box_has_home56: {
-      section: 'boiler', type: 'bool', scope: 'premium', default: false,
-      label: 'field.box_has_home56.label', hint: 'field.box_has_home56.hint',
-    },
     boiler_home5_maneuver_enabled: {
       section: 'boiler', type: 'bool', scope: 'premium', default: false,
       label: 'field.boiler_home5_maneuver_enabled.label', hint: 'field.boiler_home5_maneuver_enabled.hint',

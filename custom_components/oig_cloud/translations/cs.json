@@ -228,7 +228,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "box_has_home56": "🔀 Box má Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
@@ -243,7 +244,8 @@
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
           "telemetry_mqtt_port": "Standardní MQTT port je 1883",
           "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "box_has_home56": "Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru."
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
         "title": "📦 Výběr modulů a funkcí"
@@ -502,7 +504,6 @@
           "boiler_has_alternative_heating": "Alternativní zdroj tepla (plyn, TČ, krb…)",
           "boiler_alt_source_type": "Typ alternativního zdroje",
           "boiler_alt_cost_kwh": "Cena tepla (Kč/kWh)",
-          "box_has_home56": "Box má Home 5/6",
           "boiler_home5_maneuver_enabled": "🔋→🔥 Ohřev z baterie",
           "boiler_battery_cycle_cost_czk_kwh": "Cena cyklu baterie (Kč/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -511,7 +512,6 @@
           "boiler_has_alternative_heating": "Zapni, pokud může bojler ohřát i jiný zdroj (plynový kotel, tepelné čerpadlo, krb…)",
           "boiler_alt_source_type": "Použito pouze pro štítky; nemá vliv na výpočty. Plyn: do ceny zahrň účinnost kotle.",
           "boiler_alt_cost_kwh": "Cena tepla z alternativního zdroje v Kč/kWh (např. 1,5 Kč/kWh pro plyn vč. účinnosti). Elektrický ohřev se použije jen když je levnější.",
-          "box_has_home56": "Aktivuje Home 5/6 (OIG CBB) přepínače na dashboardu a umožňuje ohřev baterie→bojler",
           "boiler_home5_maneuver_enabled": "Plánovač může použít baterii (Home 5) k ohřevu, pokud je levnější než síť. Vyžaduje Home 5/6.",
           "boiler_battery_cycle_cost_czk_kwh": "Cena degradace baterie za kWh (doporučeno 0,40–0,60 Kč/kWh). Plánovač ji porovná se spotovou cenou.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
@@ -613,7 +613,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "box_has_home56": "🔀 Box má Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
@@ -628,7 +629,8 @@
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
           "telemetry_mqtt_port": "Standardní MQTT port je 1883",
           "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "box_has_home56": "Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru."
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
         "title": "📦 Výběr modulů a funkcí"

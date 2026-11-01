@@ -102,6 +102,7 @@ const MODULE_CONFIG: ModuleConfig = {
     enable_statistics: false,
     enable_extended_sensors: false,
     enable_chmu_warnings: false,
+    box_has_home56: false,
   },
   battery: {
     auto_mode_switch_enabled: false,
@@ -139,7 +140,6 @@ const MODULE_CONFIG: ModuleConfig = {
     boiler_alt_cost_kwh: 0,
     boiler_alt_energy_sensor: '',
     boiler_alt_energy_daily: false,
-    box_has_home56: false,
     boiler_home5_maneuver_enabled: false,
     boiler_battery_cycle_cost_czk_kwh: 0,
     boiler_target_temp_c: 60,
@@ -510,6 +510,55 @@ describe('settings registry-driven — showIf field gating', () => {
 
     const settings = await mountSettings();
     expect(cardText(settings, 'Dodavatelské a distribuční ceny')).not.toContain('pricing show if marker');
+  });
+});
+
+describe('Home 5/6 switch', () => {
+  const home56Fields = registryWith({
+    box_has_home56: {
+      section: 'modules',
+      type: 'bool',
+      scope: 'premium',
+      default: false,
+      label: 'field.box_has_home56.label',
+      hint: 'field.box_has_home56.hint',
+    },
+    boiler_home5_maneuver_enabled: {
+      section: 'boiler',
+      type: 'bool',
+      scope: 'premium',
+      default: false,
+      label: 'field.boiler_home5_maneuver_enabled.label',
+      hint: 'field.boiler_home5_maneuver_enabled.hint',
+    },
+  });
+
+  it('is offered in the modules card, not in the boiler card', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(home56Fields);
+
+    const settings = await mountSettings();
+
+    expect(cardText(settings, 'Moduly')).toContain('Box má Home 5/6');
+    expect(cardText(settings, 'Bojler')).not.toContain('Zapne přepínače Home 5');
+  });
+
+  it('points the boiler maneuver at the modules card while the box has no Home 5/6', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(home56Fields);
+
+    const settings = await mountSettings();
+
+    expect(cardText(settings, 'Bojler')).toContain('v kartě Moduly');
+  });
+
+  it('unlocks the boiler maneuver from the value in the modules section', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(home56Fields);
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({ modules: { box_has_home56: true } }),
+    );
+
+    const settings = await mountSettings();
+
+    expect(cardText(settings, 'Bojler')).toContain('Plánovač použije baterii');
   });
 });
 
