@@ -14,6 +14,10 @@ from custom_components.oig_cloud import home6_window as module
 from custom_components.oig_cloud.config.steps import WizardMixin
 from custom_components.oig_cloud.config_registry import FIELD_REGISTRY
 from custom_components.oig_cloud.const import DOMAIN
+from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
+    OigCloudApi,
+    OigCloudApiError,
+)
 from custom_components.oig_cloud.onboarding.state import ONBOARDING_STEPS
 
 
@@ -185,3 +189,47 @@ def test_step_count_includes_the_step():
 
 def test_onboarding_tracks_the_step():
     assert "home56" in ONBOARDING_STEPS
+
+
+class _Response:
+    status = 200
+
+    def __init__(self, body):
+        self.body = body
+
+    async def text(self):
+        return self.body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
+class _Session(_Response):
+    def post(self, *_args, **_kwargs):
+        return _Response(self.body)
+
+
+def _api(monkeypatch, body):
+    api = OigCloudApi("user", "pass", True)
+    api.box_id = "123"
+    monkeypatch.setattr(api, "get_session", lambda: _Session(body))
+    return api
+
+
+@pytest.mark.asyncio
+async def test_refused_window_write_is_a_failure(monkeypatch):
+    """Regression: the portal answers a refused write with HTTP 200."""
+    api = _api(monkeypatch, '[[0, 2, "Nastala chyba. Aktualizujte prosím stránku a zkuste to znovu."]]')
+
+    with pytest.raises(OigCloudApiError):
+        await api.set_home6_window_start(22)
+
+
+@pytest.mark.asyncio
+async def test_accepted_window_write_succeeds(monkeypatch):
+    api = _api(monkeypatch, '[[0, 2, "Uloženo"]]')
+
+    assert await api.set_home6_window_end(6) is True
