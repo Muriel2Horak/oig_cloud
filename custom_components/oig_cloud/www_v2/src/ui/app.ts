@@ -705,7 +705,7 @@ export class OigApp extends LitElement {
     window.addEventListener('pageshow', this.onPageShow);
     document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
     window.addEventListener('keydown', this.onSimulatorKeydown);
-    this.initApp();
+    void this.initApp();
     this.startTimeUpdate();
   }
 
@@ -728,16 +728,16 @@ export class OigApp extends LitElement {
     }
     if (changed.has('activeTab')) {
       if (this.activeTab === 'pricing' && (!this.pricingData || this.pricingDirty)) {
-        this.loadPricingData();
+        void this.loadPricingData();
       }
       if (this.activeTab === 'pricing' && (this.analyticsData === EMPTY_ANALYTICS || this.analyticsDirty)) {
-        this.loadAnalyticsAsync();
+        void this.loadAnalyticsAsync();
       }
       if (this.activeTab === 'pricing' && (!this.timelineData || this.timelineDirty)) {
-        this.loadTimelineTabData(this.timelineTab);
+        void this.loadTimelineTabData(this.timelineTab);
       }
       if (this.activeTab === 'boiler' && (!this.boilerState || this.boilerDirty)) {
-        this.loadBoilerDataAsync();
+        void this.loadBoilerDataAsync();
       }
     }
   }
@@ -779,13 +779,13 @@ export class OigApp extends LitElement {
       // Initial data load
       this.updateFlowData();
       this.updateSensorData();
-      this.loadPricingData();
-      this.loadBoilerDataAsync();
-      this.loadAnalyticsAsync();
-      this.loadTilesAsync();
+      void this.loadPricingData();
+      void this.loadBoilerDataAsync();
+      void this.loadAnalyticsAsync();
+      void this.loadTilesAsync();
       void this.loadOnboarding();
       // R7 + Unit A-FE: load box_has_home56 + pricing/boiler/statistics enable flags (best-effort, no throw)
-      this.loadBoxHasHome56();
+      void this.loadBoxHasHome56();
 
       // Weather forecast (current + hourly/daily) — refreshed periodically
       void this.loadWeather();
@@ -1257,11 +1257,11 @@ export class OigApp extends LitElement {
   // Timeline events
   private onTimelineTabChange(e: CustomEvent): void {
     this.timelineTab = e.detail.tab;
-    this.loadTimelineTabData(e.detail.tab);
+    void this.loadTimelineTabData(e.detail.tab);
   }
 
   private onTimelineRefresh(): void {
-    this.loadTimelineTabData(this.timelineTab);
+    void this.loadTimelineTabData(this.timelineTab);
   }
 
   private onAddTile(): void {
@@ -1327,7 +1327,7 @@ export class OigApp extends LitElement {
     const resolved = resolveTiles(config);
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
-    saveTilesConfig(config);
+    void saveTilesConfig(config);
     this.subscribeTileEntities();
   }
 
@@ -1364,7 +1364,7 @@ export class OigApp extends LitElement {
     const resolved = resolveTiles(updated);
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
-    saveTilesConfig(updated);
+    void saveTilesConfig(updated);
     this.subscribeTileEntities();
   }
 
@@ -1514,7 +1514,7 @@ export class OigApp extends LitElement {
         <div class="error">
           <h2>Chyba připojení</h2>
           <p>${this.error}</p>
-          <button @click=${() => { this.error = null; this.loading = true; this.initApp(); }}>Zkusit znovu</button>
+          <button @click=${() => { this.error = null; this.loading = true; void this.initApp(); }}>Zkusit znovu</button>
         </div>
       `;
     }

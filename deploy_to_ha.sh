@@ -156,7 +156,8 @@ if [[ -f "${HA_CONFIG}" ]]; then
 fi
 
 if [[ -z "${HA_URL}" ]] && [[ -n "${HA_HOST}" ]]; then
-    HA_URL="http://${HA_HOST}:8123"
+    # LAN address of the operator's own HA, which serves plain HTTP; set HA_URL to override.
+    HA_URL="http://${HA_HOST}:8123"  # NOSONAR
 fi
 
 if [[ "${LOCAL_PATH}" != "${REPO_ROOT}"/* ]]; then

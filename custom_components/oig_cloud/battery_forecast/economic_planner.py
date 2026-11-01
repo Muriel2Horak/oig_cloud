@@ -589,7 +589,10 @@ def _ups_decisions(
 def _trace_action(decision: Decision) -> str:
     if not decision.charge_intervals:
         return "defer"
-    return "hold" if decision.evidence.get("grid_charge_kwh") == 0.0 else "charge"
+    grid_charge_kwh = decision.evidence.get("grid_charge_kwh")
+    if grid_charge_kwh is not None and abs(grid_charge_kwh) < 1e-9:
+        return "hold"
+    return "charge"
 
 
 def build_planner_decision_trace(
