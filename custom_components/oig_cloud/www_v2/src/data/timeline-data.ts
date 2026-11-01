@@ -19,6 +19,20 @@ import { oigLog } from '@/core/logger';
 
 export type TimelineTab = 'yesterday' | 'today' | 'tomorrow' | 'history' | 'detail';
 
+/** What a tile shows: what the box did, and for the future what is planned. */
+export function blockDisplayMode(block: ModeBlock): string {
+  const happened = block.modeHistorical && block.modeHistorical !== 'Unknown';
+  return block.status !== 'planned' && happened
+    ? block.modeHistorical
+    : block.modePlanned || block.modeHistorical;
+}
+
+export function blockDisplayCost(block: ModeBlock): number | null {
+  return block.status === 'completed' && block.costHistorical != null
+    ? block.costHistorical
+    : block.costPlanned;
+}
+
 export interface ModeBlock {
   modeHistorical: string;
   modePlanned: string;

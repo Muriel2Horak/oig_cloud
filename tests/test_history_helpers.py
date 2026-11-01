@@ -585,3 +585,59 @@ async def test_update_actual_persists_patch_without_new_intervals(monkeypatch):
     await history_module.update_actual_from_history(sensor)
 
     assert sensor._daily_plan_state["actual"] == [{"time": "t", "net_cost": 9.9}]
+
+
+def _mode_change(hour, minute, second, mode):
+    time = history_module.dt_util.as_local(datetime(2026, 11, 1, hour, minute, second))
+    return {"time": time, "mode": mode, "mode_name": str(mode)}
+
+
+def _expand_morning(changes):
+    day_start = history_module.dt_util.as_local(datetime(2026, 11, 1, 0, 0))
+    fetch_end = history_module.dt_util.as_local(datetime(2026, 11, 1, 0, 45))
+    lookup = history_module._expand_modes_to_intervals(changes, day_start, fetch_end)
+    return {key[11:16]: value["mode"] for key, value in lookup.items()}
+
+
+def test_interval_takes_the_mode_that_prevailed_not_the_one_at_its_start():
+    """Regression: the box follows a command about a minute late, so every switch
+    was recorded one interval behind the plan and looked like a deviation."""
+    modes = _expand_morning(
+        [
+            _mode_change(0, 1, 20, 0),
+            _mode_change(0, 31, 14, 3),
+        ]
+    )
+
+    assert modes["00:00"] == 0
+    assert modes["00:15"] == 0
+    assert modes["00:30"] == 3
+
+
+def test_interval_keeps_the_old_mode_when_the_switch_came_late_in_it():
+    modes = _expand_morning(
+        [
+            _mode_change(0, 0, 0, 3),
+            _mode_change(0, 12, 0, 0),
+        ]
+    )
+
+    assert modes["00:00"] == 3
+    assert modes["00:15"] == 0
+
+
+def test_running_interval_counts_only_the_time_that_passed(monkeypatch):
+    start = history_module.dt_util.as_local(datetime(2026, 11, 1, 0, 0))
+    now = start + timedelta(minutes=4)
+    monkeypatch.setattr(history_module.dt_util, "now", lambda: now)
+
+    lookup = history_module._expand_modes_to_intervals(
+        [
+            {"time": start, "mode": 3, "mode_name": "3"},
+            {"time": start + timedelta(minutes=1), "mode": 0, "mode_name": "0"},
+        ],
+        start,
+        start + timedelta(minutes=15),
+    )
+
+    assert lookup[start.strftime(history_module.DATETIME_FMT)]["mode"] == 0

@@ -3,6 +3,7 @@ import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import type { TimelineDayData, ModeBlock, MetricTile, DaySummary } from '@/ui/features/timeline/types';
 import '@/ui/features/timeline/dialog';
+import type { OigTimelineTile } from '@/ui/features/timeline/dialog';
 
 function makeBlock(overrides: Partial<ModeBlock> = {}): ModeBlock {
   return {
@@ -455,8 +456,8 @@ describe('OigTimelineDialog', () => {
     it('hides cost on mode block when costPlanned is null', async () => {
       const data = makeData({
         modeBlocks: [
-          makeBlock({ costPlanned: null, startTime: '00:00', endTime: '06:00' }),
-          makeBlock({ costPlanned: null, startTime: '06:00', endTime: '12:00' }),
+          makeBlock({ costPlanned: null, costHistorical: null, startTime: '00:00', endTime: '06:00' }),
+          makeBlock({ costPlanned: null, costHistorical: null, startTime: '06:00', endTime: '12:00' }),
         ],
       });
       const el = await fixture<HTMLElement>(html`<oig-timeline-dialog .open=${true} .data=${data}></oig-timeline-dialog>`);
@@ -1076,8 +1077,8 @@ describe('OigTimelineTile', () => {
     it('hides cost when costPlanned is null', async () => {
       const data = makeData({
         modeBlocks: [
-          makeBlock({ costPlanned: null, startTime: '00:00', endTime: '06:00' }),
-          makeBlock({ costPlanned: null, startTime: '06:00', endTime: '12:00' }),
+          makeBlock({ costPlanned: null, costHistorical: null, startTime: '00:00', endTime: '06:00' }),
+          makeBlock({ costPlanned: null, costHistorical: null, startTime: '06:00', endTime: '12:00' }),
         ],
       });
       const el = await fixture<HTMLElement>(html`<oig-timeline-tile .data=${data}></oig-timeline-tile>`);
@@ -1308,5 +1309,41 @@ describe('OigTimelineTile', () => {
       const detail = q(el, '.bs-detail');
       expect(detail!.textContent).toContain('0.00 CZK');
     });
+  });
+});
+
+describe('Režimy tile shows what the box did', () => {
+  async function tile(block: Partial<ModeBlock>) {
+    const el = await fixture<OigTimelineTile>(html`<oig-timeline-tile></oig-timeline-tile>`);
+    (el as unknown as { data: TimelineDayData }).data = makeData({ modeBlocks: [makeBlock(block)] });
+    await el.updateComplete;
+    return el.shadowRoot!.querySelector('.mode-block') as HTMLElement;
+  }
+
+  it('names a finished block after the actual mode and keeps the plan in the tooltip', async () => {
+    const block = await tile({
+      modeHistorical: 'HOME UPS', modePlanned: 'HOME I', modeMatch: false, status: 'completed',
+      costHistorical: 30, costPlanned: 100,
+    });
+    expect(block.querySelector('.mode-name')!.textContent).toContain('UPS');
+    expect(block.title).toContain('Plán:');
+    expect(block.querySelector('.mode-cost')!.textContent).toContain('30');
+  });
+
+  it('names the current block after the actual mode', async () => {
+    const block = await tile({
+      modeHistorical: 'HOME UPS', modePlanned: 'HOME I', modeMatch: false, status: 'current',
+    });
+    expect(block.querySelector('.mode-name')!.textContent).toContain('UPS');
+  });
+
+  it('names a future block after the plan, with no mismatch', async () => {
+    const block = await tile({
+      modeHistorical: 'Unknown', modePlanned: 'HOME UPS', modeMatch: true, status: 'planned',
+      costHistorical: null, costPlanned: 50,
+    });
+    expect(block.querySelector('.mode-name')!.textContent).toContain('UPS');
+    expect(block.querySelector('.mode-mismatch')).toBeNull();
+    expect(block.querySelector('.mode-cost')!.textContent).toContain('50');
   });
 });

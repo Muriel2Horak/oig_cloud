@@ -5,6 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.battery_forecast.planning.interval_grouping import (
+    group_intervals_by_mode,
+)
 from custom_components.oig_cloud.battery_forecast.presentation import (
     detail_tabs_blocks as blocks_module,
 )
@@ -582,3 +585,72 @@ def test_build_mode_blocks_for_tab_completed_mismatch():
         mode_names={0: "Home 1", 1: "Home 2"},
     )
     assert blocks[0]["adherence_pct"] == 0
+
+
+MODE_NAMES = {0: "HOME I", 3: "HOME UPS"}
+
+
+def _interval(time, planned, actual=None):
+    entry = {"time": time, "planned": {"mode": planned, "net_cost": 1.0}}
+    entry["actual"] = None if actual is None else {"mode": actual, "net_cost": 2.0}
+    return entry
+
+
+def test_today_block_does_not_merge_what_happened_with_what_is_planned():
+    """Regression: actual UPS and planned UPS merged into one tile named after the past."""
+    groups = group_intervals_by_mode(
+        [
+            _interval("2026-11-01T15:00:00", 0, 3),
+            _interval("2026-11-01T15:15:00", 0, 3),
+            _interval("2026-11-01T15:30:00", 3),
+            _interval("2026-11-01T15:45:00", 3),
+        ],
+        "both",
+        MODE_NAMES,
+    )
+
+    assert [(g["start_time"], g["end_time"]) for g in groups] == [
+        ("15:00", "15:30"),
+        ("15:30", "16:00"),
+    ]
+
+
+def test_completed_days_still_merge_by_mode():
+    groups = group_intervals_by_mode(
+        [_interval("2026-11-01T15:00:00", 0, 3), _interval("2026-11-01T15:15:00", 3, 3)],
+        "completed",
+        MODE_NAMES,
+    )
+
+    assert len(groups) == 1
+
+
+def _costs(intervals):
+    block = {}
+    blocks_module._populate_mode_costs(block, {}, intervals, "both", MODE_NAMES)
+    return block
+
+
+def test_block_plan_is_the_prevailing_mode_not_the_first_interval():
+    block = _costs(
+        [
+            _interval("2026-11-01T15:00:00", 3, 3),
+            _interval("2026-11-01T15:15:00", 0, 3),
+            _interval("2026-11-01T15:30:00", 0, 3),
+        ]
+    )
+
+    assert block["mode_historical"] == "HOME UPS"
+    assert block["mode_planned"] == "HOME I"
+    assert block["mode_match"] is False
+
+
+def test_block_without_actuals_has_nothing_to_disagree_with():
+    block = _costs([_interval("2026-11-01T17:00:00", 3)])
+
+    assert block["mode_planned"] == "HOME UPS"
+    assert block["mode_match"] is True
+
+
+def test_block_matches_only_when_every_interval_does():
+    assert _costs([_interval("2026-11-01T15:00:00", 3, 3)])["mode_match"] is True

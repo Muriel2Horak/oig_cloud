@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.5] - 2026-11-01
+
+The Plan & reality view disagreed with what the box was doing. All of this is in
+how the record and the view read the data; the planner itself is unchanged.
+
+### Fixed
+- **Every mode switch was recorded one interval late.** The box follows a command
+  about a minute later, and the record took the mode at the interval's start, so
+  switches looked 15 minutes behind the plan and counted as deviations. An interval
+  now takes the mode that prevailed in it.
+- **Mode tiles showed the plan instead of what happened.** Finished and running
+  blocks now name the actual mode and cost, and future blocks the plan. A deviation
+  keeps its mark, with the planned mode in the tooltip.
+- **One tile could span the past and the future.** Today's blocks now split where
+  the actuals end, and a block's plan is its prevailing mode, not its first interval.
+- **The mode switch count** no longer counts that split as a switch.
+
 ## [2.4.4] - 2026-11-01
 
 The planner now decides when to hold the battery on UPS with an optimizer, and it
