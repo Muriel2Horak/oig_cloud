@@ -9,6 +9,7 @@ import {
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
   BoilerV2Data, BoilerV2PlanSlot, DemandMapData, DrawMapData,
   CirculationRun, LegionellaStatus, PlanSummary, EnergyToday, BatteryForecastEntry,
+  BoilerProgressData,
   OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
   OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
   SOURCE_LABELS,
@@ -296,6 +297,8 @@ interface BoilerCanonicalAPI {
   box_id: string;
   /** F5/Task C: alt source type ("gas"|"heat_pump"|"fireplace"|"other") */
   alt_source_type?: string | null;
+  /** Day record: plan versus actual. Additive top-level key, no existing key changed. */
+  progress?: BoilerProgressData | null;
   current_state: {
     temperatures: {
       top?: number;
@@ -1155,6 +1158,9 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     loadError: null,
     // F5/Task C: pass alt_source_type from canonical DTO to FE consumers
     altSourceType: typeof canonical.alt_source_type === 'string' ? canonical.alt_source_type : null,
+    // Day record `progress` block — passed through verbatim; the strip reads the
+    // contract's snake_case keys so the FE cannot silently rename one.
+    progress: (canonical.progress && typeof canonical.progress === 'object') ? canonical.progress : null,
   };
 }
 

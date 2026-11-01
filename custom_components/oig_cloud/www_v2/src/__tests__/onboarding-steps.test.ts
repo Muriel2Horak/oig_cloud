@@ -646,7 +646,7 @@ describe('ONBOARDING_STEPS wizard-v2 content steps (F1 Wizard v2 S1 Task 1)', ()
     const { ONBOARDING_STEPS, EMPTY_ONBOARDING_STATE } = await import('@/ui/features/onboarding/onboarding-data');
     expect(ONBOARDING_STEPS).toEqual([
       'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-      'pricing_supplier_sell', 'battery', 'boiler', 'connection',
+      'pricing_supplier_sell', 'battery', 'home56', 'boiler', 'connection',
     ]);
     expect(Object.keys(EMPTY_ONBOARDING_STATE.steps)).toEqual(ONBOARDING_STEPS);
   });

@@ -227,21 +227,10 @@ async def test_wizard_solar_success():
 async def test_wizard_battery_validation_errors():
     flow = DummyWizard()
     result = await flow.async_step_wizard_battery(
-        {"charge_rate_kw": 20.0, "expensive_percentile_pct": 70}
+        {"charge_rate_kw": 20.0}
     )
 
     assert result["errors"]["charge_rate_kw"] == "invalid_charge_rate_kw"
-
-
-@pytest.mark.asyncio
-async def test_wizard_battery_percentile_out_of_range():
-    flow = DummyWizard()
-    result = await flow.async_step_wizard_battery(
-        {"charge_rate_kw": 2.8, "expensive_percentile_pct": 45}
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"]["expensive_percentile_pct"] == "invalid_percentile"
 
 
 @pytest.mark.asyncio

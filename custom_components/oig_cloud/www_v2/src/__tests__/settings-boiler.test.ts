@@ -40,7 +40,6 @@ const EXPECTED_BOILER_KEYS = [
   'boiler_alt_cost_kwh',
   'boiler_alt_energy_sensor',
   'boiler_alt_energy_daily',
-  'box_has_home56',
   'boiler_home5_maneuver_enabled',
   'boiler_battery_cycle_cost_czk_kwh',
   'boiler_target_temp_c',
@@ -70,7 +69,6 @@ function makeConfig(boilerOverrides: Partial<BoilerConfig> = {}): ModuleConfig {
     boiler_alt_cost_kwh: 0,
     boiler_alt_energy_sensor: '',
     boiler_alt_energy_daily: true,
-    box_has_home56: false,
     boiler_home5_maneuver_enabled: false,
     boiler_battery_cycle_cost_czk_kwh: 0.5,
     boiler_target_temp_c: 60,
@@ -96,12 +94,11 @@ function makeConfig(boilerOverrides: Partial<BoilerConfig> = {}): ModuleConfig {
       enable_statistics: false,
       enable_extended_sensors: false,
       enable_chmu_warnings: false,
+      box_has_home56: false,
     },
     battery: {
       auto_mode_switch_enabled: false,
       charge_rate_kw: null,
-      expensive_percentile: null,
-      battery_comfort_soc_percent: null,
       balancing_enabled: false,
       balancing_interval_days: null,
       balancing_hold_hours: null,
@@ -234,13 +231,11 @@ describe('saveModuleConfig — boiler section', () => {
     mockFetch.mockResolvedValueOnce({ updated: true });
 
     await saveModuleConfig('boiler', {
-      box_has_home56: true,
       boiler_home5_maneuver_enabled: true,
       boiler_battery_cycle_cost_czk_kwh: 0.5,
     });
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.values.box_has_home56).toBe(true);
     expect(body.values.boiler_home5_maneuver_enabled).toBe(true);
     expect(body.values.boiler_battery_cycle_cost_czk_kwh).toBe(0.5);
   });
@@ -320,18 +315,6 @@ describe('Conditional field visibility logic', () => {
     expect(legInterval > 0).toBe(true);
   });
 
-  it('home5 maneuver disabled when box_has_home56=false', () => {
-    const config = makeConfig({ box_has_home56: false });
-    const hasHome56 = !!config.boiler.box_has_home56;
-    expect(!hasHome56).toBe(true); // disabled=true
-  });
-
-  it('home5 maneuver enabled when box_has_home56=true', () => {
-    const config = makeConfig({ box_has_home56: true });
-    const hasHome56 = !!config.boiler.box_has_home56;
-    expect(!hasHome56).toBe(false); // disabled=false
-  });
-
   it('alt source fields hidden when boiler_has_alternative_heating=false', () => {
     const config = makeConfig({ boiler_has_alternative_heating: false });
     expect(!!config.boiler.boiler_has_alternative_heating).toBe(false);
@@ -352,11 +335,6 @@ describe('Conditional field visibility logic', () => {
     expect(!!config.boiler.boiler_enable_second_thermometer).toBe(true);
   });
 
-  it('battery_cycle_cost field hidden when box_has_home56=false', () => {
-    const config = makeConfig({ box_has_home56: false });
-    // Field only renders when hasHome56=true
-    expect(!!config.boiler.box_has_home56).toBe(false);
-  });
 });
 
 // ============================================================
@@ -374,7 +352,6 @@ describe('BoilerConfig interface', () => {
     const config = makeConfig();
     // All optional features default to false/0/off
     expect(config.boiler.boiler_has_alternative_heating).toBe(false);
-    expect(config.boiler.box_has_home56).toBe(false);
     expect(config.boiler.boiler_home5_maneuver_enabled).toBe(false);
     expect(config.boiler.boiler_circulation_enabled).toBe(false);
     expect(config.boiler.boiler_legionella_interval_days).toBe(0);

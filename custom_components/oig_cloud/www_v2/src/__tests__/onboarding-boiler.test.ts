@@ -136,10 +136,6 @@ const BOILER_REGISTRY_FIXTURE: FieldRegistry = {
       section: 'boiler', type: 'float', scope: 'premium', default: 0, min: 0, max: 50,
       label: 'field.boiler_alt_power_kw.label', hint: 'field.boiler_alt_power_kw.hint',
     },
-    box_has_home56: {
-      section: 'boiler', type: 'bool', scope: 'premium', default: false,
-      label: 'field.box_has_home56.label', hint: 'field.box_has_home56.hint',
-    },
     boiler_home5_maneuver_enabled: {
       section: 'boiler', type: 'bool', scope: 'premium', default: false,
       label: 'field.boiler_home5_maneuver_enabled.label', hint: 'field.boiler_home5_maneuver_enabled.hint',
@@ -217,6 +213,22 @@ describe('boiler step (Task 19 — single registry-driven form, UX-SPEC §Step 7
       (f) => el.shadowRoot!.querySelector(`[data-key="${f.key}"]`),
     );
     expect(rendered).toBe(true);
+  });
+
+  it('offers the Home 5/6 step only with the switch on', async () => {
+    const el = await openWizard();
+    const steps = () => [...el.shadowRoot!.querySelectorAll('[data-testid="wizard-steps"] button')]
+      .map((b: Element) => (b as HTMLElement).dataset.step);
+
+    el.modulesDraft = { ...el.modulesDraft, box_has_home56: false };
+    await el.updateComplete;
+    expect(steps()).not.toContain('home56');
+
+    el.modulesDraft = { ...el.modulesDraft, box_has_home56: true };
+    el.currentStep = 'home56';
+    await el.updateComplete;
+    expect(steps()).toContain('home56');
+    expect(el.shadowRoot!.querySelector('oig-home6-guide')).not.toBeNull();
   });
 
   it('renders the core boiler fields first and keeps advanced boiler expanders collapsed by default', async () => {

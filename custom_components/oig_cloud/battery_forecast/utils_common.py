@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from homeassistant.util import dt as dt_util
 
@@ -61,36 +61,31 @@ def parse_tariff_times(time_str: str) -> list[int]:
         return []
 
 
-def get_tariff_for_datetime(target_datetime: datetime, config: Dict[str, Any]) -> str:
-    """Get tariff (VT/NT) for a given datetime using config values."""
-    dual_tariff_enabled = config.get("dual_tariff_enabled", True)
-    if not dual_tariff_enabled:
-        return "VT"
-
-    is_weekend = target_datetime.weekday() >= 5
-
+def _tariff_changes(config: Mapping[str, Any], is_weekend: bool) -> list[tuple[int, str]]:
     if is_weekend:
         nt_times = parse_tariff_times(config.get("tariff_nt_start_weekend", "0"))
         vt_times = parse_tariff_times(config.get("tariff_vt_start_weekend", ""))
     else:
         nt_times = parse_tariff_times(config.get("tariff_nt_start_weekday", "22,2"))
         vt_times = parse_tariff_times(config.get("tariff_vt_start_weekday", "6"))
+    return [(hour, "NT") for hour in nt_times] + [(hour, "VT") for hour in vt_times]
 
-    current_hour = target_datetime.hour
-    last_tariff = "NT"
-    last_hour = -1
 
-    all_changes: list[tuple[int, str]] = []
-    for hour in nt_times:
-        all_changes.append((hour, "NT"))
-    for hour in vt_times:
-        all_changes.append((hour, "VT"))
+def get_tariff_for_datetime(target_datetime: datetime, config: Mapping[str, Any]) -> str:
+    """Get tariff (VT/NT) for a given datetime using config values."""
+    dual_tariff_enabled = config.get("dual_tariff_enabled", True)
+    if not dual_tariff_enabled:
+        return "VT"
 
-    all_changes.sort(reverse=True)
+    weekday = target_datetime.weekday()
+    changes_so_far = [
+        change
+        for change in _tariff_changes(config, weekday >= 5)
+        if change[0] <= target_datetime.hour
+    ]
+    if changes_so_far:
+        return max(changes_so_far)[1]
 
-    for hour, tariff in all_changes:
-        if hour <= current_hour and hour > last_hour:
-            last_tariff = tariff
-            last_hour = hour
-
-    return last_tariff
+    # Before today's first change the tariff is whatever yesterday ended on.
+    yesterday_changes = _tariff_changes(config, (weekday - 1) % 7 >= 5)
+    return max(yesterday_changes)[1] if yesterday_changes else "NT"

@@ -2,7 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "Integrace OIG Cloud je již nakonfigurována",
-      "not_implemented": "Tato funkce ještě není implementována"
+      "not_implemented": "Tato funkce ještě není implementována",
+      "reconfigure_successful": "✅ Přihlašovací údaje byly změněny a integrace se znovu načetla.",
+      "reauth_successful": "✅ Přihlášení bylo obnoveno a integrace se znovu načetla.",
+      "unknown": "Neočekávaná chyba. Zkuste to prosím znovu."
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ Pro aktualizaci každé 4 hodiny nebo každou hodinu je vyžadován API klíč z Forecast.Solar",
@@ -102,8 +105,7 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "price_hysteresis_czk": "Hystereze ceny (CZK/kWh)",
           "hw_min_hold_hours": "Max. hodin na HW minimu",
-          "target_capacity_percent": "Cílová kapacita baterie (%)",
-          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu. Stejné nastavení jako v průvodci.",
@@ -120,8 +122,7 @@
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "price_hysteresis_czk": "Minimální cenový rozdíl pro rozhodnutí držet vs. čekat",
           "hw_min_hold_hours": "Maximální doba na HW minimu před nuceným dobitím",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
-          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -230,7 +231,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "box_has_home56": "🔀 Box má Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
@@ -245,7 +247,8 @@
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
           "telemetry_mqtt_port": "Standardní MQTT port je 1883",
           "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "box_has_home56": "Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru."
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
         "title": "📦 Výběr modulů a funkcí"
@@ -375,6 +378,29 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení.",
         "title": "🔧 Změna nastavení OIG Cloud"
+      },
+      "reconfigure": {
+        "title": "🔑 Přihlášení k OIG Cloud",
+        "description": "Zadejte nové přihlašovací údaje, například po změně hesla. Před uložením je ověříme, při chybě zůstanou platit ty stávající. Integrace se potom znovu načte.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
+      },
+      "reauth_confirm": {
+        "title": "🔑 Přihlášení k OIG Cloud vypršelo",
+        "description": "Stávající údaje už OIG Cloud nepřijímá. Zadejte aktuální přihlašovací údaje.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 a Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pásmo Home 6 se nastavuje přímo na displeji boxu: Uživatelské nastavení → Expertní nastavení → Home Grid VI Vypnutí/Zapnutí. Přes OIG Cloud ho nastavit nejde.\n\nDokud je pásmo 0:00-0:00, box se v Home 6 chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.",
+        "data": {
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        }
       }
     }
   },
@@ -418,7 +444,9 @@
   },
   "options": {
     "abort": {
-      "reconfigure_successful": "✅ Nastavení bylo uloženo a integrace byla znovu načtena."
+      "reconfigure_successful": "✅ Nastavení bylo uloženo a integrace byla znovu načtena.",
+      "credentials_updated": "✅ Přihlašovací údaje byly změněny a integrace se znovu načetla.",
+      "unknown": "Neočekávaná chyba. Zkuste to prosím znovu."
     },
     "step": {
       "battery_prediction": {
@@ -445,8 +473,7 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
-          "target_capacity_percent": "Cílová kapacita baterie (%)",
-          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu.",
@@ -461,8 +488,7 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
-          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -506,7 +532,6 @@
           "boiler_has_alternative_heating": "Alternativní zdroj tepla (plyn, TČ, krb…)",
           "boiler_alt_source_type": "Typ alternativního zdroje",
           "boiler_alt_cost_kwh": "Cena tepla (Kč/kWh)",
-          "box_has_home56": "Box má Home 5/6",
           "boiler_home5_maneuver_enabled": "🔋→🔥 Ohřev z baterie",
           "boiler_battery_cycle_cost_czk_kwh": "Cena cyklu baterie (Kč/kWh)",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
@@ -515,7 +540,6 @@
           "boiler_has_alternative_heating": "Zapni, pokud může bojler ohřát i jiný zdroj (plynový kotel, tepelné čerpadlo, krb…)",
           "boiler_alt_source_type": "Použito pouze pro štítky; nemá vliv na výpočty. Plyn: do ceny zahrň účinnost kotle.",
           "boiler_alt_cost_kwh": "Cena tepla z alternativního zdroje v Kč/kWh (např. 1,5 Kč/kWh pro plyn vč. účinnosti). Elektrický ohřev se použije jen když je levnější.",
-          "box_has_home56": "Aktivuje Home 5/6 (OIG CBB) přepínače na dashboardu a umožňuje ohřev baterie→bojler",
           "boiler_home5_maneuver_enabled": "Plánovač může použít baterii (Home 5) k ohřevu, pokud je levnější než síť. Vyžaduje Home 5/6.",
           "boiler_battery_cycle_cost_czk_kwh": "Cena degradace baterie za kWh (doporučeno 0,40–0,60 Kč/kWh). Plánovač ji porovná se spotovou cenou.",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
@@ -617,7 +641,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "box_has_home56": "🔀 Box má Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
@@ -632,7 +657,8 @@
           "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
           "telemetry_mqtt_port": "Standardní MQTT port je 1883",
           "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "box_has_home56": "Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru."
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
         "title": "📦 Výběr modulů a funkcí"
@@ -786,15 +812,38 @@
         "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
         "menu_options": {
           "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_credentials": "🔑 Přihlášení k OIG Cloud",
           "section_intervals": "⏱️ Připojení a intervaly",
           "section_solar": "☀️ Solární předpověď",
           "section_battery": "🔋 Baterie a plánovač",
+          "section_home56": "🌙 Home 5/6",
           "section_pricing": "💰 Ceny energie",
           "section_boiler": "🔥 Bojler",
           "section_ai": "🤖 AI pomocník (volitelný)",
           "section_all": "🧙 Celý průvodce znovu"
         }
+      },
+      "section_credentials": {
+        "title": "🔑 Přihlášení k OIG Cloud",
+        "description": "Zadejte nové přihlašovací údaje, například po změně hesla. Před uložením je ověříme, při chybě zůstanou platit ty stávající. Integrace se potom znovu načte.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 a Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pásmo Home 6 se nastavuje přímo na displeji boxu: Uživatelské nastavení → Expertní nastavení → Home Grid VI Vypnutí/Zapnutí. Přes OIG Cloud ho nastavit nejde.\n\nDokud je pásmo 0:00-0:00, box se v Home 6 chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.",
+        "data": {
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "cannot_connect": "Nepodařilo se připojit k OIG Cloud API",
+      "live_data_not_enabled": "V OIG Cloud aplikaci nejsou zapnutá 'Živá data'. Zapněte je v nastavení aplikace!",
+      "unknown": "Neočekávaná chyba"
     }
   },
   "selector": {

@@ -355,4 +355,16 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "description": "Automaticky generované profily spotřeby založené na historických datech. State = počet profilů, attributes = detaily jednotlivých profilů.",
     },
+    "forecast_accuracy": {
+        "name": "Forecast Accuracy",
+        "name_cs": "Přesnost předpovědi",
+        "unit": "%",
+        "icon": "mdi:target-variant",
+        "device_class": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "forecast_accuracy",
+        "device_mapping": "analytics",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "description": "Jak přesně denní plán trefil skutečnost. State = průměrná chyba spotřeby za 7 dní (%), attributes = rozpad po dnech, po verzích plánu, proti naivní predikci a v Kč.",
+    },
 }

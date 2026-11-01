@@ -38,6 +38,10 @@ def enforce_min_mode_duration(
     if not modes:
         return modes
 
+    # Display names and duration-policy labels differ in capitalization.
+    normalized_durations = {
+        name.casefold(): duration for name, duration in min_mode_duration.items()
+    }
     result = modes.copy()
     n = len(result)
     i = 0
@@ -54,7 +58,9 @@ def enforce_min_mode_duration(
         block_end = _find_block_end(result, block_start, current_mode)
         block_length = block_end - block_start
 
-        min_duration = min_mode_duration.get(mode_name, 1)
+        min_duration = min_mode_duration.get(
+            mode_name, normalized_durations.get(mode_name.casefold(), 1)
+        )
 
         if block_length < min_duration:
             violations_fixed += 1

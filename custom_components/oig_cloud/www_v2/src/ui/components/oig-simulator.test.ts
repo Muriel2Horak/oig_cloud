@@ -1,5 +1,5 @@
 import { haClient } from '@/data/ha-client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import {
@@ -7,6 +7,7 @@ import {
   fetchSimulatorPresets,
   mockFetcher,
   type SimRequest,
+  type SimResponse,
 } from './simulator-fetcher';
 import '@/ui/components/oig-simulator';
 
@@ -50,6 +51,7 @@ describe('simulator fetcher', () => {
     preset: 'winter_high_price',
     horizon_intervals: 2,
     interval_minutes: 15,
+    prices: [2.4, 6.2],
     timeline: [
       {
         interval_index: 0,
@@ -123,38 +125,7 @@ describe('simulator fetcher', () => {
     expect(result.summary.cost).toBeCloseTo(1.1);
     expect(result.summary.base_cost).toBeUndefined();
     expect(result.summary.ups_hours).toBeCloseTo(0.25);
-
-    vi.unstubAllGlobals();
-  });
-
-  // Owner live repro: simulate 400 "Expensive percentile must be in (0, 1]".
-  // config_registry.py:314 declares expensive_percentile canonical as a
-  // fraction (0.5-0.95, scale=100) — the simulator's own control (and any
-  // UI-style draft) carries the human percent. planning_api validates the
-  // canonical fraction directly (economic_planner_types.py:105), so a
-  // UI-style draft must be converted at this network boundary.
-  it('canonicalizes expensive_percentile (UI %) to the backend fraction before posting', async () => {
-    window.history.pushState({}, '', '/?sn=BOX123');
-    const fetchMock = vi
-      .spyOn(haClient, 'fetchOIGAPITyped')
-      .mockResolvedValue({ ok: true, status: 200, data: PLANNER_SIMULATE_FIXTURE } as any);
-
-    await defaultFetcher({
-      kind: 'battery',
-      presetId: 'winter_high_price',
-      draft: {
-        expensive_percentile: 70,
-        battery_comfort_soc_percent: 50,
-      },
-    } satisfies SimRequest);
-
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as {
-      config_overrides: Record<string, unknown>;
-    };
-    expect(body.config_overrides.expensive_percentile).toBeCloseTo(0.7);
-    // battery_comfort_soc_percent is canonically a percent already (no
-    // registry `scale`) — must pass through unconverted.
-    expect(body.config_overrides.battery_comfort_soc_percent).toBe(50);
+    expect(result.prices).toEqual([2.4, 6.2]);
 
     vi.unstubAllGlobals();
   });
@@ -166,7 +137,7 @@ describe('simulator fetcher', () => {
     entry_id: 'entry1',
     box_id: 'BOX123',
     preset: 'workday',
-    inputs: {},
+    inputs: { water_draw_profile_lh: [0, 12, 80] },
     source: {},
     timeline: [
       {
@@ -256,6 +227,7 @@ describe('simulator fetcher', () => {
     expect(result.summary.kwh).toBeCloseTo(2.4);
     expect(result.summary.cost).toBeCloseTo(5.6);
     expect(result.summary.solar_share).toBeCloseTo(0.5);
+    expect(result.draws).toEqual([0, 12, 80]);
 
     vi.unstubAllGlobals();
   });
@@ -388,13 +360,300 @@ describe('oig-simulator', () => {
     warnSpy.mockRestore();
   });
 
+  it('offers the charge rate as the only battery control and posts nothing else from its controls', async () => {
+    const fetcher = vi.fn(mockFetcher);
+
+    const el = await fixture<HTMLElement & Record<string, any>>(html`
+      <oig-simulator
+        .domain=${'battery'}
+        .draft=${{}}
+        .presets=${batteryPresets}
+        .activePresetId=${'zima'}
+        .bootstrapPayload=${{ capacity_kwh: 17.4, hw_min_soc_percent: 20 }}
+        .fetcher=${fetcher}
+      ></oig-simulator>
+    `);
+    await flush();
+    await (el as any).updateComplete;
+
+    const sliders = [...el.shadowRoot!.querySelectorAll('input[type="range"]')];
+    expect(sliders.map((slider) => slider.getAttribute('data-testid'))).toEqual(['slider-charge-rate']);
+    expect(fetcher.mock.calls[0][0].draft).toEqual({ charge_rate_kw: 2.6 });
+    expect(el.shadowRoot!.textContent).not.toContain('komfortní rezerva');
+    expect(el.shadowRoot!.textContent).not.toContain('Práh drahých hodin');
+  });
+
+  describe('sliders start from the draft', () => {
+    type SimElement = HTMLElement & Record<string, any>;
+
+    async function mountSimulator(domain: 'battery' | 'boiler', draft: Record<string, unknown>) {
+      const fetcher = vi.fn(mockFetcher);
+      const el = await fixture<SimElement>(html`
+        <oig-simulator
+          .domain=${domain}
+          .draft=${draft}
+          .presets=${domain === 'battery' ? batteryPresets : boilerPresets}
+          .activePresetId=${domain === 'battery' ? 'zima' : 'vsedni'}
+          .fetcher=${fetcher}
+          .debounceMs=${0}
+        ></oig-simulator>
+      `);
+      await flush();
+      await el.updateComplete;
+      return { el, fetcher };
+    }
+
+    const slider = (el: SimElement, testId: string) =>
+      el.shadowRoot!.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
+    const settings = (el: SimElement) =>
+      el.shadowRoot!.querySelector('[data-testid="simulator-settings"]')!.textContent;
+    const lastDraft = (fetcher: Mock<[SimRequest], Promise<SimResponse>>) => fetcher.mock.lastCall![0].draft;
+
+    async function drag(el: SimElement, testId: string, value: string) {
+      const input = slider(el, testId);
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      await el.updateComplete;
+      await flush();
+      await el.updateComplete;
+    }
+
+    async function setDraft(el: SimElement, draft: Record<string, unknown>) {
+      el.draft = draft;
+      await el.updateComplete;
+      await flush();
+      await el.updateComplete;
+    }
+
+    it('shows and posts the charge rate the draft carries', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: 3.1 });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('3.1');
+      expect(settings(el)).toContain('3,1 kW');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.1);
+    });
+
+    it('reads a charge rate the wizard field left as text', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: '3.4' });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('3.4');
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.4);
+    });
+
+    it.each([[undefined], [null], [''], ['nope']])(
+      'falls back to 2.6 kW when the draft holds %j',
+      async (value) => {
+        const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: value });
+
+        expect(slider(el, 'slider-charge-rate').value).toBe('2.6');
+        expect(settings(el)).toContain('2,6 kW');
+        expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(2.6);
+      },
+    );
+
+    // The field accepts 0.5–10 kW (config_registry.py). A narrower slider would
+    // park its thumb on the end stop while the readout and the POST say otherwise.
+    it.each([['0.5'], ['8.5'], ['10']])('can show %s kW, which the wizard field accepts', async (value) => {
+      const { el } = await mountSimulator('battery', { charge_rate_kw: Number(value) });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe(value);
+    });
+
+    it('follows a charge rate that changes after mount', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: 3.1 });
+
+      await setDraft(el, { charge_rate_kw: 4.2 });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('4.2');
+      expect(settings(el)).toContain('4,2 kW');
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(4.2);
+    });
+
+    it('goes back to the fallback when a later draft stops carrying a charge rate', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: 3.1 });
+
+      await setDraft(el, {});
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('2.6');
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(2.6);
+    });
+
+    it('keeps a dragged charge rate when the draft changes something else', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: 3.1, soc_start: 40 });
+
+      await drag(el, 'slider-charge-rate', '5.2');
+      await setDraft(el, { charge_rate_kw: 3.1, soc_start: 55 });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('5.2');
+      expect(lastDraft(fetcher)).toMatchObject({ charge_rate_kw: 5.2, soc_start: 55 });
+    });
+
+    it('replaces a dragged charge rate when the draft brings a new one', async () => {
+      const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: 3.1 });
+
+      await drag(el, 'slider-charge-rate', '5.2');
+      await setDraft(el, { charge_rate_kw: 3.3 });
+
+      expect(slider(el, 'slider-charge-rate').value).toBe('3.3');
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.3);
+    });
+
+    it('shows the boiler target the draft carries', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', { boiler_target_temp_c: 63 });
+
+      expect(slider(el, 'slider-target-temp').value).toBe('63');
+      expect(settings(el)).toContain('63 °C');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(lastDraft(fetcher).boiler_target_temp_c).toBe(63);
+    });
+
+    // simulate_water_day has no minimum-temperature input, so a slider for one
+    // could only move a line in the chart.
+    it('offers the target as the only boiler control', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', {});
+
+      const sliders = [...el.shadowRoot!.querySelectorAll('input[type="range"]')];
+      expect(sliders.map((input) => input.getAttribute('data-testid'))).toEqual(['slider-target-temp']);
+      expect(lastDraft(fetcher)).toEqual({ boiler_target_temp_c: 60 });
+      expect(el.shadowRoot!.textContent).not.toContain('Minimální teplota');
+      expect(el.shadowRoot!.querySelector('[data-testid="chart-temp"]')!.textContent).toContain('cíl 60 °C');
+      expect(el.shadowRoot!.querySelector('[data-testid="chart-temp"]')!.textContent).not.toContain('minimum');
+    });
+
+    it('falls back to 60 °C when the boiler draft is empty', async () => {
+      const { el } = await mountSimulator('boiler', {});
+
+      expect(slider(el, 'slider-target-temp').value).toBe('60');
+    });
+
+    // simulate_water_day drops every override_config key outside
+    // _OVERRIDE_CONFIG_KEYS (boiler/api_views.py), so posting `target_temp_c`
+    // left the slider with no effect on the simulation at all.
+    it('posts the dragged boiler target under the key the backend accepts', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', { boiler_target_temp_c: 63 });
+
+      await drag(el, 'slider-target-temp', '66');
+
+      expect(lastDraft(fetcher).boiler_target_temp_c).toBe(66);
+      expect(lastDraft(fetcher)).not.toHaveProperty('target_temp_c');
+    });
+
+    // boiler_target_temp_c accepts 40–85 °C (config_registry.py).
+    it.each([['40'], ['75'], ['85']])('can show a %s °C boiler target, which the wizard field accepts', async (value) => {
+      const { el } = await mountSimulator('boiler', { boiler_target_temp_c: Number(value) });
+
+      expect(slider(el, 'slider-target-temp').value).toBe(value);
+    });
+
+    it('follows a boiler target that changes after mount', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', { boiler_target_temp_c: 63 });
+
+      await setDraft(el, { boiler_target_temp_c: 58 });
+
+      expect(slider(el, 'slider-target-temp').value).toBe('58');
+      expect(lastDraft(fetcher).boiler_target_temp_c).toBe(58);
+    });
+  });
+
+  describe('charts draw what the simulation returned', () => {
+    // Real preset ids from the backend: none of them exists in the mock's
+    // local scenarios, which is how every preset used to end up drawing `zima`.
+    const realBatteryPresets = [
+      { id: 'winter_high_price', label: 'Zima, draho' },
+      { id: 'sunny_summer', label: 'Léto, slunečno' },
+    ];
+    const realBoilerPresets = [
+      { id: 'workday', label: 'Pracovní den' },
+      { id: 'weekend', label: 'Víkend' },
+    ];
+    const quarterHours = (price: number) => Array.from({ length: 96 }, () => price);
+
+    function batteryFetcher(pricesByPreset: Record<string, number[]>) {
+      return vi.fn(async (req: SimRequest): Promise<SimResponse> => ({
+        kind: 'battery',
+        intervals: [{ t: '2099-06-14T00:00:00Z', mode: 'home', soc: 50, cost: 0 }],
+        prices: pricesByPreset[req.presetId as string],
+        summary: { cost: 1, ups_hours: 0 },
+      }));
+    }
+
+    function boilerFetcher(drawsByPreset: Record<string, number[]>) {
+      return vi.fn(async (req: SimRequest): Promise<SimResponse> => ({
+        kind: 'boiler',
+        intervals: [{ t: '2099-06-14T00:00:00Z', heating: false, source: 'grid', temp: 50 }],
+        draws: drawsByPreset[req.presetId as string],
+        summary: { kwh: 1, cost: 1, solar_share: 0 },
+      }));
+    }
+
+    const barLabels = (el: HTMLElement, chart: string) =>
+      [...el.shadowRoot!.querySelectorAll(`[data-testid="${chart}"] rect`)].map((bar) => bar.getAttribute('aria-label'));
+
+    it('draws every quarter-hour price of a real preset', async () => {
+      const el = await fixture<HTMLElement & Record<string, any>>(html`
+        <oig-simulator
+          .domain=${'battery'}
+          .presets=${realBatteryPresets}
+          .activePresetId=${'sunny_summer'}
+          .fetcher=${batteryFetcher({ winter_high_price: quarterHours(6.2), sunny_summer: quarterHours(0.6) })}
+        ></oig-simulator>
+      `);
+      await flush();
+      await el.updateComplete;
+
+      const labels = barLabels(el, 'chart-price');
+      expect(labels).toHaveLength(96);
+      expect(labels.every((label) => label?.includes('0.60 Kč/kWh'))).toBe(true);
+    });
+
+    it('redraws the prices when another preset is picked', async () => {
+      const el = await fixture<HTMLElement & Record<string, any>>(html`
+        <oig-simulator
+          .domain=${'battery'}
+          .presets=${realBatteryPresets}
+          .activePresetId=${'winter_high_price'}
+          .fetcher=${batteryFetcher({ winter_high_price: quarterHours(6.2), sunny_summer: quarterHours(0.6) })}
+        ></oig-simulator>
+      `);
+      await flush();
+      await el.updateComplete;
+      expect(barLabels(el, 'chart-price')[0]).toContain('6.20 Kč/kWh');
+
+      (el.shadowRoot!.querySelector('[data-testid="preset-sunny_summer"]') as HTMLButtonElement).click();
+      await flush();
+      await el.updateComplete;
+
+      expect(barLabels(el, 'chart-price')[0]).toContain('0.60 Kč/kWh');
+    });
+
+    it('draws the water draws of a real boiler preset', async () => {
+      const weekend = Array.from({ length: 24 }, (_, hour) => hour);
+      const el = await fixture<HTMLElement & Record<string, any>>(html`
+        <oig-simulator
+          .domain=${'boiler'}
+          .presets=${realBoilerPresets}
+          .activePresetId=${'weekend'}
+          .fetcher=${boilerFetcher({ workday: weekend.map(() => 0), weekend })}
+        ></oig-simulator>
+      `);
+      await flush();
+      await el.updateComplete;
+
+      const labels = barLabels(el, 'chart-draw');
+      expect(labels).toHaveLength(24);
+      expect(labels[7]).toContain('odběr 7 l');
+    });
+  });
+
   it('renders the boiler overlay with boiler-specific tiles and charts', async () => {
     const fetcher = vi.fn(mockFetcher);
 
     const el = await fixture<HTMLElement & Record<string, any>>(html`
       <oig-simulator
         .domain=${'boiler'}
-        .draft=${{ target_temp_c: 61, min_temp_c: 46 }}
+        .draft=${{ boiler_target_temp_c: 61 }}
         .presets=${boilerPresets}
         .activePresetId=${'vsedni'}
         .bootstrapPayload=${{ top_temp_c: 58.8, bottom_temp_c: 46.0, cold_inlet_c: 12 }}

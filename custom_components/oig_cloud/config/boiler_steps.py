@@ -25,7 +25,6 @@ from ..const import (
     CONF_BOILER_TEMP_SENSOR_TOP,
     CONF_BOILER_TARGET_TEMP_C,
     CONF_BOILER_VOLUME_L,
-    CONF_BOX_HAS_HOME56,
     DEFAULT_BOILER_ALT_SOURCE_TYPE,
     DEFAULT_BOILER_BATTERY_CYCLE_COST,
     DEFAULT_BOILER_CIRCULATION_ENABLED,
@@ -38,7 +37,6 @@ from ..const import (
     DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
     DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
     DEFAULT_BOILER_TARGET_TEMP_C,
-    DEFAULT_BOX_HAS_HOME56,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -319,11 +317,6 @@ def get_boiler_simple_6_schema(
                     min=0.0, max=20.0, step=0.1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
-            # Box má Home 5/6 (aktivuje ovládání z dashboardu)
-            vol.Optional(
-                CONF_BOX_HAS_HOME56,
-                default=defaults.get(CONF_BOX_HAS_HOME56, DEFAULT_BOX_HAS_HOME56),
-            ): selector.BooleanSelector(),
             # 🔋→🔥 Ohřev z baterie — opt-in pro plánovač (vyžaduje Home 5/6)
             vol.Optional(
                 CONF_BOILER_HOME5_MANEUVER_ENABLED,

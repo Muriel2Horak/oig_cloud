@@ -1,4 +1,5 @@
 import './boiler-svg';
+import './boiler-progress';
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
@@ -211,6 +212,12 @@ export class OigBoilerV2Shell extends LitElement {
           ></oig-boiler-v2-svg>
         </div>
         <span aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">${status?.temperatureTop ?? ''}</span>
+
+        <oig-boiler-progress
+          .progress="${data?.progress ?? null}"
+          .altSourceType="${data?.altSourceType ?? null}"
+          .lang="${this.lang}"
+        ></oig-boiler-progress>
 
         <div class="advanced-slot" data-testid="boiler-advanced-slot">
           <slot name="advanced"></slot>

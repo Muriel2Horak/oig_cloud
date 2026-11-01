@@ -20,13 +20,12 @@ export interface ModulesConfig {
   enable_statistics: boolean;
   enable_extended_sensors: boolean;
   enable_chmu_warnings: boolean;
+  box_has_home56: boolean;
 }
 
 export interface BatteryConfig {
   auto_mode_switch_enabled: boolean;
   charge_rate_kw: number | null;
-  expensive_percentile: number | null;
-  battery_comfort_soc_percent: number | null;
   balancing_enabled: boolean;
   balancing_interval_days: number | null;
   balancing_hold_hours: number | null;
@@ -78,7 +77,6 @@ export interface BoilerConfig {
   boiler_alt_energy_sensor: string;
   boiler_alt_energy_daily: boolean;
   // Home 5/6 + baterie
-  box_has_home56: boolean;
   boiler_home5_maneuver_enabled: boolean;
   boiler_battery_cycle_cost_czk_kwh: number | null;
   // Teplota a čas

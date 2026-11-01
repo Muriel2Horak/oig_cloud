@@ -79,7 +79,6 @@ export const BOILER_FIELD_GROUPS: readonly BoilerFieldGroup[] = [
       'boiler_max_temp_c',
       'boiler_alt_power_kw',
       'boiler_current_power_entity',
-      'box_has_home56',
       'boiler_home5_maneuver_enabled',
     ],
     collapsible: true,

@@ -115,6 +115,7 @@ const BATTERY_SIM_FIXTURE = {
   preset: 'winter_high_price',
   horizon_intervals: 1,
   interval_minutes: 15,
+  prices: [6.2],
   timeline: [
     {
       interval_index: 0, soc_kwh: 8.7, solar_kwh: 0, load_kwh: 0.2,
@@ -125,7 +126,8 @@ const BATTERY_SIM_FIXTURE = {
   summary: { total_cost_czk: 1.1, mode_distribution: { 'HOME I': 1 } },
 };
 const BOILER_SIM_FIXTURE = {
-  entry_id: 'entry1', box_id: 'SN123', preset: 'workday', inputs: {}, source: {},
+  entry_id: 'entry1', box_id: 'SN123', preset: 'workday',
+  inputs: { water_draw_profile_lh: [3, 7] }, source: {},
   timeline: [
     {
       start: '2026-07-26T05:00:00+02:00', end: '2026-07-26T05:15:00+02:00',
@@ -188,6 +190,14 @@ async function settle(app: TestApp) {
   for (let i = 0; i < 6; i += 1) await flush(app);
 }
 
+function lastSimulatePost(route: string): any {
+  const calls = fetchOIGAPITyped.mock.calls.filter(
+    ([p, o]) => typeof p === 'string' && p.endsWith(route) && (o as RequestInit | undefined)?.method === 'POST',
+  );
+  expect(calls.length).toBeGreaterThanOrEqual(1);
+  return JSON.parse(String((calls[calls.length - 1][1] as RequestInit).body));
+}
+
 /** Battery fields verbatim from onboarding-battery.test.ts's fixture, boiler
  *  fields verbatim from onboarding-boiler.test.ts's — merged into one
  *  registry so both wizard steps render their sim-trigger button. */
@@ -198,11 +208,6 @@ const REGISTRY_FIXTURE: FieldRegistry = {
       section: 'battery', type: 'float', scope: 'premium',
       label: 'field.charge_rate_kw.label', hint: 'field.charge_rate_kw.hint',
       min: 0.5, max: 10.0, step: 0.1,
-    },
-    battery_comfort_soc_percent: {
-      section: 'battery', type: 'float', scope: 'premium',
-      label: 'field.battery_comfort_soc_percent.label', hint: 'field.battery_comfort_soc_percent.hint',
-      min: 0.0, max: 95.0, step: 5.0,
     },
     boiler_volume_l: {
       section: 'boiler', type: 'float', scope: 'premium', default: null, min: 30, max: 1000,
@@ -351,6 +356,76 @@ describe('simulator overlay mount (fe/fix: seam was dispatch-only, nothing liste
     expect(simulateCalls.length).toBeGreaterThanOrEqual(1);
     const body = JSON.parse(String((simulateCalls[0][1] as RequestInit)?.body));
     expect(body.preset).toBe(BATTERY_PRESETS_FIXTURE[0].id);
+  });
+
+  it('a charge rate typed into the battery step reaches the slider and the simulate POST', async () => {
+    const wizard = getWizard(el)!;
+    (wizardRoot(wizard).querySelector('button[data-step="battery"]') as HTMLButtonElement).click();
+    await flush(wizard);
+
+    const field = wizardRoot(wizard).querySelector(
+      '[data-key="charge_rate_kw"] input[type="number"]',
+    ) as HTMLInputElement;
+    field.value = '3.1';
+    field.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await flush(wizard);
+
+    (wizardRoot(wizard).querySelector('[data-testid="battery-simulator-button"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement;
+    const slider = sim.shadowRoot!.querySelector('[data-testid="slider-charge-rate"]') as HTMLInputElement;
+    expect(slider.value).toBe('3.1');
+    expect(sim.shadowRoot!.querySelector('[data-testid="simulator-settings"]')!.textContent).toContain('3,1 kW');
+    expect(lastSimulatePost('/planner_simulate').config_overrides.charge_rate_kw).toBe(3.1);
+  });
+
+  it('a boiler target typed into the boiler step reaches the slider and the simulate POST', async () => {
+    const wizard = getWizard(el)!;
+    (wizardRoot(wizard).querySelector('button[data-step="boiler"]') as HTMLButtonElement).click();
+    await flush(wizard);
+
+    const field = wizardRoot(wizard).querySelector(
+      '[data-key="boiler_target_temp_c"] input[type="number"]',
+    ) as HTMLInputElement;
+    field.value = '63';
+    field.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await flush(wizard);
+
+    (wizardRoot(wizard).querySelector('[data-testid="boiler-simulator-button"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement;
+    const slider = sim.shadowRoot!.querySelector('[data-testid="slider-target-temp"]') as HTMLInputElement;
+    expect(slider.value).toBe('63');
+    expect(lastSimulatePost('/simulate_water_day').override_config.boiler_target_temp_c).toBe(63);
+  });
+
+  it('the battery price chart shows the prices the endpoint returned', async () => {
+    const wizard = getWizard(el)!;
+    (wizardRoot(wizard).querySelector('button[data-step="battery"]') as HTMLButtonElement).click();
+    await flush(wizard);
+    (wizardRoot(wizard).querySelector('[data-testid="battery-simulator-button"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement;
+    const bars = [...sim.shadowRoot!.querySelectorAll('[data-testid="chart-price"] rect')];
+    expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual(['0:00 — 6.20 Kč/kWh']);
+  });
+
+  it('the boiler draw chart shows the draws the endpoint returned', async () => {
+    const wizard = getWizard(el)!;
+    (wizardRoot(wizard).querySelector('button[data-step="boiler"]') as HTMLButtonElement).click();
+    await flush(wizard);
+    (wizardRoot(wizard).querySelector('[data-testid="boiler-simulator-button"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement;
+    const bars = [...sim.shadowRoot!.querySelectorAll('[data-testid="chart-draw"] rect')];
+    expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual([
+      '0:00 — odběr 3 l',
+      '1:00 — odběr 7 l',
+    ]);
   });
 
   it('backdrop click closes the overlay and unmounts the simulator', async () => {

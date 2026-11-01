@@ -390,6 +390,7 @@ class WizardMixin:
             "enable_chmu_warnings",
             "enable_statistics",
             "enable_extended_sensors",
+            "box_has_home56",
         ):
             options[key] = wizard_data.get(key, modules[key].default)
 
@@ -456,20 +457,9 @@ class WizardMixin:
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
         )
-        expensive_pct = wizard_data.get("expensive_percentile_pct")
-        if expensive_pct is None:
-            expensive_fraction = float(wizard_data.get("expensive_percentile", 0.70))
-        else:
-            expensive_fraction = float(expensive_pct) / 100.0
         return {
-            "expensive_percentile": round(expensive_fraction, 2),
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
-            # Comfort SoC buffer kept above the hard floor via cheap windows only,
-            # so the box never force-charges to ~80% at any price (0 disables).
-            "battery_comfort_soc_percent": wizard_data.get(
-                "battery_comfort_soc_percent", 50.0
-            ),
             "home_charge_rate": charge_rate_kw,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
@@ -551,7 +541,6 @@ class WizardMixin:
             "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
                 "boiler_battery_cycle_cost_czk_kwh", BATTERY_CYCLE_COST_CZK_PER_KWH
             ),
-            "box_has_home56": wizard_data.get("box_has_home56", False),
             "boiler_home5_maneuver_enabled": wizard_data.get(
                 "boiler_home5_maneuver_enabled", False
             ),
@@ -1067,6 +1056,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 vol.Optional(
                     "enable_boiler", default=defaults.get("enable_boiler", False)
                 ): bool,
+                vol.Optional(
+                    "box_has_home56", default=defaults.get("box_has_home56", False)
+                ): bool,
                 vol.Optional("go_back", default=False): bool,
             }
         )
@@ -1102,6 +1094,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if self._wizard_data.get("enable_solar_forecast", False):
             total += 1
         if self._wizard_data.get("enable_battery_prediction", False):
+            total += 1
+        if self._wizard_data.get("box_has_home56", False):
             total += 1
         if self._wizard_data.get("enable_pricing", False):
             total += 3
@@ -1166,6 +1160,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             steps.append("wizard_solar")
         if self._wizard_data.get("enable_battery_prediction", False):
             steps.append("wizard_battery")
+        if self._wizard_data.get("box_has_home56", False):
+            steps.append("wizard_home56")
         if self._wizard_data.get("enable_pricing", False):
             steps.extend(
                 [
@@ -1228,6 +1224,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         "intervals": "wizard_intervals",
         "solar": "wizard_solar",
         "battery": "wizard_battery",
+        "home56": "wizard_home56",
         "pricing": "wizard_pricing_distribution",
         # boiler chains already end right before the summary
     }
@@ -1253,6 +1250,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_intervals",
             "wizard_solar",
             "wizard_battery",
+            "wizard_home56",
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
@@ -1298,6 +1296,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             return not self._wizard_data.get("enable_solar_forecast")
         if step == "wizard_battery":
             return not self._wizard_data.get("enable_battery_prediction")
+        if step == "wizard_home56":
+            return not self._wizard_data.get("box_has_home56")
         if step in {
             "wizard_pricing_import",
             "wizard_pricing_export",
@@ -1851,14 +1851,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if charge_rate_kw < 0.5 or charge_rate_kw > 10.0:
             errors[CONF_CHARGE_RATE_KW] = "invalid_charge_rate_kw"
 
-        pct = user_input.get("expensive_percentile_pct", 70)
-        try:
-            pct = float(pct)
-        except (TypeError, ValueError):
-            pct = 70.0
-        if pct < 50 or pct > 95:
-            errors["expensive_percentile_pct"] = "invalid_percentile"
-
         return errors
 
     async def async_step_wizard_battery(
@@ -1927,18 +1919,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
-            # Displacement threshold: imports priced above this per-day
-            # percentile are candidates for cheap pre-charging.
-            vol.Optional(
-                "expensive_percentile_pct",
-                default=int(
-                    round(float(defaults.get("expensive_percentile", 0.70)) * 100)
-                ),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=50, max=95, step=5, mode=selector.NumberSelectorMode.SLIDER
-                )
-            ),
             # BATTERY BALANCING PARAMETERS
             vol.Optional(
                 "balancing_enabled",
@@ -1993,6 +1973,24 @@ Kliknutím na "Odeslat" spustíte průvodce.
         )
 
         return vol.Schema(schema_fields)
+
+    async def async_step_wizard_home56(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Wizard step: how Home 5 and 6 work; the window is set on the box itself."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_home56")
+
+            self._step_history.append("wizard_home56")
+            next_step = self._get_next_step("wizard_home56")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        return self.async_show_form(
+            step_id="wizard_home56",
+            data_schema=vol.Schema({vol.Optional("go_back", default=False): bool}),
+            description_placeholders=self._get_step_placeholders("wizard_home56"),
+        )
 
     async def async_step_wizard_pricing_import(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3037,6 +3035,63 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # This will be overridden in ConfigFlow and OptionsFlow
         raise NotImplementedError("Must be implemented in subclass")
 
+    async def _async_credentials_step(
+        self,
+        step_id: str,
+        entry: Optional[config_entries.ConfigEntry],
+        user_input: Optional[Dict[str, Any]],
+        success_reason: str,
+    ) -> ConfigFlowResult:
+        """Change the OIG Cloud login of an existing entry.
+
+        The new login is verified first, so a mistyped password leaves the working
+        one in place. The stored password is never put into the form.
+        """
+        if entry is None:
+            return self.async_abort(reason="unknown")
+
+        errors: Dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await validate_input(self.hass, user_input)
+            except LiveDataNotEnabled:
+                errors["base"] = "live_data_not_enabled"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception while changing the login")
+                errors["base"] = "unknown"
+
+            if not errors:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason=success_reason)
+
+        username = (user_input or entry.data).get(CONF_USERNAME, "")
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=username): str,
+                    vol.Required(CONF_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
 
 class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
     """Handle a config flow for OIG Cloud."""
@@ -3091,65 +3146,21 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
     async def async_step_reauth_confirm(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
-        reauth_entry_id = self.context.get("entry_id")
-        existing_entry = (
-            self.hass.config_entries.async_get_entry(reauth_entry_id)
-            if reauth_entry_id
-            else None
+        return await self._async_credentials_step(
+            "reauth_confirm", self._context_entry(), user_input, "reauth_successful"
         )
 
-        if existing_entry is None:
-            return self.async_abort(reason="unknown")
+    async def async_step_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Home Assistant's own "Reconfigure" entry: change the OIG Cloud login."""
+        return await self._async_credentials_step(
+            "reconfigure", self._context_entry(), user_input, "reconfigure_successful"
+        )
 
-        if user_input is None:
-            return self.async_show_form(
-                step_id="reauth_confirm",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_USERNAME,
-                            default=existing_entry.data.get(CONF_USERNAME, ""),
-                        ): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
-                ),
-            )
-
-        errors: Dict[str, str] = {}
-        try:
-            await validate_input(self.hass, user_input)
-        except LiveDataNotEnabled:
-            errors["base"] = "live_data_not_enabled"
-        except CannotConnect:
-            errors["base"] = "cannot_connect"
-        except InvalidAuth:
-            errors["base"] = "invalid_auth"
-        except Exception:
-            _LOGGER.exception("Unexpected exception during reauth")
-            errors["base"] = "unknown"
-
-        if errors:
-            return self.async_show_form(
-                step_id="reauth_confirm",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_USERNAME,
-                            default=user_input.get(CONF_USERNAME, ""),
-                        ): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
-                ),
-                errors=errors,
-            )
-
-        updated_data = dict(existing_entry.data)
-        updated_data[CONF_USERNAME] = user_input[CONF_USERNAME]
-        updated_data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
-
-        self.hass.config_entries.async_update_entry(existing_entry, data=updated_data)
-        await self.hass.config_entries.async_reload(existing_entry.entry_id)
-        return self.async_abort(reason="reauth_successful")
+    def _context_entry(self) -> Optional[config_entries.ConfigEntry]:
+        entry_id = self.context.get("entry_id")
+        return self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
 
     async def async_step_quick_setup(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3390,8 +3401,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         #
         # Diffing payload-against-payload (rather than payload-against-raw-stored-
         # options) is what makes the delta submitted-fields-only: the serializer's
-        # normalization — e.g. the expensive_percentile rounding in
-        # _build_battery_options — is applied identically to both sides, so it
+        # normalization — e.g. the round trip of spot_fixed_fee_mwh through CZK/kWh
+        # in _map_pricing_to_backend — is applied identically to both sides, so it
         # cancels out and can never be mistaken for a user edit. An untouched
         # field is therefore always absent from the delta, and a concurrent REST
         # or dashboard write to it survives this flow's save untouched.
@@ -3418,11 +3429,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         Previously this re-ran the WHOLE wizard (up to ~12 steps) even for a
         single value change. Each section now ends at the summary (save).
         """
-        menu = ["section_modules", "section_intervals"]
+        menu = ["section_modules", "section_credentials", "section_intervals"]
         if self._wizard_data.get("enable_solar_forecast"):
             menu.append("section_solar")
         if self._wizard_data.get("enable_battery_prediction"):
             menu.append("section_battery")
+        if self._wizard_data.get("box_has_home56"):
+            menu.append("section_home56")
         if self._wizard_data.get("enable_pricing"):
             menu.append("section_pricing")
         if self._wizard_data.get("enable_boiler") or self._wizard_data.get(
@@ -3437,6 +3450,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     _STEP_MODULE = {
         "wizard_solar": "enable_solar_forecast",
         "wizard_battery": "enable_battery_prediction",
+        "wizard_home56": "box_has_home56",
         "wizard_pricing_import": "enable_pricing",
         "wizard_pricing_export": "enable_pricing",
         "wizard_pricing_distribution": "enable_pricing",
@@ -3450,7 +3464,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         "wizard_boiler_simple_8": "enable_boiler",
         "wizard_boiler": "enable_boiler",
     }
-    _MODULE_FLAGS = ("enable_solar_forecast", "enable_battery_prediction", "enable_pricing", "enable_boiler")
+    _MODULE_FLAGS = (
+        "enable_solar_forecast",
+        "enable_battery_prediction",
+        "enable_pricing",
+        "enable_boiler",
+        "box_has_home56",
+    )
 
     def _newly_enabled_modules(self) -> set:
         """Module flags that are ON now but were OFF when the section was entered."""
@@ -3477,6 +3497,21 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
         return await self._enter_section("modules", "wizard_modules")
+
+    async def async_step_section_credentials(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._async_credentials_step(
+            "section_credentials",
+            self._config_entry_cache,
+            user_input,
+            "credentials_updated",
+        )
+
+    async def async_step_section_home56(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("home56", "wizard_home56")
 
     async def async_step_section_intervals(
         self, user_input: Optional[Dict[str, Any]] = None

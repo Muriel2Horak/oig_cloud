@@ -47,10 +47,7 @@ describe('simulator i18n copy', () => {
     expect(fieldLabel('unavailable', 'simulator.common.unavailable.label')).toBe('nedostupné');
     expect(fieldLabel('retry', 'simulator.common.retry.label')).toBe('Zkusit znovu');
     expect(fieldLabel('charge_rate_kw', 'simulator.battery.charge_rate_kw.label')).toBe('Nabíjecí výkon ze sítě');
-    expect(fieldLabel('battery_comfort_soc_percent', 'simulator.battery.reserve.label')).toBe('Komfortní rezerva');
-    expect(fieldLabel('expensive_percentile', 'simulator.battery.expensive_percentile.label')).toBe('Práh drahých hodin');
     expect(fieldLabel('target_temp_c', 'simulator.boiler.target_temp_c.label')).toBe('Cílová teplota');
-    expect(fieldLabel('min_temp_c', 'simulator.boiler.min_temp_c.label')).toBe('Minimální teplota');
     expect(fieldLabel('capacity_kwh', 'simulator.box.capacity_kwh.label')).toBe('Kapacita baterie');
     expect(fieldLabel('hw_min_soc_percent', 'simulator.box.hw_min_soc_percent.label')).toBe('Minimální SoC (HW)');
     expect(fieldLabel('top_temp_c', 'simulator.box.top_temp_c.label')).toBe('Teplota nahoře');
@@ -72,11 +69,11 @@ describe('battery simulator chart helpers', () => {
     expect(svg).toContain('var(--home)');
   });
 
-  it('renders the SoC chart with one axis, a threshold line, and focusable points', () => {
-    const svg = renderBatterySocSvg(batteryIntervals(), 50);
+  it('renders the SoC chart with one axis, no threshold line, and focusable points', () => {
+    const svg = renderBatterySocSvg(batteryIntervals());
     expect(svg).toContain('100 %');
     expect(svg).toContain('0 %');
-    expect(svg).toContain('komfortní rezerva');
+    expect(svg).not.toContain('stroke-dasharray="3 4"');
     expect(svg).toContain('fill-opacity=".14"');
     expect(svg.match(/data-sim-point="/g)).toHaveLength(24);
     expect(svg).not.toContain('right-axis');
@@ -93,7 +90,60 @@ describe('battery simulator chart helpers', () => {
   });
 });
 
+describe('battery price chart with real presets', () => {
+  const bars = (svg: string) => {
+    const host = document.createElement('div');
+    host.innerHTML = svg;
+    return [...host.querySelectorAll('rect')];
+  };
+
+  it('labels quarter-hour bars with the time of day', () => {
+    const labels = bars(renderBatteryPriceSvg(Array.from({ length: 96 }, () => 1))).map((bar) =>
+      bar.getAttribute('aria-label'),
+    );
+
+    expect(labels[0]).toBe('0:00 — 1.00 Kč/kWh');
+    expect(labels[1]).toBe('0:15 — 1.00 Kč/kWh');
+    expect(labels[25]).toBe('6:15 — 1.00 Kč/kWh');
+    expect(labels[95]).toBe('23:45 — 1.00 Kč/kWh');
+  });
+
+  it('keeps hourly bars on the hour', () => {
+    const labels = bars(renderBatteryPriceSvg(Array.from({ length: 24 }, () => 1))).map((bar) =>
+      bar.getAttribute('aria-label'),
+    );
+
+    expect(labels[6]).toBe('6:00 — 1.00 Kč/kWh');
+  });
+
+  // The negative_price preset spans -2 to +1 Kč/kWh.
+  it('fits negative and positive bars inside the chart, sized in proportion', () => {
+    const [negative, positive] = bars(renderBatteryPriceSvg([-2, 1]));
+    const top = (bar: Element) => Number(bar.getAttribute('y'));
+    const height = (bar: Element) => Number(bar.getAttribute('height'));
+
+    expect(top(negative) + height(negative)).toBeLessThanOrEqual(62);
+    expect(top(positive)).toBeGreaterThanOrEqual(0);
+    expect(height(negative) / height(positive)).toBeCloseTo(2, 1);
+    // Both grow away from the same zero line.
+    expect(top(positive) + height(positive)).toBeCloseTo(top(negative), 1);
+  });
+
+  it('keeps an all-zero day on the bottom line', () => {
+    const [bar] = bars(renderBoilerDrawSvg(Array.from({ length: 24 }, () => 0)));
+
+    expect(Number(bar.getAttribute('y')) + Number(bar.getAttribute('height'))).toBeCloseTo(46, 1);
+  });
+});
+
 describe('boiler simulator chart helpers', () => {
+  // The target slider reaches 85 °C.
+  it('raises the temperature scale for a target above it', () => {
+    const svg = renderBoilerTempSvg(boilerIntervals(), 85);
+    expect(svg).toContain('85 °C');
+    expect(svg).not.toContain('75 °C');
+  });
+
   it('renders 24 hourly heating rects with titles and aria labels', () => {
     const svg = renderBoilerModeBandSvg(boilerIntervals());
     expect(svg.match(/<rect\b/g)).toHaveLength(24);
@@ -102,11 +152,13 @@ describe('boiler simulator chart helpers', () => {
     expect(svg).toContain('var(--boil)');
   });
 
-  it('renders the temperature chart with a single axis and threshold line', () => {
-    const svg = renderBoilerTempSvg(boilerIntervals(), 45);
+  it('renders the temperature chart with a single axis and the target as its line', () => {
+    const svg = renderBoilerTempSvg(boilerIntervals(), 60);
     expect(svg).toContain('75 °C');
     expect(svg).toContain('30 °C');
-    expect(svg).toContain('minimum');
+    expect(svg).toContain('stroke-dasharray="3 4"');
+    expect(svg).toContain('cíl 60 °C');
+    expect(svg).not.toContain('minimum');
     expect(svg.match(/data-sim-point="/g)).toHaveLength(24);
   });
 

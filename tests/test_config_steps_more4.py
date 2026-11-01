@@ -582,11 +582,13 @@ async def test_wizard_battery_initial_form():
 
 def test_battery_schema_uses_defaults():
     flow = DummyWizard()
-    flow._wizard_data = {"expensive_percentile": 0.8}
+    # A stored value of a retired option must not bring its field back.
+    flow._wizard_data = {"expensive_percentile": 0.8, "battery_comfort_soc_percent": 60}
     schema = flow._get_battery_schema()
     keys = {str(k) for k in schema.schema}
     # Slimmed form: only live planner params remain
-    assert "expensive_percentile_pct" in keys
+    assert "expensive_percentile_pct" not in keys
+    assert "battery_comfort_soc_percent" not in keys
     assert "charge_rate_kw" in keys
     assert "min_capacity_percent" not in keys
     assert "price_hysteresis_czk" not in keys

@@ -25,8 +25,8 @@ HOME_1_LABEL = "Home 1"
 HOME_2_LABEL = "Home 2"
 HOME_3_LABEL = "Home 3"
 # Minimum interval between mode changes in recommended sensor.
-# Must match MIN_MODE_DURATION for HOME UPS (2 intervals = 30 min).
-MIN_RECOMMENDED_INTERVAL_MINUTES = 30
+# Match the five-minute execution guard, not the 15-minute planning resolution.
+MIN_RECOMMENDED_INTERVAL_MINUTES = 5
 MODE_LABEL_HOME_UPS = "Home UPS"
 
 

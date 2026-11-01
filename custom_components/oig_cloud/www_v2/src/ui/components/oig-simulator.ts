@@ -13,8 +13,6 @@ import {
 } from './simulator-charts';
 import {
   defaultFetcher,
-  getBatteryPresetPrices,
-  getBoilerPresetDraws,
   type Domain,
   type SimRequest,
   type SimResponse,
@@ -23,6 +21,10 @@ import {
 } from './simulator-fetcher';
 
 const u = unsafeCSS;
+
+// Where the sliders stand when the draft holds no value for them.
+const FALLBACK_CHARGE_RATE_KW = 2.6;
+const FALLBACK_BOILER_TARGET_TEMP_C = 60;
 
 export interface BootstrapPayload {
   capacity_kwh?: number;
@@ -67,11 +69,8 @@ export class OigSimulator extends LitElement {
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private response: SimResponse | null = null;
-  @state() private chargeRateKw = 2.6;
-  @state() private reserveSocPercent = 50;
-  @state() private expensivePercentile = 70;
-  @state() private boilerTargetTempC = 60;
-  @state() private boilerMinTempC = 45;
+  @state() private chargeRateKw = FALLBACK_CHARGE_RATE_KW;
+  @state() private boilerTargetTempC = FALLBACK_BOILER_TARGET_TEMP_C;
 
   private initialized = false;
   private initialPropsSettled = false;
@@ -434,6 +433,12 @@ export class OigSimulator extends LitElement {
     this.syncThemeToken();
   }
 
+  protected willUpdate(changed: PropertyValues<Record<string, unknown>>): void {
+    if (changed.has('draft')) {
+      this.seedControlsFromDraft((changed.get('draft') ?? {}) as Record<string, unknown>);
+    }
+  }
+
   protected firstUpdated(): void {
     this.initialized = true;
     this.syncThemeToken();
@@ -463,10 +468,7 @@ export class OigSimulator extends LitElement {
 
     if (
       changed.has('chargeRateKw') ||
-      changed.has('reserveSocPercent') ||
-      changed.has('expensivePercentile') ||
-      changed.has('boilerTargetTempC') ||
-      changed.has('boilerMinTempC')
+      changed.has('boilerTargetTempC')
     ) {
       this.scheduleFetch(false);
     }
@@ -496,18 +498,27 @@ export class OigSimulator extends LitElement {
     this.style.setProperty('--tc', this.domain === 'boiler' ? 'var(--boil)' : 'var(--batt)');
   }
 
+  // A slider follows the draft whenever the draft's value for it changes. A new
+  // draft that leaves that value alone keeps whatever the user dragged.
+  private seedControlsFromDraft(previous: Record<string, unknown>): void {
+    const seeded = (key: string, current: number, fallback: number): number => {
+      const value = numberFrom(this.draft[key]);
+      return value === numberFrom(previous[key]) ? current : value ?? fallback;
+    };
+
+    this.chargeRateKw = seeded('charge_rate_kw', this.chargeRateKw, FALLBACK_CHARGE_RATE_KW);
+    this.boilerTargetTempC = seeded('boiler_target_temp_c', this.boilerTargetTempC, FALLBACK_BOILER_TARGET_TEMP_C);
+  }
+
   private buildControlOverrides(): Record<string, unknown> {
     if (this.domain === 'battery') {
       return {
         charge_rate_kw: this.chargeRateKw,
-        battery_comfort_soc_percent: this.reserveSocPercent,
-        expensive_percentile: this.expensivePercentile,
       };
     }
 
     return {
-      target_temp_c: this.boilerTargetTempC,
-      min_temp_c: this.boilerMinTempC,
+      boiler_target_temp_c: this.boilerTargetTempC,
     };
   }
 
@@ -635,20 +646,8 @@ export class OigSimulator extends LitElement {
     this.chargeRateKw = Number((event.currentTarget as HTMLInputElement).value);
   }
 
-  private handleBatteryReserveInput(event: Event): void {
-    this.reserveSocPercent = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
-  private handleBatteryExpensiveInput(event: Event): void {
-    this.expensivePercentile = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
   private handleBoilerTargetInput(event: Event): void {
     this.boilerTargetTempC = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
-  private handleBoilerMinInput(event: Event): void {
-    this.boilerMinTempC = Number((event.currentTarget as HTMLInputElement).value);
   }
 
   private renderPresetChips(): unknown {
@@ -672,6 +671,8 @@ export class OigSimulator extends LitElement {
     `;
   }
 
+  // The charge-rate and boiler-target slider bounds repeat the field limits in
+  // config_registry.py, so every value the draft can hold has a thumb position.
   private renderBatteryControlCard(): unknown {
     return html`
       <section class="card" data-testid="simulator-settings">
@@ -685,47 +686,13 @@ export class OigSimulator extends LitElement {
           <input
             data-testid="slider-charge-rate"
             type="range"
-            min="1"
-            max="7"
+            min="0.5"
+            max="10"
             step="0.1"
             .value=${String(this.chargeRateKw)}
             @input=${this.handleBatteryChargeInput}
           />
           <div class="exp">${fieldHint('charge_rate_kw', 'simulator.battery.charge_rate_kw.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('battery_comfort_soc_percent', 'simulator.battery.reserve.label')}</b>
-            <span class="val">${formatNumber(this.reserveSocPercent, 0)} %</span>
-          </div>
-          <input
-            data-testid="slider-reserve"
-            type="range"
-            min="0"
-            max="80"
-            step="5"
-            .value=${String(this.reserveSocPercent)}
-            @input=${this.handleBatteryReserveInput}
-          />
-          <div class="exp">${fieldHint('battery_comfort_soc_percent', 'simulator.battery.reserve.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('expensive_percentile', 'simulator.battery.expensive_percentile.label')}</b>
-            <span class="val">${formatNumber(this.expensivePercentile, 0)} %</span>
-          </div>
-          <input
-            data-testid="slider-expensive-percentile"
-            type="range"
-            min="40"
-            max="95"
-            step="5"
-            .value=${String(this.expensivePercentile)}
-            @input=${this.handleBatteryExpensiveInput}
-          />
-          <div class="exp">${fieldHint('expensive_percentile', 'simulator.battery.expensive_percentile.hint') ?? ''}</div>
         </div>
       </section>
     `;
@@ -744,30 +711,13 @@ export class OigSimulator extends LitElement {
           <input
             data-testid="slider-target-temp"
             type="range"
-            min="45"
-            max="70"
+            min="40"
+            max="85"
             step="1"
             .value=${String(this.boilerTargetTempC)}
             @input=${this.handleBoilerTargetInput}
           />
           <div class="exp">${fieldHint('target_temp_c', 'simulator.boiler.target_temp_c.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('min_temp_c', 'simulator.boiler.min_temp_c.label')}</b>
-            <span class="val">${formatNumber(this.boilerMinTempC, 0)} °C</span>
-          </div>
-          <input
-            data-testid="slider-min-temp"
-            type="range"
-            min="35"
-            max="55"
-            step="1"
-            .value=${String(this.boilerMinTempC)}
-            @input=${this.handleBoilerMinInput}
-          />
-          <div class="exp">${fieldHint('min_temp_c', 'simulator.boiler.min_temp_c.hint') ?? ''}</div>
         </div>
       </section>
     `;
@@ -828,22 +778,20 @@ export class OigSimulator extends LitElement {
           <b>${fieldLabel('day_cost', 'simulator.kpi.day_cost.label')}</b>
           <div class="n">${formatNumber(summary.cost, 0)} <small>Kč</small></div>
         </div>
-        <div class="tile" data-testid="kpi-base-cost">
-          <b>${fieldLabel('base_cost', 'simulator.kpi.base_cost.label')}</b>
-          <div class="n">
-            ${hasBaseCost
-              ? html`${formatNumber(summary.base_cost as number, 0)} <small>Kč</small>`
-              : html`<small>—</small>`}
-          </div>
-        </div>
-        <div class="tile" data-testid="kpi-savings">
-          <b>${fieldLabel('savings', 'simulator.kpi.savings.label')}</b>
-          <div class="n price">
-            ${savings != null
-              ? html`${savingsLabel}${formatNumber(Math.abs(savings), 0)} <small>Kč</small>`
-              : html`<small>—</small>`}
-          </div>
-        </div>
+        ${hasBaseCost
+          ? html`
+              <div class="tile" data-testid="kpi-base-cost">
+                <b>${fieldLabel('base_cost', 'simulator.kpi.base_cost.label')}</b>
+                <div class="n">${formatNumber(summary.base_cost as number, 0)} <small>Kč</small></div>
+              </div>
+              <div class="tile" data-testid="kpi-savings">
+                <b>${fieldLabel('savings', 'simulator.kpi.savings.label')}</b>
+                <div class="n price">
+                  ${savingsLabel}${formatNumber(Math.abs(savings as number), 0)} <small>Kč</small>
+                </div>
+              </div>
+            `
+          : nothing}
         <div class="tile" data-testid="kpi-ups-hours">
           <b>${fieldLabel('ups_hours', 'simulator.kpi.ups_hours.label')}</b>
           <div class="n">${formatNumber(summary.ups_hours, 0)} <small>h</small></div>
@@ -871,9 +819,7 @@ export class OigSimulator extends LitElement {
     `;
   }
 
-  private renderBatteryCharts(intervals: BatteryInterval[]): unknown {
-    const presetId = this.activePresetId || this.presets[0]?.id || 'zima';
-    const prices = getBatteryPresetPrices(presetId);
+  private renderBatteryCharts(intervals: BatteryInterval[], prices: number[]): unknown {
     return html`
       <div class="chart" data-testid="chart-mode">
         <h4>
@@ -888,9 +834,8 @@ export class OigSimulator extends LitElement {
         <h4>
           ${fieldLabel('soc', 'simulator.chart.soc.label')}
           <span class="key"><span class="sw" style="background:var(--batt)"></span>SoC %</span>
-          <span class="key" style="color:var(--mut)">··· komfortní rezerva ${formatNumber(this.reserveSocPercent, 0)} %</span>
         </h4>
-        <div class="chart-body">${unsafeHTML(renderBatterySocSvg(intervals, this.reserveSocPercent))}</div>
+        <div class="chart-body">${unsafeHTML(renderBatterySocSvg(intervals))}</div>
       </div>
 
       <div class="chart" data-testid="chart-price">
@@ -904,9 +849,7 @@ export class OigSimulator extends LitElement {
     `;
   }
 
-  private renderBoilerCharts(intervals: BoilerInterval[]): unknown {
-    const presetId = this.activePresetId || this.presets[0]?.id || 'vsedni';
-    const draws = getBoilerPresetDraws(presetId);
+  private renderBoilerCharts(intervals: BoilerInterval[], draws: number[]): unknown {
     return html`
       <div class="chart" data-testid="chart-heating">
         <h4>
@@ -921,9 +864,9 @@ export class OigSimulator extends LitElement {
         <h4>
           ${fieldLabel('water_temp', 'simulator.chart.water_temp.label')}
           <span class="key"><span class="sw" style="background:var(--boil)"></span>°C</span>
-          <span class="key" style="color:var(--mut)">··· minimum ${formatNumber(this.boilerMinTempC, 0)} °C · cíl ${formatNumber(this.boilerTargetTempC, 0)} °C</span>
+          <span class="key" style="color:var(--mut)">··· cíl ${formatNumber(this.boilerTargetTempC, 0)} °C</span>
         </h4>
-        <div class="chart-body">${unsafeHTML(renderBoilerTempSvg(intervals, this.boilerMinTempC))}</div>
+        <div class="chart-body">${unsafeHTML(renderBoilerTempSvg(intervals, this.boilerTargetTempC))}</div>
       </div>
 
       <div class="chart" data-testid="chart-draw">
@@ -948,7 +891,7 @@ export class OigSimulator extends LitElement {
             ${this.renderPresetChips()}
           </div>
           ${this.renderBatteryTiles(this.response.summary)}
-          ${this.renderBatteryCharts(this.response.intervals)}
+          ${this.renderBatteryCharts(this.response.intervals, this.response.prices)}
         </section>
       `;
     }
@@ -959,7 +902,7 @@ export class OigSimulator extends LitElement {
           ${this.renderPresetChips()}
         </div>
         ${this.renderBoilerTiles(this.response.summary)}
-        ${this.renderBoilerCharts(this.response.intervals)}
+        ${this.renderBoilerCharts(this.response.intervals, this.response.draws)}
       </section>
     `;
   }

@@ -154,13 +154,11 @@ _AI_STATUS_STATES = frozenset(
 )
 _AI_PROVIDERS = frozenset({"groq", "nvidia", "ai_task"})
 _VALIDATE_CONFIG_OPTION_FIELDS = (
-    "battery_comfort_soc_percent",
     "auto_mode_switch_enabled",
     "balancing_enabled",
     "balancing_interval_days",
     "balancing_hold_hours",
     "cheap_window_percentile",
-    "expensive_percentile",
     "charge_rate_kw",
 )
 

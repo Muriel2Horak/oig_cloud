@@ -547,6 +547,29 @@ async def test_module_config_post_accepts_finite_update():
     assert entry.options["charge_rate_kw"] == 3.5
 
 
+@pytest.mark.asyncio
+async def test_module_config_ignores_stored_retired_planner_options():
+    stored = {"expensive_percentile": 70, "battery_comfort_soc_percent": 60}
+    hass, entry = _make_hass_for_module_config("oldbox", {"charge_rate_kw": 2.8, **stored})
+    view = api_module.OIGCloudModuleConfigView()
+
+    response = await view.get(_module_config_request(hass, {}), "oldbox")
+
+    assert response.status == 200
+    battery = json.loads(response.text)["battery"]
+    assert battery["charge_rate_kw"] == 2.8
+    assert not set(stored).intersection(battery)
+
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"charge_rate_kw": 3.5}}
+    )
+    response = await view.post(request, "oldbox")
+
+    assert response.status == 200
+    assert entry.options["charge_rate_kw"] == 3.5
+    assert {key: entry.options[key] for key in stored} == stored
+
+
 def test_setup_api_endpoints_registers_views():
     registered = []
 

@@ -71,7 +71,7 @@ describe('renderFieldPresenter (Task 1 — shared field renderer/presenter)', ()
 
   it('renders a number-with-scale field, showing the scaled value and coercing back on change', () => {
     const f: FieldDef = {
-      key: 'expensive_percentile', label: 'Práh drahých hodin (%)', type: 'number',
+      key: 'scaled_share', label: 'Podíl (%)', type: 'number',
       min: 50, max: 95, step: 5, scale: 100,
     };
     const onChange = vi.fn();

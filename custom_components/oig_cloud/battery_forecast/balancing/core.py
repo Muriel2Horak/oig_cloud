@@ -137,7 +137,8 @@ class BalancingManager:
     def _get_cheap_window_percentile(self) -> int:
         """Percentile threshold for 'cheap' windows (default 30%).
 
-        Reuses the general cheap-window option so balancing aligns with planner behavior.
+        Balancing is the only reader of this option: the planner works from the
+        prices themselves.
         """
         try:
             return int(self._config_entry.options.get("cheap_window_percentile", 30))

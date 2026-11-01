@@ -96,9 +96,6 @@ def test_tariff_parsing_and_calculation_percentage(monkeypatch):
         },
     )
 
-    assert sensor._parse_tariff_times("22,2") == [22, 2]
-    assert sensor._parse_tariff_times("") == []
-
     dt = datetime(2025, 1, 1, 12, 0, 0)
     price = sensor._calculate_final_price_15min(2.0, dt)
     assert price == 3.2
@@ -133,12 +130,13 @@ def test_tariff_fixed_prices_and_fee(monkeypatch):
     assert fee_price == 3.1
 
 
-def test_tariff_hours_returns_nt_when_not_in_vt_hours(monkeypatch):
+def test_tariff_returns_nt_after_configured_nt_start(monkeypatch):
     sensor = _make_sensor(
         monkeypatch,
         {
             "dual_tariff_enabled": True,
-            "vt_hours": "8,10",
+            "tariff_vt_start_weekday": "8,10",
+            "tariff_nt_start_weekday": "9,11",
         },
     )
     target_dt = datetime(2025, 1, 1, 9, 0, 0)
@@ -437,11 +435,6 @@ def test_get_tariff_for_datetime_weekend(monkeypatch):
     )
     dt = datetime(2025, 1, 4, 6, 0, 0)
     assert sensor._get_tariff_for_datetime(dt) == "VT"
-
-
-def test_parse_tariff_times_invalid(monkeypatch):
-    sensor = _make_sensor(monkeypatch)
-    assert sensor._parse_tariff_times("bad,2x") == []
 
 
 @pytest.mark.asyncio

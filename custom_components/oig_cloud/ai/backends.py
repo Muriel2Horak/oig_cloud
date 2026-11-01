@@ -57,9 +57,9 @@ PROMPT_ALLOWED_FIELDS = frozenset({
     # solar geometry — shape of the array, not where it is
     "kwp", "declination", "azimuth",
     # battery sizing + planner ratios
-    "capacity_kwh", "battery_comfort_soc_percent", "auto_mode_switch_enabled",
+    "capacity_kwh", "auto_mode_switch_enabled",
     "balancing_enabled", "balancing_interval_days", "balancing_hold_hours",
-    "cheap_window_percentile", "expensive_percentile", "charge_rate_kw",
+    "cheap_window_percentile", "charge_rate_kw",
 })
 
 ALLOWED_TASKS = frozenset({

@@ -155,7 +155,6 @@ def test_step_6_schema_has_expected_keys():
     assert "boiler_has_alternative_heating" in keys
     assert "boiler_alt_source_type" in keys
     assert "boiler_alt_cost_kwh" in keys
-    assert "box_has_home56" in keys
     assert "boiler_home5_maneuver_enabled" in keys
     assert "boiler_battery_cycle_cost_czk_kwh" in keys
     assert "go_back" in keys
@@ -178,7 +177,6 @@ def test_step_6_validation_passes_valid():
         "boiler_has_alternative_heating": True,
         "boiler_alt_source_type": "heat_pump",
         "boiler_alt_cost_kwh": 1.5,
-        "box_has_home56": True,
         "boiler_home5_maneuver_enabled": True,
         "boiler_battery_cycle_cost_czk_kwh": 0.50,
     })
@@ -311,7 +309,7 @@ async def test_module_config_boiler_get_returns_new_keys():
     assert boiler["boiler_alt_source_type"] == "heat_pump"
     assert boiler["boiler_battery_cycle_cost_czk_kwh"] == pytest.approx(0.40)
     # Bool flags present
-    assert "box_has_home56" in boiler
+    assert "box_has_home56" in data["modules"]
     assert "boiler_home5_maneuver_enabled" in boiler
     assert "boiler_circulation_enabled" in boiler
     assert "boiler_legionella_interval_days" in boiler
@@ -337,7 +335,7 @@ async def test_module_config_boiler_get_defaults_when_missing():
     data = json.loads(response.text)
     boiler = data["boiler"]
 
-    assert boiler["box_has_home56"] is False
+    assert data["modules"]["box_has_home56"] is False
     assert boiler["boiler_home5_maneuver_enabled"] is False
     assert boiler["boiler_circulation_enabled"] is False
 
@@ -449,7 +447,6 @@ async def test_module_config_boiler_post_alt_source_type_valid():
                 "values": {
                     "boiler_alt_source_type": "fireplace",
                     "boiler_battery_cycle_cost_czk_kwh": 0.35,
-                    "box_has_home56": True,
                     "boiler_home5_maneuver_enabled": True,
                 },
             }
@@ -460,7 +457,6 @@ async def test_module_config_boiler_post_alt_source_type_valid():
     assert data["updated"] is True
     assert captured["boiler_alt_source_type"] == "fireplace"
     assert captured["boiler_battery_cycle_cost_czk_kwh"] == pytest.approx(0.35)
-    assert captured["box_has_home56"] is True
     assert captured["boiler_home5_maneuver_enabled"] is True
 
 
@@ -679,8 +675,13 @@ async def test_module_config_post_uses_shared_merge(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_canonical_dto_includes_alt_source_type():
-    """_assemble_canonical_dto emits top-level alt_source_type from config."""
+@pytest.mark.asyncio
+async def test_canonical_dto_includes_alt_source_type():
+    """_assemble_canonical_dto emits top-level alt_source_type from config.
+
+    The helper became a coroutine when the progress block was added: building
+    the DTO now reads the stored day record, which is async.
+    """
     from custom_components.oig_cloud.boiler.api_views import _assemble_canonical_dto
 
     _config = {
@@ -738,7 +739,7 @@ def test_canonical_dto_includes_alt_source_type():
         states=_DummyStates(),
     )
 
-    result = _assemble_canonical_dto(hass, "eid", "testbox")
+    result = await _assemble_canonical_dto(hass, "eid", "testbox")
     # Should be a dict (not a web.Response)
     assert isinstance(result, dict), f"Expected dict, got {type(result)}: {result}"
     assert result.get("alt_source_type") == "heat_pump"
@@ -773,8 +774,7 @@ def test_build_boiler_options_includes_f5_keys():
     assert opts["boiler_alt_source_type"] == "gas"
     assert "boiler_battery_cycle_cost_czk_kwh" in opts
     assert opts["boiler_battery_cycle_cost_czk_kwh"] == pytest.approx(0.50)
-    assert "box_has_home56" in opts
-    assert opts["box_has_home56"] is False
+    assert "box_has_home56" not in opts
     assert "boiler_home5_maneuver_enabled" in opts
     assert opts["boiler_home5_maneuver_enabled"] is False
     assert "boiler_circulation_enabled" in opts
@@ -808,7 +808,6 @@ def test_build_boiler_options_preserves_configured_values():
     opts = w._build_boiler_options({
         "boiler_alt_source_type": "fireplace",
         "boiler_battery_cycle_cost_czk_kwh": 0.30,
-        "box_has_home56": True,
         "boiler_home5_maneuver_enabled": True,
         "boiler_circulation_enabled": True,
         "boiler_circulation_lead_minutes": 20,
@@ -820,7 +819,6 @@ def test_build_boiler_options_preserves_configured_values():
 
     assert opts["boiler_alt_source_type"] == "fireplace"
     assert opts["boiler_battery_cycle_cost_czk_kwh"] == pytest.approx(0.30)
-    assert opts["box_has_home56"] is True
     assert opts["boiler_home5_maneuver_enabled"] is True
     assert opts["boiler_circulation_enabled"] is True
     assert opts["boiler_circulation_lead_minutes"] == 20

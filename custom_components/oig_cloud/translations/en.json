@@ -2,7 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "OIG Cloud integration is already configured",
-      "not_implemented": "This feature is not yet implemented"
+      "not_implemented": "This feature is not yet implemented",
+      "reconfigure_successful": "✅ The login was changed and the integration reloaded.",
+      "reauth_successful": "✅ The login was renewed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ For updates every 4 hours or every hour, API key from Forecast.Solar is required",
@@ -102,8 +105,7 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "price_hysteresis_czk": "Price hysteresis (CZK/kWh)",
           "hw_min_hold_hours": "Max hours at HW minimum",
-          "target_capacity_percent": "Target battery capacity (%)",
-          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
+          "target_capacity_percent": "Target battery capacity (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "When enabled the integration calls the set_box_mode service automatically according to the computed schedule (same as Config Flow).",
@@ -120,8 +122,7 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "price_hysteresis_czk": "Minimum price delta for hold vs. wait decisions",
           "hw_min_hold_hours": "Maximum time to stay at hardware minimum before forcing recharge",
-          "target_capacity_percent": "Optimal capacity to charge to",
-          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
+          "target_capacity_percent": "Optimal capacity to charge to"
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -230,7 +231,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ I want to go back (check + click Submit)"
+          "go_back": "⬅️ I want to go back (check + click Submit)",
+          "box_has_home56": "🔀 Box has Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimental - smart charging based on prices",
@@ -245,7 +247,8 @@
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
           "telemetry_mqtt_port": "The standard MQTT port is 1883",
           "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
-          "go_back": "Check this box and press 'Submit' - you will go back one step"
+          "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "box_has_home56": "Enables the Home 5 and Home 6 toggles in the control panel. Does not depend on the boiler module."
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
         "title": "📦 Module and Feature Selection"
@@ -375,6 +378,29 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
+      },
+      "reconfigure": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "🔑 OIG Cloud login expired",
+        "description": "OIG Cloud no longer accepts the stored login. Enter the current one.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 and Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. The Home 6 window is set on the box display: User settings → Expert settings → Home Grid VI Off/On. It cannot be set through OIG Cloud.\n\nWhile the window is 0:00-0:00, Home 6 behaves as Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.",
+        "data": {
+          "go_back": "⬅️ Go back (tick and submit)"
+        }
       }
     }
   },
@@ -418,7 +444,9 @@
   },
   "options": {
     "abort": {
-      "reconfigure_successful": "✅ Settings saved and integration reloaded."
+      "reconfigure_successful": "✅ Settings saved and integration reloaded.",
+      "credentials_updated": "✅ The login was changed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
     },
     "step": {
       "basic_config": {
@@ -569,8 +597,7 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "min_capacity_percent": "Minimum battery capacity (%)",
           "disable_planning_min_guard": "Disable planning minimum guard",
-          "target_capacity_percent": "Target battery capacity (%)",
-          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
+          "target_capacity_percent": "Target battery capacity (%)"
         },
         "data_description": {
           "balancing_economic_threshold": "On days 5-7 after last balance, use this price threshold (typically 2.5 CZK/kWh)",
@@ -583,8 +610,7 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "min_capacity_percent": "If capacity drops below this value, charging starts",
           "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
-          "target_capacity_percent": "Optimal capacity to charge to",
-          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
+          "target_capacity_percent": "Optimal capacity to charge to"
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -628,7 +654,6 @@
           "boiler_has_alternative_heating": "Alternative heat source (gas, heat pump, fireplace…)",
           "boiler_alt_source_type": "Type of alternative source",
           "boiler_alt_cost_kwh": "Heat cost (CZK/kWh)",
-          "box_has_home56": "Box has Home 5/6",
           "boiler_home5_maneuver_enabled": "🔋→🔥 Heating from battery",
           "boiler_battery_cycle_cost_czk_kwh": "Battery cycle cost (CZK/kWh)",
           "go_back": "⬅️ I want to go back (check + click Submit)"
@@ -637,7 +662,6 @@
           "boiler_has_alternative_heating": "Enable if the boiler can be heated by another source (gas boiler, heat pump, fireplace…)",
           "boiler_alt_source_type": "Used only for labels; does not affect calculations. Gas: include boiler efficiency in the price.",
           "boiler_alt_cost_kwh": "Cost per kWh of heat from the alternative source (e.g. 1.5 CZK/kWh for gas incl. efficiency). Electric heating is used only when cheaper.",
-          "box_has_home56": "Enables Home 5/6 (OIG CBB) toggles on the dashboard and allows battery-to-boiler heating",
           "boiler_home5_maneuver_enabled": "Planner may use battery (Home 5) to heat the boiler when cheaper than the grid. Requires Home 5/6.",
           "boiler_battery_cycle_cost_czk_kwh": "Battery degradation cost per kWh (recommended 0.40–0.60 CZK/kWh). Planner compares this with spot price.",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
@@ -739,7 +763,8 @@
           "telemetry_mqtt_host": "MQTT broker host",
           "telemetry_mqtt_port": "MQTT broker port",
           "telemetry_mqtt_prefix": "MQTT topic prefix",
-          "go_back": "⬅️ I want to go back (check + click Submit)"
+          "go_back": "⬅️ I want to go back (check + click Submit)",
+          "box_has_home56": "🔀 Box has Home 5/6"
         },
         "data_description": {
           "enable_battery_prediction": "Experimental - smart charging based on prices",
@@ -754,7 +779,8 @@
           "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
           "telemetry_mqtt_port": "The standard MQTT port is 1883",
           "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
-          "go_back": "Check this box and press 'Submit' - you will go back one step"
+          "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "box_has_home56": "Enables the Home 5 and Home 6 toggles in the control panel. Does not depend on the boiler module."
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
         "title": "📦 Module and Feature Selection"
@@ -908,15 +934,38 @@
         "description": "Pick the section you want to change. Saving a section applies immediately.",
         "menu_options": {
           "section_modules": "🧩 Modules (enable/disable)",
+          "section_credentials": "🔑 OIG Cloud login",
           "section_intervals": "⏱️ Connection & intervals",
           "section_solar": "☀️ Solar forecast",
           "section_battery": "🔋 Battery & planner",
+          "section_home56": "🌙 Home 5/6",
           "section_pricing": "💰 Energy pricing",
           "section_boiler": "🔥 Boiler",
           "section_ai": "🤖 AI helper (optional)",
           "section_all": "🧙 Full wizard"
         }
+      },
+      "section_credentials": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 and Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. The Home 6 window is set on the box display: User settings → Expert settings → Home Grid VI Off/On. It cannot be set through OIG Cloud.\n\nWhile the window is 0:00-0:00, Home 6 behaves as Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.",
+        "data": {
+          "go_back": "⬅️ Go back (tick and submit)"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect": "Failed to connect to OIG Cloud API",
+      "live_data_not_enabled": "'Live Data' is not enabled in OIG Cloud app. Enable it in app settings!",
+      "unknown": "Unexpected error"
     }
   },
   "selector": {

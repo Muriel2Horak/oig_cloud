@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from ..battery_forecast.utils_common import get_tariff_for_datetime
 from ..pricing.spot_price_15min_base import BasePrice15MinSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,28 +75,8 @@ class SpotPrice15MinSensor(BasePrice15MinSensor):
         }
 
     def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
-        """Získat tarif (VT/NT) pro daný datetime - kopie z analytics sensoru."""
-        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
-        if not dual_tariff_enabled:
-            return "VT"
-
-        vt_hours = self._parse_tariff_times(
-            self._entry.options.get("vt_hours", "")
-        )
-        if not vt_hours:
-            return "VT"
-
-        hour = target_datetime.hour
-        return "VT" if hour in vt_hours else "NT"
-
-    def _parse_tariff_times(self, time_str: str) -> list[int]:
-        """Parse tariff times string to list of hours."""
-        if not time_str:
-            return []
-        try:
-            return [int(x.strip()) for x in time_str.split(",") if x.strip()]
-        except ValueError:
-            return []
+        """Získat tarif (VT/NT) pro daný datetime."""
+        return get_tariff_for_datetime(target_datetime, self._entry.options)
 
     def _calculate_final_price_15min(
         self, spot_price_czk: float, target_datetime: datetime

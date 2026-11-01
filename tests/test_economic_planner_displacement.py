@@ -1,24 +1,21 @@
-"""Focused unit tests for the LOCKED displacement algorithm (F1 core).
+"""What the economic planning has to do on the classic price shapes.
 
-Covers the EXPENSIVE_IMPORT classifier and the displacement loop added to
-economic_planner.py:
+These cases were written for the displacement loop that the optimizer replaced.
+They describe the behaviour, not that loop, so they stay:
 
   * cheap-night / expensive-morning  -> pre-charges ahead of the peak
   * sunny day before peak            -> defers to PV (no grid pre-charge)
   * all-cheap day                    -> no economic charging
-  * all-expensive day                -> only safety-floor defense (no η-gated charge)
-  * η-gate boundary                  -> charge only when cheap/η < expensive
-  * empty PV                         -> still classifies / displaces correctly
+  * all-expensive day                -> only safety-floor defense
+  * spread vs round-trip losses      -> charge only when it pays
+  * empty PV                         -> still plans correctly
 """
 from __future__ import annotations
 
 from typing import List
 
 from custom_components.oig_cloud.battery_forecast.economic_planner import (
-    find_expensive_import_moments,
     plan_battery_schedule,
-    simulate_home_i_detailed,
-    _percentile_threshold,
 )
 from custom_components.oig_cloud.battery_forecast.economic_planner_types import (
     IntervalData,
@@ -37,9 +34,6 @@ def _build_inputs(
     max_capacity_kwh: float = 10.24,
     hw_min_kwh: float = 2.048,
     planning_min_percent: float = 20.0,
-    expensive_percentile: float = 0.70,
-    round_trip_efficiency: float = 0.85,
-    comfort_soc_kwh: float = 0.0,
 ) -> PlannerInputs:
     n = len(prices)
     intervals: List[IntervalData] = [{"index": i} for i in range(n)]
@@ -53,9 +47,6 @@ def _build_inputs(
         prices=prices,
         solar_forecast=solar_forecast,
         load_forecast=load_forecast,
-        expensive_percentile=expensive_percentile,
-        round_trip_efficiency=round_trip_efficiency,
-        comfort_soc_kwh=comfort_soc_kwh,
     )
 
 
@@ -65,53 +56,6 @@ def _count_ups(result) -> int:
 
 def _ups_indices(result) -> List[int]:
     return [i for i, m in enumerate(result.modes) if m == CBBMode.HOME_UPS.value]
-
-
-# ---------------------------------------------------------------------------
-# Percentile helper
-# ---------------------------------------------------------------------------
-
-
-def test_percentile_threshold_basic() -> None:
-    values = [1.0, 2.0, 3.0, 4.0, 5.0]
-    # P=0.0 -> min, P=1.0 -> max.
-    assert _percentile_threshold(values, 0.0) == 1.0
-    assert _percentile_threshold(values, 1.0) == 5.0
-    # P=0.5 -> median.
-    assert _percentile_threshold(values, 0.5) == 3.0
-
-
-def test_percentile_threshold_empty_is_inf() -> None:
-    assert _percentile_threshold([], 0.7) == float("inf")
-
-
-# ---------------------------------------------------------------------------
-# Classifier
-# ---------------------------------------------------------------------------
-
-
-def test_expensive_import_classifier_flags_high_price_imports() -> None:
-    # 8 intervals: first 4 cheap (no import because battery full), last 4
-    # expensive with load forcing grid import once the battery drains.
-    prices = [1.0, 1.0, 1.0, 1.0, 9.0, 9.0, 9.0, 9.0]
-    solar = [0.0] * 8
-    load = [0.5, 0.5, 0.5, 0.5, 2.0, 2.0, 2.0, 2.0]
-    inputs = _build_inputs(
-        current_soc_kwh=3.0,
-        prices=prices,
-        solar_forecast=solar,
-        load_forecast=load,
-    )
-    baseline = simulate_home_i_detailed(inputs)
-    moments = find_expensive_import_moments(baseline, inputs)
-
-    assert moments, "expected at least one expensive import moment"
-    # All flagged moments must be in the expensive (>= P-th percentile) region
-    # and have a positive baseline import.
-    for m in moments:
-        assert m.type == "EXPENSIVE_IMPORT"
-        assert m.price_czk is not None and m.price_czk >= 8.0
-        assert m.deficit_kwh > 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -240,13 +184,14 @@ def test_eta_gate_blocks_when_spread_too_small() -> None:
     # cheap/η = 8/0.85 = 9.41 >= 9 -> NOT economical -> no displacement charge.
     prices = [8.0] * 8 + [9.0] * 8
     solar = [0.0] * 16
-    load = [0.6] * 16
+    load = [0.1] * 16
     inputs = _build_inputs(
-        current_soc_kwh=9.5,  # high SOC so no floor defense interferes
+        # Well below full, so holding in UPS would mean buying a real charge,
+        # and enough charge that no floor defense interferes.
+        current_soc_kwh=6.0,
         prices=prices,
         solar_forecast=solar,
         load_forecast=load,
-        round_trip_efficiency=0.85,
     )
     result = plan_battery_schedule(inputs)
     assert _count_ups(result) == 0, "η-gate should block uneconomical charging"
@@ -263,7 +208,6 @@ def test_eta_gate_allows_when_spread_large() -> None:
         prices=prices,
         solar_forecast=solar,
         load_forecast=load,
-        round_trip_efficiency=0.85,
     )
     result = plan_battery_schedule(inputs)
     ups = _ups_indices(result)
@@ -321,19 +265,14 @@ def test_public_return_shape_stable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Performance regression guard (displacement must stay ~O(n²), not O(n⁴))
+# Performance regression guard
 # ---------------------------------------------------------------------------
 
 
-def test_displacement_performance_full_horizon() -> None:
-    """Worst-case full horizon must plan quickly.
-
-    The first displacement implementation re-simulated twice per candidate,
-    giving ~O(n⁴): n=96 took ~5.6 s and n=192 did not finish in ~54 s. The
-    fixed loop is ~O(n²). This guard runs the production-sized horizon and a
-    larger one and asserts a generous wall-clock bound so the blowup can never
-    silently return.
-    """
+def test_planning_performance_full_horizon() -> None:
+    """Worst-case full horizon must plan quickly. A generous wall-clock bound on
+    the production-sized horizon and a larger one, so a blowup cannot return
+    silently."""
     import time
 
     for n in (96, 192):
@@ -352,35 +291,6 @@ def test_displacement_performance_full_horizon() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Per-day percentile (a cheap day's relative peak is judged per day)
-# ---------------------------------------------------------------------------
-
-
-def test_per_day_percentile_flags_each_days_relative_peak() -> None:
-    """A whole-horizon percentile lets a very expensive day-1 hide day-0's own
-    relative peak. Per-day percentile judges each day independently."""
-    n = 8
-    prices = [1.0, 1.0, 1.0, 5.0, 10.0, 10.0, 10.0, 10.0]
-    # battery at floor -> every interval imports from grid (grid_import > 0)
-    base = dict(
-        current_soc_kwh=2.048, prices=prices, solar_forecast=[0.0] * n,
-        load_forecast=[0.5] * n, hw_min_kwh=2.048, planning_min_percent=20.0,
-        expensive_percentile=0.70,
-    )
-    wh = _build_inputs(**base)
-    wh_flagged = {m.interval for m in find_expensive_import_moments(
-        simulate_home_i_detailed(wh), wh)}
-
-    pd = _build_inputs(**base)
-    pd.interval_days = [0, 0, 0, 0, 1, 1, 1, 1]
-    pd_flagged = {m.interval for m in find_expensive_import_moments(
-        simulate_home_i_detailed(pd), pd)}
-
-    assert 3 not in wh_flagged, "whole-horizon threshold hides day-0 relative peak"
-    assert 3 in pd_flagged, "per-day threshold flags day-0 relative peak"
-
-
-# ---------------------------------------------------------------------------
 # Regression: relative spread but no real cost benefit -> NO grid charging
 # ---------------------------------------------------------------------------
 
@@ -394,12 +304,11 @@ def test_no_charge_when_displacement_does_not_lower_cost() -> None:
     # Small absolute spread (3.0 .. 3.6), no big cheap/expensive gap.
     prices = [3.0 + 0.6 * (i / (n - 1)) for i in range(n)]
     solar = [0.0] * n
-    load = [0.08] * n  # total ~7.7 kWh: battery (14 -> ~6.3) never reaches floor
+    load = [0.05] * n  # total ~4.8 kWh: battery (9 -> ~3.6) never reaches floor
     inputs = _build_inputs(
-        current_soc_kwh=14.0, prices=prices, solar_forecast=solar,
+        current_soc_kwh=9.0, prices=prices, solar_forecast=solar,
         load_forecast=load, max_capacity_kwh=15.36, hw_min_kwh=3.07,
-        planning_min_percent=20.0, expensive_percentile=0.70,
-        round_trip_efficiency=0.838,
+        planning_min_percent=20.0,
     )
     result = plan_battery_schedule(inputs)
     assert _count_ups(result) == 0, (
@@ -409,63 +318,31 @@ def test_no_charge_when_displacement_does_not_lower_cost() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Comfort buffer (two-tier floor): keep SoC above a comfort target using ONLY
-# cheap windows, so the box never force-charges to ~80% at any price.
+# A cheap window is bought because it is cheap
 # ---------------------------------------------------------------------------
 
 
-def test_comfort_tops_up_in_cheap_windows_only():
-    # 4 cheap (1.0) then 4 expensive (5.0). Battery starts at ~49% and would
-    # sit below the 78% comfort target → comfort should charge cheap windows.
+def test_cheap_windows_are_bought_and_expensive_ones_are_not():
+    # 1 CZK against a typical 3 CZK: worth storing even with nothing in the
+    # horizon to spend it on.
     inputs = _build_inputs(
         current_soc_kwh=5.0,
         prices=[1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 5.0],
         solar_forecast=[0.0] * 8,
         load_forecast=[0.1] * 8,
-        comfort_soc_kwh=8.0,
     )
     result = plan_battery_schedule(inputs)
     ups = _ups_indices(result)
-    assert ups, "comfort should have charged at least one cheap window"
-    # Every charge must be in a cheap (1.0) window — never the 5.0 windows.
+    assert ups
     assert all(inputs.prices[i] == 1.0 for i in ups), ups
 
 
-def test_comfort_waits_when_no_cheap_window():
-    # All-expensive flat day: no cheap tier → comfort must NOT charge (descend
-    # and wait). Battery stays above the hard floor so the greedy doesn't fire.
-    inputs = _build_inputs(
-        current_soc_kwh=6.0,
-        prices=[5.0] * 8,
-        solar_forecast=[0.0] * 8,
-        load_forecast=[0.1] * 8,
-        comfort_soc_kwh=8.0,
-    )
-    result = plan_battery_schedule(inputs)
-    assert _count_ups(result) == 0, "no cheap window → comfort must not force expensive grid"
-
-
-def test_comfort_disabled_changes_nothing():
-    # comfort_soc_kwh=0 → behaviour identical to before (no comfort charging).
-    kwargs = dict(
-        current_soc_kwh=5.0,
-        prices=[1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 5.0],
-        solar_forecast=[0.0] * 8,
-        load_forecast=[0.1] * 8,
-    )
-    off = plan_battery_schedule(_build_inputs(**kwargs, comfort_soc_kwh=0.0))
-    assert _count_ups(off) == 0
-
-
-def test_comfort_skips_grid_when_solar_recovers():
-    # Battery below comfort but abundant solar will refill it → comfort must NOT
-    # grid-charge (PV-first). This is the "charging at peak FVE" bug fix.
+def test_solar_refill_needs_no_grid_even_on_cheap_prices():
     inputs = _build_inputs(
         current_soc_kwh=4.0,
-        prices=[1.0] * 8,            # all cheap (would otherwise tempt charging)
-        solar_forecast=[2.0] * 8,    # strong surplus over load
+        prices=[1.0] * 8,
+        solar_forecast=[2.0] * 8,
         load_forecast=[0.5] * 8,
-        comfort_soc_kwh=8.0,
     )
     result = plan_battery_schedule(inputs)
-    assert _count_ups(result) == 0, f"solar covers comfort → no grid, got {_ups_indices(result)}"
+    assert _count_ups(result) == 0, f"solar fills the battery, got {_ups_indices(result)}"

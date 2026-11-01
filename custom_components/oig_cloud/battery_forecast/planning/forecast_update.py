@@ -11,7 +11,11 @@ from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from ...const import DOMAIN
+from ...const import (
+    CONF_BOILER_BATTERY_CYCLE_COST,
+    DEFAULT_BOILER_BATTERY_CYCLE_COST,
+    DOMAIN,
+)
 from ...core.data_source import (
     DATA_SOURCE_CLOUD_ONLY,
     DEFAULT_PROXY_STALE_MINUTES,
@@ -33,6 +37,8 @@ from ..economic_planner import (
     simulate_home_i_detailed,
 )
 from ..economic_planner_types import DEFAULT_ROUND_TRIP_EFFICIENCY, PlannerInputs
+from ..forecast_accuracy import apply_correction_to_forecast, compute_correction_factor
+from ..storage.plan_storage_io import get_plans_store_lock
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
     attach_planner_reasons,
@@ -44,7 +50,8 @@ from . import mode_guard as mode_guard_module
 
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
-MODE_GUARD_MINUTES = 60
+# Default plan-stability window; configurable with mode_guard_minutes.
+MODE_GUARD_MINUTES = 5
 # Hardware safety floor as a fraction of max capacity — fallback only, used
 # when the box's live bat_min sensor (_resolve_proxy_bat_min_pct) is
 # unavailable or implausible. Typically ~20% for CBB 3F Home Plus Premium.
@@ -565,9 +572,8 @@ def _derive_planning_min_percent(
 ) -> float:
     """Planning floor = box trigger + safety margin (never below hw floor).
 
-    Prevention by construction: the existing proactive floor defense
-    (cheapest-window pre-charging) keeps the trajectory above this floor, so
-    "drain to the box trigger and wait" can never appear in a plan. No box
+    Prevention by construction: the optimizer treats this floor as a hard limit,
+    so "drain to the box trigger and wait" can never appear in a plan. No box
     behavior emulation, no post-hoc plan patching.
     """
     trigger_pct = proxy_bat_min_pct if proxy_bat_min_pct is not None else hw_min_percent
@@ -924,6 +930,23 @@ def _resolve_load_kwh(
     return hourly_kwh / 4.0
 
 
+def _profile_covers_hour(profile: Any, hour: int) -> bool:
+    """True when the profile carries a real value for this hour of the day."""
+    if not isinstance(profile, dict):
+        return False
+    hourly_consumption = profile.get("hourly_consumption")
+    start_hour = profile.get("start_hour", 0)
+    if isinstance(hourly_consumption, list):
+        index = hour - start_hour
+        return 0 <= index < len(hourly_consumption)
+    if isinstance(hourly_consumption, dict):
+        return (
+            hourly_consumption.get(hour) is not None
+            or hourly_consumption.get(hour - start_hour) is not None
+        )
+    return False
+
+
 def _select_adaptive_profile(
     adaptive_profiles: dict[str, Any],
     timestamp: datetime,
@@ -932,8 +955,18 @@ def _select_adaptive_profile(
     today_profile = adaptive_profiles.get("today_profile")
     tomorrow_profile = adaptive_profiles.get("tomorrow_profile")
     if timestamp.date() == today:
-        return today_profile or tomorrow_profile
-    return tomorrow_profile or today_profile
+        preference = (today_profile, tomorrow_profile)
+    else:
+        preference = (tomorrow_profile, today_profile)
+
+    # today_profile is a *remaining hours of today* window (start_hour =
+    # current_hour), so at 00:00 it still holds yesterday's tail. Asking it for
+    # hour 14 used to miss and collapse the whole day plan to one number, so
+    # prefer whichever profile actually covers the hour being planned.
+    for profile in preference:
+        if _profile_covers_hour(profile, timestamp.hour):
+            return profile
+    return next((profile for profile in preference if profile), None)
 
 
 def _profile_has_hourly_series(profile: Any) -> bool:
@@ -984,26 +1017,21 @@ def _hourly_kwh_from_profile(
             except (TypeError, ValueError):
                 pass
 
-    avg_kwh_h = _profile_avg_kwh_h(profile)
-    if avg_kwh_h is not None:
-        sensor._log_rate_limited(
-            "adaptive_profile_oob",
-            "debug",
-            "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
-            hour,
-            start_hour,
-            len(hourly_consumption) if isinstance(hourly_consumption, (list, dict)) else 0,
-            cooldown_s=900.0,
-        )
-        return avg_kwh_h
-
+    # No avg_kwh_h fallback here on purpose: one scalar stretched across 96
+    # slots is exactly what turned a stored day plan into a flat 592 W line
+    # that nothing in the logs ever mentioned. The load_avg windows the caller
+    # falls back to are coarse, but at least they have a shape - and the miss
+    # is now loud enough to be caught in production.
     sensor._log_rate_limited(
-        "adaptive_profile_missing_data",
-        "debug",
-        "Adaptive profile missing usable data: hour=%s start=%s (falling back to load_avg)",
+        "adaptive_profile_window_miss",
+        "warning",
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        "Adaptive profile does not cover hour=%s (start_hour=%s, hours=%s) - "
+        "falling back to load_avg windows",
         hour,
         start_hour,
-        cooldown_s=900.0,
+        len(hourly_consumption) if isinstance(hourly_consumption, (list, dict)) else 0,
+        cooldown_s=60.0,
     )
     return None
 
@@ -1081,41 +1109,82 @@ async def _get_recent_solar_ratio(
         return None
 
 
+async def _maybe_apply_adaptive_correction(
+    sensor: Any,
+    solar_kwh_list: list[float],
+) -> float:
+    """Scale the solar list by the bias learned from finished days.
+
+    Returns the factor that was applied, 1.0 when the plans store is unavailable.
+    """
+    store = getattr(sensor, "_plans_store", None)
+    if not store:
+        return 1.0
+
+    try:
+        async with get_plans_store_lock(sensor):
+            storage_data = await store.async_load() or {}
+    except Exception as err:
+        _LOGGER.debug("Could not load solar accuracy history: %s", err)
+        return 1.0
+
+    factor = compute_correction_factor(storage_data)
+    solar_kwh_list[:] = apply_correction_to_forecast(solar_kwh_list, factor)
+    sensor._log_rate_limited(
+        "adaptive_forecast_correction",
+        "info",
+        "[ForecastAccuracy] Applied solar correction factor %.3f",
+        factor,
+        cooldown_s=3600.0,
+    )
+    return factor
+
+
 async def _maybe_apply_solar_correction(
     sensor: Any,
     adaptive_helper: AdaptiveConsumptionHelper,
     solar_forecast: Any,
     solar_kwh_list: list[float],
+    *,
+    applied_factor: float = 1.0,
 ) -> None:
     """Damp same-day solar drift into the forward solar list (dead band 0.85–1.15),
     mirroring the consumption boost. Prevents an under-forecast (sunnier than
     Solcast) from forcing unnecessary grid-charging, and lets a cloudier-than-
-    forecast day pull in protective charging earlier."""
+    forecast day pull in protective charging earlier.
+
+    The drift is measured against the raw forecast, so the factor already applied
+    to the list is taken out of it: otherwise the same bias is corrected twice."""
     ratio = await _get_recent_solar_ratio(sensor, solar_forecast)
-    if ratio and (ratio > 1.15 or ratio < 0.85):
-        adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, ratio)
+    if not ratio:
+        return
+    remaining = ratio / applied_factor
+    if remaining > 1.15 or remaining < 0.85:
+        adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, remaining)
 
 
-def _interval_day_indices(
-    spot_prices: list[dict[str, Any]],
-) -> Optional[List[int]]:
-    """0-based day index (0=first day, 1=next, …) per interval from the price
-    timestamps. Returns None on any parse failure so the planner falls back to a
-    whole-horizon percentile."""
-    days: List[int] = []
-    first_date: Optional[date] = None
-    for point in spot_prices:
-        ts = point.get("time")
-        if not ts:
-            return None
-        try:
-            point_date = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).date()
-        except (ValueError, TypeError):
-            return None
-        if first_date is None:
-            first_date = point_date
-        days.append((point_date - first_date).days)
-    return days or None
+def _battery_wear_czk_per_kwh(opts: Any) -> float:
+    """One battery, one wear figure: the option the boiler planner already uses
+    for the same thing. A bad stored value must not cost the plan."""
+    try:
+        wear = float(
+            opts.get(CONF_BOILER_BATTERY_CYCLE_COST, DEFAULT_BOILER_BATTERY_CYCLE_COST)
+        )
+    except (TypeError, ValueError):
+        return DEFAULT_BOILER_BATTERY_CYCLE_COST
+    return wear if math.isfinite(wear) and wear >= 0 else DEFAULT_BOILER_BATTERY_CYCLE_COST
+
+
+def _with_slot_times(
+    trace: list[dict[str, Any]], spot_prices: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Name the clock time of each entry's first UPS slot: a slot index means
+    nothing to someone reading the trace an hour after the plan was made."""
+    for entry in trace:
+        slots = entry.get("charge_intervals") or []
+        if slots and slots[0] < len(spot_prices):
+            entry["charge_start"] = spot_prices[slots[0]].get("time")
+    return trace
 
 
 def _run_planner(
@@ -1144,10 +1213,9 @@ def _run_planner(
         # (~99%) from the battery's own charge/discharge energy counters — it is
         # NOT the AC round-trip (grid -> house) the planner economics need, which
         # also pays the inverter conversion losses both ways (~84% total). Use the
-        # planner's AC round-trip constant consistently for the η-gate, the
-        # displayed timeline and the mode guard so they all agree with the cost
-        # simulation (_simulate_interval). The DC sensor stays a battery-health
-        # metric only.
+        # planner's AC round-trip constant consistently for the displayed timeline
+        # and the mode guard so they agree with the cost simulation
+        # (_simulate_interval). The DC sensor stays a battery-health metric only.
         directional_efficiency = _round_trip_to_directional(
             DEFAULT_ROUND_TRIP_EFFICIENCY
         )
@@ -1174,13 +1242,13 @@ def _run_planner(
             reason_class=bat_min_reason_class,
         )
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
-        # Floor defense protects the hardware safety minimum PLUS a small
-        # margin above the BOX bat_min trigger: dwelling at the trigger makes
-        # the box force-balance from grid uncontrolled, so the plan must never
-        # aim at it (see _derive_planning_min_percent). Any reserve above this
-        # floor is still built purely by cost-gated displacement — no fixed
-        # backup that forces uneconomic grid charging. The legacy
-        # `min_capacity_percent` option no longer raises this floor.
+        # The hard minimum is the hardware safety minimum PLUS a small margin
+        # above the BOX bat_min trigger: dwelling at the trigger makes the box
+        # force-balance from grid uncontrolled, so the plan must never aim at it
+        # (see _derive_planning_min_percent). Any reserve above this floor is
+        # there only where the optimizer finds it pays — no fixed backup that
+        # forces uneconomic grid charging. The legacy `min_capacity_percent`
+        # option no longer raises this floor.
         planning_min_percent = _derive_planning_min_percent(
             hw_min_percent,
             proxy_bat_min_pct,
@@ -1189,18 +1257,16 @@ def _run_planner(
             ),
         )
 
-        # Comfort SoC target: keep a buffer well above the hard floor so the BOX
-        # never force-charges to ~80% at any price when the battery dwells near
-        # bat_min. Maintained ONLY from cheap windows (never expensive grid);
-        # configurable %, default 50. 0 disables it.
-        comfort_pct = float(opts.get("battery_comfort_soc_percent", 50.0))
-        comfort_pct = max(0.0, min(95.0, comfort_pct))
-        comfort_soc_kwh = max_capacity * (comfort_pct / 100.0)
-
-        # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
-        # so the expensive-price percentile is computed per day, not blended
-        # across a cheap day + an expensive day.
-        interval_days = _interval_day_indices(spot_prices)
+        # Same index rule as the displayed timeline (build_planner_timeline).
+        export_price_list = [
+            float(export_prices[i].get("price", 0.0) or 0.0)
+            if i < len(export_prices)
+            else 0.0
+            for i in range(len(spot_prices))
+        ]
+        # The box's own mode: leaving it costs a switch, so that a rerun on a
+        # close call does not flip the box for nothing.
+        get_current_mode = getattr(sensor, "_get_current_mode", None)
 
         planner_inputs = PlannerInputs(
             current_soc_kwh=current_capacity,
@@ -1212,19 +1278,16 @@ def _run_planner(
             prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
             solar_forecast=list(solar_kwh_list),
             load_forecast=list(load_forecast),
-            expensive_percentile=float(opts.get("expensive_percentile", 0.70)),
-            # round_trip_efficiency defaults to the AC round-trip constant
-            # (DEFAULT_ROUND_TRIP_EFFICIENCY), matching _simulate_interval — see
-            # the directional_efficiency note above.
-            interval_days=interval_days,
-            comfort_soc_kwh=comfort_soc_kwh,
+            export_prices=export_price_list,
+            current_mode=get_current_mode() if callable(get_current_mode) else None,
+            battery_wear_czk_per_kwh=_battery_wear_czk_per_kwh(opts),
         )
 
         result = plan_battery_schedule(planner_inputs)
         charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
         charging_metrics.pop("planner_failure_class", None)
-        charging_metrics["planner_decision_trace"] = build_planner_decision_trace(
-            result.decisions, planner_inputs
+        charging_metrics["planner_decision_trace"] = _with_slot_times(
+            build_planner_decision_trace(result.decisions, planner_inputs), spot_prices
         )
         sensor._charging_metrics = charging_metrics
 
@@ -1316,7 +1379,7 @@ def _run_planner(
             "target_kwh": planning_min_kwh,
             # Emergent dynamic reserve: the peak SoC the plan deliberately builds
             # (via cheap grid pre-charging) to bridge upcoming expensive/low-PV
-            # windows — higher than the static floor when displacement kicks in.
+            # windows — higher than the static floor when that pays.
             "dynamic_reserve_kwh": round(
                 max(
                     (s.soc_kwh for s in (getattr(result, "states", None) or [])),
@@ -1683,6 +1746,56 @@ def _post_update_housekeeping(
     _schedule_precompute(sensor)
 
 
+# Longer than the slowest measured start of a loaded Home Assistant: the data
+# appeared 8.5 minutes after the first planner run on 1. 11. 2026.
+LOAD_DATA_GRACE_MINUTES = 20
+
+# Each attempt reads the sensors only, and the profile sensor's own signal wakes
+# the planner within seconds, so this is just the backstop for the load_avg path.
+LOAD_DATA_RETRY_SECONDS = 30.0
+
+
+def _should_defer_for_load_data(
+    sensor: Any, load_avg_sensors: Any, adaptive_profiles: Any
+) -> bool:
+    """Wait, rather than plan on a guess, while no consumption data exists.
+
+    Without the adaptive profile and the load_avg sensors every interval falls
+    back to a flat 500 W. Such a plan is published and can steer the box, so
+    after a restart the box keeps its last mode until real data arrives.
+
+    The wait is bounded: an install that never gets the data still needs a plan.
+    """
+    if load_avg_sensors or _has_usable_adaptive_profiles(adaptive_profiles):
+        sensor._load_data_wait_started_at = None
+        return False
+
+    now_aware = dt_util.now()
+    started = getattr(sensor, "_load_data_wait_started_at", None)
+    if started is None:
+        started = now_aware
+        sensor._load_data_wait_started_at = started
+
+    if (now_aware - started).total_seconds() < LOAD_DATA_GRACE_MINUTES * 60:
+        sensor._log_rate_limited(
+            "load_data_not_ready",
+            "info",
+            "No consumption data yet; deferring the plan",
+            cooldown_s=300.0,
+        )
+        sensor._schedule_forecast_retry(LOAD_DATA_RETRY_SECONDS)
+        return True
+
+    sensor._log_rate_limited(
+        "load_data_absent_after_grace",
+        "warning",
+        "No consumption data after %s min; planning on the flat fallback load",
+        LOAD_DATA_GRACE_MINUTES,
+        cooldown_s=3600.0,
+    )
+    return False
+
+
 async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optional[
     tuple[
         float,
@@ -1708,10 +1821,6 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         min_capacity,
     )
 
-    current_interval_naive = bucket_start.replace(tzinfo=None)
-    spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
-
-    solar_forecast = sensor._get_solar_forecast()
     load_avg_sensors = sensor._get_load_avg_sensors()
 
     adaptive_helper = AdaptiveConsumptionHelper(
@@ -1720,6 +1829,14 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         ISO_TZ_OFFSET,
     )
     adaptive_profiles = await adaptive_helper.get_adaptive_load_prediction()
+
+    if _should_defer_for_load_data(sensor, load_avg_sensors, adaptive_profiles):
+        return None
+
+    current_interval_naive = bucket_start.replace(tzinfo=None)
+    spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
+
+    solar_forecast = sensor._get_solar_forecast()
 
     if not spot_prices:
         _LOGGER.warning(
@@ -1812,10 +1929,16 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
 
         # Build load forecast list (kWh/15min for each interval)
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
+        # Historical correction: remove the forecast's systematic bias.
+        solar_factor = await _maybe_apply_adaptive_correction(sensor, solar_kwh_list)
         # Same-day reality correction: damp solar drift (sunnier/cloudier than
         # forecast) into the near-term solar list before planning.
         await _maybe_apply_solar_correction(
-            sensor, adaptive_helper, solar_forecast, solar_kwh_list
+            sensor,
+            adaptive_helper,
+            solar_forecast,
+            solar_kwh_list,
+            applied_factor=solar_factor,
         )
         # _run_planner() writes _plan_lock_until, _plan_lock_modes and
         # _charging_metrics onto the sensor as it runs -- on both the success

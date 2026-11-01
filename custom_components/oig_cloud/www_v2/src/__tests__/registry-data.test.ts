@@ -26,10 +26,10 @@ const REGISTRY = {
       label: 'field.solar_forecast_api_key.label', hint: 'field.solar_forecast_api_key.hint',
       show_if: { field: 'solar_forecast_provider', in: ['forecast_solar'] },
     },
-    expensive_percentile: {
+    scaled_share: {
       section: 'battery', type: 'float', scope: 'premium', default: 0.7,
       min: 0.5, max: 0.95, scale: 100,
-      label: 'field.expensive_percentile.label', hint: 'field.expensive_percentile.hint',
+      label: 'field.scaled_share.label', hint: 'field.scaled_share.hint',
     },
   },
   sections: ['battery', 'solar'],
@@ -78,7 +78,7 @@ describe('fieldsFromRegistry', () => {
     const solcastKey = defs.find((d) => d.key === 'solcast_api_key')!;
     expect(solcastKey.showIf).toEqual({ field: 'solar_forecast_provider', in: ['solcast'] });
     expect(solcastKey.secret).toBe(true);
-    expect(defs.every((d) => d.key !== 'expensive_percentile')).toBe(true); // section filter
+    expect(defs.every((d) => d.key !== 'scaled_share')).toBe(true); // section filter
   });
 
   it('maps registry numeric types + scale onto the number widget', () => {
@@ -189,11 +189,10 @@ describe('fieldLabel / fieldHint catalog', () => {
 const ALL_REGISTRY_KEYS: Record<string, string[]> = {
   modules: [
     'enable_solar_forecast', 'enable_battery_prediction', 'enable_pricing', 'enable_boiler',
-    'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
+    'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings', 'box_has_home56',
   ],
   battery: [
-    'auto_mode_switch_enabled', 'charge_rate_kw', 'expensive_percentile',
-    'battery_comfort_soc_percent', 'balancing_enabled', 'balancing_interval_days',
+    'auto_mode_switch_enabled', 'charge_rate_kw', 'balancing_enabled', 'balancing_interval_days',
     'balancing_hold_hours', 'balancing_opportunistic_threshold', 'balancing_economic_threshold',
     'cheap_window_percentile',
   ],
@@ -212,7 +211,7 @@ const ALL_REGISTRY_KEYS: Record<string, string[]> = {
     'boiler_has_alternative_heating', 'boiler_target_temp_c', 'boiler_deadline_time',
     'boiler_alt_source_type', 'boiler_battery_cycle_cost_czk_kwh',
     'boiler_thermal_arbitrage_enabled', 'boiler_max_temp_c', 'boiler_alt_power_kw',
-    'box_has_home56', 'boiler_home5_maneuver_enabled', 'boiler_circulation_enabled',
+    'boiler_home5_maneuver_enabled', 'boiler_circulation_enabled',
     'boiler_circulation_lead_minutes', 'boiler_circulation_run_minutes',
     'boiler_circulation_max_runs_per_day', 'boiler_circulation_min_gap_minutes',
     'boiler_legionella_interval_days', 'boiler_legionella_target_temp_c',

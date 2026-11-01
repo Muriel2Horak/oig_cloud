@@ -248,6 +248,30 @@ def test_summarize_block_reason_dominant_other():
     assert "Kč/kWh" in reason
 
 
+def test_summarize_block_reason_names_the_optimizer_reason_instead_of_the_generic_line():
+    sensor = SimpleNamespace(
+        _config_entry=SimpleNamespace(options={"max_ups_price_czk": 4.0}),
+        _get_battery_efficiency=lambda: 0.9,
+    )
+    group_intervals = [
+        {
+            "planned": {
+                "spot_price": price,
+                "decision_metrics": {
+                    "planner_reason_code": "ECONOMIC_CHARGE_CHEAPER_FUTURE",
+                    "grid_charge_kwh": 0.65,
+                },
+            }
+        }
+        for price in (2.0, 3.0)
+    ]
+    block = {"mode_planned": "Home UPS"}
+
+    reason = blocks_module.summarize_block_reason(sensor, group_intervals, block)
+
+    assert reason == "Nabíjení ze sítě, později bude elektřina dražší (průměr 2.50 Kč/kWh)."
+
+
 def test_summarize_block_reason_ups_price_limit():
     sensor = SimpleNamespace(
         _config_entry=SimpleNamespace(options={"max_ups_price_czk": 3.0}),

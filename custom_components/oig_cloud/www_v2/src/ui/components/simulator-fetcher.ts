@@ -43,8 +43,8 @@ export interface BoilerSummary {
 }
 
 export type SimResponse =
-  | { kind: 'battery'; intervals: BatteryInterval[]; summary: BatterySummary }
-  | { kind: 'boiler'; intervals: BoilerInterval[]; summary: BoilerSummary };
+  | { kind: 'battery'; intervals: BatteryInterval[]; prices: number[]; summary: BatterySummary }
+  | { kind: 'boiler'; intervals: BoilerInterval[]; draws: number[]; summary: BoilerSummary };
 
 interface BatteryPresetScenario {
   label: string;
@@ -111,6 +111,12 @@ export const BOILER_PRESET_SCENARIOS: Record<string, BoilerPresetScenario> = {
 };
 
 const BATTERY_CAPACITY_KWH = 17.4;
+// The mock's own rule of thumb, unrelated to the planner: it charges in the
+// cheapest 30 % of hours and keeps half a battery. The real plan comes from
+// planner_simulate; these numbers only give the overlay's tests a stable day.
+const MOCK_CHEAP_HOURS_SHARE = 0.3;
+const MOCK_KEEP_SOC_PERCENT = 50;
+const MOCK_MIN_TEMP_C = 45;
 
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -135,27 +141,6 @@ function numberFrom(value: unknown): number | null {
   return null;
 }
 
-// config_registry.py's Field.scale ("display multiplier (fraction stored, %
-// shown)") is the single source of truth for which fields carry a human
-// percent in the UI but a fraction canonically — currently only
-// expensive_percentile (config_registry.py:314, scale=100). Registry-driven
-// renders (field-renderer.ts) already divide by `scale` before saving; the
-// simulator's own control is not registry-driven, so a UI-style draft
-// crossing into the real backend must be converted here, at the one network
-// boundary, rather than scattered per-field in each caller.
-const UI_PERCENT_TO_CANONICAL_SCALE: Readonly<Record<string, number>> = {
-  expensive_percentile: 100,
-};
-
-function toCanonicalConfigOverrides(draft: Record<string, unknown>): Record<string, unknown> {
-  const canonical: Record<string, unknown> = { ...draft };
-  for (const [key, scale] of Object.entries(UI_PERCENT_TO_CANONICAL_SCALE)) {
-    const raw = numberFrom(canonical[key]);
-    if (raw != null) canonical[key] = raw / scale;
-  }
-  return canonical;
-}
-
 function resolveBatteryScenario(presetId?: string): BatteryPresetScenario {
   return BATTERY_PRESET_SCENARIOS[presetId ?? 'zima'] ?? BATTERY_PRESET_SCENARIOS.zima;
 }
@@ -166,26 +151,20 @@ function resolveBoilerScenario(presetId?: string): BoilerPresetScenario {
 
 function resolveBatteryControls(draft: Record<string, unknown>): {
   chargeRateKw: number;
-  reserveSocPercent: number;
-  expensivePercentile: number;
   socStart: number | null;
 } {
   return {
     chargeRateKw: numberFrom(draft.charge_rate_kw) ?? 2.6,
-    reserveSocPercent: numberFrom(draft.battery_comfort_soc_percent) ?? 50,
-    expensivePercentile: numberFrom(draft.expensive_percentile) ?? 70,
     socStart: numberFrom(draft.soc_start ?? draft.battery_start ?? draft.battery_soc),
   };
 }
 
 function resolveBoilerControls(draft: Record<string, unknown>): {
   targetTempC: number;
-  minTempC: number;
   coldInletC: number | null;
 } {
   return {
-    targetTempC: numberFrom(draft.target_temp_c ?? draft.boiler_target_temp_c) ?? 60,
-    minTempC: numberFrom(draft.min_temp_c ?? draft.boiler_min_temp_c) ?? 45,
+    targetTempC: numberFrom(draft.boiler_target_temp_c) ?? 60,
     coldInletC: numberFrom(draft.cold_inlet_c ?? draft.boiler_cold_inlet_c),
   };
 }
@@ -195,10 +174,10 @@ function runBatteryScenario(presetId: string | undefined, draft: Record<string, 
   const controls = resolveBatteryControls(draft);
   const prices = [...preset.prices];
   const sorted = [...prices].sort((a, b) => a - b);
-  const thresholdIndex = clamp(Math.floor(((100 - controls.expensivePercentile) / 100) * 23), 0, 23);
+  const thresholdIndex = clamp(Math.floor(MOCK_CHEAP_HOURS_SHARE * 23), 0, 23);
   const threshold = sorted[thresholdIndex] ?? sorted[sorted.length - 1] ?? 0;
 
-  let soc = clamp(controls.socStart ?? Math.max(35, controls.reserveSocPercent - 5), 8, 100);
+  let soc = clamp(controls.socStart ?? Math.max(35, MOCK_KEEP_SOC_PERCENT - 5), 8, 100);
   let baseCost = 0;
   let runningCost = 0;
   let upsHours = 0;
@@ -210,7 +189,7 @@ function runBatteryScenario(presetId: string | undefined, draft: Record<string, 
     const cheap = price <= threshold;
     let mode: 'home' | 'ups' = 'home';
 
-    if (cheap && soc < 90 && (price < 2.5 || soc < controls.reserveSocPercent)) {
+    if (cheap && soc < 90 && (price < 2.5 || soc < MOCK_KEEP_SOC_PERCENT)) {
       mode = 'ups';
     }
 
@@ -221,10 +200,10 @@ function runBatteryScenario(presetId: string | undefined, draft: Record<string, 
       upsHours += 1;
     } else {
       soc += (net / BATTERY_CAPACITY_KWH) * 100;
-      if (net < 0 && soc < controls.reserveSocPercent) {
-        const short = ((controls.reserveSocPercent - soc) / 100) * BATTERY_CAPACITY_KWH;
+      if (net < 0 && soc < MOCK_KEEP_SOC_PERCENT) {
+        const short = ((MOCK_KEEP_SOC_PERCENT - soc) / 100) * BATTERY_CAPACITY_KWH;
         runningCost += short * price;
-        soc = controls.reserveSocPercent;
+        soc = MOCK_KEEP_SOC_PERCENT;
       }
     }
 
@@ -253,6 +232,7 @@ function runBatteryScenario(presetId: string | undefined, draft: Record<string, 
   return {
     kind: 'battery',
     intervals,
+    prices,
     summary: {
       cost: round(summaryCost),
       base_cost: round(baseCost),
@@ -280,7 +260,7 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
     let source: 'solar' | 'grid' = 'grid';
 
     if (
-      temp < controls.minTempC ||
+      temp < MOCK_MIN_TEMP_C ||
       ((solarWin || cheapWin) && temp < targetToday - 1) ||
       (preset.legionella && hour >= 13 && hour <= 15 && temp < 70)
     ) {
@@ -307,6 +287,7 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
   return {
     kind: 'boiler',
     intervals,
+    draws: [...preset.draw],
     summary: {
       kwh: round(kwh, 1),
       cost: round(cost),
@@ -318,9 +299,9 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
 // --- Real BE response shapes (live-probed) and their mapping to the FE contract ---
 //
 // POST /{box}/planner_simulate -> {preset, horizon_intervals, interval_minutes,
-// timeline:[{interval_index, soc_kwh, solar_kwh, load_kwh, grid_import_kwh,
-// grid_export_kwh, cost_czk, mode, mode_name, soc_percent}], summary:{...}}
-// (api/planning_api.py: _planner_result_to_response)
+// prices:[Kč/kWh per interval], timeline:[{interval_index, soc_kwh, solar_kwh,
+// load_kwh, grid_import_kwh, grid_export_kwh, cost_czk, mode, mode_name,
+// soc_percent}], summary:{...}} (api/planning_api.py: _planner_result_to_response)
 
 interface PlannerSimulateTimelineEntry {
   interval_index: number;
@@ -331,6 +312,7 @@ interface PlannerSimulateTimelineEntry {
 
 interface PlannerSimulateResponse {
   interval_minutes: number;
+  prices: number[];
   timeline: PlannerSimulateTimelineEntry[];
   summary: {
     total_cost_czk: number;
@@ -362,6 +344,7 @@ function mapPlannerSimulateResponse(raw: PlannerSimulateResponse): Extract<SimRe
   return {
     kind: 'battery',
     intervals,
+    prices: raw.prices ?? [],
     summary: {
       cost: round(raw.summary?.total_cost_czk ?? 0),
       ups_hours: round((upsIntervals * intervalMinutes) / 60, 2),
@@ -369,7 +352,8 @@ function mapPlannerSimulateResponse(raw: PlannerSimulateResponse): Extract<SimRe
   };
 }
 
-// POST /boiler/{entry}/{box}/simulate_water_day -> {..., timeline:[{start, end,
+// POST /boiler/{entry}/{box}/simulate_water_day -> {...,
+// inputs:{water_draw_profile_lh:[litres per hour], ...}, timeline:[{start, end,
 // action, source, heating_kwh, pv_kwh, grid_kwh, alt_kwh, battery_kwh,
 // estimated_cost_czk, predicted_top_temp_c, purpose}], summary:{total_heating_kwh,
 // cost_czk, pv_kwh, ...}} (boiler/api_views.py: _run_boiler_simulation)
@@ -382,6 +366,9 @@ interface BoilerSimulateTimelineEntry {
 }
 
 interface BoilerSimulateResponse {
+  inputs: {
+    water_draw_profile_lh: number[];
+  };
   timeline: BoilerSimulateTimelineEntry[];
   summary: {
     total_heating_kwh: number;
@@ -412,6 +399,7 @@ function mapBoilerSimulateResponse(raw: BoilerSimulateResponse): Extract<SimResp
   return {
     kind: 'boiler',
     intervals,
+    draws: raw.inputs?.water_draw_profile_lh ?? [],
     summary: {
       kwh: round(totalHeatingKwh, 1),
       cost: round(raw.summary?.cost_czk ?? 0),
@@ -518,7 +506,7 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
     const body: Record<string, unknown> = {
       // BE reads `preset` (planning_api.py) — not preset_id.
       preset: req.presetId,
-      config_overrides: toCanonicalConfigOverrides(req.draft),
+      config_overrides: req.draft,
     };
     const socStart = numberFrom(req.draft.soc_start ?? req.draft.battery_start ?? req.draft.battery_soc);
     if (socStart != null) body.soc_start = socStart;
@@ -544,12 +532,4 @@ export async function mockFetcher(req: SimRequest): Promise<SimResponse> {
     return runBatteryScenario(req.presetId, req.draft);
   }
   return runBoilerScenario(req.presetId, req.draft);
-}
-
-export function getBatteryPresetPrices(presetId?: string): number[] {
-  return [...resolveBatteryScenario(presetId).prices];
-}
-
-export function getBoilerPresetDraws(presetId?: string): number[] {
-  return [...resolveBoilerScenario(presetId).draw];
 }

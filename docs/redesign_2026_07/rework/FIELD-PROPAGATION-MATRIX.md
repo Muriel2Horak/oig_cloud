@@ -6,6 +6,8 @@ Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total at audit ti
 
 **Post-audit note (dead-cleanup Unit 3, 2026-07-26; rework, 2026-07-26):** `boiler_enable_second_thermometer` was briefly REMOVED from `FIELD_REGISTRY` by dead-cleanup Unit 3 on a zero-BE-consumer verdict, then RESTORED on rework review: the field is BE-dead (no BE runtime reader) but is live-consumed by the FRONTEND — the `/config_registry` REST dump (`ha_rest_api.py:1633`) feeds `settings/index.ts:476` `fieldsFromRegistry`, which drives `secondTherm` (`index.ts:718`) and controls `boiler_temp_sensor_bottom` field visibility (`index.ts:750`). Removing it hid a real config option in the UI. Registry is back to 102 fields.
 
+**Post-audit note (planner optimizer, 2026-11-01):** `expensive_percentile` and `battery_comfort_soc_percent` were REMOVED from `FIELD_REGISTRY`: the optimizer that replaced the planner's greedy layers reads neither. Their rows below describe the audit's state. A stored value stays in the entry and nothing reads it.
+
 ## Summary
 
 | verdict | count |

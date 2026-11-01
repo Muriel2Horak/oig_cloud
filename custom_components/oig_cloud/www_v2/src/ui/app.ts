@@ -101,7 +101,7 @@ export class OigApp extends LitElement {
   @state() private boilerConfig: BoilerConfig | null = null;
   private boilerRefreshTimer: number | null = null;
 
-  // R7: box_has_home56 flag — loaded from module_config boiler section.
+  // R7: box_has_home56 flag — loaded from module_config modules section.
   // Default false = Home 5/6 toggles hidden until user enables in Nastavení.
   @state() private boxHasHome56 = false;
 
@@ -705,7 +705,7 @@ export class OigApp extends LitElement {
     window.addEventListener('pageshow', this.onPageShow);
     document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
     window.addEventListener('keydown', this.onSimulatorKeydown);
-    this.initApp();
+    void this.initApp();
     this.startTimeUpdate();
   }
 
@@ -728,16 +728,16 @@ export class OigApp extends LitElement {
     }
     if (changed.has('activeTab')) {
       if (this.activeTab === 'pricing' && (!this.pricingData || this.pricingDirty)) {
-        this.loadPricingData();
+        void this.loadPricingData();
       }
       if (this.activeTab === 'pricing' && (this.analyticsData === EMPTY_ANALYTICS || this.analyticsDirty)) {
-        this.loadAnalyticsAsync();
+        void this.loadAnalyticsAsync();
       }
       if (this.activeTab === 'pricing' && (!this.timelineData || this.timelineDirty)) {
-        this.loadTimelineTabData(this.timelineTab);
+        void this.loadTimelineTabData(this.timelineTab);
       }
       if (this.activeTab === 'boiler' && (!this.boilerState || this.boilerDirty)) {
-        this.loadBoilerDataAsync();
+        void this.loadBoilerDataAsync();
       }
     }
   }
@@ -779,13 +779,13 @@ export class OigApp extends LitElement {
       // Initial data load
       this.updateFlowData();
       this.updateSensorData();
-      this.loadPricingData();
-      this.loadBoilerDataAsync();
-      this.loadAnalyticsAsync();
-      this.loadTilesAsync();
+      void this.loadPricingData();
+      void this.loadBoilerDataAsync();
+      void this.loadAnalyticsAsync();
+      void this.loadTilesAsync();
       void this.loadOnboarding();
       // R7 + Unit A-FE: load box_has_home56 + pricing/boiler/statistics enable flags (best-effort, no throw)
-      this.loadBoxHasHome56();
+      void this.loadBoxHasHome56();
 
       // Weather forecast (current + hourly/daily) — refreshed periodically
       void this.loadWeather();
@@ -1028,14 +1028,14 @@ export class OigApp extends LitElement {
   }
 
   /**
-   * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
+   * R7 + Unit A-FE: load box_has_home56 and the pricing/
    * boiler/statistics/battery_prediction module enable flags (modules section)
    * from module_config in one request (best-effort).
    */
   private async loadBoxHasHome56(): Promise<void> {
     try {
       const cfg = await loadModuleConfig();
-      this.boxHasHome56 = cfg?.boiler?.box_has_home56 === true;
+      this.boxHasHome56 = cfg?.modules?.box_has_home56 === true;
       if (cfg?.modules) {
         this.enablePricing = cfg.modules.enable_pricing !== false;
         this.enableBoiler = cfg.modules.enable_boiler !== false;
@@ -1132,9 +1132,16 @@ export class OigApp extends LitElement {
     void this.loadOnboarding();
   }
 
-  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): Promise<void> {
+  // The simulation takes the target from the request over the entry's config,
+  // so the slider has to start from the config, not from its own fallback.
+  private boilerTabSimulatorDraft(): Record<string, unknown> {
+    const target = this.boilerConfig?.targetTempC;
+    return target == null ? {} : { boiler_target_temp_c: target };
+  }
+
+  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown>; bootstrap?: BootstrapPayload }>): Promise<void> {
     e.stopPropagation();
-    const { domain, box, draft } = e.detail ?? {};
+    const { domain, box, draft, bootstrap } = e.detail ?? {};
     this.simulatorDomain = domain ?? 'battery';
     // simulator-fetcher.ts resolves the box id from draft.box_id/boxId/
     // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
@@ -1148,7 +1155,7 @@ export class OigApp extends LitElement {
           bottom_temp_c: this.boilerV2Data?.status?.temperatureBottom ?? undefined,
           cold_inlet_c: this.boilerConfig?.coldInletTempC,
         }
-      : null;
+      : bootstrap ?? null;
     // Open the overlay (shows the loading state) before resolving presets so
     // <oig-simulator> mounts only once a preset id is known — its firstUpdated
     // fires the initial simulate immediately, and a blank preset 400s upstream.
@@ -1250,11 +1257,11 @@ export class OigApp extends LitElement {
   // Timeline events
   private onTimelineTabChange(e: CustomEvent): void {
     this.timelineTab = e.detail.tab;
-    this.loadTimelineTabData(e.detail.tab);
+    void this.loadTimelineTabData(e.detail.tab);
   }
 
   private onTimelineRefresh(): void {
-    this.loadTimelineTabData(this.timelineTab);
+    void this.loadTimelineTabData(this.timelineTab);
   }
 
   private onAddTile(): void {
@@ -1320,7 +1327,7 @@ export class OigApp extends LitElement {
     const resolved = resolveTiles(config);
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
-    saveTilesConfig(config);
+    void saveTilesConfig(config);
     this.subscribeTileEntities();
   }
 
@@ -1357,7 +1364,7 @@ export class OigApp extends LitElement {
     const resolved = resolveTiles(updated);
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
-    saveTilesConfig(updated);
+    void saveTilesConfig(updated);
     this.subscribeTileEntities();
   }
 
@@ -1451,6 +1458,12 @@ export class OigApp extends LitElement {
 
       <oig-boiler-plan-realita-tile .lang=${lang}></oig-boiler-plan-realita-tile>
 
+      <oig-boiler-progress
+        .progress=${v2.progress ?? null}
+        .altSourceType=${v2.altSourceType ?? null}
+        .lang=${lang}
+      ></oig-boiler-progress>
+
       <div class="boiler-model-row">
         <oig-boiler-energy-today
           .energy=${v2.energyToday ?? null}
@@ -1472,7 +1485,7 @@ export class OigApp extends LitElement {
           <button
             type="button"
             data-testid="boiler-simulator-launch"
-            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: {} } }))}
+            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: this.boilerTabSimulatorDraft() } }))}
           >${t('boiler.simulator.launch', lang)}</button>
           <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
             <span class="boiler-setup-guide__icon">🧙</span>
@@ -1501,7 +1514,7 @@ export class OigApp extends LitElement {
         <div class="error">
           <h2>Chyba připojení</h2>
           <p>${this.error}</p>
-          <button @click=${() => { this.error = null; this.loading = true; this.initApp(); }}>Zkusit znovu</button>
+          <button @click=${() => { this.error = null; this.loading = true; void this.initApp(); }}>Zkusit znovu</button>
         </div>
       `;
     }

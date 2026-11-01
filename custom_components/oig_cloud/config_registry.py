@@ -308,6 +308,9 @@ _register(
     Field("enable_statistics", "modules", bool, default=True, reload_on_change=True),
     Field("enable_extended_sensors", "modules", bool, default=True, reload_on_change=True),
     Field("enable_chmu_warnings", "modules", bool, default=False, reload_on_change=True),
+    # A capability of the box, not of the boiler: it decides whether the control
+    # panel offers the Home 5 and Home 6 toggles.
+    Field("box_has_home56", "modules", bool, default=False, reload_on_change=True),
 )
 
 # --- section: battery -------------------------------------------------------
@@ -315,10 +318,6 @@ _register(
     Field("auto_mode_switch_enabled", "battery", bool, default=False),
     Field("charge_rate_kw", "battery", float, default=None, min=0.5, max=10.0,
           step=0.1, mirror="home_charge_rate"),
-    Field("expensive_percentile", "battery", float, default=None, min=0.5, max=0.95,
-          scale=100),
-    Field("battery_comfort_soc_percent", "battery", float, default=None, min=0.0,
-          max=95.0, step=5.0),
     Field("balancing_enabled", "battery", bool, default=False),
     Field("balancing_interval_days", "battery", int, default=None, min=3, max=30),
     Field("balancing_hold_hours", "battery", int, default=None, min=1, max=12),
@@ -330,9 +329,9 @@ _register(
     Field("hw_min_fraction", "battery", float, default=0.20, min=0.01, max=0.95,
           step=0.01),
     # F1 h-w1: promoted hardcoded planner constants (PLANNER-INPUTS-RESEARCH.md
-    # Part 2.2). Defaults match the prior hardcoded values exactly — a stored
-    # entry that never set these keys reads identical planner behavior.
-    Field("mode_guard_minutes", "battery", int, default=60, min=15, max=120),
+    # Part 2.2). The mode guard now defaults to the operator-selected five-minute
+    # window; other promoted defaults retain their prior values.
+    Field("mode_guard_minutes", "battery", int, default=5, min=5, max=120),
     Field("box_floor_safety_margin_pct", "battery", float, default=2.0, min=0.0,
           max=10.0, step=0.5),
     Field("holding_soc_threshold_percent", "battery", float, default=97.0, min=90.0,
@@ -414,7 +413,6 @@ _register(
           reload_on_change=True),
     Field("boiler_alt_power_kw", "boiler", float, default=0.0, min=0.0, max=50.0,
           reload_on_change=True),
-    Field("box_has_home56", "boiler", bool, default=False, reload_on_change=True),
     Field("boiler_home5_maneuver_enabled", "boiler", bool, default=False,
           reload_on_change=True),
     Field("boiler_circulation_enabled", "boiler", bool, default=False, reload_on_change=True),

@@ -28,7 +28,14 @@ class DummySensor:
 
 
 def _valid_intervals():
-    return [{"time": f"{i // 4:02d}:{(i % 4) * 15:02d}", "consumption_kwh": 0.1} for i in range(96)]
+    """Shaped like a real profile-driven plan - a flat day is now rejected."""
+    return [
+        {
+            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
+            "consumption_kwh": round(0.05 + 0.01 * (i // 4), 4),
+        }
+        for i in range(96)
+    ]
 
 
 def test_is_baseline_plan_invalid_low_consumption():

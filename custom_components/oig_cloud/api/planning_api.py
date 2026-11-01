@@ -33,6 +33,7 @@ from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 from ..battery_forecast.economic_planner import plan_battery_schedule
 from ..battery_forecast.economic_planner_types import PlannerInputs
 from ..battery_forecast.types import CBB_MODE_NAMES
+from ..const import DEFAULT_BOILER_BATTERY_CYCLE_COST
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,9 +95,9 @@ def _build_planner_inputs(
         prices=list(prices),
         solar_forecast=list(solar),
         load_forecast=list(consumption),
-        expensive_percentile=float(cfg["expensive_percentile"]),
-        round_trip_efficiency=float(cfg["round_trip_efficiency"]),
-        comfort_soc_kwh=float(cfg.get("comfort_soc_kwh", 0.0)),
+        battery_wear_czk_per_kwh=float(
+            cfg.get("battery_wear_czk_per_kwh", DEFAULT_BOILER_BATTERY_CYCLE_COST)
+        ),
     )
 
 
@@ -120,6 +121,7 @@ def _planner_result_to_response(inputs: PlannerInputs, preset_id: str | None) ->
         "preset": preset_id,
         "horizon_intervals": len(inputs.intervals),
         "interval_minutes": 15,
+        "prices": list(inputs.prices),
         "timeline": timeline,
         "summary": {
             "total_cost_czk": round(result.total_cost, 4),

@@ -161,6 +161,21 @@ def test_normalize_mode_label(monkeypatch):
     assert sensor._normalize_mode_label("custom", None) is None
 
 
+@pytest.mark.parametrize("seconds", [299, 300, 900])
+def test_next_change_uses_five_minute_guard(monkeypatch, seconds):
+    sensor = _make_sensor(monkeypatch)
+    start = dt_util.now()
+    next_start = start + timedelta(seconds=seconds)
+    result = sensor._find_next_change(
+        [
+            {"time": start.isoformat(), "mode": 3},
+            {"time": next_start.isoformat(), "mode": 0},
+        ],
+        0, "Home UPS", start, None, start.tzinfo, planned=False,
+    )
+    assert result == ((None, None, None) if seconds < 300 else (next_start, "Home 1", 0))
+
+
 def test_parse_local_start_none(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     assert sensor._parse_local_start(None) is None
@@ -397,7 +412,7 @@ def test_compute_state_and_attrs_min_interval_detail_intervals(monkeypatch):
 
     _value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert attrs["next_mode_change_at"] == "2025-01-01T10:45:00+00:00"
+    assert attrs["next_mode_change_at"] == "2025-01-01T10:10:00+00:00"
 
 
 def test_compute_state_and_attrs_lead_seconds_zero(monkeypatch):

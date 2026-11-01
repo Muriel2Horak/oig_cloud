@@ -27,6 +27,17 @@ class DummySensor:
         self._daily_plan_state = None
 
 
+def _shaped_intervals(count: int = 96) -> list[dict]:
+    """A day plan with the shape a real adaptive profile gives it."""
+    return [
+        {
+            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
+            "consumption_kwh": round(0.05 + 0.01 * (i // 4), 4),
+        }
+        for i in range(count)
+    ]
+
+
 def test_missing_battery_kwh_warns_once_per_sensor(caplog):
     sensor = DummySensor()
 
@@ -59,9 +70,17 @@ def test_is_baseline_plan_invalid():
         )
         is True
     )
+    # A plan that repeats one number across the whole day is the adaptive
+    # profile failing to reach the planner, not a plan.
     assert (
         module.is_baseline_plan_invalid(
             {"intervals": [{"consumption_kwh": 0.1}] * 100, "filled_intervals": None}
+        )
+        is True
+    )
+    assert (
+        module.is_baseline_plan_invalid(
+            {"intervals": _shaped_intervals(), "filled_intervals": None}
         )
         is False
     )
@@ -70,11 +89,13 @@ def test_is_baseline_plan_invalid():
 @pytest.mark.asyncio
 async def test_create_baseline_plan_with_hybrid_timeline(monkeypatch):
     sensor = DummySensor()
+    # A full day of shaped intervals: a two-slot timeline would leave 94 slots
+    # on the default constant, which is refused as degenerate.
     sensor._timeline_data = [
         {
-            "time": "00:00",
+            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
             "solar_kwh": 0.1,
-            "load_kwh": 0.2,
+            "load_kwh": round(0.05 + 0.01 * (i // 4), 4),
             "battery_soc": 50.0,
             "battery_capacity_kwh": 7.68,
             "grid_import": 0.1,
@@ -83,20 +104,8 @@ async def test_create_baseline_plan_with_hybrid_timeline(monkeypatch):
             "mode_name": "HOME III",
             "spot_price": 3.0,
             "net_cost": 0.2,
-        },
-        {
-            "time": "00:15",
-            "solar_kwh": 0.1,
-            "load_kwh": 0.2,
-            "battery_soc": 50.0,
-            "battery_capacity_kwh": 7.68,
-            "grid_import": 0.1,
-            "grid_export": 0.0,
-            "mode": 2,
-            "mode_name": "HOME III",
-            "spot_price": 3.0,
-            "net_cost": 0.2,
-        },
+        }
+        for i in range(96)
     ]
 
     async def fake_fetch(*_args, **_kwargs):
@@ -125,13 +134,7 @@ async def test_create_baseline_plan_with_hybrid_timeline(monkeypatch):
 async def test_create_baseline_plan_from_storage_fallback(monkeypatch):
     sensor = DummySensor()
     sensor._timeline_data = []
-    fallback_intervals = [
-        {
-            "time": f"{i // 4:02d}:{(i % 4) * 15:02d}",
-            "consumption_kwh": 0.1,
-        }
-        for i in range(96)
-    ]
+    fallback_intervals = _shaped_intervals()
     sensor._plans_store = DummyStore(
         {
             "daily_archive": {

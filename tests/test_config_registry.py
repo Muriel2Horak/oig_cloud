@@ -37,6 +37,13 @@ def test_coerce_bool():
         coerce_value(f, "banana")
 
 
+def test_mode_guard_accepts_five_minutes_but_rejects_shorter_windows():
+    field = FIELD_REGISTRY["mode_guard_minutes"]
+    assert coerce_value(field, 5) == 5
+    with pytest.raises(ValueError):
+        coerce_value(field, 4)
+
+
 def test_coerce_float_bounds():
     f = Field(key="r", section="battery", type=float, default=2.8, min=0.5, max=10.0)
     assert coerce_value(f, 3.5) == 3.5
@@ -85,14 +92,11 @@ def test_modules_and_battery_sections_ported():
     assert set(modules) == {
         "enable_solar_forecast", "enable_battery_prediction", "enable_pricing",
         "enable_boiler", "enable_statistics", "enable_extended_sensors",
-        "enable_chmu_warnings",
+        "enable_chmu_warnings", "box_has_home56",
     }
-    assert {"charge_rate_kw", "expensive_percentile", "battery_comfort_soc_percent",
-            "balancing_enabled", "cheap_window_percentile"} <= set(battery)
+    assert {"charge_rate_kw", "balancing_enabled", "cheap_window_percentile"} <= set(battery)
     assert battery["charge_rate_kw"].mirror == "home_charge_rate"
     assert battery["charge_rate_kw"].min == 0.5 and battery["charge_rate_kw"].max == 10.0
-    assert battery["expensive_percentile"].min == 0.5 and battery["expensive_percentile"].max == 0.95
-    assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 
 
 def test_module_enable_fields_reload_on_change():
@@ -418,11 +422,15 @@ def test_pick_latest_snapshot_no_snapshots_key_returns_payload_unchanged():
     assert _pick_latest_snapshot(payload, now=date(2026, 1, 1)) is payload
 
 
-def test_api_dict_emits_show_if_and_widget_metadata():
+def test_api_dict_emits_show_if_and_widget_metadata(monkeypatch):
+    # No registered field carries a scale today; the contract still has to emit it.
+    monkeypatch.setitem(
+        FIELD_REGISTRY, "scaled_field", Field("scaled_field", "battery", float, scale=100)
+    )
     api = registry_as_api_dict()
     assert api["solcast_api_key"]["show_if"] == {
         "field": "solar_forecast_provider", "in": ["solcast"]}
-    assert api["expensive_percentile"]["scale"] == 100
+    assert api["scaled_field"]["scale"] == 100
     assert api["boiler_temp_sensor_top"]["entity_domain"] == "sensor"
     assert api["boiler_temp_sensor_bottom"]["optional"] is True
 

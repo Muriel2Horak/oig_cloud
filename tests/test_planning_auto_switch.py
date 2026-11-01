@@ -443,6 +443,7 @@ async def test_ensure_current_mode(monkeypatch):
 async def test_ensure_current_mode_min_interval(monkeypatch):
     sensor = DummySensor({})
     now = dt_util.now()
+    monkeypatch.setattr(auto_switch.dt_util, "now", lambda: now)
     sensor._hass = DummyHass(
         DummyStates(
             {
@@ -454,6 +455,11 @@ async def test_ensure_current_mode_min_interval(monkeypatch):
     )
 
     called = {}
+    retries = []
+    monkeypatch.setattr(
+        auto_switch, "async_call_later",
+        lambda _hass, delay, _callback: retries.append(delay) or (lambda: None),
+    )
 
     async def _execute(_s, _mode, _reason, context=None):
         called["ok"] = True
@@ -462,6 +468,7 @@ async def test_ensure_current_mode_min_interval(monkeypatch):
     monkeypatch.setattr(auto_switch, "execute_mode_change", _execute)
     await auto_switch.ensure_current_mode(sensor, "Home 1", "reason")
     assert "ok" not in called
+    assert retries == [300]
 
 
 def test_get_mode_switch_timeline():
@@ -617,19 +624,7 @@ async def test_start_watchdog_ticks(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_update_auto_switch_schedule_adjusts_past(monkeypatch):
-    class FakeTime:
-        def __init__(self):
-            self._calls = 0
-
-        def __le__(self, _other):
-            self._calls += 1
-            return self._calls > 1
-
-        def isoformat(self):
-            return "2025-01-01T00:00:00"
-
-    fake_time = FakeTime()
-
+    now = dt_util.now()
     sensor = DummySensor({CONF_AUTO_MODE_SWITCH: True})
     sensor._hass = DummyHass()
     sensor._auto_switch_ready_at = None
@@ -637,16 +632,16 @@ async def test_update_auto_switch_schedule_adjusts_past(monkeypatch):
     sensor._auto_switch_watchdog_unsub = None
     sensor._auto_switch_watchdog_interval = timedelta(seconds=30)
 
-    timeline = [{"time": "2025-01-01T00:00:00", "mode_name": "Home 1"}]
+    timeline = [{"time": now.isoformat(), "mode_name": "Home 1"}]
 
     monkeypatch.setattr(auto_switch, "get_mode_switch_timeline", lambda _s: (timeline, "hybrid"))
-    monkeypatch.setattr(auto_switch, "parse_timeline_timestamp", lambda _t: fake_time)
     monkeypatch.setattr(auto_switch, "start_auto_switch_watchdog", lambda *_a, **_k: None)
 
     callbacks = {}
 
     def _track(_hass, cb, _when):
         callbacks["cb"] = cb
+        callbacks["when"] = _when
         return lambda: None
 
     monkeypatch.setattr(auto_switch, "async_track_point_in_time", _track)
@@ -655,8 +650,11 @@ async def test_update_auto_switch_schedule_adjusts_past(monkeypatch):
 
     monkeypatch.setattr(auto_switch, "execute_mode_change", _execute)
 
-    await auto_switch.update_auto_switch_schedule(sensor)
-    await callbacks["cb"](dt_util.now())
+    auto_switch._schedule_auto_switch_events(
+        sensor, [(now - timedelta(seconds=1), "Home 1", None)], now
+    )
+    assert callbacks["when"] == now + timedelta(seconds=1)
+    await callbacks["cb"](now)
 
 
 def test_calculate_interval_cost_opportunity():

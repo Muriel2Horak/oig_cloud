@@ -4,10 +4,7 @@
     "max_capacity_kwh": 10.0,
     "hw_min_kwh": 2.0,
     "planning_min_percent": 20.0,
-    "charge_rate_kw": 2.8,
-    "expensive_percentile": 0.7,
-    "round_trip_efficiency": 0.8379,
-    "comfort_soc_kwh": 0.0
+    "charge_rate_kw": 2.8
   },
   "presets": {
     "winter_high_price": {

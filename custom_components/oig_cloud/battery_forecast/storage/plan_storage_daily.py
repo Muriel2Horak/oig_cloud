@@ -8,6 +8,9 @@ from typing import Any, Optional
 
 from homeassistant.util import dt as dt_util
 
+from ..forecast_accuracy import record_forecast_accuracy
+from .plan_archive import build_archive_entry
+from .plan_revisions import maybe_record_plan_revision
 from .plan_storage_baseline import create_baseline_plan
 from .plan_storage_io import get_plans_store_lock, plan_exists_in_storage
 
@@ -46,7 +49,13 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
     if not sensor._daily_plan_state:
         return
     yesterday_date = sensor._daily_plan_state.get("date")
-    sensor._daily_plans_archive[yesterday_date] = sensor._daily_plan_state.copy()
+    # The in-memory state holds a forward snapshot and an actual list nothing
+    # ever filled; the archive gets the midnight baseline and the measured day.
+    sensor._daily_plans_archive[yesterday_date] = await build_archive_entry(
+        sensor,
+        yesterday_date,
+        fallback_plan=sensor._daily_plan_state.get("plan") or [],
+    )
 
     cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
     sensor._daily_plans_archive = {
@@ -66,6 +75,9 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
             async with get_plans_store_lock(sensor):
                 storage_data = await sensor._plans_store.async_load() or {}
                 storage_data["daily_archive"] = sensor._daily_plans_archive
+                _learn_solar_accuracy(
+                    storage_data, sensor._daily_plans_archive.get(yesterday_date)
+                )
                 await sensor._plans_store.async_save(storage_data)
             _LOGGER.info(
                 "Saved daily plans archive to storage (%s days)",
@@ -78,6 +90,36 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
                 err,
                 exc_info=True,
             )
+
+
+def _learn_solar_accuracy(
+    storage_data: dict[str, Any], archive_entry: Optional[dict[str, Any]]
+) -> None:
+    """Teach the solar correction from a finished day.
+
+    Only a complete day counts: a partial actual series would read as a forecast
+    miss. The plan side is the raw forecast, so the factor never learns from itself.
+    """
+    if not archive_entry or not archive_entry.get("locked"):
+        return
+
+    forecast_kwh = sum(iv.get("solar_kwh", 0) for iv in archive_entry.get("plan", []))
+    actual_kwh = sum(iv.get("solar_kwh", 0) for iv in archive_entry.get("actual", []))
+    if forecast_kwh <= 0 or actual_kwh <= 0:
+        return
+
+    try:
+        record_forecast_accuracy(
+            storage_data, archive_entry["date"], forecast_kwh, actual_kwh
+        )
+    except Exception as err:
+        # The archive is the record of the day; the correction is an extra on top.
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "Could not record solar accuracy for %s: %s",
+            archive_entry.get("date"),
+            err,
+        )
 
 
 def _collect_today_timeline(
@@ -134,6 +176,11 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         sensor._daily_plan_state = None
 
     await _ensure_baseline(sensor, today_str, now)
+
+    # Before the locked-plan short circuit below: for most of the day that
+    # return is the path we take, so a revision hook placed after it would
+    # never fire.
+    await maybe_record_plan_revision(sensor, now)
 
     if _should_keep_locked_plan(sensor._daily_plan_state, today_str):
         _LOGGER.debug(

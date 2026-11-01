@@ -31,6 +31,13 @@ function hourLabel(hour: number): string {
   return `${hour}:00`;
 }
 
+// The bar charts span one day, so the bar count sets the slot length: 24 bars
+// are hours, 96 are quarter-hours.
+function slotLabel(index: number, slotCount: number): string {
+  const minutes = Math.round((index * 24 * 60) / Math.max(1, slotCount));
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
 function axisSvg(labels: number[]): string {
   const step = CHART_W / 24;
   return `
@@ -95,8 +102,7 @@ function renderLineChart(
     min: number;
     max: number;
     lineColor: string;
-    threshold: number;
-    thresholdLabel: string;
+    threshold?: { value: number; label: string };
     topLabel: string;
     bottomLabel: string;
     seriesLabel: string;
@@ -117,7 +123,7 @@ function renderLineChart(
     const clamped = clamp(value, options.min, options.max);
     return padT + plotH - ((clamped - options.min) / range) * plotH;
   };
-  const thresholdY = yFor(options.threshold);
+  const thresholdY = options.threshold ? yFor(options.threshold.value).toFixed(1) : null;
   const points = values.map((value, index) => `${xFor(index).toFixed(1)},${yFor(value).toFixed(1)}`).join(' ');
   const firstX = xFor(0).toFixed(1);
   const lastX = xFor(pointCount - 1).toFixed(1);
@@ -126,20 +132,22 @@ function renderLineChart(
   return `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${options.seriesLabel}" focusable="false">
       ${gridSvg(plotW, plotH)}
-      <line
+      ${options.threshold
+        ? `<line
         x1="${padL}"
-        y1="${thresholdY.toFixed(1)}"
+        y1="${thresholdY}"
         x2="${padL + plotW}"
-        y2="${thresholdY.toFixed(1)}"
+        y2="${thresholdY}"
         stroke="${options.lineColor}"
         stroke-width="1"
         stroke-dasharray="3 4"
         opacity=".55"
         tabindex="0"
-        aria-label="${options.thresholdLabel}"
+        aria-label="${options.threshold.label}"
       >
-        <title>${options.thresholdLabel}</title>
-      </line>
+        <title>${options.threshold.label}</title>
+      </line>`
+        : ''}
       <path d="${area}" fill="${options.lineColor}" fill-opacity=".14" aria-hidden="true" focusable="false"></path>
       <polyline
         points="${points}"
@@ -191,17 +199,19 @@ function renderBarChart(
 ): string {
   const W = CHART_W;
   const H = 62;
-  const baselineY = 46;
+  const plotH = 46;
   const barW = W / Math.max(1, values.length);
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
   const range = max - min || 1;
-  const barHeight = (value: number): number => Math.max(options.minHeight ?? 1.5, (Math.abs(value) / range) * 46);
+  // Negative bars hang below the zero line, so it moves up to leave them room.
+  const baselineY = min < 0 ? (max / range) * plotH : plotH;
+  const barHeight = (value: number): number => Math.max(options.minHeight ?? 1.5, (Math.abs(value) / range) * plotH);
   const barY = (value: number): number => (value >= 0 ? baselineY - barHeight(value) : baselineY);
 
   return `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${options.seriesLabel}" focusable="false">
-      ${gridSvg(W, baselineY, 4)}
+      ${gridSvg(W, plotH, 4)}
       ${values
         .map((value, index) => {
           const x = (index * barW).toFixed(1);
@@ -253,27 +263,25 @@ export function renderBoilerModeBandSvg(intervals: BoilerInterval[]): string {
   );
 }
 
-export function renderBatterySocSvg(intervals: BatteryInterval[], reservePercent: number): string {
+export function renderBatterySocSvg(intervals: BatteryInterval[]): string {
   return renderLineChart(intervals.map((interval) => interval.soc), {
     min: 0,
     max: 100,
     lineColor: 'var(--batt)',
-    threshold: reservePercent,
-    thresholdLabel: `komfortní rezerva ${reservePercent} %`,
     topLabel: '100 %',
     bottomLabel: '0 %',
     seriesLabel: 'SoC %',
   });
 }
 
-export function renderBoilerTempSvg(intervals: BoilerInterval[], minTempC: number): string {
+export function renderBoilerTempSvg(intervals: BoilerInterval[], targetTempC: number): string {
+  const max = Math.max(75, targetTempC);
   return renderLineChart(intervals.map((interval) => interval.temp), {
     min: 30,
-    max: 75,
+    max,
     lineColor: 'var(--boil)',
-    threshold: minTempC,
-    thresholdLabel: `minimum ${minTempC} °C`,
-    topLabel: '75 °C',
+    threshold: { value: targetTempC, label: `cíl ${targetTempC} °C` },
+    topLabel: `${max} °C`,
     bottomLabel: '30 °C',
     seriesLabel: '°C',
   });
@@ -283,7 +291,7 @@ export function renderBatteryPriceSvg(prices: number[]): string {
   return renderBarChart(prices, {
     colors: (value) => (value < 0 ? 'var(--price)' : '#31406b'),
     seriesLabel: 'Kč/kWh',
-    valueLabel: (value, hour) => `${hourLabel(hour)} — ${value.toFixed(2)} Kč/kWh`,
+    valueLabel: (value, index) => `${slotLabel(index, prices.length)} — ${value.toFixed(2)} Kč/kWh`,
   });
 }
 

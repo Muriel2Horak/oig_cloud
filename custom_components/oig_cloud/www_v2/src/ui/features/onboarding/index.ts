@@ -60,9 +60,11 @@ import {
   BATTERY_GROUPS,
   BATTERY_HARDWARE_CHIPS,
   getBatteryHardwareValue,
+  batterySimulatorBootstrap,
 } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
+import './home6-guide';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import { ergoStyles } from './ergo-styles';
@@ -514,7 +516,7 @@ declare global {
  */
 const WIZARD_STEPS: ReadonlyArray<OnboardingStepId> = [
   'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-  'pricing_supplier_sell', 'battery', 'boiler', 'connection', 'summary',
+  'pricing_supplier_sell', 'battery', 'home56', 'boiler', 'connection', 'summary',
 ];
 
 /**
@@ -532,6 +534,7 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   pricing_supplier: 'Nákup',
   pricing_supplier_sell: 'Prodej',
   battery: 'Baterie',
+  home56: 'Home 5/6',
   boiler: 'Bojler',
   connection: 'Připojení',
   summary: 'Shrnutí',
@@ -546,7 +549,8 @@ const STEP_SUBTITLES: Record<OnboardingStepId, string> = {
   pricing_distribution: 'Sazba a poplatky vašeho distributora',
   pricing_supplier: 'Nákupní cena od dodavatele elektřiny',
   pricing_supplier_sell: 'Prodejní (výkupní) cena do sítě',
-  battery: 'Jak agresivně má systém pracovat s cenou',
+  battery: 'Nabíjení baterie ze sítě',
+  home56: 'Jak fungují režimy Home 5 a Home 6',
   boiler: 'Nastavení ohřevu vody',
   connection: 'Připojení k OIG Cloud a Home Assistantu',
   summary: 'Kontrola a dokončení nastavení',
@@ -564,6 +568,7 @@ const STEP_COLOR_VAR: Record<OnboardingStepId, string> = {
   pricing_supplier: 'var(--c-price)',
   pricing_supplier_sell: 'var(--c-price)',
   battery: 'var(--c-batt)',
+  home56: 'var(--c-batt)',
   boiler: 'var(--c-boiler)',
   connection: 'var(--c-conn)',
   summary: 'var(--c-sum)',
@@ -578,6 +583,7 @@ const STEP_ICON: Record<OnboardingStepId, string> = {
   pricing_supplier: '🛒',
   pricing_supplier_sell: '📤',
   battery: '🔋',
+  home56: '🌙',
   boiler: '🔥',
   connection: '📡',
   summary: '📋',
@@ -594,6 +600,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
   pricing_supplier: STEP_PRICING_SUPPLIER.skippable,
   pricing_supplier_sell: STEP_PRICING_SUPPLIER_SELL.skippable,
   battery: STEP_BATTERY.skippable,
+  home56: true,
   boiler: STEP_BOILER.skippable,
   connection: STEP_CONNECTION.skippable,
   summary: false,
@@ -607,7 +614,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
  * grid cell tied to nav button positions.
  */
 const STEP_PHASE: Partial<Record<OnboardingStepId, 'A' | 'B'>> = {
-  modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', boiler: 'A', connection: 'A',
+  modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', home56: 'A', boiler: 'A', connection: 'A',
   pricing_supplier: 'B', pricing_supplier_sell: 'B', battery: 'B',
 };
 const PHASE_LABELS = { A: 'Nastavuje se jednou', B: 'Mění se v čase' } as const;
@@ -620,6 +627,7 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   pricing_supplier: 'enable_pricing',
   pricing_supplier_sell: 'enable_pricing',
   battery: 'enable_battery_prediction',
+  home56: 'box_has_home56',
   boiler: 'enable_boiler',
 };
 
@@ -666,6 +674,7 @@ const MODULE_SOFT_DEPS: Record<string, readonly string[]> = {
  */
 const MODULES_GROUP_HLAVNI = [
   'enable_solar_forecast', 'enable_pricing', 'enable_battery_prediction', 'enable_boiler',
+  'box_has_home56',
 ] as const;
 const MODULES_GROUP_DOPLNKOVE = [
   'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
@@ -1557,8 +1566,8 @@ export class OigOnboardingWizard extends LitElement {
     }
     .vt-nt-row > div { flex: 1; min-width: 0; }
 
-    /* Number+unit pcard pairs (battery charge-rate/reserve, item 2) — grid,
-       single column on mobile. */
+    /* Number+unit pcard row (battery charge rate, item 2) — grid, single
+       column on mobile. */
     .pair {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -3306,6 +3315,7 @@ export class OigOnboardingWizard extends LitElement {
             domain: 'battery',
             box: this.inverterSn,
             draft: { ...this.batteryDraft },
+            bootstrap: batterySimulatorBootstrap(this.hass, this.inverterSn),
           },
         }));
       };
@@ -3319,9 +3329,9 @@ export class OigOnboardingWizard extends LitElement {
             </div>
             ${BATTERY_GROUPS.map((group) => {
               const groupFields = group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f);
-              // Item 2: number+unit pair as pcards, side by side (design rev 3
-              // "distribution/battery pairs") — only the charge-rate/reserve
-              // pair reads as a pcard row; the rest of the step is unchanged.
+              // Item 2: number+unit field as a pcard (design rev 3
+              // "distribution/battery pairs") — only the charge rate reads as a
+              // pcard row; the rest of the step is unchanged.
               const asPair = group.id === 'nabijeni';
               const renderField = (f: FieldDef) => html`
                 <div class=${asPair ? 'pcard' : ''} data-key=${f.key}>
@@ -3809,6 +3819,15 @@ export class OigOnboardingWizard extends LitElement {
               onValidate: () => void this.validateAiConfig(),
             })}
           </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'home56') {
+      return html`
+        <section class="step step-home56" data-step="home56" style=${`--sc:${STEP_COLOR_VAR.home56}`}>
+          ${this.renderStepHead('home56')}
+          <div class="step-card"><oig-home6-guide></oig-home6-guide></div>
         </section>
       `;
     }

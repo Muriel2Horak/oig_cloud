@@ -154,6 +154,28 @@ async def test_migration_records_snapshot_private_store_and_marker(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {"expensive_percentile": 0.8, "battery_comfort_soc_percent": 60},
+        # A pre-registry display percent, which used to need rescaling.
+        {"expensive_percentile": 70},
+    ],
+)
+async def test_retired_planner_options_need_no_migration(monkeypatch, stored):
+    """Nothing reads them any more: a stored value is ignored, not an error, and it
+    stays in the entry, so going back to an older version keeps the user's setting."""
+    monkeypatch.setattr(config_migration, "Store", _StoreFactory())
+    hass = _DummyHass()
+    options = {"enable_battery_prediction": True, **stored}
+    entry = _Entry(options=dict(options))
+
+    assert await run_migration(hass, entry) is False
+    assert await config_migration.strip_dead_keys(hass, entry) is False
+    assert entry.options == options
+
+
+@pytest.mark.asyncio
 async def test_migration_backup_strips_registry_secret_fields(monkeypatch):
     stores = _StoreFactory()
     monkeypatch.setattr(config_migration, "Store", stores)

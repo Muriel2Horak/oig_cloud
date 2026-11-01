@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from math import ceil
-from typing import List
+from typing import Callable, Dict, List, Optional, Set, Tuple
+
+import numpy as np
 
 from .economic_planner_types import (
     CriticalMoment,
@@ -11,21 +14,50 @@ from .economic_planner_types import (
     PlannerResult,
     SimulatedState,
 )
-from .types import CBBMode, DEFAULT_CHARGE_EFFICIENCY, DEFAULT_EFFICIENCY
+from .types import (
+    CBBMode,
+    DEFAULT_CHARGE_EFFICIENCY,
+    DEFAULT_EFFICIENCY,
+    MODE_LABEL_HOME_I,
+    MODE_LABEL_HOME_UPS,
+    TRANSITION_COSTS,
+)
 
 _LOGGER = logging.getLogger(__name__)
-_SOLAR_HEADROOM_EPS_KWH = 0.05
-_PRICE_EPS_CZK = 1e-9
-# A displacement grid-charge is only kept if it lowers TOTAL plan cost by at
-# least this much. Using real cost (not "expensive kWh") automatically accounts
-# for round-trip losses, so pre-charging is rejected unless cheap/η < expensive
-# actually pays off — no pointless charging on flat-price days.
-_COST_IMPROVEMENT_EPS_CZK = 1e-4
-# Comfort top-up charges ONLY in windows at or below this price percentile of the
-# planning horizon ("the cheapest windows"). Above it the battery is allowed to
-# keep descending toward the hard floor — comfort is never bought with expensive
-# grid (that would re-create the over-charge problem). 0.30 = cheapest ~third.
-_COMFORT_CHEAP_PERCENTILE = 0.30
+_HOME_1 = CBBMode.HOME_I.value
+_HOME_UPS = CBBMode.HOME_UPS.value
+# Resolution of the optimizer's SoC grid: a numerical setting, not a preference.
+# One UPS slot stores about twelve of these at 2.6 kW. A finer grid no longer
+# changes what the plan costs: a year replayed on the box's data comes to
+# 11 822 CZK at this step and 11 824 CZK at 0.01 kWh.
+_SOC_GRID_STEP_KWH = 0.05
+# A cost difference below this is rounding, not a saving; such ties go to Home 1.
+_COST_TIE_EPS_CZK = 1e-6
+# Floating point slack on SoC comparisons, not a margin on the hard minimum.
+_ENERGY_EPS_KWH = 1e-9
+# What a mode change loses, from the existing transition table. Priced at the
+# slot's own price it comes to a few tenths of a crown per round trip: small
+# against a real price spread, enough to stop the plan chasing rounding.
+_SWITCH_ENERGY_LOSS_KWH: Dict[Tuple[Optional[int], int], float] = {
+    (_HOME_1, _HOME_UPS): TRANSITION_COSTS[(MODE_LABEL_HOME_I, MODE_LABEL_HOME_UPS)][
+        "energy_loss_kwh"
+    ],
+    (_HOME_UPS, _HOME_1): TRANSITION_COSTS[(MODE_LABEL_HOME_UPS, MODE_LABEL_HOME_I)][
+        "energy_loss_kwh"
+    ],
+}
+
+# Why a UPS slot is in the plan. The values are taken from the telemetry contract
+# (DETAIL_ENUMS["detail_reason"]), so they reach it without a contract change.
+REASON_FLOOR_RECOVERY = "RECOVERY_BELOW_PLANNING_MIN"
+REASON_FLOOR_DEFENSE = "REPAIR_PLANNING_MIN_VIOLATION"
+REASON_PRICE_SPREAD = "ECONOMIC_CHARGE_CHEAPER_FUTURE"
+REASON_HOLD_FOR_LATER = "PRICE_BAND_CONTINUATION"
+REASON_END_OF_HORIZON = "REACH_TARGET_SOC"
+REASON_SWITCH_NOT_WORTH_IT = "GAP_FILL"
+_FLOOR_REASONS = frozenset({REASON_FLOOR_RECOVERY, REASON_FLOOR_DEFENSE})
+
+_SwitchCost = Callable[[Optional[int], int, float], float]
 
 
 def _simulate_interval(
@@ -77,6 +109,50 @@ def _simulate_interval(
         grid_import = max(0.0, remaining_load - battery_to_load)
 
     return new_soc, grid_import, grid_export, grid_import * price
+
+
+def _simulate_interval_array(
+    soc: np.ndarray,
+    solar: float,
+    load: float,
+    inputs: PlannerInputs,
+    mode: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``_simulate_interval`` over an array of SoC values.
+
+    The optimizer steps every grid point of every slot, and ``_run_planner`` runs
+    in the event loop: one call per point would hold it for hundreds of
+    milliseconds on the box. Same operations in the same order; a test holds the
+    two equal, so there is still only one battery model.
+    """
+    capacity = inputs.max_capacity_kwh
+    solar_to_load = min(solar, load)
+    remaining_load = max(0.0, load - solar_to_load)
+    solar_surplus = max(0.0, solar - solar_to_load)
+
+    max_storable_input = (capacity - soc) / DEFAULT_CHARGE_EFFICIENCY
+    charge_from_solar = np.minimum(solar_surplus, np.maximum(0.0, max_storable_input))
+    new_soc = np.minimum(capacity, soc + (charge_from_solar * DEFAULT_CHARGE_EFFICIENCY))
+    grid_export = np.maximum(0.0, solar_surplus - charge_from_solar)
+
+    if mode == _HOME_UPS:
+        max_storable_input = (capacity - new_soc) / DEFAULT_CHARGE_EFFICIENCY
+        grid_charge_input = np.minimum(
+            inputs.charge_rate_per_interval, np.maximum(0.0, max_storable_input)
+        )
+        new_soc = np.minimum(capacity, new_soc + (grid_charge_input * DEFAULT_CHARGE_EFFICIENCY))
+        grid_import = remaining_load + grid_charge_input
+    else:
+        available_output = np.maximum(0.0, new_soc - inputs.hw_min_kwh) * DEFAULT_EFFICIENCY
+        battery_to_load = np.minimum(remaining_load, available_output)
+        new_soc = np.where(
+            battery_to_load > 0.0,
+            np.maximum(inputs.hw_min_kwh, new_soc - battery_to_load / DEFAULT_EFFICIENCY),
+            new_soc,
+        )
+        grid_import = np.maximum(0.0, remaining_load - battery_to_load)
+
+    return new_soc, grid_import, grid_export
 
 
 def simulate_home_i_detailed(inputs: PlannerInputs) -> List[SimulatedState]:
@@ -137,417 +213,6 @@ def find_critical_moments(
     return moments
 
 
-def _percentile_threshold(values: List[float], percentile: float) -> float:
-    """Return the value at ``percentile`` (0..1) of ``values``.
-
-    Uses a simple nearest-rank style threshold on the sorted prices so that the
-    classifier is deterministic and dependency-free. With percentile ``P`` an
-    interval is "expensive" when its price is >= this returned threshold.
-    """
-    if not values:
-        return float("inf")
-    clamped = min(1.0, max(0.0, percentile))
-    ordered = sorted(values)
-    # Nearest-rank index into the sorted list.
-    rank = clamped * (len(ordered) - 1)
-    lower = int(rank)
-    upper = min(lower + 1, len(ordered) - 1)
-    frac = rank - lower
-    return ordered[lower] + (ordered[upper] - ordered[lower]) * frac
-
-
-def find_expensive_import_moments(
-    states: List[SimulatedState],
-    inputs: PlannerInputs,
-) -> List[CriticalMoment]:
-    """Emit EXPENSIVE_IMPORT moments from a baseline (all-HOME_I) simulation.
-
-    A moment is created for every baseline interval that imports from the grid
-    (grid_import > 0) at a price >= the P-th percentile of the horizon prices.
-    These are the periods the LOCKED design wants to displace by pre-charging
-    the battery in cheaper, earlier windows.
-    """
-    moments: List[CriticalMoment] = []
-    if not states:
-        return moments
-
-    prices = [max(0.0, p) for p in inputs.prices]
-    days = inputs.interval_days
-    if days and len(days) == len(prices):
-        # Per-day percentile: judge each day's expensive intervals against that
-        # day's own price distribution (a cheap day and an expensive day do not
-        # blend into one threshold).
-        by_day: dict[int, List[float]] = {}
-        for idx, day in enumerate(days):
-            by_day.setdefault(day, []).append(prices[idx])
-        day_threshold = {
-            day: _percentile_threshold(values, inputs.expensive_percentile)
-            for day, values in by_day.items()
-        }
-        thresholds = [day_threshold[days[idx]] for idx in range(len(prices))]
-    else:
-        whole = _percentile_threshold(prices, inputs.expensive_percentile)
-        thresholds = [whole] * len(prices)
-
-    for interval, state in enumerate(states):
-        price = prices[interval] if interval < len(prices) else 0.0
-        if state.grid_import_kwh <= 0.0:
-            continue
-        if price + _PRICE_EPS_CZK < thresholds[interval]:
-            continue
-
-        # The "deficit" for an expensive import is the energy we would like the
-        # battery to have supplied instead of the grid at this interval.
-        deficit = state.grid_import_kwh
-        intervals_needed = (
-            ceil(deficit / inputs.charge_rate_per_interval)
-            if inputs.charge_rate_per_interval > 0.0
-            else 0
-        )
-        moments.append(
-            CriticalMoment(
-                type="EXPENSIVE_IMPORT",
-                interval=interval,
-                deficit_kwh=deficit,
-                intervals_needed=intervals_needed,
-                must_start_charging=max(0, interval - intervals_needed),
-                soc_kwh=state.soc_kwh,
-                price_czk=price,
-            )
-        )
-
-    return moments
-
-
-def _compute_soc_trajectory(modes: List[int], inputs: PlannerInputs) -> List[float]:
-    soc_trajectory: List[float] = []
-    soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
-
-    for i, mode in enumerate(modes):
-        soc_trajectory.append(soc)
-        solar = max(0.0, inputs.solar_forecast[i])
-        load = max(0.0, inputs.load_forecast[i])
-        price = max(0.0, inputs.prices[i])
-        soc, _, _, _ = _simulate_interval(soc, solar, load, price, inputs, mode)
-
-    soc_trajectory.append(soc)
-    return soc_trajectory
-
-
-def _estimate_future_storable_surplus_kwh(
-    inputs: PlannerInputs,
-    *,
-    start_idx: int,
-    end_idx: int,
-) -> float:
-    surplus_kwh = 0.0
-    bounded_end = min(end_idx, len(inputs.intervals))
-    for idx in range(max(0, start_idx), bounded_end):
-        solar = max(0.0, inputs.solar_forecast[idx])
-        load = max(0.0, inputs.load_forecast[idx])
-        surplus_kwh += max(0.0, solar - load) * DEFAULT_CHARGE_EFFICIENCY
-    return surplus_kwh
-
-
-def _pick_greedy_candidate_for_moment(
-    *,
-    moment: CriticalMoment,
-    modes: List[int],
-    inputs: PlannerInputs,
-) -> int | None:
-    candidate_range = range(0, min(moment.interval, len(inputs.intervals)))
-    candidates = sorted(candidate_range, key=lambda idx: inputs.prices[idx])
-    soc_traj = _compute_soc_trajectory(modes, inputs)
-    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
-
-    for candidate_idx in candidates:
-        if modes[candidate_idx] == CBBMode.HOME_UPS.value:
-            continue
-
-        headroom_before_charge = inputs.max_capacity_kwh - soc_traj[candidate_idx]
-        effective_charge_kwh = min(
-            inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY,
-            max(0.0, headroom_before_charge),
-        )
-        if effective_charge_kwh < min_useful_charge_kwh:
-            continue
-
-        future_surplus_kwh = _estimate_future_storable_surplus_kwh(
-            inputs,
-            start_idx=candidate_idx + 1,
-            end_idx=moment.interval,
-        )
-        remaining_headroom_after_charge = max(
-            0.0,
-            headroom_before_charge - effective_charge_kwh,
-        )
-        if future_surplus_kwh > remaining_headroom_after_charge + _SOLAR_HEADROOM_EPS_KWH:
-            continue
-
-        return candidate_idx
-
-    return None
-
-
-def _global_greedy_charge_intervals(inputs: PlannerInputs) -> List[int]:
-    n = len(inputs.intervals)
-    if n == 0 or inputs.charge_rate_per_interval <= 0.0:
-        return []
-
-    modes = [CBBMode.HOME_I.value] * n
-    ups_intervals: List[int] = []
-
-    for _ in range(n):
-        states = _simulate_with_modes(modes, inputs)
-        critical_moments = find_critical_moments(states, inputs)
-        if not critical_moments:
-            break
-
-        worst_moment = max(
-            critical_moments,
-            key=lambda moment: (moment.deficit_kwh, moment.interval),
-        )
-        candidate_idx = _pick_greedy_candidate_for_moment(
-            moment=worst_moment,
-            modes=modes,
-            inputs=inputs,
-        )
-        if candidate_idx is None:
-            break
-
-        modes[candidate_idx] = CBBMode.HOME_UPS.value
-        ups_intervals.append(candidate_idx)
-
-    return sorted(ups_intervals)
-
-
-def _comfort_charge_intervals(
-    modes: List[int],
-    inputs: PlannerInputs,
-    comfort_kwh: float,
-    cheap_threshold: float,
-) -> List[int]:
-    """Opportunistically top up toward the comfort SoC using ONLY cheap windows.
-
-    Runs on top of the floor-defense + displacement modes. For each interval
-    where the projected SoC would dip below ``comfort_kwh``, it places HOME_UPS in
-    the cheapest earlier window whose price is at/below ``cheap_threshold`` and
-    that has headroom. It NEVER charges from an expensive window: if no cheap
-    window is available the battery is allowed to keep descending toward the hard
-    floor (which the greedy defends at any price). This keeps a buffer above the
-    BOX bat_min trigger cheaply, so the box never force-charges to ~80%.
-    """
-    n = len(inputs.intervals)
-    if n == 0 or inputs.charge_rate_per_interval <= 0.0 or comfort_kwh <= 0.0:
-        return []
-
-    target = min(comfort_kwh, inputs.max_capacity_kwh)
-    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
-    added: List[int] = []
-
-    for _ in range(2 * n):
-        states = _simulate_with_modes(modes, inputs)
-        # Earliest interval whose projected SoC dips below the comfort target.
-        moment_idx: int | None = None
-        for i, state in enumerate(states):
-            if state.soc_kwh < target - _SOLAR_HEADROOM_EPS_KWH:
-                moment_idx = i
-                break
-        if moment_idx is None:
-            break
-
-        soc_traj = _compute_soc_trajectory(modes, inputs)
-        # Cheapest CHEAP window up to AND INCLUDING the dip interval (charging at
-        # the dip itself lifts its end-of-interval SoC), so a battery that already
-        # starts below comfort can still top up from the earliest cheap window.
-        candidates = sorted(
-            range(0, min(moment_idx + 1, n)), key=lambda idx: inputs.prices[idx]
-        )
-        # PV-first: if upcoming solar will lift the SoC back to the comfort target
-        # on its own, this dip is transient — don't grid-charge for it (comfort is
-        # a soft "descend & wait" target, the hard floor still protects). Avoids
-        # buying grid for a morning dip that the day's solar refills anyway.
-        deficit_kwh = target - states[moment_idx].soc_kwh
-        future_solar_kwh = _estimate_future_storable_surplus_kwh(
-            inputs, start_idx=moment_idx, end_idx=n
-        )
-        if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
-            break
-
-        picked: int | None = None
-        for candidate_idx in candidates:
-            if modes[candidate_idx] == CBBMode.HOME_UPS.value:
-                continue
-            if inputs.prices[candidate_idx] > cheap_threshold + _PRICE_EPS_CZK:
-                continue  # not cheap → don't force; let the battery descend
-            # PV-first: never add grid in an interval where solar already produces
-            # a net surplus — the battery is charging from the sun there for free.
-            solar_c = (
-                max(0.0, inputs.solar_forecast[candidate_idx])
-                if candidate_idx < len(inputs.solar_forecast)
-                else 0.0
-            )
-            load_c = (
-                max(0.0, inputs.load_forecast[candidate_idx])
-                if candidate_idx < len(inputs.load_forecast)
-                else 0.0
-            )
-            if solar_c > load_c + _SOLAR_HEADROOM_EPS_KWH:
-                continue
-            headroom = inputs.max_capacity_kwh - soc_traj[candidate_idx]
-            if min(inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY, max(0.0, headroom)) < min_useful_charge_kwh:
-                continue
-            picked = candidate_idx
-            break
-
-        if picked is None:
-            break  # no cheap window available — descend and wait
-
-        modes[picked] = CBBMode.HOME_UPS.value
-        added.append(picked)
-
-    return sorted(added)
-
-
-def _pick_displacement_candidate(
-    *,
-    moment: CriticalMoment,
-    modes: List[int],
-    inputs: PlannerInputs,
-    soc_traj: List[float],
-    blocked: set[int],
-) -> int | None:
-    """Pick an earlier interval to set HOME_UPS so it displaces ``moment``.
-
-    Cheapest-first. Applies, in order:
-      (a) economic η-gate for EXPENSIVE_IMPORT (cheap_price/η < expensive_price);
-          PLANNING_MIN is a hard safety floor and skips the gate.
-      (b) battery headroom (accounting for intervening solar via the PV-first
-          surplus skip).
-      (c) re-simulation persistence: charging must actually reach the target.
-    """
-    n = len(inputs.intervals)
-    candidate_range = range(0, min(moment.interval, n))
-    candidates = sorted(candidate_range, key=lambda idx: inputs.prices[idx])
-    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
-
-    apply_eta_gate = moment.type == "EXPENSIVE_IMPORT"
-    expensive_price = moment.price_czk if moment.price_czk is not None else 0.0
-    eta = inputs.round_trip_efficiency if inputs.round_trip_efficiency > 0.0 else 1.0
-
-    for candidate_idx in candidates:
-        if modes[candidate_idx] == CBBMode.HOME_UPS.value:
-            continue
-        if candidate_idx in blocked:
-            continue
-
-        cheap_price = max(0.0, inputs.prices[candidate_idx])
-
-        # (a) Economic gate (EXPENSIVE_IMPORT only). Safety floor bypasses it.
-        if apply_eta_gate:
-            if cheap_price / eta >= expensive_price - _PRICE_EPS_CZK:
-                # Cheapest-first ordering means no later candidate can pass either.
-                return None
-
-        # (b) Headroom + PV-first surplus skip (shared with the floor picker).
-        headroom_before_charge = inputs.max_capacity_kwh - soc_traj[candidate_idx]
-        effective_charge_kwh = min(
-            inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY,
-            max(0.0, headroom_before_charge),
-        )
-        if effective_charge_kwh < min_useful_charge_kwh:
-            continue
-
-        future_surplus_kwh = _estimate_future_storable_surplus_kwh(
-            inputs,
-            start_idx=candidate_idx + 1,
-            end_idx=moment.interval,
-        )
-        remaining_headroom_after_charge = max(
-            0.0,
-            headroom_before_charge - effective_charge_kwh,
-        )
-        if future_surplus_kwh > remaining_headroom_after_charge + _SOLAR_HEADROOM_EPS_KWH:
-            continue
-
-        return candidate_idx
-
-    return None
-
-
-def _displace_expensive_imports(
-    modes: List[int],
-    inputs: PlannerInputs,
-) -> List[int]:
-    """Core displacement loop (LOCKED step 2).
-
-    For each expensive baseline import (most expensive first) try to pre-charge an
-    earlier cheap window. After each successful HOME_UPS placement, re-simulate and
-    recompute the remaining expensive imports, then repeat. Returns the list of
-    newly added UPS interval indices.
-    """
-    n = len(inputs.intervals)
-    if n == 0 or inputs.charge_rate_per_interval <= 0.0:
-        return []
-
-    added: List[int] = []
-    blocked: set[int] = set()
-
-    # Each iteration either places one UPS interval or blocks one non-improving
-    # candidate, so it terminates in <= 2n iterations. Cost per iteration is a
-    # constant number of O(n) simulations => O(n²) overall. Persistence ("does
-    # the charge actually reduce an expensive import?") is verified cheaply here
-    # by an improvement check instead of a per-candidate re-simulation.
-    for _ in range(2 * n):
-        states = _simulate_with_modes(modes, inputs)
-        moments = find_expensive_import_moments(states, inputs)
-        if not moments:
-            break
-        # Improvement is measured in real TOTAL COST, not "expensive kWh": a
-        # pre-charge that merely shifts an import to a similarly priced earlier
-        # slot does not lower cost (and round-trip losses make it worse), so it
-        # must be rejected.
-        total_cost = sum(state.cost_czk for state in states)
-
-        # Most expensive first; tie-break on later interval (closer deadline).
-        moments.sort(key=lambda m: (m.price_czk or 0.0, m.interval), reverse=True)
-
-        # SoC trajectory under the current modes — shared by all candidates this
-        # iteration (modes do not change until we place one).
-        soc_traj = _compute_soc_trajectory(modes, inputs)
-
-        candidate_idx: int | None = None
-        for moment in moments:
-            candidate_idx = _pick_displacement_candidate(
-                moment=moment,
-                modes=modes,
-                inputs=inputs,
-                soc_traj=soc_traj,
-                blocked=blocked,
-            )
-            if candidate_idx is not None:
-                break
-
-        if candidate_idx is None:
-            break
-
-        # Place tentatively, then keep it only if TOTAL plan cost strictly drops.
-        modes[candidate_idx] = CBBMode.HOME_UPS.value
-        trial_states = _simulate_with_modes(modes, inputs)
-        trial_cost = sum(state.cost_czk for state in trial_states)
-
-        if trial_cost >= total_cost - _COST_IMPROVEMENT_EPS_CZK:
-            # Not cost-reducing (no real arbitrage / round-trip loss dominates) —
-            # revert, block this candidate, and try the next-cheapest one.
-            modes[candidate_idx] = CBBMode.HOME_I.value
-            blocked.add(candidate_idx)
-            continue
-
-        added.append(candidate_idx)
-
-    return sorted(added)
-
-
 def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[SimulatedState]:
     states: List[SimulatedState] = []
     soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
@@ -582,97 +247,384 @@ def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[Simula
     return states
 
 
+def _stored_energy_value(inputs: PlannerInputs) -> float:
+    """What one kWh still in the battery at the end of the horizon is worth (CZK).
+
+    Without a value the cheapest way to finish is an empty battery, whatever the
+    last slots cost. A stored kWh will later replace DEFAULT_EFFICIENCY kWh of
+    purchase and wear the battery on its way out. The prices after the horizon
+    are unknown, so the horizon's own median stands in for them: it does not
+    swing with a single peak or a single cheap hour.
+    """
+    if not inputs.prices:
+        return 0.0
+    typical_price = float(np.median(np.maximum(inputs.prices, 0.0)))
+    return max(0.0, DEFAULT_EFFICIENCY * typical_price - inputs.battery_wear_czk_per_kwh)
+
+
+def _switch_cost(from_mode: Optional[int], to_mode: int, price: float) -> float:
+    """Penalty for changing mode; a negative price is no reward for switching."""
+    return _SWITCH_ENERGY_LOSS_KWH.get((from_mode, to_mode), 0.0) * max(0.0, price)
+
+
+def _no_switch_cost(_from_mode: Optional[int], _to_mode: int, _price: float) -> float:
+    return 0.0
+
+
+def _slot_forecast(inputs: PlannerInputs, i: int) -> Tuple[float, float, float, float]:
+    export_price = inputs.export_prices[i] if inputs.export_prices else 0.0
+    return (
+        max(0.0, inputs.solar_forecast[i]),
+        max(0.0, inputs.load_forecast[i]),
+        inputs.prices[i],
+        export_price,
+    )
+
+
+def _slot_cost(
+    soc: np.ndarray | float,
+    new_soc: np.ndarray | float,
+    grid_import: np.ndarray | float,
+    grid_export: np.ndarray | float,
+    price: float,
+    export_price: float,
+    wear: float,
+) -> np.ndarray | float:
+    """The objective of one slot: what it buys, less what it sells, plus the wear
+    on what leaves the battery. Same formula for the grid and for the real SoC."""
+    return (
+        grid_import * price
+        - grid_export * export_price
+        + wear * np.maximum(0.0, soc - new_soc)
+    )
+
+
+def _soc_grid(inputs: PlannerInputs, floor_kwh: float) -> np.ndarray:
+    """SoC levels the backward pass evaluates; the hard minimum is one of them."""
+    span = inputs.max_capacity_kwh - inputs.hw_min_kwh
+    count = max(2, ceil(span / _SOC_GRID_STEP_KWH) + 1)
+    return np.union1d(
+        np.linspace(inputs.hw_min_kwh, inputs.max_capacity_kwh, count), [floor_kwh]
+    )
+
+
+def _cost_to_go(
+    inputs: PlannerInputs,
+    grid: np.ndarray,
+    floor_kwh: float,
+    switch_cost: _SwitchCost,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Backward pass: cheapest cost from each slot boundary to the end.
+
+    One curve over the SoC grid per mode of the slot before the boundary, because
+    that mode decides whether the next slot pays for a switch.
+    """
+    n = len(inputs.intervals)
+    wear = inputs.battery_wear_czk_per_kwh
+    end_of_horizon = -_stored_energy_value(inputs) * grid
+    to_go: List[Tuple[np.ndarray, np.ndarray]] = [(end_of_horizon, end_of_horizon)] * (n + 1)
+
+    for i in range(n - 1, -1, -1):
+        solar, load, price, export_price = _slot_forecast(inputs, i)
+        after_home, after_ups = to_go[i + 1]
+
+        new_soc, grid_import, grid_export = _simulate_interval_array(
+            grid, solar, load, inputs, _HOME_1
+        )
+        via_home = _slot_cost(
+            grid, new_soc, grid_import, grid_export, price, export_price, wear
+        ) + np.interp(new_soc, grid, after_home)
+        # Home 1 may not end a slot below the hard minimum, not even on its way
+        # back up: a battery that lingers down there hands control to the box.
+        # UPS never lowers the SoC, so a legal action always exists.
+        via_home[new_soc < floor_kwh - _ENERGY_EPS_KWH] = np.inf
+
+        new_soc, grid_import, grid_export = _simulate_interval_array(
+            grid, solar, load, inputs, _HOME_UPS
+        )
+        via_ups = _slot_cost(
+            grid, new_soc, grid_import, grid_export, price, export_price, wear
+        ) + np.interp(new_soc, grid, after_ups)
+
+        to_go[i] = (
+            np.minimum(via_home, via_ups + switch_cost(_HOME_1, _HOME_UPS, price)),
+            np.minimum(via_home + switch_cost(_HOME_UPS, _HOME_1, price), via_ups),
+        )
+
+    return to_go
+
+
+@dataclass
+class _PlannedSlot:
+    """One slot of an optimized plan and what the optimizer knew when choosing it."""
+
+    mode: int
+    soc_before_kwh: float
+    soc_after_kwh: float
+    grid_charge_kwh: float
+    discharge_kwh: float
+    # What the horizon would cost on top if this slot ran Home 1 instead. None
+    # when Home 1 would break the hard minimum here.
+    home1_extra_cost_czk: Optional[float]
+
+
+def _optimize_modes(
+    inputs: PlannerInputs,
+    floor_kwh: float,
+    switch_cost: _SwitchCost = _switch_cost,
+) -> List[_PlannedSlot]:
+    """Cheapest Home 1 / Home UPS sequence over the horizon for this forecast.
+
+    Dynamic programming over the SoC: backward over a grid to learn what each
+    level is worth, then forward from the real SoC with the real physics, so
+    nothing but ``_simulate_interval`` decides where the battery ends up. The
+    objective is what the slots cost (imports minus export earnings, plus wear on
+    what leaves the battery, plus mode switches) less the value of the energy
+    left at the end.
+    """
+    if inputs.charge_rate_per_interval <= 0.0:
+        raise ValueError("Charge rate must be positive")
+    # A single NaN would silently pick UPS for the whole horizon: every comparison
+    # with it is false.
+    if not np.isfinite(inputs.prices).all() or not np.isfinite(inputs.export_prices or 0.0).all():
+        raise ValueError("Prices must be finite")
+
+    grid = _soc_grid(inputs, floor_kwh)
+    to_go = _cost_to_go(inputs, grid, floor_kwh, switch_cost)
+    wear = inputs.battery_wear_czk_per_kwh
+    soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
+    previous = inputs.current_mode
+    slots: List[_PlannedSlot] = []
+
+    for i in range(len(inputs.intervals)):
+        solar, load, price, export_price = _slot_forecast(inputs, i)
+        after_home, after_ups = to_go[i + 1]
+
+        home_soc, home_import, home_export, _ = _simulate_interval(
+            soc, solar, load, price, inputs, _HOME_1
+        )
+        via_home: Optional[float] = None
+        if home_soc >= floor_kwh - _ENERGY_EPS_KWH:
+            via_home = float(
+                _slot_cost(soc, home_soc, home_import, home_export, price, export_price, wear)
+                + np.interp(home_soc, grid, after_home)
+            )
+
+        ups_soc, ups_import, ups_export, _ = _simulate_interval(
+            soc, solar, load, price, inputs, _HOME_UPS
+        )
+        via_ups = float(
+            _slot_cost(soc, ups_soc, ups_import, ups_export, price, export_price, wear)
+            + np.interp(ups_soc, grid, after_ups)
+        )
+
+        home_total = (
+            None if via_home is None else via_home + switch_cost(previous, _HOME_1, price)
+        )
+        ups_total = via_ups + switch_cost(previous, _HOME_UPS, price)
+
+        if home_total is not None and ups_total >= home_total - _COST_TIE_EPS_CZK:
+            mode = _HOME_1
+            new_soc = home_soc
+        else:
+            mode = _HOME_UPS
+            new_soc = ups_soc
+
+        slots.append(
+            _PlannedSlot(
+                mode=mode,
+                soc_before_kwh=soc,
+                soc_after_kwh=new_soc,
+                grid_charge_kwh=(
+                    max(0.0, ups_import - max(0.0, load - solar)) if mode == _HOME_UPS else 0.0
+                ),
+                discharge_kwh=max(0.0, soc - new_soc),
+                home1_extra_cost_czk=(
+                    None if home_total is None else home_total - ups_total
+                ),
+            )
+        )
+        soc = new_soc
+        previous = mode
+
+    return slots
+
+
+def _ups_slots(slots: List[_PlannedSlot]) -> Set[int]:
+    return {i for i, slot in enumerate(slots) if slot.mode == _HOME_UPS}
+
+
+def _ups_slot_reason(
+    index: int,
+    slot: _PlannedSlot,
+    without_floor: Set[int],
+    without_switch_cost: Set[int],
+    floor_kwh: float,
+    lowest_later_soc: float,
+) -> str:
+    if slot.soc_before_kwh < floor_kwh - _ENERGY_EPS_KWH:
+        return REASON_FLOOR_RECOVERY
+    # Counterfactuals, not the slot's own figures: with flat prices a charge well
+    # ahead of the low point exists only for the minimum, and with a real spread
+    # a charge right next to the minimum may be worth buying anyway. The same for
+    # switching: Home 1's cost in this slot already includes the way back to UPS,
+    # so comparing the two modes here does not show what the switch decided.
+    if index not in without_floor:
+        return REASON_FLOOR_DEFENSE
+    if index not in without_switch_cost:
+        return REASON_SWITCH_NOT_WORTH_IT
+    if slot.grid_charge_kwh <= _ENERGY_EPS_KWH:
+        return REASON_HOLD_FOR_LATER
+    # The battery never comes back down to what this slot added, so nothing in
+    # the horizon uses it: only its value at the end pays for the purchase.
+    if lowest_later_soc >= slot.soc_after_kwh - _ENERGY_EPS_KWH:
+        return REASON_END_OF_HORIZON
+    return REASON_PRICE_SPREAD
+
+
+def _served_moment(
+    reason: str,
+    block: List[int],
+    slots: List[_PlannedSlot],
+    inputs: PlannerInputs,
+    baseline_moments: List[CriticalMoment],
+) -> CriticalMoment:
+    """The interval a UPS block is there for."""
+    first, last = block[0], block[-1]
+    interval = len(slots) - 1
+    moment_type = "HORIZON_END"
+    deficit = 0.0
+    price: Optional[float] = None
+
+    if reason in _FLOOR_REASONS:
+        breach = next((m for m in baseline_moments if m.interval >= first), None)
+        moment_type = "PLANNING_MIN"
+        interval = breach.interval if breach else first
+        deficit = breach.deficit_kwh if breach else 0.0
+    elif reason != REASON_END_OF_HORIZON:
+        later_discharges = [
+            i for i in range(last + 1, len(slots)) if slots[i].discharge_kwh > _ENERGY_EPS_KWH
+        ]
+        if later_discharges:
+            interval = max(later_discharges, key=lambda i: inputs.prices[i])
+            moment_type = "EXPENSIVE_IMPORT"
+            price = inputs.prices[interval]
+
+    return CriticalMoment(
+        type=moment_type,
+        interval=interval,
+        deficit_kwh=deficit,
+        intervals_needed=len(block),
+        must_start_charging=first,
+        soc_kwh=slots[first].soc_before_kwh,
+        price_czk=price,
+    )
+
+
+def _ups_decisions(
+    slots: List[_PlannedSlot],
+    inputs: PlannerInputs,
+    baseline_moments: List[CriticalMoment],
+    total_cost: float,
+) -> List[Decision]:
+    """One decision per run of neighbouring UPS slots that share a reason.
+
+    Not one per slot: the trace is published as a sensor attribute, a plan can
+    hold UPS for most of the horizon, and the recorder drops every attribute of
+    a state above 16 KiB. ``charge_intervals`` still names each slot.
+    """
+    floor_kwh = inputs.planning_min_kwh
+    without_floor = _ups_slots(_optimize_modes(inputs, inputs.hw_min_kwh))
+    without_switch_cost = _ups_slots(
+        _optimize_modes(inputs, floor_kwh, switch_cost=_no_switch_cost)
+    )
+    lowest_later_soc = [float("inf")] * len(slots)
+    for i in range(len(slots) - 2, -1, -1):
+        lowest_later_soc[i] = min(lowest_later_soc[i + 1], slots[i + 1].soc_after_kwh)
+
+    blocks: List[Tuple[str, List[int]]] = []
+    for i, slot in enumerate(slots):
+        if slot.mode != _HOME_UPS:
+            continue
+        reason = _ups_slot_reason(
+            i, slot, without_floor, without_switch_cost, floor_kwh, lowest_later_soc[i]
+        )
+        if blocks and blocks[-1][0] == reason and blocks[-1][1][-1] == i - 1:
+            blocks[-1][1].append(i)
+        else:
+            blocks.append((reason, [i]))
+
+    decisions: List[Decision] = []
+    for reason, block in blocks:
+        moment = _served_moment(reason, block, slots, inputs, baseline_moments)
+        first_slot, last_slot = slots[block[0]], slots[block[-1]]
+        extra_cost = first_slot.home1_extra_cost_czk
+        decisions.append(
+            Decision(
+                moment=moment,
+                strategy="CHARGE_CHEAPEST",
+                cost=total_cost,
+                charge_intervals=block,
+                alternatives=[],
+                reason=reason,
+                evidence={
+                    "slot_price_czk": round(
+                        sum(inputs.prices[i] for i in block) / len(block), 3
+                    ),
+                    "served_price_czk": moment.price_czk,
+                    "grid_charge_kwh": round(
+                        sum(slots[i].grid_charge_kwh for i in block), 3
+                    ),
+                    "soc_start_kwh": round(first_slot.soc_before_kwh, 3),
+                    "soc_end_kwh": round(last_slot.soc_after_kwh, 3),
+                    "home1_extra_cost_czk": (
+                        None if extra_cost is None else round(extra_cost, 3)
+                    ),
+                },
+            )
+        )
+    return decisions
+
+
+def _trace_action(decision: Decision) -> str:
+    if not decision.charge_intervals:
+        return "defer"
+    grid_charge_kwh = decision.evidence.get("grid_charge_kwh")
+    if grid_charge_kwh is not None and abs(grid_charge_kwh) < 1e-9:
+        return "hold"
+    return "charge"
+
+
 def build_planner_decision_trace(
     decisions: List[Decision],
     inputs: PlannerInputs,
 ) -> List[dict[str, object]]:
-    trace: List[dict[str, object]] = []
-    for decision in decisions:
-        if (
-            decision.strategy == "CHARGE_CHEAPEST"
-            and decision.reason == "GLOBAL_GREEDY"
-            and len(decision.charge_intervals) > 1
-        ):
-            for charge_interval in decision.charge_intervals:
-                trace.append(
-                    {
-                        "interval_idx": decision.moment.interval,
-                        "must_start_charging_idx": decision.moment.must_start_charging,
-                        "action": "charge",
-                        "strategy": decision.strategy,
-                        "reason": decision.reason,
-                        "deficit_kwh": round(decision.moment.deficit_kwh, 3),
-                        "planning_min_kwh": round(inputs.planning_min_kwh, 3),
-                        "charge_intervals": [charge_interval],
-                        "alternatives": [
-                            {"strategy": name, "cost": cost}
-                            for name, cost in (decision.alternatives or [])
-                        ],
-                    }
-                )
-            continue
-
-        trace.append(
-            {
-                "interval_idx": decision.moment.interval,
-                "must_start_charging_idx": decision.moment.must_start_charging,
-                "action": "charge" if decision.charge_intervals else "defer",
-                "strategy": decision.strategy,
-                "reason": decision.reason or decision.strategy.lower(),
-                "deficit_kwh": round(decision.moment.deficit_kwh, 3),
-                "planning_min_kwh": round(inputs.planning_min_kwh, 3),
-                "charge_intervals": list(decision.charge_intervals),
-                "alternatives": [
-                    {"strategy": name, "cost": cost}
-                    for name, cost in (decision.alternatives or [])
-                ],
-            }
-        )
-    return trace
+    return [
+        {
+            "interval_idx": decision.moment.interval,
+            "must_start_charging_idx": decision.moment.must_start_charging,
+            "action": _trace_action(decision),
+            "strategy": decision.strategy,
+            "reason": decision.reason or decision.strategy.lower(),
+            "deficit_kwh": round(decision.moment.deficit_kwh, 3),
+            "planning_min_kwh": round(inputs.planning_min_kwh, 3),
+            "charge_intervals": list(decision.charge_intervals),
+            "alternatives": [
+                {"strategy": name, "cost": cost}
+                for name, cost in (decision.alternatives or [])
+            ],
+            **decision.evidence,
+        }
+        for decision in decisions
+    ]
 
 
 def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
     try:
         baseline_states = simulate_home_i_detailed(inputs)
 
-        n = len(inputs.intervals)
-        modes = [CBBMode.HOME_I.value] * n
-
-        # Step 3 (HARD safety floor, KEEP): defend planning_min by charging the
-        # cheapest earlier windows WITHOUT the economic η-gate.
-        floor_intervals = _global_greedy_charge_intervals(inputs)
-        for idx in floor_intervals:
-            if 0 <= idx < n:
-                modes[idx] = CBBMode.HOME_UPS.value
-
-        # Step 2 (CORE displacement): pre-charge cheap windows ahead of expensive
-        # low-PV imports, applying the economic η-gate and PV-first guard. This
-        # runs on top of the floor-defense modes and re-simulates internally.
-        displacement_intervals = _displace_expensive_imports(modes, inputs)
-
-        # Step 4 (COMFORT buffer): keep the battery above a comfort SoC using ONLY
-        # cheap windows, so it never dwells near the BOX bat_min trigger (which
-        # would make the box force-charge to ~80% at any price). Cheap-only, so it
-        # cannot re-create expensive over-charging; if no cheap window exists the
-        # battery descends and only the hard floor (Step 3) is defended at any price.
-        comfort_kwh = max(0.0, getattr(inputs, "comfort_soc_kwh", 0.0) or 0.0)
-        comfort_intervals: List[int] = []
-        if comfort_kwh > inputs.planning_min_kwh and inputs.prices:
-            prices_nonneg = [max(0.0, p) for p in inputs.prices]
-            cheap_threshold = _percentile_threshold(prices_nonneg, _COMFORT_CHEAP_PERCENTILE)
-            mean_price = sum(prices_nonneg) / len(prices_nonneg)
-            # Only top up for comfort when a genuinely cheap tier exists (spread).
-            # On a flat/all-expensive day there is no cheap window → descend and
-            # wait (the hard floor still protects against the box takeover).
-            if cheap_threshold < mean_price - _PRICE_EPS_CZK:
-                comfort_intervals = _comfort_charge_intervals(
-                    modes, inputs, comfort_kwh, cheap_threshold
-                )
-
-        ups_intervals = sorted(
-            set(floor_intervals) | set(displacement_intervals) | set(comfort_intervals)
-        )
-
+        slots = _optimize_modes(inputs, inputs.planning_min_kwh)
+        modes = [slot.mode for slot in slots]
         states = _simulate_with_modes(modes, inputs)
 
         safety_min_kwh = inputs.hw_min_kwh * 0.95
@@ -686,49 +638,11 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
         total_cost = sum(state.cost_czk for state in states)
 
         critical_moments = find_critical_moments(baseline_states, inputs)
-        expensive_moments = find_expensive_import_moments(baseline_states, inputs)
-        decisions: List[Decision] = []
-        if critical_moments:
-            worst = max(critical_moments, key=lambda m: m.deficit_kwh)
-            if ups_intervals:
-                decisions.append(
-                    Decision(
-                        moment=worst,
-                        strategy="CHARGE_CHEAPEST",
-                        cost=total_cost,
-                        charge_intervals=ups_intervals,
-                        alternatives=[],
-                        reason="GLOBAL_GREEDY",
-                    )
-                )
-            else:
-                decisions.append(
-                    Decision(
-                        moment=worst,
-                        strategy="USE_BATTERY",
-                        cost=total_cost,
-                        charge_intervals=[],
-                        alternatives=[],
-                        reason="BATTERY_SUFFICIENT",
-                    )
-                )
-        elif displacement_intervals and expensive_moments:
-            # Displacement-only plan: no static-floor breach, but we pre-charged
-            # cheap windows to displace expensive imports. Record it for the trace
-            # without altering the stable PlannerResult contract.
-            worst_expensive = max(
-                expensive_moments, key=lambda m: (m.price_czk or 0.0, m.deficit_kwh)
-            )
-            decisions.append(
-                Decision(
-                    moment=worst_expensive,
-                    strategy="CHARGE_CHEAPEST",
-                    cost=total_cost,
-                    charge_intervals=sorted(displacement_intervals),
-                    alternatives=[],
-                    reason="DISPLACE_EXPENSIVE_IMPORT",
-                )
-            )
+        decisions = (
+            _ups_decisions(slots, inputs, critical_moments, total_cost)
+            if _HOME_UPS in modes
+            else []
+        )
 
         return PlannerResult(
             modes=modes,

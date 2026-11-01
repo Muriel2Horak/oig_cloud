@@ -42,6 +42,7 @@ export type OnboardingStepId =
   | 'pricing_supplier'
   | 'pricing_supplier_sell'
   | 'battery'
+  | 'home56'
   | 'boiler'
   | 'connection'
   | 'summary';
@@ -98,7 +99,7 @@ export interface AiVerifyResult {
 /** Mirror of `ONBOARDING_STEPS` in Python — used for completion validation. */
 export const ONBOARDING_STEPS: ReadonlyArray<OnboardingStepId> = [
   'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-  'pricing_supplier_sell', 'battery', 'boiler', 'connection',
+  'pricing_supplier_sell', 'battery', 'home56', 'boiler', 'connection',
 ];
 
 /** Empty state used when the backend returns nothing (404 / cold start). */
@@ -112,6 +113,7 @@ export const EMPTY_ONBOARDING_STATE: OnboardingState = {
     pricing_supplier: 'pending',
     pricing_supplier_sell: 'pending',
     battery: 'pending',
+    home56: 'pending',
     boiler: 'pending',
     connection: 'pending',
   },

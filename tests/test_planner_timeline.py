@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.battery_forecast import economic_planner
 from custom_components.oig_cloud.battery_forecast.timeline import planner
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
@@ -129,6 +130,38 @@ def test_format_planner_reason():
     assert planner.format_planner_reason("price_band_hold") == "UPS držíme v cenovém pásmu dle účinnosti"
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        economic_planner.REASON_FLOOR_RECOVERY,
+        economic_planner.REASON_FLOOR_DEFENSE,
+        economic_planner.REASON_PRICE_SPREAD,
+        economic_planner.REASON_END_OF_HORIZON,
+        economic_planner.REASON_HOLD_FOR_LATER,
+        economic_planner.REASON_SWITCH_NOT_WORTH_IT,
+    ],
+)
+def test_every_optimizer_reason_has_a_user_facing_text(reason):
+    text = planner.format_planner_reason(reason, spot_price=2.5)
+
+    assert text
+    assert reason not in text
+    # The price belongs to the caller: a block adds its own average.
+    assert "Kč/kWh" not in text
+
+
+def test_optimizer_reasons_read_differently():
+    reasons = [
+        value
+        for name, value in vars(economic_planner).items()
+        if name.startswith("REASON_")
+    ]
+    texts = {planner.format_planner_reason(reason) for reason in reasons}
+
+    assert None not in texts
+    assert len(texts) == len(reasons)
+
+
 def test_attach_planner_reasons():
     timeline = [{"spot_price": 1.0}, {"spot_price": 2.0}]
 
@@ -153,6 +186,56 @@ def test_attach_planner_reasons():
     assert timeline[1]["decision_metrics"]["planner_is_negative_price"] is True
 
     planner.attach_planner_reasons(timeline, decisions + [Decision("x")])
+
+
+def test_attach_planner_reasons_follows_the_charge_intervals():
+    """A plan has one decision per run of UPS slots, so the position of a
+    decision in the list says nothing about which slot it belongs to."""
+    timeline = [{"spot_price": float(i)} for i in range(6)]
+
+    class Decision:
+        def __init__(self, reason, charge_intervals):
+            self.reason = reason
+            self.charge_intervals = charge_intervals
+
+    planner.attach_planner_reasons(
+        timeline,
+        [Decision("FIRST", [2, 3]), Decision("SECOND", [5]), Decision("BEYOND", [99])],
+    )
+
+    assert timeline[2]["decision_metrics"]["planner_reason_code"] == "FIRST"
+    assert timeline[3]["decision_metrics"]["planner_reason_code"] == "FIRST"
+    assert timeline[5]["decision_metrics"]["planner_reason_code"] == "SECOND"
+    assert "decision_metrics" not in timeline[0]
+    assert "decision_metrics" not in timeline[1]
+    assert "decision_metrics" not in timeline[4]
+
+
+def test_attach_planner_reasons_gives_an_optimizer_slot_its_text():
+    timeline = [{"spot_price": 1.0}, {"spot_price": 2.0}]
+    decision = SimpleNamespace(
+        reason=economic_planner.REASON_FLOOR_DEFENSE, charge_intervals=[1]
+    )
+
+    planner.attach_planner_reasons(timeline, [decision])
+
+    assert "decision_reason" not in timeline[0]
+    assert timeline[1]["decision_reason"] == (
+        "Nabíjení ze sítě, aby baterie neklesla pod plánovací minimum"
+    )
+
+
+def test_attach_planner_reasons_decision_without_slots_keeps_its_position():
+    timeline = [{"spot_price": 1.0}, {"spot_price": 2.0}]
+
+    class Decision:
+        reason = "BATTERY_SUFFICIENT"
+        charge_intervals = []
+
+    planner.attach_planner_reasons(timeline, [Decision()])
+
+    assert timeline[0]["decision_metrics"]["planner_reason_code"] == "BATTERY_SUFFICIENT"
+    assert "decision_metrics" not in timeline[1]
 
 
 def test_add_decision_reasons_to_timeline():

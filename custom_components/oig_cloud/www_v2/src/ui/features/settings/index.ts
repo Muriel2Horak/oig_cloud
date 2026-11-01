@@ -47,6 +47,7 @@ import {
   type AiValidationState,
 } from '@/ui/features/onboarding';
 import { resolveLang, t, type Lang } from '@/i18n/onboarding';
+import '@/ui/features/onboarding/home6-guide';
 
 const u = unsafeCSS;
 const INVERTER_SN = new URLSearchParams(window.location.search).get('sn')
@@ -662,6 +663,15 @@ export class OigSettings extends LitElement {
     this.aiValidation = { kind: 'error', code: result.data?.code ?? 'error' };
   }
 
+  private renderHome56Card() {
+    if (!this.currentCrossSection('modules', 'box_has_home56')) return nothing;
+    return html`
+      <div class="card" data-testid="settings-home56">
+        <h2>🌙 Home 5/6</h2>
+        <oig-home6-guide></oig-home6-guide>
+      </div>`;
+  }
+
   private renderCard(section: SettingsSection | 'ai', title: string, sub: string, fields: FieldDef[]) {
     if (!this.registry && section !== 'ai') {
       return this.renderRegistryUnavailable(section, title, sub);
@@ -732,7 +742,7 @@ export class OigSettings extends LitElement {
     const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
     const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
     const altCostKwh = this.current(section, 'boiler_alt_cost_kwh') as number | null;
-    const hasHome56 = !!this.current(section, 'box_has_home56');
+    const hasHome56 = !!this.currentCrossSection(section, 'box_has_home56');
     const home5Enabled = !!this.current(section, 'boiler_home5_maneuver_enabled');
     const circEnabled = !!this.current(section, 'boiler_circulation_enabled');
     const legInterval = Number(this.current(section, 'boiler_legionella_interval_days') ?? 0);
@@ -750,7 +760,7 @@ export class OigSettings extends LitElement {
       ...home5Field,
       hint: hasHome56
         ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
-        : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
+        : 'Vyžaduje zapnutí „Box má Home 5/6" v kartě Moduly',
     } : undefined;
 
     // Section badges
@@ -791,10 +801,6 @@ export class OigSettings extends LitElement {
               ${renderBoilerField('boiler_thermal_arbitrage_enabled')}
               ${this.current(section, 'boiler_thermal_arbitrage_enabled') ? renderBoilerField('boiler_max_temp_c') : nothing}
             ` : nothing}
-            ${renderBoilerField('box_has_home56')}
-            <div class="note" style="margin-top:6px;margin-bottom:2px">
-              Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
-            </div>
             ${home5FieldWithHint ? this.renderFieldDisableable(section, home5FieldWithHint, !hasHome56) : nothing}
             ${hasHome56 ? renderBoilerField('boiler_battery_cycle_cost_czk_kwh') : nothing}
           </div>
@@ -940,6 +946,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
         ${this.renderAiCard()}
         ${this.renderCard('pricing_supplier', '💳 Dodavatelské a distribuční ceny', 'Obchodní podmínky vaší smlouvy s dodavatelem a distributorem elektřiny.', this.fieldsFor('pricing_supplier'))}
+        ${this.renderHome56Card()}
         ${this.renderBoilerCard()}
       </div>
     `;

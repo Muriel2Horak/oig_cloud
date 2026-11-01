@@ -9,12 +9,31 @@ from homeassistant.util import dt as dt_util
 
 from ...physics import simulate_interval
 from ..data.input import get_solar_for_timestamp
+from ..economic_planner import (
+    REASON_END_OF_HORIZON,
+    REASON_FLOOR_DEFENSE,
+    REASON_FLOOR_RECOVERY,
+    REASON_HOLD_FOR_LATER,
+    REASON_PRICE_SPREAD,
+    REASON_SWITCH_NOT_WORTH_IT,
+)
 from ..types import (
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
 )
+
+# Why the optimizer holds a slot in UPS. No price here: a block's summary adds its
+# own average to the text (detail_tabs_blocks._summarize_dominant_code).
+_UPS_REASON_TEXTS: Dict[str, str] = {
+    REASON_FLOOR_RECOVERY: "Nabíjení ze sítě, baterie je pod plánovacím minimem",
+    REASON_FLOOR_DEFENSE: "Nabíjení ze sítě, aby baterie neklesla pod plánovací minimum",
+    REASON_PRICE_SPREAD: "Nabíjení ze sítě, později bude elektřina dražší",
+    REASON_END_OF_HORIZON: "Nabíjení ze sítě do zásoby, spotřebuje se až po konci plánu",
+    REASON_HOLD_FOR_LATER: "Plná baterie čeká na dražší hodiny, spotřeba jde ze sítě",
+    REASON_SWITCH_NOT_WORTH_IT: "UPS zůstává, přepnutí by se nevyplatilo",
+}
 
 
 def build_planner_timeline(
@@ -136,39 +155,44 @@ def format_planner_reason(
     if reason_code in {"negative_price_consume", "auto_negative_consume"}:
         return "Negativní cena: maximalizace spotřeby"
 
-    return None
+    return _UPS_REASON_TEXTS.get(reason_code)
 
 
 def attach_planner_reasons(
     timeline: List[Dict[str, Any]],
     decisions: List[Any],
 ) -> None:
-    """Attach planner reasons and decision metrics to timeline entries."""
-    for idx, decision in enumerate(decisions):
-        if idx >= len(timeline):
-            break
-        reason_code = getattr(decision, "reason", None)
-        metrics = timeline[idx].get("decision_metrics") or {}
-        if reason_code:
-            metrics.setdefault("planner_reason_code", reason_code)
-            metrics.setdefault("planner_reason", reason_code)
-        metrics.setdefault(
-            "planner_is_balancing", bool(getattr(decision, "is_balancing", False))
-        )
-        metrics.setdefault(
-            "planner_is_holding", bool(getattr(decision, "is_holding", False))
-        )
-        metrics.setdefault(
-            "planner_is_negative_price",
-            bool(getattr(decision, "is_negative_price", False)),
-        )
-        timeline[idx]["decision_metrics"] = metrics
+    """Attach planner reasons and decision metrics to timeline entries.
 
-        reason_text = format_planner_reason(
-            reason_code, spot_price=timeline[idx].get("spot_price")
-        )
-        if reason_text:
-            timeline[idx]["decision_reason"] = reason_text
+    A decision belongs to the slots it charges in; one without any (a plan with
+    no UPS slot) falls back to its position in the list.
+    """
+    for idx, decision in enumerate(decisions):
+        reason_code = getattr(decision, "reason", None)
+        for slot in getattr(decision, "charge_intervals", None) or [idx]:
+            if slot >= len(timeline):
+                continue
+            metrics = timeline[slot].get("decision_metrics") or {}
+            if reason_code:
+                metrics.setdefault("planner_reason_code", reason_code)
+                metrics.setdefault("planner_reason", reason_code)
+            metrics.setdefault(
+                "planner_is_balancing", bool(getattr(decision, "is_balancing", False))
+            )
+            metrics.setdefault(
+                "planner_is_holding", bool(getattr(decision, "is_holding", False))
+            )
+            metrics.setdefault(
+                "planner_is_negative_price",
+                bool(getattr(decision, "is_negative_price", False)),
+            )
+            timeline[slot]["decision_metrics"] = metrics
+
+            reason_text = format_planner_reason(
+                reason_code, spot_price=timeline[slot].get("spot_price")
+            )
+            if reason_text:
+                timeline[slot]["decision_reason"] = reason_text
 
 
 def add_decision_reasons_to_timeline(

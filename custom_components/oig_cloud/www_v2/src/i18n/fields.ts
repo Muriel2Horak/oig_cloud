@@ -26,8 +26,6 @@ const CS_LABELS: Record<string, string> = {
   // --- battery settings ---
   'field.auto_mode_switch_enabled.label': 'Automatické přepínání režimů',
   'field.charge_rate_kw.label': 'Nabíjecí výkon ze sítě (kW)',
-  'field.expensive_percentile.label': 'Práh drahých hodin (%)',
-  'field.battery_comfort_soc_percent.label': 'Komfortní rezerva baterie (%)',
   'field.balancing_enabled.label': 'Balancování článků',
   'field.balancing_interval_days.label': 'Interval balancování (dny)',
   'field.balancing_hold_hours.label': 'Držení 100 % (hodiny)',
@@ -65,6 +63,13 @@ const CS_LABELS: Record<string, string> = {
   'field.boiler_alt_energy_sensor.label': 'Senzor energie alt. zdroje',
   'field.boiler_alt_energy_daily.label': 'Denní přírůstek energie',
   'field.box_has_home56.label': 'Box má Home 5/6',
+  'field.hw_min_fraction.label': 'Záložní minimum baterie (podíl kapacity)',
+  'field.mode_guard_minutes.label': 'Ochranná doba přepnutí režimu (min)',
+  'field.box_floor_safety_margin_pct.label': 'Rezerva nad minimem boxu (%)',
+  'field.holding_soc_threshold_percent.label': 'Práh držení při balancování (%)',
+  'field.ups_opportunistic_price_czk_kwh.label': 'Cena pro příležitostné nabíjení (Kč/kWh)',
+  'field.ups_opportunistic_charge_rate_kw.label': 'Výkon příležitostného nabíjení (kW)',
+  'field.ai_consent_cross_provider_fallback.label': 'Souhlas se záložním AI poskytovatelem',
   'field.boiler_home5_maneuver_enabled.label': '🔋→🔥 Ohřev z baterie',
   'field.boiler_battery_cycle_cost_czk_kwh.label': 'Cena cyklu baterie (Kč/kWh)',
   'field.boiler_circulation_enabled.label': 'Cirkulace teplé vody',
@@ -155,10 +160,7 @@ const CS_LABELS: Record<string, string> = {
   'simulator.chart.water_temp.label': 'Teplota vody',
   'simulator.chart.draw.label': 'Odběr teplé vody',
   'simulator.battery.charge_rate_kw.label': 'Nabíjecí výkon ze sítě',
-  'simulator.battery.reserve.label': 'Komfortní rezerva',
-  'simulator.battery.expensive_percentile.label': 'Práh drahých hodin',
   'simulator.boiler.target_temp_c.label': 'Cílová teplota',
-  'simulator.boiler.min_temp_c.label': 'Minimální teplota',
   'simulator.box.capacity_kwh.label': 'Kapacita baterie',
   'simulator.box.hw_min_soc_percent.label': 'Minimální SoC (HW)',
   'simulator.box.top_temp_c.label': 'Teplota nahoře',
@@ -176,8 +178,6 @@ const CS_HINTS: Record<string, string> = {
   // --- battery settings hints ---
   'field.auto_mode_switch_enabled.hint': 'Plánovač sám přepíná Home 1 / Home UPS podle plánu',
   'field.charge_rate_kw.hint': 'Kolik kW box bere při nabíjení ze sítě (UPS)',
-  'field.expensive_percentile.hint': 'Importy nad tímto denním percentilem cen se plánovač snaží pokrýt levným přednabitím. Výchozí 70 %.',
-  'field.battery_comfort_soc_percent.hint': 'Baterku drží nad touto úrovní, ale jen dobíjením v nejlevnějších oknech — aby ji box sám nenatáhl na 80 % za jakoukoli cenu. 0 = vypnuto. Výchozí 50 %.',
   'field.balancing_enabled.hint': 'Pravidelné nabití na 100 % kvůli vyrovnání článků',
   'field.cheap_window_percentile.hint': 'Balancování se plánuje do hodin pod tímto cenovým percentilem',
 
@@ -205,7 +205,14 @@ const CS_HINTS: Record<string, string> = {
   'field.boiler_alt_cost_kwh.hint': 'Cena tepla z alternativního zdroje v Kč/kWh',
   'field.boiler_alt_energy_sensor.hint': 'ID entity senzoru energie (kWh)',
   'field.boiler_alt_energy_daily.hint': 'Zapni, pokud senzor měří denní (ne celkový) přírůstek',
-  'field.box_has_home56.hint': 'Aktivuje Home 5/6 (OIG CBB) — umožňuje 🔋→🔥 ohřev z baterie',
+  'field.box_has_home56.hint': 'Zapne přepínače Home 5 a Home 6 v řídicím panelu. Nezávisí na modulu bojleru',
+  'field.hw_min_fraction.hint': 'Použije se, jen když box minimum nehlásí. 0,20 znamená 20 % kapacity.',
+  'field.mode_guard_minutes.hint': 'Jak dlouho musí režim platit, než ho plánovač znovu změní.',
+  'field.box_floor_safety_margin_pct.hint': 'O kolik procent nad minimem boxu má plánovač držet baterii.',
+  'field.holding_soc_threshold_percent.hint': 'Od tohoto stavu baterie se při balancování počítá držení na plné kapacitě.',
+  'field.ups_opportunistic_price_czk_kwh.hint': 'Do této ceny může plánovač nabíjet ze sítě i mimo plánované okno.',
+  'field.ups_opportunistic_charge_rate_kw.hint': 'S jakým výkonem plánovač při příležitostném nabíjení počítá.',
+  'field.ai_consent_cross_provider_fallback.hint': 'Bez tohoto souhlasu se záložní poskytovatel nikdy nepoužije, i když je uložen.',
   'field.boiler_home5_maneuver_enabled.hint': 'Plánovač může použít baterii k ohřevu (vyžaduje Home 5/6)',
   'field.boiler_battery_cycle_cost_czk_kwh.hint': 'Degradace baterie za kWh; plánovač porovná s cenou sítě',
   'field.boiler_circulation_enabled.hint': 'Zapnutí cirkulačního čerpadla TUV',
@@ -268,10 +275,7 @@ const CS_HINTS: Record<string, string> = {
 
   // Simulator overlay (F1)
   'simulator.battery.charge_rate_kw.hint': 'Kolik box bere při nabíjení v režimu UPS. Vyšší = stihne nabít v kratším levném okně.',
-  'simulator.battery.reserve.hint': 'Pod tuto úroveň baterku nepustí — dobíjí ale jen v levných oknech. 0 = vypnuto.',
-  'simulator.battery.expensive_percentile.hint': 'Hodiny nad tímto percentilem cen se plánovač snaží pokrýt levným přednabitím. Vyšší = útočnější spoření.',
   'simulator.boiler.target_temp_c.hint': 'Na kolik stupňů se bojler snaží ohřát v levných/solárních oknech.',
-  'simulator.boiler.min_temp_c.hint': 'Pod tohle nesmí spadnout — ohřeje se hned, i za draho. Komfortní pojistka.',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */
