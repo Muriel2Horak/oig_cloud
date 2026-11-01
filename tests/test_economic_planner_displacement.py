@@ -34,9 +34,6 @@ def _build_inputs(
     max_capacity_kwh: float = 10.24,
     hw_min_kwh: float = 2.048,
     planning_min_percent: float = 20.0,
-    expensive_percentile: float = 0.70,
-    round_trip_efficiency: float = 0.85,
-    comfort_soc_kwh: float = 0.0,
 ) -> PlannerInputs:
     n = len(prices)
     intervals: List[IntervalData] = [{"index": i} for i in range(n)]
@@ -50,9 +47,6 @@ def _build_inputs(
         prices=prices,
         solar_forecast=solar_forecast,
         load_forecast=load_forecast,
-        expensive_percentile=expensive_percentile,
-        round_trip_efficiency=round_trip_efficiency,
-        comfort_soc_kwh=comfort_soc_kwh,
     )
 
 
@@ -198,7 +192,6 @@ def test_eta_gate_blocks_when_spread_too_small() -> None:
         prices=prices,
         solar_forecast=solar,
         load_forecast=load,
-        round_trip_efficiency=0.85,
     )
     result = plan_battery_schedule(inputs)
     assert _count_ups(result) == 0, "η-gate should block uneconomical charging"
@@ -215,7 +208,6 @@ def test_eta_gate_allows_when_spread_large() -> None:
         prices=prices,
         solar_forecast=solar,
         load_forecast=load,
-        round_trip_efficiency=0.85,
     )
     result = plan_battery_schedule(inputs)
     ups = _ups_indices(result)
@@ -316,8 +308,7 @@ def test_no_charge_when_displacement_does_not_lower_cost() -> None:
     inputs = _build_inputs(
         current_soc_kwh=9.0, prices=prices, solar_forecast=solar,
         load_forecast=load, max_capacity_kwh=15.36, hw_min_kwh=3.07,
-        planning_min_percent=20.0, expensive_percentile=0.70,
-        round_trip_efficiency=0.838,
+        planning_min_percent=20.0,
     )
     result = plan_battery_schedule(inputs)
     assert _count_ups(result) == 0, (
@@ -327,7 +318,7 @@ def test_no_charge_when_displacement_does_not_lower_cost() -> None:
 
 
 # ---------------------------------------------------------------------------
-# A cheap window is bought because it is cheap, not because of a comfort target
+# A cheap window is bought because it is cheap
 # ---------------------------------------------------------------------------
 
 
@@ -346,25 +337,12 @@ def test_cheap_windows_are_bought_and_expensive_ones_are_not():
     assert all(inputs.prices[i] == 1.0 for i in ups), ups
 
 
-def test_comfort_target_does_not_force_expensive_grid():
-    inputs = _build_inputs(
-        current_soc_kwh=6.0,
-        prices=[5.0] * 8,
-        solar_forecast=[0.0] * 8,
-        load_forecast=[0.1] * 8,
-        comfort_soc_kwh=8.0,
-    )
-    result = plan_battery_schedule(inputs)
-    assert _count_ups(result) == 0
-
-
 def test_solar_refill_needs_no_grid_even_on_cheap_prices():
     inputs = _build_inputs(
         current_soc_kwh=4.0,
         prices=[1.0] * 8,
         solar_forecast=[2.0] * 8,
         load_forecast=[0.5] * 8,
-        comfort_soc_kwh=8.0,
     )
     result = plan_battery_schedule(inputs)
     assert _count_ups(result) == 0, f"solar fills the battery, got {_ups_indices(result)}"

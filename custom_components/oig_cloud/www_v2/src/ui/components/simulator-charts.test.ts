@@ -47,8 +47,6 @@ describe('simulator i18n copy', () => {
     expect(fieldLabel('unavailable', 'simulator.common.unavailable.label')).toBe('nedostupné');
     expect(fieldLabel('retry', 'simulator.common.retry.label')).toBe('Zkusit znovu');
     expect(fieldLabel('charge_rate_kw', 'simulator.battery.charge_rate_kw.label')).toBe('Nabíjecí výkon ze sítě');
-    expect(fieldLabel('battery_comfort_soc_percent', 'simulator.battery.reserve.label')).toBe('Komfortní rezerva');
-    expect(fieldLabel('expensive_percentile', 'simulator.battery.expensive_percentile.label')).toBe('Práh drahých hodin');
     expect(fieldLabel('target_temp_c', 'simulator.boiler.target_temp_c.label')).toBe('Cílová teplota');
     expect(fieldLabel('min_temp_c', 'simulator.boiler.min_temp_c.label')).toBe('Minimální teplota');
     expect(fieldLabel('capacity_kwh', 'simulator.box.capacity_kwh.label')).toBe('Kapacita baterie');
@@ -72,11 +70,11 @@ describe('battery simulator chart helpers', () => {
     expect(svg).toContain('var(--home)');
   });
 
-  it('renders the SoC chart with one axis, a threshold line, and focusable points', () => {
-    const svg = renderBatterySocSvg(batteryIntervals(), 50);
+  it('renders the SoC chart with one axis, no threshold line, and focusable points', () => {
+    const svg = renderBatterySocSvg(batteryIntervals());
     expect(svg).toContain('100 %');
     expect(svg).toContain('0 %');
-    expect(svg).toContain('komfortní rezerva');
+    expect(svg).not.toContain('stroke-dasharray="3 4"');
     expect(svg).toContain('fill-opacity=".14"');
     expect(svg.match(/data-sim-point="/g)).toHaveLength(24);
     expect(svg).not.toContain('right-axis');

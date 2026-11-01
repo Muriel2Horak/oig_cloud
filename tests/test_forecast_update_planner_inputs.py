@@ -89,6 +89,18 @@ def test_a_bad_stored_wear_does_not_cost_the_plan(monkeypatch, stored) -> None:
     assert inputs.battery_wear_czk_per_kwh == DEFAULT_BOILER_BATTERY_CYCLE_COST
 
 
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {"expensive_percentile": 0.8, "battery_comfort_soc_percent": 60},
+        # A pre-registry percent that the planner inputs used to reject outright.
+        {"expensive_percentile": 70},
+    ],
+)
+def test_retired_options_do_not_reach_the_planner(monkeypatch, stored) -> None:
+    assert _planned_inputs(monkeypatch, options=stored) == _planned_inputs(monkeypatch)
+
+
 def test_export_prices_follow_the_slots(monkeypatch) -> None:
     inputs = _planned_inputs(
         monkeypatch,

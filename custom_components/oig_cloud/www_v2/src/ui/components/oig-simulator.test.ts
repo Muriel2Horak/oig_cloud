@@ -127,38 +127,6 @@ describe('simulator fetcher', () => {
     vi.unstubAllGlobals();
   });
 
-  // Owner live repro: simulate 400 "Expensive percentile must be in (0, 1]".
-  // config_registry.py:314 declares expensive_percentile canonical as a
-  // fraction (0.5-0.95, scale=100) — the simulator's own control (and any
-  // UI-style draft) carries the human percent. planning_api validates the
-  // canonical fraction directly (economic_planner_types.py:105), so a
-  // UI-style draft must be converted at this network boundary.
-  it('canonicalizes expensive_percentile (UI %) to the backend fraction before posting', async () => {
-    window.history.pushState({}, '', '/?sn=BOX123');
-    const fetchMock = vi
-      .spyOn(haClient, 'fetchOIGAPITyped')
-      .mockResolvedValue({ ok: true, status: 200, data: PLANNER_SIMULATE_FIXTURE } as any);
-
-    await defaultFetcher({
-      kind: 'battery',
-      presetId: 'winter_high_price',
-      draft: {
-        expensive_percentile: 70,
-        battery_comfort_soc_percent: 50,
-      },
-    } satisfies SimRequest);
-
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as {
-      config_overrides: Record<string, unknown>;
-    };
-    expect(body.config_overrides.expensive_percentile).toBeCloseTo(0.7);
-    // battery_comfort_soc_percent is canonically a percent already (no
-    // registry `scale`) — must pass through unconverted.
-    expect(body.config_overrides.battery_comfort_soc_percent).toBe(50);
-
-    vi.unstubAllGlobals();
-  });
-
   // Live-probed BE shape: POST /boiler/{entry}/{box}/simulate_water_day ->
   // {..., timeline:[{start, end, action, source, heating_kwh, pv_kwh, ...,
   // predicted_top_temp_c, purpose}], summary:{total_heating_kwh, cost_czk, pv_kwh, ...}}
@@ -386,6 +354,29 @@ describe('oig-simulator', () => {
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
+  });
+
+  it('offers the charge rate as the only battery control and posts nothing else from its controls', async () => {
+    const fetcher = vi.fn(mockFetcher);
+
+    const el = await fixture<HTMLElement & Record<string, any>>(html`
+      <oig-simulator
+        .domain=${'battery'}
+        .draft=${{}}
+        .presets=${batteryPresets}
+        .activePresetId=${'zima'}
+        .bootstrapPayload=${{ capacity_kwh: 17.4, hw_min_soc_percent: 20 }}
+        .fetcher=${fetcher}
+      ></oig-simulator>
+    `);
+    await flush();
+    await (el as any).updateComplete;
+
+    const sliders = [...el.shadowRoot!.querySelectorAll('input[type="range"]')];
+    expect(sliders.map((slider) => slider.getAttribute('data-testid'))).toEqual(['slider-charge-rate']);
+    expect(fetcher.mock.calls[0][0].draft).toEqual({ charge_rate_kw: 2.6 });
+    expect(el.shadowRoot!.textContent).not.toContain('komfortní rezerva');
+    expect(el.shadowRoot!.textContent).not.toContain('Práh drahých hodin');
   });
 
   it('renders the boiler overlay with boiler-specific tiles and charts', async () => {

@@ -456,20 +456,9 @@ class WizardMixin:
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
         )
-        expensive_pct = wizard_data.get("expensive_percentile_pct")
-        if expensive_pct is None:
-            expensive_fraction = float(wizard_data.get("expensive_percentile", 0.70))
-        else:
-            expensive_fraction = float(expensive_pct) / 100.0
         return {
-            "expensive_percentile": round(expensive_fraction, 2),
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
-            # Comfort SoC buffer kept above the hard floor via cheap windows only,
-            # so the box never force-charges to ~80% at any price (0 disables).
-            "battery_comfort_soc_percent": wizard_data.get(
-                "battery_comfort_soc_percent", 50.0
-            ),
             "home_charge_rate": charge_rate_kw,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
@@ -1851,14 +1840,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if charge_rate_kw < 0.5 or charge_rate_kw > 10.0:
             errors[CONF_CHARGE_RATE_KW] = "invalid_charge_rate_kw"
 
-        pct = user_input.get("expensive_percentile_pct", 70)
-        try:
-            pct = float(pct)
-        except (TypeError, ValueError):
-            pct = 70.0
-        if pct < 50 or pct > 95:
-            errors["expensive_percentile_pct"] = "invalid_percentile"
-
         return errors
 
     async def async_step_wizard_battery(
@@ -1925,18 +1906,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     max=10.0,
                     step=0.1,
                     mode=selector.NumberSelectorMode.BOX,
-                )
-            ),
-            # Displacement threshold: imports priced above this per-day
-            # percentile are candidates for cheap pre-charging.
-            vol.Optional(
-                "expensive_percentile_pct",
-                default=int(
-                    round(float(defaults.get("expensive_percentile", 0.70)) * 100)
-                ),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=50, max=95, step=5, mode=selector.NumberSelectorMode.SLIDER
                 )
             ),
             # BATTERY BALANCING PARAMETERS
@@ -3390,8 +3359,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         #
         # Diffing payload-against-payload (rather than payload-against-raw-stored-
         # options) is what makes the delta submitted-fields-only: the serializer's
-        # normalization — e.g. the expensive_percentile rounding in
-        # _build_battery_options — is applied identically to both sides, so it
+        # normalization — e.g. the round trip of spot_fixed_fee_mwh through CZK/kWh
+        # in _map_pricing_to_backend — is applied identically to both sides, so it
         # cancels out and can never be mistaken for a user edit. An untouched
         # field is therefore always absent from the delta, and a concurrent REST
         # or dashboard write to it survives this flow's save untouched.

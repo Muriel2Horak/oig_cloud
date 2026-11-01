@@ -106,8 +106,6 @@ const MODULE_CONFIG: ModuleConfig = {
   battery: {
     auto_mode_switch_enabled: false,
     charge_rate_kw: null,
-    expensive_percentile: null,
-    battery_comfort_soc_percent: null,
     balancing_enabled: false,
     balancing_interval_days: null,
     balancing_hold_hours: null,

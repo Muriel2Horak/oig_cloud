@@ -95,9 +95,6 @@ def _build_planner_inputs(
         prices=list(prices),
         solar_forecast=list(solar),
         load_forecast=list(consumption),
-        expensive_percentile=float(cfg["expensive_percentile"]),
-        round_trip_efficiency=float(cfg["round_trip_efficiency"]),
-        comfort_soc_kwh=float(cfg.get("comfort_soc_kwh", 0.0)),
         battery_wear_czk_per_kwh=float(
             cfg.get("battery_wear_czk_per_kwh", DEFAULT_BOILER_BATTERY_CYCLE_COST)
         ),

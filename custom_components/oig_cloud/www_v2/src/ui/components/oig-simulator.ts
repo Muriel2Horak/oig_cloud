@@ -68,8 +68,6 @@ export class OigSimulator extends LitElement {
   @state() private error: string | null = null;
   @state() private response: SimResponse | null = null;
   @state() private chargeRateKw = 2.6;
-  @state() private reserveSocPercent = 50;
-  @state() private expensivePercentile = 70;
   @state() private boilerTargetTempC = 60;
   @state() private boilerMinTempC = 45;
 
@@ -463,8 +461,6 @@ export class OigSimulator extends LitElement {
 
     if (
       changed.has('chargeRateKw') ||
-      changed.has('reserveSocPercent') ||
-      changed.has('expensivePercentile') ||
       changed.has('boilerTargetTempC') ||
       changed.has('boilerMinTempC')
     ) {
@@ -500,8 +496,6 @@ export class OigSimulator extends LitElement {
     if (this.domain === 'battery') {
       return {
         charge_rate_kw: this.chargeRateKw,
-        battery_comfort_soc_percent: this.reserveSocPercent,
-        expensive_percentile: this.expensivePercentile,
       };
     }
 
@@ -635,14 +629,6 @@ export class OigSimulator extends LitElement {
     this.chargeRateKw = Number((event.currentTarget as HTMLInputElement).value);
   }
 
-  private handleBatteryReserveInput(event: Event): void {
-    this.reserveSocPercent = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
-  private handleBatteryExpensiveInput(event: Event): void {
-    this.expensivePercentile = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
   private handleBoilerTargetInput(event: Event): void {
     this.boilerTargetTempC = Number((event.currentTarget as HTMLInputElement).value);
   }
@@ -692,40 +678,6 @@ export class OigSimulator extends LitElement {
             @input=${this.handleBatteryChargeInput}
           />
           <div class="exp">${fieldHint('charge_rate_kw', 'simulator.battery.charge_rate_kw.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('battery_comfort_soc_percent', 'simulator.battery.reserve.label')}</b>
-            <span class="val">${formatNumber(this.reserveSocPercent, 0)} %</span>
-          </div>
-          <input
-            data-testid="slider-reserve"
-            type="range"
-            min="0"
-            max="80"
-            step="5"
-            .value=${String(this.reserveSocPercent)}
-            @input=${this.handleBatteryReserveInput}
-          />
-          <div class="exp">${fieldHint('battery_comfort_soc_percent', 'simulator.battery.reserve.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('expensive_percentile', 'simulator.battery.expensive_percentile.label')}</b>
-            <span class="val">${formatNumber(this.expensivePercentile, 0)} %</span>
-          </div>
-          <input
-            data-testid="slider-expensive-percentile"
-            type="range"
-            min="40"
-            max="95"
-            step="5"
-            .value=${String(this.expensivePercentile)}
-            @input=${this.handleBatteryExpensiveInput}
-          />
-          <div class="exp">${fieldHint('expensive_percentile', 'simulator.battery.expensive_percentile.hint') ?? ''}</div>
         </div>
       </section>
     `;
@@ -888,9 +840,8 @@ export class OigSimulator extends LitElement {
         <h4>
           ${fieldLabel('soc', 'simulator.chart.soc.label')}
           <span class="key"><span class="sw" style="background:var(--batt)"></span>SoC %</span>
-          <span class="key" style="color:var(--mut)">··· komfortní rezerva ${formatNumber(this.reserveSocPercent, 0)} %</span>
         </h4>
-        <div class="chart-body">${unsafeHTML(renderBatterySocSvg(intervals, this.reserveSocPercent))}</div>
+        <div class="chart-body">${unsafeHTML(renderBatterySocSvg(intervals))}</div>
       </div>
 
       <div class="chart" data-testid="chart-price">

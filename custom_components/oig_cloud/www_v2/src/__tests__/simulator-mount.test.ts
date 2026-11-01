@@ -199,11 +199,6 @@ const REGISTRY_FIXTURE: FieldRegistry = {
       label: 'field.charge_rate_kw.label', hint: 'field.charge_rate_kw.hint',
       min: 0.5, max: 10.0, step: 0.1,
     },
-    battery_comfort_soc_percent: {
-      section: 'battery', type: 'float', scope: 'premium',
-      label: 'field.battery_comfort_soc_percent.label', hint: 'field.battery_comfort_soc_percent.hint',
-      min: 0.0, max: 95.0, step: 5.0,
-    },
     boiler_volume_l: {
       section: 'boiler', type: 'float', scope: 'premium', default: null, min: 30, max: 1000,
       label: 'field.boiler_volume_l.label', hint: 'field.boiler_volume_l.hint',

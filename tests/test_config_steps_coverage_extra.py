@@ -35,32 +35,10 @@ def test_migrate_import_percentage_single_tariff_branch():
 
 
 @pytest.mark.asyncio
-async def test_wizard_battery_invalid_percentile_low():
-    flow = DummyWizard()
-    result = await flow.async_step_wizard_battery(
-        {"charge_rate_kw": 2.8, "expensive_percentile_pct": 40}
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"]["expensive_percentile_pct"] == "invalid_percentile"
-
-
-@pytest.mark.asyncio
-async def test_wizard_battery_invalid_percentile_high():
-    flow = DummyWizard()
-    result = await flow.async_step_wizard_battery(
-        {"charge_rate_kw": 2.8, "expensive_percentile_pct": 99}
-    )
-
-    assert result["type"] == "form"
-    assert result["errors"]["expensive_percentile_pct"] == "invalid_percentile"
-
-
-@pytest.mark.asyncio
 async def test_wizard_battery_invalid_charge_rate():
     flow = DummyWizard()
     result = await flow.async_step_wizard_battery(
-        {"charge_rate_kw": 0.1, "expensive_percentile_pct": 70}
+        {"charge_rate_kw": 0.1}
     )
 
     assert result["type"] == "form"

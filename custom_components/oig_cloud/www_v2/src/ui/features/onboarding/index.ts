@@ -546,7 +546,7 @@ const STEP_SUBTITLES: Record<OnboardingStepId, string> = {
   pricing_distribution: 'Sazba a poplatky vašeho distributora',
   pricing_supplier: 'Nákupní cena od dodavatele elektřiny',
   pricing_supplier_sell: 'Prodejní (výkupní) cena do sítě',
-  battery: 'Jak agresivně má systém pracovat s cenou',
+  battery: 'Nabíjení baterie ze sítě',
   boiler: 'Nastavení ohřevu vody',
   connection: 'Připojení k OIG Cloud a Home Assistantu',
   summary: 'Kontrola a dokončení nastavení',
@@ -1557,8 +1557,8 @@ export class OigOnboardingWizard extends LitElement {
     }
     .vt-nt-row > div { flex: 1; min-width: 0; }
 
-    /* Number+unit pcard pairs (battery charge-rate/reserve, item 2) — grid,
-       single column on mobile. */
+    /* Number+unit pcard row (battery charge rate, item 2) — grid, single
+       column on mobile. */
     .pair {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -3319,9 +3319,9 @@ export class OigOnboardingWizard extends LitElement {
             </div>
             ${BATTERY_GROUPS.map((group) => {
               const groupFields = group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f);
-              // Item 2: number+unit pair as pcards, side by side (design rev 3
-              // "distribution/battery pairs") — only the charge-rate/reserve
-              // pair reads as a pcard row; the rest of the step is unchanged.
+              // Item 2: number+unit field as a pcard (design rev 3
+              // "distribution/battery pairs") — only the charge rate reads as a
+              // pcard row; the rest of the step is unchanged.
               const asPair = group.id === 'nabijeni';
               const renderField = (f: FieldDef) => html`
                 <div class=${asPair ? 'pcard' : ''} data-key=${f.key}>

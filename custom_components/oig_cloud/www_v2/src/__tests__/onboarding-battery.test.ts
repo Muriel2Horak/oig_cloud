@@ -26,7 +26,7 @@ vi.mock('@/data/registry-data', async (importOriginal) => {
 import '@/ui/features/onboarding';
 
 /**
- * Verbatim mirror of the 10 `battery`-section fields registered in
+ * Verbatim mirror of the 8 `battery`-section fields registered in
  * `config_registry.py:299-315` (Task 18). None carry a `show_if` today —
  * the 4 `balancing_*` sub-fields' gate on `balancing_enabled` is a
  * client-side fallback (plan Task 18 step 3), not registry-driven yet.
@@ -45,18 +45,6 @@ const BATTERY_REGISTRY_FIXTURE: FieldRegistry = {
       label: 'field.charge_rate_kw.label',
       hint: 'field.charge_rate_kw.hint',
       min: 0.5, max: 10.0, step: 0.1,
-    },
-    expensive_percentile: {
-      section: 'battery', type: 'float', scope: 'premium',
-      label: 'field.expensive_percentile.label',
-      hint: 'field.expensive_percentile.hint',
-      min: 0.5, max: 0.95, scale: 100,
-    },
-    battery_comfort_soc_percent: {
-      section: 'battery', type: 'float', scope: 'premium',
-      label: 'field.battery_comfort_soc_percent.label',
-      hint: 'field.battery_comfort_soc_percent.hint',
-      min: 0.0, max: 95.0, step: 5.0,
     },
     balancing_enabled: {
       section: 'battery', type: 'bool', scope: 'premium',
@@ -165,7 +153,7 @@ describe('battery step render (wizard/expert split + simulator seam)', () => {
     fixtureCleanup();
   });
 
-  it('renders only the user-facing Nabíjení group with charge_rate_kw and battery_comfort_soc_percent', async () => {
+  it('renders only the user-facing Nabíjení group with charge_rate_kw', async () => {
     const wizard = await openWizardOnBatteryStep();
     const headings = [...wizard.shadowRoot!.querySelectorAll('[data-testid="battery-group-heading"]')]
       .map((h) => h.textContent);
@@ -174,9 +162,9 @@ describe('battery step render (wizard/expert split + simulator seam)', () => {
     const nabijeniGroup = wizard.shadowRoot!.querySelector('[data-group="nabijeni"]') as HTMLElement;
     expect(nabijeniGroup).toBeTruthy();
     expect(nabijeniGroup.querySelector('[data-key="charge_rate_kw"]')).not.toBeNull();
-    expect(nabijeniGroup.querySelector('[data-key="battery_comfort_soc_percent"]')).not.toBeNull();
     expect(wizard.shadowRoot!.querySelector('[data-key="auto_mode_switch_enabled"]')).toBeNull();
     expect(wizard.shadowRoot!.querySelector('[data-key="expensive_percentile"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="battery_comfort_soc_percent"]')).toBeNull();
     expect(wizard.shadowRoot!.querySelector('[data-key="balancing_enabled"]')).toBeNull();
     expect(wizard.shadowRoot!.querySelector('[data-key="cheap_window_percentile"]')).toBeNull();
   });
@@ -186,14 +174,9 @@ describe('battery step render (wizard/expert split + simulator seam)', () => {
     const chargeInput = wizard.shadowRoot!.querySelector(
       '[data-key="charge_rate_kw"] input[type="number"]',
     ) as HTMLInputElement;
-    const comfortInput = wizard.shadowRoot!.querySelector(
-      '[data-key="battery_comfort_soc_percent"] input[type="number"]',
-    ) as HTMLInputElement;
 
     chargeInput.value = '3.2';
     chargeInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    comfortInput.value = '65';
-    comfortInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     await (wizard as any).updateComplete;
 
     const received: CustomEvent[] = [];
@@ -212,7 +195,6 @@ describe('battery step render (wizard/expert split + simulator seam)', () => {
       box: 'SN123',
       draft: {
         charge_rate_kw: 3.2,
-        battery_comfort_soc_percent: 65,
       },
     });
   });

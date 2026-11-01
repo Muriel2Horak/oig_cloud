@@ -9,9 +9,6 @@ from .types import (
     INTERVAL_MINUTES,
 )
 
-# Default for the retired expensive_percentile input, see PlannerInputs.
-DEFAULT_EXPENSIVE_PERCENTILE: float = 0.70
-
 # Storing then re-extracting energy incurs both the charge and discharge losses.
 # This mirrors the global simulation constants.
 DEFAULT_ROUND_TRIP_EFFICIENCY: float = DEFAULT_EFFICIENCY * DEFAULT_CHARGE_EFFICIENCY
@@ -40,13 +37,6 @@ class PlannerInputs:
     prices: List[float]
     solar_forecast: List[float]
     load_forecast: List[float]
-    # Inputs of the layers the optimizer replaced. They no longer change the plan;
-    # they stay accepted and validated so the simulator API and stored options
-    # remain valid until those options are retired.
-    expensive_percentile: float = DEFAULT_EXPENSIVE_PERCENTILE
-    round_trip_efficiency: float = DEFAULT_ROUND_TRIP_EFFICIENCY
-    interval_days: Optional[List[int]] = None
-    comfort_soc_kwh: float = 0.0
     # Export price per interval (CZK/kWh, may be negative). Exported solar earns
     # this in the objective; None treats export as worthless.
     export_prices: Optional[List[float]] = None
@@ -103,12 +93,6 @@ class PlannerInputs:
 
         if not (0.0 <= self.battery_wear_czk_per_kwh < float("inf")):
             raise ValueError("Battery wear must be a finite, non-negative cost")
-
-        if not (0.0 < self.expensive_percentile <= 1.0):
-            raise ValueError("Expensive percentile must be in (0, 1]")
-
-        if not (0.0 < self.round_trip_efficiency <= 1.0):
-            raise ValueError("Round-trip efficiency must be in (0, 1]")
 
 
 @dataclass

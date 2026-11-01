@@ -25,8 +25,6 @@ export interface ModulesConfig {
 export interface BatteryConfig {
   auto_mode_switch_enabled: boolean;
   charge_rate_kw: number | null;
-  expensive_percentile: number | null;
-  battery_comfort_soc_percent: number | null;
   balancing_enabled: boolean;
   balancing_interval_days: number | null;
   balancing_hold_hours: number | null;

@@ -34,7 +34,6 @@ def _build_inputs(
     max_capacity_kwh: float = 15.36,
     hw_min_kwh: float = 3.07,
     planning_min_percent: float = 22.0,
-    comfort_soc_kwh: float = 0.0,
 ) -> PlannerInputs:
     intervals: List[IntervalData] = [{"index": i} for i in range(len(prices))]
     return PlannerInputs(
@@ -47,9 +46,6 @@ def _build_inputs(
         prices=prices,
         solar_forecast=solar_forecast,
         load_forecast=load_forecast,
-        expensive_percentile=0.70,
-        round_trip_efficiency=0.85,
-        comfort_soc_kwh=comfort_soc_kwh,
     )
 
 
@@ -82,21 +78,13 @@ REAL_DAY_LOAD = [
 ]
 
 
-def _real_day(comfort_soc_kwh: float = 0.0) -> PlannerInputs:
+def _real_day() -> PlannerInputs:
     return _build_inputs(
         current_soc_kwh=4.9,  # 32 % - where the battery actually stood at 00:00
         prices=REAL_DAY_PRICES,
         solar_forecast=REAL_DAY_SOLAR,
         load_forecast=REAL_DAY_LOAD,
-        comfort_soc_kwh=comfort_soc_kwh,
     )
-
-
-def test_comfort_input_no_longer_changes_the_plan():
-    without = plan_battery_schedule(_real_day(0.0))
-    with_comfort = plan_battery_schedule(_real_day(7.68))
-
-    assert with_comfort.modes == without.modes
 
 
 def test_the_night_before_an_expensive_morning_is_bought():
@@ -143,7 +131,6 @@ def test_flat_expensive_day_still_buys_nothing():
             prices=[5.0] * 8,
             solar_forecast=[0.0] * 8,
             load_forecast=[0.1] * 8,
-            comfort_soc_kwh=8.0,
         )
     )
 
@@ -159,7 +146,6 @@ def test_a_cheap_low_point_is_not_worth_pre_buying_for():
             prices=[6.0, 6.0, 6.0, 6.0, 1.0, 1.0, 1.0, 1.0],
             solar_forecast=[0.0] * 8,
             load_forecast=[0.1] * 8,
-            comfort_soc_kwh=8.0,
         )
     )
 
@@ -173,7 +159,6 @@ def test_solar_recovery_still_wins_over_grid():
             prices=[1.0] * 8,
             solar_forecast=[2.0] * 8,
             load_forecast=[0.5] * 8,
-            comfort_soc_kwh=8.0,
         )
     )
 
@@ -221,16 +206,14 @@ def test_solar_arriving_after_the_low_point_does_not_excuse_the_dip():
 
 
 def test_a_transient_dip_well_clear_of_the_trigger_still_defers_to_solar():
-    """The restraint that must survive: a battery that dips below the comfort
-    target but stays far above the trigger, with solar on the way, must not buy
-    grid for it."""
+    """The restraint that must survive: a battery that dips but stays far above
+    the trigger, with solar on the way, must not buy grid for it."""
     result = plan_battery_schedule(
         _build_inputs(
             current_soc_kwh=11.0,
             prices=[3.0] * 24,
             solar_forecast=[0.0] * 9 + [3.0] * 9 + [0.0] * 6,
             load_forecast=[0.5] * 9 + [0.9] * 15,
-            comfort_soc_kwh=13.0,
         )
     )
 

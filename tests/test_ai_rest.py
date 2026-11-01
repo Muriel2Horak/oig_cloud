@@ -388,6 +388,9 @@ async def test_validate_config_collects_only_allow_listed_fields(validate_env, m
     assert resp.status == 200
     assert set(captured[0][1]).issubset(api_module.PROMPT_ALLOWED_FIELDS)
     assert not {"latitude", "longitude", "box_id", "email"}.intersection(captured[0][1])
+    # Stored but retired: the planner no longer reads them, so nothing to validate.
+    assert not {"battery_comfort_soc_percent", "expensive_percentile"}.intersection(captured[0][1])
+    assert captured[0][1]["cheap_window_percentile"] == 25
     assert captured[0][0] == "validate_config"
 
 

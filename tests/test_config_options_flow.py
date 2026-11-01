@@ -1146,29 +1146,67 @@ async def test_options_flow_save_preserves_rest_value_for_absent_field():
 async def test_options_flow_save_preserves_concurrent_rest_change_normalized_field():
     """Regression: serializer normalization of an untouched field is not a user edit.
 
-    REST accepts expensive_percentile=0.705, but _build_battery_options rounds it
-    to 0.7. The flow opens on 0.705; a REST write then sets 0.8. Saving without
-    touching the wizard must not treat the 0.7 rounding as an edit and must leave
-    the later 0.8 in place.
+    The serializer carries spot_fixed_fee_mwh through CZK/kWh and back, which turns
+    a stored 500.7 into 500.70000000000005. The flow opens on 500.7; a REST write
+    then sets 600.0. Saving without touching the wizard must not treat the round
+    trip as an edit and must leave the later 600.0 in place.
     """
     entry = SimpleNamespace(
         entry_id="entry1",
         data={CONF_USERNAME: "demo"},
-        options={"expensive_percentile": 0.705, "enable_battery_prediction": True},
+        options={
+            "spot_pricing_model": "fixed",
+            "spot_fixed_fee_mwh": 500.7,
+            "enable_battery_prediction": True,
+        },
     )
     flow = DummyOptionsFlow(entry)
     flow.hass = DummyHass()
+    assert flow._build_options_payload(flow._wizard_data)["spot_fixed_fee_mwh"] != 500.7
 
     # Simulate concurrent dashboard REST write after the flow opened.
-    entry.options["expensive_percentile"] = 0.8
+    entry.options["spot_fixed_fee_mwh"] = 600.0
 
     result = await flow.async_step_wizard_summary({})
 
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
-    # Empty delta => the 0.705 -> 0.7 normalization never reached the merge.
+    # Empty delta => the round trip's normalization never reached the merge.
     assert not flow.hass.config_entries.updated
-    assert entry.options["expensive_percentile"] == 0.8
+    assert entry.options["spot_fixed_fee_mwh"] == 600.0
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_ignores_stored_retired_planner_options():
+    """A stored value of a retired option neither breaks the flow nor gets lost."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "expensive_percentile": 70,
+            "battery_comfort_soc_percent": 60,
+            "home_charge_rate": 2.8,
+            "enable_battery_prediction": True,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    battery_keys = {str(key) for key in flow._get_battery_schema().schema}
+    assert "expensive_percentile_pct" not in battery_keys
+    payload = flow._build_options_payload(flow._wizard_data)
+    assert "expensive_percentile" not in payload
+    assert "battery_comfort_soc_percent" not in payload
+
+    flow._wizard_data["home_charge_rate"] = 3.3
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["home_charge_rate"] == 3.3
+    assert options["expensive_percentile"] == 70
+    assert options["battery_comfort_soc_percent"] == 60
 
 
 @pytest.mark.asyncio

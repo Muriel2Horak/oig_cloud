@@ -95,8 +95,7 @@ function renderLineChart(
     min: number;
     max: number;
     lineColor: string;
-    threshold: number;
-    thresholdLabel: string;
+    threshold?: { value: number; label: string };
     topLabel: string;
     bottomLabel: string;
     seriesLabel: string;
@@ -117,7 +116,7 @@ function renderLineChart(
     const clamped = clamp(value, options.min, options.max);
     return padT + plotH - ((clamped - options.min) / range) * plotH;
   };
-  const thresholdY = yFor(options.threshold);
+  const thresholdY = options.threshold ? yFor(options.threshold.value).toFixed(1) : null;
   const points = values.map((value, index) => `${xFor(index).toFixed(1)},${yFor(value).toFixed(1)}`).join(' ');
   const firstX = xFor(0).toFixed(1);
   const lastX = xFor(pointCount - 1).toFixed(1);
@@ -126,20 +125,22 @@ function renderLineChart(
   return `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${options.seriesLabel}" focusable="false">
       ${gridSvg(plotW, plotH)}
-      <line
+      ${options.threshold
+        ? `<line
         x1="${padL}"
-        y1="${thresholdY.toFixed(1)}"
+        y1="${thresholdY}"
         x2="${padL + plotW}"
-        y2="${thresholdY.toFixed(1)}"
+        y2="${thresholdY}"
         stroke="${options.lineColor}"
         stroke-width="1"
         stroke-dasharray="3 4"
         opacity=".55"
         tabindex="0"
-        aria-label="${options.thresholdLabel}"
+        aria-label="${options.threshold.label}"
       >
-        <title>${options.thresholdLabel}</title>
-      </line>
+        <title>${options.threshold.label}</title>
+      </line>`
+        : ''}
       <path d="${area}" fill="${options.lineColor}" fill-opacity=".14" aria-hidden="true" focusable="false"></path>
       <polyline
         points="${points}"
@@ -253,13 +254,11 @@ export function renderBoilerModeBandSvg(intervals: BoilerInterval[]): string {
   );
 }
 
-export function renderBatterySocSvg(intervals: BatteryInterval[], reservePercent: number): string {
+export function renderBatterySocSvg(intervals: BatteryInterval[]): string {
   return renderLineChart(intervals.map((interval) => interval.soc), {
     min: 0,
     max: 100,
     lineColor: 'var(--batt)',
-    threshold: reservePercent,
-    thresholdLabel: `komfortní rezerva ${reservePercent} %`,
     topLabel: '100 %',
     bottomLabel: '0 %',
     seriesLabel: 'SoC %',
@@ -271,8 +270,7 @@ export function renderBoilerTempSvg(intervals: BoilerInterval[], minTempC: numbe
     min: 30,
     max: 75,
     lineColor: 'var(--boil)',
-    threshold: minTempC,
-    thresholdLabel: `minimum ${minTempC} °C`,
+    threshold: { value: minTempC, label: `minimum ${minTempC} °C` },
     topLabel: '75 °C',
     bottomLabel: '30 °C',
     seriesLabel: '°C',

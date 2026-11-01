@@ -26,8 +26,6 @@ const CS_LABELS: Record<string, string> = {
   // --- battery settings ---
   'field.auto_mode_switch_enabled.label': 'Automatické přepínání režimů',
   'field.charge_rate_kw.label': 'Nabíjecí výkon ze sítě (kW)',
-  'field.expensive_percentile.label': 'Práh drahých hodin (%)',
-  'field.battery_comfort_soc_percent.label': 'Komfortní rezerva baterie (%)',
   'field.balancing_enabled.label': 'Balancování článků',
   'field.balancing_interval_days.label': 'Interval balancování (dny)',
   'field.balancing_hold_hours.label': 'Držení 100 % (hodiny)',
@@ -155,8 +153,6 @@ const CS_LABELS: Record<string, string> = {
   'simulator.chart.water_temp.label': 'Teplota vody',
   'simulator.chart.draw.label': 'Odběr teplé vody',
   'simulator.battery.charge_rate_kw.label': 'Nabíjecí výkon ze sítě',
-  'simulator.battery.reserve.label': 'Komfortní rezerva',
-  'simulator.battery.expensive_percentile.label': 'Práh drahých hodin',
   'simulator.boiler.target_temp_c.label': 'Cílová teplota',
   'simulator.boiler.min_temp_c.label': 'Minimální teplota',
   'simulator.box.capacity_kwh.label': 'Kapacita baterie',
@@ -176,8 +172,6 @@ const CS_HINTS: Record<string, string> = {
   // --- battery settings hints ---
   'field.auto_mode_switch_enabled.hint': 'Plánovač sám přepíná Home 1 / Home UPS podle plánu',
   'field.charge_rate_kw.hint': 'Kolik kW box bere při nabíjení ze sítě (UPS)',
-  'field.expensive_percentile.hint': 'Importy nad tímto denním percentilem cen se plánovač snaží pokrýt levným přednabitím. Výchozí 70 %.',
-  'field.battery_comfort_soc_percent.hint': 'Baterku drží nad touto úrovní, ale jen dobíjením v nejlevnějších oknech — aby ji box sám nenatáhl na 80 % za jakoukoli cenu. 0 = vypnuto. Výchozí 50 %.',
   'field.balancing_enabled.hint': 'Pravidelné nabití na 100 % kvůli vyrovnání článků',
   'field.cheap_window_percentile.hint': 'Balancování se plánuje do hodin pod tímto cenovým percentilem',
 
@@ -268,8 +262,6 @@ const CS_HINTS: Record<string, string> = {
 
   // Simulator overlay (F1)
   'simulator.battery.charge_rate_kw.hint': 'Kolik box bere při nabíjení v režimu UPS. Vyšší = stihne nabít v kratším levném okně.',
-  'simulator.battery.reserve.hint': 'Pod tuto úroveň baterku nepustí — dobíjí ale jen v levných oknech. 0 = vypnuto.',
-  'simulator.battery.expensive_percentile.hint': 'Hodiny nad tímto percentilem cen se plánovač snaží pokrýt levným přednabitím. Vyšší = útočnější spoření.',
   'simulator.boiler.target_temp_c.hint': 'Na kolik stupňů se bojler snaží ohřát v levných/solárních oknech.',
   'simulator.boiler.min_temp_c.hint': 'Pod tohle nesmí spadnout — ohřeje se hned, i za draho. Komfortní pojistka.',
 };

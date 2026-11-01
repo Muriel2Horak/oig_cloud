@@ -102,8 +102,7 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "price_hysteresis_czk": "Hystereze ceny (CZK/kWh)",
           "hw_min_hold_hours": "Max. hodin na HW minimu",
-          "target_capacity_percent": "Cílová kapacita baterie (%)",
-          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu. Stejné nastavení jako v průvodci.",
@@ -120,8 +119,7 @@
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "price_hysteresis_czk": "Minimální cenový rozdíl pro rozhodnutí držet vs. čekat",
           "hw_min_hold_hours": "Maximální doba na HW minimu před nuceným dobitím",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
-          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -445,8 +443,7 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
-          "target_capacity_percent": "Cílová kapacita baterie (%)",
-          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu.",
@@ -461,8 +458,7 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
-          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"

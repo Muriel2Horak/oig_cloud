@@ -14,7 +14,6 @@ export interface BatteryGroup {
 /** Wizard-facing battery fields only. Expert tuning stays in Settings. */
 export const BATTERY_WIZARD_FIELD_KEYS = [
   'charge_rate_kw',
-  'battery_comfort_soc_percent',
 ] as const;
 
 const BATTERY_WIZARD_KEY_SET = new Set<string>(BATTERY_WIZARD_FIELD_KEYS);
