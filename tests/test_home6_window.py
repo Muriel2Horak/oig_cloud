@@ -233,3 +233,23 @@ async def test_accepted_window_write_succeeds(monkeypatch):
     api = _api(monkeypatch, '[[0, 2, "Uloženo"]]')
 
     assert await api.set_home6_window_end(6) is True
+
+
+@pytest.mark.asyncio
+async def test_window_is_sent_in_minutes_since_midnight(monkeypatch):
+    api = OigCloudApi("user", "pass", True)
+    calls = []
+
+    async def _record(table, column, value, reject_portal_error=False):
+        calls.append((table, column, value, reject_portal_error))
+        return True
+
+    monkeypatch.setattr(api, "set_box_params_internal", _record)
+
+    await api.set_home6_window_start(22)
+    await api.set_home6_window_end(6)
+
+    assert calls == [
+        ("box_prm2", "hgvi_s", "1320", True),
+        ("box_prm2", "hgvi_e", "360", True),
+    ]
