@@ -44,6 +44,12 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+# Three days of intervals covers yesterday and today, whatever the time of day.
+INTERVAL_CACHE_SIZE = 288
+# The recorder commits in batches, so a just-closed interval may still change.
+INTERVAL_SETTLE_TIME = timedelta(minutes=5)
+
+
 def _build_history_entity_ids(box_id: str) -> list[str]:
     return [
         f"sensor.oig_{box_id}_ac_out_en_day",
@@ -314,7 +320,36 @@ def _expand_modes_to_intervals(
     return historical_modes_lookup
 
 
-async def fetch_interval_from_history(  # noqa: C901
+async def fetch_interval_from_history(
+    sensor: Any, start_time: datetime, end_time: datetime
+) -> Optional[Dict[str, Any]]:
+    """Load actual data for a 15-min interval, reading a closed one only once.
+
+    Every plan recompute asks for all past intervals of yesterday and today. Each
+    read is a database query, and a closed interval no longer changes.
+    """
+    now = dt_util.now()
+    if end_time.tzinfo is None:
+        now = now.replace(tzinfo=None)
+    settled = end_time <= now - INTERVAL_SETTLE_TIME
+    key = (start_time.isoformat(), end_time.isoformat())
+
+    cache = getattr(sensor, "_interval_history_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        sensor._interval_history_cache = cache  # pylint: disable=protected-access
+    if settled and key in cache:
+        return dict(cache[key])
+
+    result = await _fetch_interval_uncached(sensor, start_time, end_time)
+    if settled and result:
+        cache[key] = dict(result)
+        while len(cache) > INTERVAL_CACHE_SIZE:
+            cache.pop(next(iter(cache)))
+    return result
+
+
+async def _fetch_interval_uncached(  # noqa: C901
     sensor: Any, start_time: datetime, end_time: datetime
 ) -> Optional[Dict[str, Any]]:
     """Load actual data for a 15-min interval from HA history."""

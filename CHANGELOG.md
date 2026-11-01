@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restart skips that read when today already has a value, and a closed month comes
   from long-term statistics. One start went from 507 s to 99 s, with this integration
   at 2.9 s.
+- **Each plan recompute re-read all past intervals** from the database, one query per
+  interval, so it took from half a minute to ten. A closed interval is now read once.
 - **Prices were missing for minutes after a restart.** All optional sensors were added
   in one batch, so a slow one hid the rest, including the prices the Flow tab needs.
   Each group now has its own batch, and prices appear within two minutes.

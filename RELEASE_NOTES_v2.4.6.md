@@ -10,6 +10,9 @@ Home Assistant při startu čekal na integraci i několik minut, hlavně na senz
 Tahle práce teď běží na pozadí a po restartu se neopakuje, pokud už pro daný den hotová je. Při měření klesl jeden
 start z 507 s na 99 s a samotná integrace na 2,9 s. Čas startu dál závisí i na ostatních integracích a zařízení.
 
+Přepočet plánu už při každém běhu nečte znovu všechny minulé intervaly z databáze. Uzavřený interval se přečte
+jednou, takže plán na dashboardu je aktuálnější a databáze méně vytížená.
+
 ## 🔋 **Účinnost baterie**
 
 - **Opačné znaménko ve výpočtu.** Energie odebraná z baterie se za měsíc přičítala místo odečítala. Hodnoty nad
