@@ -2,6 +2,69 @@
 
 Tento dokumentace popisuje všechny CI/CD workflow, konfigurace a nastavení pro security, quality, maintainability a code coverage.
 
+## What gates release
+
+The manually triggered release workflow gates `github.sha` and the release job
+checks out that same SHA. The version is read from `manifest.json` on the gated
+commit; no version-bump commit is created by the release workflow. This keeps
+the candidate and tagged commit identical and avoids depending on a
+workflow-created push to trigger CI. The cost is that a version change must be
+merged as its own CI-green commit before starting the release.
+
+Required workflows (the latest completed attempt for each must be successful on
+the gated SHA):
+
+| Workflow | Why it is required |
+|---|---|
+| `test.yml` | Runs the Python test suite. |
+| `quality.yml` | Runs flake8, Pylint, and the frontend quality job. The Mypy report is uploaded, but its command is currently advisory. |
+| `security.yml` | Runs CodeQL and publishes Bandit/Safety reports. Bandit and Safety command failures are currently advisory. |
+| `sonarcloud.yml` | Uploads coverage and the SonarCloud analysis. **It does not fail on a red SonarCloud quality gate** (no `sonar.qualitygate.wait`), so requiring this workflow proves the scan ran, not that the quality gate passed. The gate reads workflow conclusions; the SonarCloud app's own PR status check is separate and is not part of the release gate. |
+| `secret-scanning.yml` | Includes the blocking Gitleaks secret scan; Trivy and Snyk reports are advisory. |
+| `pre-commit.yml` | Runs the repository's blocking formatting, lint, and type-check hooks. |
+
+### SonarCloud is a scan, deliberately
+
+Decided 2026-09-10 by the repository operator: `sonarcloud.yml` stays **advisory**. It uploads the
+analysis and does not set `sonar.qualitygate.wait`, so it cannot fail on a red quality gate.
+
+This is a choice, not an oversight. Do not "fix" it by adding `sonar.qualitygate.wait=true` without
+asking the operator: that would make every pull request in this repository blocking on the
+SonarCloud quality gate, which is a change of regime, not a correction. The gate requiring this
+workflow therefore proves the scan ran — nothing more, and the table above says so.
+
+What this leaves open, stated plainly: a release can pass the CI gate with a red SonarCloud quality
+gate. The blocking security signal for a release is `secret-scanning.yml` (gitleaks) and
+`pre-commit.yml`; SonarCloud findings are read by a human.
+
+These workflows are not required:
+
+| Workflow | Why it is not required |
+|---|---|
+| `maintainability.yml` | Radon/Vulture reports are advisory. |
+| `hacs.yml`, `hassfest.yml`, `build-frontend.yml`, `dependency-check.yml` | Validation, build, or dependency jobs outside the release gate's required checks. |
+
+An absent completed run blocks the release just like a failed conclusion.
+For a workflow with multiple attempts, a newer completed attempt supersedes an
+older one; this permits the normal failed-then-rerun-green recovery path while
+still blocking on the latest result. If the poll budget is exhausted while a
+newer attempt is still in flight, the gate blocks and names the workflow and
+the attempt it is waiting on — an exhausted budget is never judged as green.
+
+Invariant on the ordinary path: **no tag is created on a commit whose required
+checks were not evaluated and green**. The explicit
+`bypass-required-checks` input defaults to `false`; when set to `true`, the
+workflow records the actor and gate verdict in the run summary as the audited
+exception to that invariant.
+
+Scope limit: this gate governs only a release started through the release
+workflow. A human-pushed tag bypasses the gate entirely — nothing in the
+repository prevents `git push origin vX.Y.Z` from creating a release tag that
+never passed these checks. Closing that path requires a repository
+tag-protection ruleset (an operator setting, not code). Do not read this gate
+as more than it is: it is not a substitute for tag protection.
+
+
 ## Přehled CI/CD
 
 ### Testování

@@ -1,0 +1,283 @@
+# .fleet/deploy.toml — oig-cloud deploy manifest (schema v1, agent-ops
+# contract docs/specs/deploy-manifest.md, incl. §7b declared targets).
+#
+# WHAT THIS REPO SHIPS
+# ====================
+# oig-cloud is a Home Assistant custom component distributed to the PUBLIC
+# through HACS (hacs.json: zip_release = false, hide_default_branch = true —
+# HACS consumes the repo archive AT the release tag). A release is:
+#   1. A human dispatches .github/workflows/release.yml (workflow_dispatch)
+#      from the commit to release. Its `gate` job requires six workflows
+#      green on that exact SHA — test.yml, quality.yml, security.yml,
+#      sonarcloud.yml, secret-scanning.yml, pre-commit.yml — reading the
+#      LATEST COMPLETED ATTEMPT per workflow, polling an in-flight run, and
+#      BLOCKING when the poll budget is exhausted with a run still in
+#      flight (an exhausted budget is never read as green). The
+#      bypass-required-checks input (default false) is the audited operator
+#      override, recorded in the run summary.
+#   2. Its `release` job (needs: gate) checks out github.sha, derives the
+#      version from custom_components/oig_cloud/manifest.json, cuts the
+#      annotated tag v<version> from that SHA and pushes it. There is NO
+#      version stamping and NO release commit: the tagged bytes are the
+#      gated bytes.
+#   3. It opens a DRAFT GitHub Release (actions/create-release@v1).
+# The draft is NOT where the public risk stops: with zip_release=false the
+# tag push is ALREADY the public moment — every HACS user's Home Assistant
+# polls this repo's tags. Publishing the draft only makes the release
+# notes page visible.
+#
+# THE OPERATOR'S STANDING DECISION (binding on the executor)
+# ==========================================================
+# oig-cloud STOPS BEFORE PUBLISH. The [[publish]] stage below is a single
+# step that refuses unconditionally — no override env var exists, and no
+# release command (tag, push, release create) appears anywhere in this
+# file. Why, in prose: this release is public, one tag push is served to
+# every HACS installation, and rollback is UNAVAILABLE (see [[rollback]]
+# — the v* release tag is immutable by an active repository ruleset, and
+# even a moved tag could only change what FUTURE installs get, never
+# downgrade homes that already updated). A wrongly published
+# release cannot be un-served, so the only publish path is the human-run
+# release.yml, never the executor. This is a current policy of the
+# operator, not an aspiration.
+#
+# SONARCLOUD IS ADVISORY BY DECISION (CI_CD.md, decided 2026-09-10):
+# sonarcloud.yml sets no sonar.qualitygate.wait, so it succeeds even when
+# the SonarCloud quality gate is RED. Requiring its check below PROVES THE
+# SCAN RAN — nothing more; a release can pass the gate with a red quality
+# gate and that is intended. The blocking security signals are
+# secret-scanning.yml (gitleaks) and pre-commit.yml. Do NOT "fix" this by
+# adding sonar.qualitygate.wait without asking the operator — that is a
+# change of regime, not a correction.
+#
+# WHAT THE EXECUTOR IS FOR, THEN
+# ==============================
+#   - preflight: prove a candidate SHA is releasable — ancestry, clean
+#     tree, and the same required checks the release gate enforces, green
+#     on HEAD. Run it before a human dispatches release.yml.
+#   - build: prove the tracked frontend bundle matches its sources.
+#   - publish: refuse (see the standing decision above).
+#   - verify: after the human release, prove the tag exists on origin and
+#     names exactly the tree on disk, and that the release object exists.
+#   - rollback: UNAVAILABLE — the stage below refuses, with the reason
+#     (immutable release tag by ruleset; un-ship by publishing a newer
+#     version).
+#
+# [targets]: deliberately ABSENT (§7b decision, justified). Every step in
+# this manifest runs locally against the source tree; git and gh appear
+# only inside committed scripts performing read-only queries. The one
+# stage that would act on a non-local machine — publish, against a
+# github-release target — refuses without acting, so a declared target
+# would name no real step, and a declared-but-unused target is a rule-5
+# UserWarning. No step declares `target = ...`, which reads as local and
+# is exactly a valid v1 manifest.
+
+version = 1
+name = "oig-cloud"
+
+# ---------------------------------------------------------------------------
+# Source of truth. For this repo origin IS the durable remote (unlike
+# agent-ops, there is no fossil-mirror problem here).
+# ---------------------------------------------------------------------------
+
+[source]
+remote = "origin"
+ref = "main"
+required_ancestor = true
+# Operator-only escape hatch for the ancestry refusal. It does NOT touch
+# the publish stop — there is no env var that un-refuses publish.
+allow_override_env = "OIG_CLOUD_ALLOW_FOSSIL"
+
+# ===========================================================================
+# preflight — refuse before doing anything
+# ===========================================================================
+
+# Refresh the source of truth so the ancestry and checks queries below
+# run against the latest state, not stale local refs.
+[[preflight]]
+kind = "command"
+name = "fetch-source-of-truth"
+shell = "git fetch origin main --tags"
+on_failure = "abort"
+
+# The commit being released must be on origin/main.
+[[preflight]]
+kind = "assertion"
+name = "head-is-ancestor-of-origin-main"
+type = "git_ancestor"
+params = { of = "origin/main" }
+on_failure = "abort"
+
+# The released bytes must be reproducible from the recorded commit: no
+# uncommitted changes. (True verbatim today: release.yml creates no
+# release commit, so the tag names the committed tree as-is.)
+[[preflight]]
+kind = "assertion"
+name = "working-tree-clean"
+type = "git_working_tree_clean"
+params = {}
+on_failure = "abort"
+
+# The same required checks the release gate enforces (release.yml gate
+# job REQUIRED_WORKFLOWS; CI_CD.md "What gates release"), expressed as
+# check-RUN display names because that is what github_checks_green
+# addresses — the gate itself addresses workflow FILES:
+#   test.yml            job test               -> "test"
+#   quality.yml         job python-lint        -> "Python Lint"     (blocking)
+#                       job frontend-lint      -> "Frontend Lint"   (blocking)
+#                       job mypy               -> "Type Checking"   ADVISORY (job
+#                         pipes mypy to a report and `|| true`; excluded below)
+#   security.yml        job codeql             -> "CodeQL Analysis" (blocking)
+#                       job bandit             -> "Bandit Security Linter" ADVISORY
+#                       job safety             -> "Safety Check"           ADVISORY
+#   sonarcloud.yml      job sonarcloud         -> "SonarCloud Scan" — proves the
+#                         scan RAN; the quality gate is advisory by decision (header)
+#   secret-scanning.yml job gitleaks           -> "Gitleaks Secret Scanner" (blocking)
+#                       jobs trivy/snyk        ADVISORY (snyk: continue-on-error)
+#   pre-commit.yml      job pre-commit-check   -> "Pre-commit Linting" (blocking)
+#
+# Deliberately NOT required, with reasons: the advisory jobs above — the
+# gate requires their WORKFLOWS green as a whole, so a genuinely failed
+# advisory job still fails its workflow, but naming them here would claim
+# they individually gate the release, which CI_CD.md says they do not;
+# "CodeQL Analysis" from secret-scanning.yml (duplicate display name —
+# ambiguous, and the blocking CodeQL signal is security.yml's job);
+# hassfest.yml, hacs.yml, build-frontend.yml, dependency-check.yml,
+# maintainability.yml (outside the release gate per CI_CD.md).
+#
+# Drift hazard, stated: checks are addressed by display name, which a
+# workflow edit can rename; the contract cannot address a workflow by
+# file path. An absent completed run fails the assertion, as it blocks the
+# release gate.
+[[preflight]]
+kind = "assertion"
+name = "required-checks-green-on-head"
+type = "github_checks_green"
+params = { commit = "HEAD", required = ["test", "Python Lint", "Frontend Lint", "CodeQL Analysis", "SonarCloud Scan", "Gitleaks Secret Scanner", "Pre-commit Linting"] }
+on_failure = "abort"
+
+# ===========================================================================
+# build — derive the deploy plan from the source tree
+# ===========================================================================
+
+# The release artefact is the committed git tree at the tag; with no
+# stamping there is nothing to derive. The one integrity check that
+# matters before a release: the tracked V2 frontend bundle matches its
+# sources. The bundle (custom_components/oig_cloud/www_v2/dist) is built
+# by build-frontend.yml / dev boxes and committed; release.yml does NOT
+# rebuild it, so a stale committed bundle would ship as-is. If this fails,
+# the fix is a human rebuilding and committing — the executor must not
+# mutate the (just-proven-clean) tree.
+[[build]]
+kind = "command"
+name = "frontend-dist-matches-sources"
+shell = "npm --prefix custom_components/oig_cloud/www_v2 run build:verify"
+timeout_seconds = 600
+on_failure = "abort"
+
+# ===========================================================================
+# publish — mutate the live state. STOPPED BY OPERATOR DECISION.
+# ===========================================================================
+
+# THE STOP. This is the ENTIRE publish stage: an unconditional refusal.
+# The operator's standing decision is that oig-cloud stops before publish
+# (see header): this release is public via HACS and rollback is not
+# symmetric, so the executor must never tag or release it. No override
+# env reaches past this step; the schema default
+# source.publish_requires_approval = true and the executor's own approval
+# prompt stack on top of it, but this step alone suffices — there is no
+# release command in this file to run. The schema has no "disabled /
+# operator-only" stage marker, so the refusal is expressed as the only
+# publish step: a command that always fails, loudly, and says why.
+[[publish]]
+kind = "command"
+name = "publish-refused-operator-decision"
+shell = "echo 'REFUSED: oig-cloud publish is operator-only, by hand through release.yml. This release is public via HACS and rollback is not symmetric; the executor must not tag or release it. See .fleet/deploy.toml header.' >&2; exit 1"
+on_failure = "abort"
+
+# ===========================================================================
+# verify — MANDATORY. Prove deployed == declared. FAILS CLOSED.
+# ===========================================================================
+
+# scripts/verify_release.sh answers, in order: the tag v<version> exists
+# on origin (the release did not happen otherwise); the tag's tree is
+# byte-identical to the tree on disk (the bytes HACS serves at the tag are
+# the bytes being verified); a GitHub Release object exists for the tag.
+# Any of the three failing fails the deploy — this verify CAN detect a
+# failed, missing, or drifted release.
+#
+# What verify here does NOT check, said plainly rather than substituted:
+# whether the tagged tree is CONSUMABLE — hassfest/HACS validation runs
+# asynchronously against the tag and nothing fails the deploy on a red
+# result (HACS-side validation is third-party, not this contract); and
+# whether users' Home Assistant instances have taken the update (client
+# state, unreachable from where verify runs).
+#
+# Why not run_hassfest.sh / run_local_checks.sh here: both validate the
+# LOCAL WORKING TREE and pass whether or not a release happened — exactly
+# the "verify that cannot detect a failed outcome" defect this contract
+# exists to prevent. Their CI equivalents gate the release via the
+# preflight assertion above; their local equivalents are the developer's
+# pre-push loop.
+#
+# command_exit_zero because no typed assertion can ask "does tag v<version>
+# exist on the remote and name this exact tree": that is a remote query
+# plus a tree comparison, and github_checks_green / file_hash_match* express
+# neither. The command word is a committed repo path, per the auditability
+# rule.
+[[verify]]
+kind = "assertion"
+name = "release-tag-matches-declared-tree"
+type = "command_exit_zero"
+params = { shell = "scripts/verify_release.sh", reason = "no typed assertion can express 'tag v<version> exists on origin and its tree equals the on-disk tree'; it is a remote query plus a tree comparison", timeout_seconds = 120 }
+on_failure = "abort"
+
+# ===========================================================================
+# rollback — UNAVAILABLE, declared with the reason. FAILS CLOSED.
+# ===========================================================================
+
+# ROLLBACK IS NOT AVAILABLE FOR THIS RELEASE, and this stage says so in
+# the manifest itself rather than letting an executor discover it by
+# aborting mid-sequence. Three facts, in order:
+#
+# 1. THE RELEASE TAG IS IMMUTABLE BY REPOSITORY POLICY. As of 2026-09-10 a
+#    ruleset on this repository restricts tags matching v* with the
+#    update and deletion rules, enforcement active, no bypass actors —
+#    moving or deleting a v* tag is refused outright. The release tag is
+#    v<version>, so it always matches. The tag-repoint sequence this
+#    section used to contain cannot execute: its very first mutation (the
+#    deletion push) is refused, and worse, a delete-then-recreate that
+#    ever aborts between the two pushes would leave the release tag
+#    deleted — the release in a WORSE state than before rollback was
+#    attempted. A step that cannot run must not sit in the manifest
+#    pretending it can.
+# 2. EVEN IF THE TAG COULD MOVE, THAT IS NOT A ROLLBACK. Rewinding the
+#    tag changes what FUTURE installs get; it does not downgrade homes
+#    that already updated — their Home Assistant downloaded the archive
+#    at update time and keeps running it — and HACS caches release
+#    metadata, so even a moved tag propagates slowly.
+# 3. WHAT AN OPERATOR SHOULD ACTUALLY DO: a public HACS release is
+#    un-shipped by publishing a NEWER version, not by rewinding a tag.
+#    Land the fix on main, bump custom_components/oig_cloud/manifest.json,
+#    and dispatch .github/workflows/release.yml in the normal way; the new
+#    tag is what HACS users update to. If the bad release must also stop
+#    being offered, that is a HACS-side delisting decision for the
+#    operator, not a git operation.
+#
+# Contract note (schema gap, stated not papered over): the v1 contract
+# has no "unavailable / disabled" stage marker. Its canonical way to say
+# "no rollback path is published" is to OMIT [[rollback]] entirely, and
+# an executor asked to roll back such a manifest refuses with "no
+# rollback available" (docs/specs/deploy-manifest.md, rollback section).
+# This manifest keeps the stage instead, in the same shape as the
+# publish stop above — a single step that always fails, loudly, and says
+# why — because the reason belongs in the manifest, not only in a
+# commit message or the contract doc. It fails closed either way: an
+# omitted stage is refused by the executor, a declared one aborts here.
+# (The related gap the old step exposed — rollback acting on state the
+# publish stage never captured, because publish refuses — disappears
+# with the step; nothing here acts on remote state at all.)
+[[rollback]]
+kind = "command"
+name = "rollback-unavailable-tag-immutable"
+shell = "echo 'REFUSED: rollback is not available. v* tags on this repository are non-updatable and non-deletable by an active repository ruleset (tag rules update + deletion, enforcement active, no bypass actors, 2026-09-10), so the release tag cannot be moved or deleted. A public HACS release is un-shipped by publishing a NEWER version (move forward), not by re-pointing a tag; homes that already updated are never rolled back either way. Operator action: land the fix on main, bump the version in custom_components/oig_cloud/manifest.json, and dispatch release.yml in the normal way.' >&2; exit 1"
+on_failure = "abort"
