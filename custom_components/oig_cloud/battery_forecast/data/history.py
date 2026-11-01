@@ -361,7 +361,7 @@ async def _interval_cache(sensor: Any) -> Dict[str, Dict[str, Any]]:
     cache = {}
     sensor._interval_history_cache = cache  # pylint: disable=protected-access
     try:
-        store = Store(
+        store: Store[Dict[str, Dict[str, Any]]] = Store(
             sensor._hass,  # pylint: disable=protected-access
             INTERVAL_CACHE_VERSION,
             f"oig_cloud.interval_history_{sensor._box_id}",  # pylint: disable=protected-access
