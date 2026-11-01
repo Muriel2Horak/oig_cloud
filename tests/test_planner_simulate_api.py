@@ -36,6 +36,7 @@ REQUIRED_TOP_KEYS = {
     "preset",
     "horizon_intervals",
     "interval_minutes",
+    "prices",
     "timeline",
     "summary",
 }
@@ -89,6 +90,24 @@ async def test_planner_simulate_explicit_series_shape():
     for interval in body["timeline"]:
         assert REQUIRED_TIMELINE_KEYS <= interval.keys()
     assert body["preset"] is None
+    assert body["prices"] == _explicit_payload()["prices"]
+
+
+@pytest.mark.asyncio
+async def test_planner_simulate_returns_the_prices_of_the_selected_preset():
+    """The overlay's price chart draws these slot for slot next to the timeline."""
+    import json as _json
+
+    presets = planning_api._load_presets()["presets"]
+    assert len({tuple(preset["prices"]) for preset in presets.values()}) == len(presets)
+
+    for preset_id, preset in presets.items():
+        request = DummyRequest(json_data={"preset": preset_id})
+        response = await planning_api.OIGCloudPlannerSimulateView().post(request, "box")
+
+        body = _json.loads(response.body)
+        assert body["prices"] == preset["prices"]
+        assert len(body["prices"]) == len(body["timeline"])
 
 
 @pytest.mark.asyncio

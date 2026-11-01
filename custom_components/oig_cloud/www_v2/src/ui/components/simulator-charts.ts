@@ -31,6 +31,13 @@ function hourLabel(hour: number): string {
   return `${hour}:00`;
 }
 
+// The bar charts span one day, so the bar count sets the slot length: 24 bars
+// are hours, 96 are quarter-hours.
+function slotLabel(index: number, slotCount: number): string {
+  const minutes = Math.round((index * 24 * 60) / Math.max(1, slotCount));
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
 function axisSvg(labels: number[]): string {
   const step = CHART_W / 24;
   return `
@@ -192,17 +199,19 @@ function renderBarChart(
 ): string {
   const W = CHART_W;
   const H = 62;
-  const baselineY = 46;
+  const plotH = 46;
   const barW = W / Math.max(1, values.length);
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
   const range = max - min || 1;
-  const barHeight = (value: number): number => Math.max(options.minHeight ?? 1.5, (Math.abs(value) / range) * 46);
+  // Negative bars hang below the zero line, so it moves up to leave them room.
+  const baselineY = min < 0 ? (max / range) * plotH : plotH;
+  const barHeight = (value: number): number => Math.max(options.minHeight ?? 1.5, (Math.abs(value) / range) * plotH);
   const barY = (value: number): number => (value >= 0 ? baselineY - barHeight(value) : baselineY);
 
   return `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${options.seriesLabel}" focusable="false">
-      ${gridSvg(W, baselineY, 4)}
+      ${gridSvg(W, plotH, 4)}
       ${values
         .map((value, index) => {
           const x = (index * barW).toFixed(1);
@@ -281,7 +290,7 @@ export function renderBatteryPriceSvg(prices: number[]): string {
   return renderBarChart(prices, {
     colors: (value) => (value < 0 ? 'var(--price)' : '#31406b'),
     seriesLabel: 'Kč/kWh',
-    valueLabel: (value, hour) => `${hourLabel(hour)} — ${value.toFixed(2)} Kč/kWh`,
+    valueLabel: (value, index) => `${slotLabel(index, prices.length)} — ${value.toFixed(2)} Kč/kWh`,
   });
 }
 

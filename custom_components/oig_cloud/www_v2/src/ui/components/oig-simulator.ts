@@ -13,8 +13,6 @@ import {
 } from './simulator-charts';
 import {
   defaultFetcher,
-  getBatteryPresetPrices,
-  getBoilerPresetDraws,
   type Domain,
   type SimRequest,
   type SimResponse,
@@ -23,6 +21,11 @@ import {
 } from './simulator-fetcher';
 
 const u = unsafeCSS;
+
+// Where the sliders stand when the draft holds no value for them.
+const FALLBACK_CHARGE_RATE_KW = 2.6;
+const FALLBACK_BOILER_TARGET_TEMP_C = 60;
+const FALLBACK_BOILER_MIN_TEMP_C = 45;
 
 export interface BootstrapPayload {
   capacity_kwh?: number;
@@ -67,9 +70,9 @@ export class OigSimulator extends LitElement {
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private response: SimResponse | null = null;
-  @state() private chargeRateKw = 2.6;
-  @state() private boilerTargetTempC = 60;
-  @state() private boilerMinTempC = 45;
+  @state() private chargeRateKw = FALLBACK_CHARGE_RATE_KW;
+  @state() private boilerTargetTempC = FALLBACK_BOILER_TARGET_TEMP_C;
+  @state() private boilerMinTempC = FALLBACK_BOILER_MIN_TEMP_C;
 
   private initialized = false;
   private initialPropsSettled = false;
@@ -432,6 +435,12 @@ export class OigSimulator extends LitElement {
     this.syncThemeToken();
   }
 
+  protected willUpdate(changed: PropertyValues<Record<string, unknown>>): void {
+    if (changed.has('draft')) {
+      this.seedControlsFromDraft((changed.get('draft') ?? {}) as Record<string, unknown>);
+    }
+  }
+
   protected firstUpdated(): void {
     this.initialized = true;
     this.syncThemeToken();
@@ -492,6 +501,19 @@ export class OigSimulator extends LitElement {
     this.style.setProperty('--tc', this.domain === 'boiler' ? 'var(--boil)' : 'var(--batt)');
   }
 
+  // A slider follows the draft whenever the draft's value for it changes. A new
+  // draft that leaves that value alone keeps whatever the user dragged.
+  private seedControlsFromDraft(previous: Record<string, unknown>): void {
+    const seeded = (key: string, current: number, fallback: number): number => {
+      const value = numberFrom(this.draft[key]);
+      return value === numberFrom(previous[key]) ? current : value ?? fallback;
+    };
+
+    this.chargeRateKw = seeded('charge_rate_kw', this.chargeRateKw, FALLBACK_CHARGE_RATE_KW);
+    this.boilerTargetTempC = seeded('boiler_target_temp_c', this.boilerTargetTempC, FALLBACK_BOILER_TARGET_TEMP_C);
+    this.boilerMinTempC = seeded('min_temp_c', this.boilerMinTempC, FALLBACK_BOILER_MIN_TEMP_C);
+  }
+
   private buildControlOverrides(): Record<string, unknown> {
     if (this.domain === 'battery') {
       return {
@@ -500,7 +522,7 @@ export class OigSimulator extends LitElement {
     }
 
     return {
-      target_temp_c: this.boilerTargetTempC,
+      boiler_target_temp_c: this.boilerTargetTempC,
       min_temp_c: this.boilerMinTempC,
     };
   }
@@ -658,6 +680,8 @@ export class OigSimulator extends LitElement {
     `;
   }
 
+  // The charge-rate and boiler-target slider bounds repeat the field limits in
+  // config_registry.py, so every value the draft can hold has a thumb position.
   private renderBatteryControlCard(): unknown {
     return html`
       <section class="card" data-testid="simulator-settings">
@@ -671,8 +695,8 @@ export class OigSimulator extends LitElement {
           <input
             data-testid="slider-charge-rate"
             type="range"
-            min="1"
-            max="7"
+            min="0.5"
+            max="10"
             step="0.1"
             .value=${String(this.chargeRateKw)}
             @input=${this.handleBatteryChargeInput}
@@ -696,8 +720,8 @@ export class OigSimulator extends LitElement {
           <input
             data-testid="slider-target-temp"
             type="range"
-            min="45"
-            max="70"
+            min="40"
+            max="85"
             step="1"
             .value=${String(this.boilerTargetTempC)}
             @input=${this.handleBoilerTargetInput}
@@ -823,9 +847,7 @@ export class OigSimulator extends LitElement {
     `;
   }
 
-  private renderBatteryCharts(intervals: BatteryInterval[]): unknown {
-    const presetId = this.activePresetId || this.presets[0]?.id || 'zima';
-    const prices = getBatteryPresetPrices(presetId);
+  private renderBatteryCharts(intervals: BatteryInterval[], prices: number[]): unknown {
     return html`
       <div class="chart" data-testid="chart-mode">
         <h4>
@@ -855,9 +877,7 @@ export class OigSimulator extends LitElement {
     `;
   }
 
-  private renderBoilerCharts(intervals: BoilerInterval[]): unknown {
-    const presetId = this.activePresetId || this.presets[0]?.id || 'vsedni';
-    const draws = getBoilerPresetDraws(presetId);
+  private renderBoilerCharts(intervals: BoilerInterval[], draws: number[]): unknown {
     return html`
       <div class="chart" data-testid="chart-heating">
         <h4>
@@ -899,7 +919,7 @@ export class OigSimulator extends LitElement {
             ${this.renderPresetChips()}
           </div>
           ${this.renderBatteryTiles(this.response.summary)}
-          ${this.renderBatteryCharts(this.response.intervals)}
+          ${this.renderBatteryCharts(this.response.intervals, this.response.prices)}
         </section>
       `;
     }
@@ -910,7 +930,7 @@ export class OigSimulator extends LitElement {
           ${this.renderPresetChips()}
         </div>
         ${this.renderBoilerTiles(this.response.summary)}
-        ${this.renderBoilerCharts(this.response.intervals)}
+        ${this.renderBoilerCharts(this.response.intervals, this.response.draws)}
       </section>
     `;
   }

@@ -1132,6 +1132,13 @@ export class OigApp extends LitElement {
     void this.loadOnboarding();
   }
 
+  // The simulation takes the target from the request over the entry's config,
+  // so the slider has to start from the config, not from its own fallback.
+  private boilerTabSimulatorDraft(): Record<string, unknown> {
+    const target = this.boilerConfig?.targetTempC;
+    return target == null ? {} : { boiler_target_temp_c: target };
+  }
+
   private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): Promise<void> {
     e.stopPropagation();
     const { domain, box, draft } = e.detail ?? {};
@@ -1478,7 +1485,7 @@ export class OigApp extends LitElement {
           <button
             type="button"
             data-testid="boiler-simulator-launch"
-            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: {} } }))}
+            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: this.boilerTabSimulatorDraft() } }))}
           >${t('boiler.simulator.launch', lang)}</button>
           <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
             <span class="boiler-setup-guide__icon">🧙</span>
