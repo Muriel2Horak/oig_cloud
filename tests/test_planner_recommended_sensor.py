@@ -578,7 +578,6 @@ async def test_async_added_to_hass_setup_and_recompute(monkeypatch):
         lambda _hass, coro, _name: started.append(coro),
     )
 
-
     await sensor.async_added_to_hass()
 
     assert sensor._precomputed_store is not None

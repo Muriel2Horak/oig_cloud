@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import time
 import voluptuous as vol
 from typing import Any, Dict
 
@@ -1741,6 +1742,15 @@ async def async_setup_entry(
 ) -> bool:  # noqa: C901
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
+    phases: Dict[str, float] = {}
+    phase_start = time.perf_counter()
+
+    def _mark(phase: str) -> None:
+        nonlocal phase_start
+        now = time.perf_counter()
+        phases[phase] = round((now - phase_start) * 1000)
+        phase_start = now
+
     _LOGGER.info("Setting up OIG Cloud entry: %s", entry.title)
     _LOGGER.debug("Config data keys: %s", list(entry.data.keys()))
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
@@ -1783,6 +1793,7 @@ async def async_setup_entry(
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
     _migrate_legacy_credentials_from_options(hass, entry)
     await _run_boiler_migration(hass, entry)
+    _mark("prepare")
 
     service_shield = await _start_service_shield(hass, entry)
 
@@ -1804,6 +1815,7 @@ async def async_setup_entry(
         from .shared.emitter import async_setup_entry_telemetry
 
         await async_setup_entry_telemetry(hass, entry)
+        _mark("telemetry")
 
         coordinator, session_manager = await _init_session_manager_and_coordinator(
             hass,
@@ -1874,7 +1886,9 @@ async def async_setup_entry(
         # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
 
         # Vždy registrovat sensor + switch platform
+        _mark("coordinators")
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        _mark("platforms")
 
         # Child devices (analytics/boiler/shield) can only be linked to the box
         # device once they exist, i.e. after the platforms created them. See
@@ -1926,6 +1940,8 @@ async def async_setup_entry(
             telemetry_store,
             battery_prediction_enabled,
         )
+        _mark("services")
+        _LOGGER.info("OIG Cloud setup took (ms): %s", phases)
 
         # OPRAVA: ODSTRANĚNÍ duplicitní registrace služeb - způsobovala přepsání správného schématu
         # Služby se už registrovaly výše v async_setup_entry_services_with_shield
