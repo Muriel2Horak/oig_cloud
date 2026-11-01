@@ -529,10 +529,10 @@ echo "🔄 Restarting Home Assistant..."
 RESTARTED=0
 
 if [[ "${RESTARTED}" -eq 0 ]] && [[ -n "${HA_TOKEN}" ]] && [[ -n "${HA_URL}" ]]; then
-    if curl -fsS --max-time 30 -X POST \
-        -H "Authorization: Bearer ${HA_TOKEN}" \
-        -H "Content-Type: application/json" \
-        "${HA_URL}/api/services/homeassistant/restart" >/dev/null 2>&1; then
+    RESTART_ARGS=(-fsS --max-time 30 -X POST
+        -H "Authorization: Bearer ${HA_TOKEN}"
+        -H "Content-Type: application/json")
+    if curl "${RESTART_ARGS[@]}" "${HA_URL}/api/services/homeassistant/restart" >/dev/null 2>&1; then  # NOSONAR: local HA over LAN
         echo "  ✅ Restarted via HA API (${HA_URL})"
         RESTARTED=1
     fi
