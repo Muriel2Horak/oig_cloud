@@ -91,6 +91,52 @@ describe('battery simulator chart helpers', () => {
   });
 });
 
+describe('battery price chart with real presets', () => {
+  const bars = (svg: string) => {
+    const host = document.createElement('div');
+    host.innerHTML = svg;
+    return [...host.querySelectorAll('rect')];
+  };
+
+  it('labels quarter-hour bars with the time of day', () => {
+    const labels = bars(renderBatteryPriceSvg(Array.from({ length: 96 }, () => 1))).map((bar) =>
+      bar.getAttribute('aria-label'),
+    );
+
+    expect(labels[0]).toBe('0:00 — 1.00 Kč/kWh');
+    expect(labels[1]).toBe('0:15 — 1.00 Kč/kWh');
+    expect(labels[25]).toBe('6:15 — 1.00 Kč/kWh');
+    expect(labels[95]).toBe('23:45 — 1.00 Kč/kWh');
+  });
+
+  it('keeps hourly bars on the hour', () => {
+    const labels = bars(renderBatteryPriceSvg(Array.from({ length: 24 }, () => 1))).map((bar) =>
+      bar.getAttribute('aria-label'),
+    );
+
+    expect(labels[6]).toBe('6:00 — 1.00 Kč/kWh');
+  });
+
+  // The negative_price preset spans -2 to +1 Kč/kWh.
+  it('fits negative and positive bars inside the chart, sized in proportion', () => {
+    const [negative, positive] = bars(renderBatteryPriceSvg([-2, 1]));
+    const top = (bar: Element) => Number(bar.getAttribute('y'));
+    const height = (bar: Element) => Number(bar.getAttribute('height'));
+
+    expect(top(negative) + height(negative)).toBeLessThanOrEqual(62);
+    expect(top(positive)).toBeGreaterThanOrEqual(0);
+    expect(height(negative) / height(positive)).toBeCloseTo(2, 1);
+    // Both grow away from the same zero line.
+    expect(top(positive) + height(positive)).toBeCloseTo(top(negative), 1);
+  });
+
+  it('keeps an all-zero day on the bottom line', () => {
+    const [bar] = bars(renderBoilerDrawSvg(Array.from({ length: 24 }, () => 0)));
+
+    expect(Number(bar.getAttribute('y')) + Number(bar.getAttribute('height'))).toBeCloseTo(46, 1);
+  });
+});
+
 describe('boiler simulator chart helpers', () => {
   it('renders 24 hourly heating rects with titles and aria labels', () => {
     const svg = renderBoilerModeBandSvg(boilerIntervals());

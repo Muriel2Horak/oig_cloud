@@ -43,8 +43,8 @@ export interface BoilerSummary {
 }
 
 export type SimResponse =
-  | { kind: 'battery'; intervals: BatteryInterval[]; summary: BatterySummary }
-  | { kind: 'boiler'; intervals: BoilerInterval[]; summary: BoilerSummary };
+  | { kind: 'battery'; intervals: BatteryInterval[]; prices: number[]; summary: BatterySummary }
+  | { kind: 'boiler'; intervals: BoilerInterval[]; draws: number[]; summary: BoilerSummary };
 
 interface BatteryPresetScenario {
   label: string;
@@ -164,7 +164,7 @@ function resolveBoilerControls(draft: Record<string, unknown>): {
   coldInletC: number | null;
 } {
   return {
-    targetTempC: numberFrom(draft.target_temp_c ?? draft.boiler_target_temp_c) ?? 60,
+    targetTempC: numberFrom(draft.boiler_target_temp_c) ?? 60,
     minTempC: numberFrom(draft.min_temp_c ?? draft.boiler_min_temp_c) ?? 45,
     coldInletC: numberFrom(draft.cold_inlet_c ?? draft.boiler_cold_inlet_c),
   };
@@ -233,6 +233,7 @@ function runBatteryScenario(presetId: string | undefined, draft: Record<string, 
   return {
     kind: 'battery',
     intervals,
+    prices,
     summary: {
       cost: round(summaryCost),
       base_cost: round(baseCost),
@@ -287,6 +288,7 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
   return {
     kind: 'boiler',
     intervals,
+    draws: [...preset.draw],
     summary: {
       kwh: round(kwh, 1),
       cost: round(cost),
@@ -298,9 +300,9 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
 // --- Real BE response shapes (live-probed) and their mapping to the FE contract ---
 //
 // POST /{box}/planner_simulate -> {preset, horizon_intervals, interval_minutes,
-// timeline:[{interval_index, soc_kwh, solar_kwh, load_kwh, grid_import_kwh,
-// grid_export_kwh, cost_czk, mode, mode_name, soc_percent}], summary:{...}}
-// (api/planning_api.py: _planner_result_to_response)
+// prices:[Kč/kWh per interval], timeline:[{interval_index, soc_kwh, solar_kwh,
+// load_kwh, grid_import_kwh, grid_export_kwh, cost_czk, mode, mode_name,
+// soc_percent}], summary:{...}} (api/planning_api.py: _planner_result_to_response)
 
 interface PlannerSimulateTimelineEntry {
   interval_index: number;
@@ -311,6 +313,7 @@ interface PlannerSimulateTimelineEntry {
 
 interface PlannerSimulateResponse {
   interval_minutes: number;
+  prices: number[];
   timeline: PlannerSimulateTimelineEntry[];
   summary: {
     total_cost_czk: number;
@@ -342,6 +345,7 @@ function mapPlannerSimulateResponse(raw: PlannerSimulateResponse): Extract<SimRe
   return {
     kind: 'battery',
     intervals,
+    prices: raw.prices ?? [],
     summary: {
       cost: round(raw.summary?.total_cost_czk ?? 0),
       ups_hours: round((upsIntervals * intervalMinutes) / 60, 2),
@@ -349,7 +353,8 @@ function mapPlannerSimulateResponse(raw: PlannerSimulateResponse): Extract<SimRe
   };
 }
 
-// POST /boiler/{entry}/{box}/simulate_water_day -> {..., timeline:[{start, end,
+// POST /boiler/{entry}/{box}/simulate_water_day -> {...,
+// inputs:{water_draw_profile_lh:[litres per hour], ...}, timeline:[{start, end,
 // action, source, heating_kwh, pv_kwh, grid_kwh, alt_kwh, battery_kwh,
 // estimated_cost_czk, predicted_top_temp_c, purpose}], summary:{total_heating_kwh,
 // cost_czk, pv_kwh, ...}} (boiler/api_views.py: _run_boiler_simulation)
@@ -362,6 +367,9 @@ interface BoilerSimulateTimelineEntry {
 }
 
 interface BoilerSimulateResponse {
+  inputs: {
+    water_draw_profile_lh: number[];
+  };
   timeline: BoilerSimulateTimelineEntry[];
   summary: {
     total_heating_kwh: number;
@@ -392,6 +400,7 @@ function mapBoilerSimulateResponse(raw: BoilerSimulateResponse): Extract<SimResp
   return {
     kind: 'boiler',
     intervals,
+    draws: raw.inputs?.water_draw_profile_lh ?? [],
     summary: {
       kwh: round(totalHeatingKwh, 1),
       cost: round(raw.summary?.cost_czk ?? 0),
@@ -524,12 +533,4 @@ export async function mockFetcher(req: SimRequest): Promise<SimResponse> {
     return runBatteryScenario(req.presetId, req.draft);
   }
   return runBoilerScenario(req.presetId, req.draft);
-}
-
-export function getBatteryPresetPrices(presetId?: string): number[] {
-  return [...resolveBatteryScenario(presetId).prices];
-}
-
-export function getBoilerPresetDraws(presetId?: string): number[] {
-  return [...resolveBoilerScenario(presetId).draw];
 }

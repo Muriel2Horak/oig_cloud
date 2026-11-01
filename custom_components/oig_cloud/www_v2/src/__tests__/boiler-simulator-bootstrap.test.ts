@@ -189,8 +189,8 @@ describe('boiler tab -> simulator bootstrap payload (fe/author: dispatcher + pay
   let el: TestApp;
 
   beforeEach(async () => {
-    // The boiler-tab button dispatches with an empty draft (per brief) — box
-    // id resolution falls back to the URL's ?sn=, same as production pages.
+    // The boiler-tab button's draft carries no box id — its resolution falls
+    // back to the URL's ?sn=, same as production pages.
     window.history.pushState({}, '', '/?entry_id=entry1&sn=SN123');
 
     fetchOIGAPI.mockReset();
@@ -250,6 +250,27 @@ describe('boiler tab -> simulator bootstrap payload (fe/author: dispatcher + pay
     // fabricated from volumeL or any other proxy.
     expect(sim.bootstrapPayload.capacity_kwh).toBeUndefined();
     expect(sim.bootstrapPayload.hw_min_soc_percent).toBeUndefined();
+  });
+
+  // simulate_water_day honours boiler_target_temp_c from the request over the
+  // entry's config, so the slider must start from the config: starting at its
+  // fallback would simulate 60 °C on a box configured for something else.
+  it('starts the target slider from the live boiler config and simulates with that value', async () => {
+    (el as any).boilerConfig = { ...BOILER_CONFIG_FIXTURE, targetTempC: 55 };
+    await flush(el);
+
+    (el.shadowRoot!.querySelector('[data-testid="boiler-simulator-launch"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement & Record<string, any>;
+    const slider = sim.shadowRoot!.querySelector('[data-testid="slider-target-temp"]') as HTMLInputElement;
+    expect(slider.value).toBe('55');
+
+    const posts = fetchOIGAPITyped.mock.calls.filter(
+      ([p, o]) => typeof p === 'string' && p.endsWith('/simulate_water_day') && (o as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String((posts[0][1] as RequestInit).body)).override_config.boiler_target_temp_c).toBe(55);
   });
 
   it('opening the simulator from a non-boiler domain leaves bootstrapPayload null', async () => {

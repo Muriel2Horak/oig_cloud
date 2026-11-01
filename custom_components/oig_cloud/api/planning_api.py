@@ -121,6 +121,7 @@ def _planner_result_to_response(inputs: PlannerInputs, preset_id: str | None) ->
         "preset": preset_id,
         "horizon_intervals": len(inputs.intervals),
         "interval_minutes": 15,
+        "prices": list(inputs.prices),
         "timeline": timeline,
         "summary": {
             "total_cost_czk": round(result.total_cost, 4),
