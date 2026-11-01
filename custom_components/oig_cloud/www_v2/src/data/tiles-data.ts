@@ -210,7 +210,6 @@ const TILE_MODULE_HINTS: Array<{
       'export_price_',
       'current_tariff',
       'eur_czk_exchange_rate',
-      'adjusted_spot_electricity_prices',
       'computed_grid_',
     ],
   },
