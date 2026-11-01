@@ -12,6 +12,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
+from ..shared.background import start_background
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
 from . import validation as shield_validation
@@ -172,7 +173,7 @@ class ServiceShield:
                 result = cb()
                 # Pokud callback vrátí coroutine, naplánuj ji
                 if result is not None and hasattr(result, "__await__"):
-                    self.hass.async_create_task(result)
+                    start_background(self.hass, result, "oig_cloud_shield_job")
                 # Pokud vrátí None (synchronní callback), nic nedělej
             except Exception as e:
                 _LOGGER.error(
@@ -266,7 +267,7 @@ class ServiceShield:
 
         # KRITICKÁ OPRAVA: @callback NESMÍ být async!
         # Naplánujeme _check_loop() jako async job v event loop
-        self.hass.async_create_task(self._check_loop(datetime.now()))
+        start_background(self.hass, self._check_loop(datetime.now()), "oig_cloud_shield_loop")
 
     async def register_services(self) -> None:
         """Registruje služby ServiceShield."""

@@ -13,6 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util.dt import now as dt_now
 
+from ..shared.background import start_background
 from ..api.ote_api import OteApi
 from ..entities.base_sensor import OigCloudSensor
 from ..sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
@@ -132,7 +133,7 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntityBase):
             await self._async_initialize_after_add()
             return
 
-        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        startup_task = start_background(self.hass, self._async_initialize_after_add(), "oig_cloud_spot_15min")
         if startup_task is None:
             await self._async_initialize_after_add()
         elif asyncio.iscoroutine(startup_task):
@@ -224,7 +225,9 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntityBase):
         self._refresh_cached_state_and_attributes()
         self.async_write_ha_state()
         if self.hass and self.coordinator:
-            self.hass.async_create_task(self.coordinator.async_request_refresh())
+            start_background(
+                self.hass, self.coordinator.async_request_refresh(), "oig_cloud_spot_refresh"
+            )
 
     async def async_will_remove_from_hass(self) -> None:
         """Cleanup při odstranění senzoru."""

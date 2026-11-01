@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 from propcache import cached_property
 
+from ...shared.background import start_background
 from ...const import DOMAIN
 
 MODE_LABEL_HOME_UPS = "Home UPS"
@@ -119,7 +120,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
-        await self._load_ups_blocks()
+        start_background(self.hass, self._load_ups_blocks(), "oig_cloud_ups_blocks")
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -128,7 +129,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
         # updates can arrive faster than the storage read completes, otherwise
         # stacking redundant tasks.
         if self.hass and not self._ups_load_inflight:
-            self.hass.async_create_task(self._load_ups_blocks())
+            start_background(self.hass, self._load_ups_blocks(), "oig_cloud_ups_blocks")
         super()._handle_coordinator_update()
 
     async def _load_ups_blocks(self) -> None:

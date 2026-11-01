@@ -204,7 +204,7 @@ class _Harness:
                 self._tracked_states.add(entity_id)
 
         await sensor_module.async_setup_entry(self.hass, self.entry, _add_entities)
-        await self.hass.async_block_till_done()
+        await self.hass.async_block_till_done(wait_background_tasks=True)
 
     def registry_ids(self) -> Set[str]:
         return {

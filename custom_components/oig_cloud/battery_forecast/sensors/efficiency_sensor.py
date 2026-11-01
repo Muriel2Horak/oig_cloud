@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from ...shared.background import start_background
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,10 +116,18 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
             )
         )
 
-        now_local = dt_util.as_local(dt_util.utcnow())
-        await self._finalize_last_month(now_local, force=True)
         self._update_current_month_metrics()
         self._publish_state()
+        start_background(
+            self.hass, self._finish_startup(), "oig_cloud_battery_efficiency"
+        )
+
+    async def _finish_startup(self) -> None:
+        """Read a closed month from history only when it is not stored yet."""
+        await self._finalize_last_month(dt_util.as_local(dt_util.utcnow()), force=False)
+        self._update_current_month_metrics()
+        self._publish_state()
+        self.async_write_ha_state()
 
     def _handle_coordinator_update(self) -> None:
         """Update current month metrics on coordinator updates."""
@@ -150,10 +159,27 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
                 "battery_end_kwh": attrs.get("last_month_battery_end_kwh"),
             }
             self._last_month_key = _month_key(last_year, last_month)
+            self._recompute_restored_month(last_year, last_month)
 
         self._current_month_start_kwh = attrs.get("battery_kwh_month_start")
         self._current_month_key = attrs.get("_current_month_key")
         self._month_snapshot = attrs.get("_month_snapshot")
+
+    def _recompute_restored_month(self, year: int, month: int) -> None:
+        """Apply the current formula to a stored month, with no database read."""
+        stored = self._last_month_metrics or {}
+        charge_kwh = stored.get("charge_kwh")
+        discharge_kwh = stored.get("discharge_kwh")
+        if charge_kwh is None or discharge_kwh is None:
+            return
+        metrics = _compute_metrics_from_wh(
+            charge_kwh * 1000,
+            discharge_kwh * 1000,
+            stored.get("battery_start_kwh"),
+            stored.get("battery_end_kwh"),
+        )
+        if metrics:
+            self._last_month_metrics = {**metrics, "year": year, "month": month}
 
     async def _scheduled_snapshot(self, now: datetime) -> None:
         now_local = dt_util.as_local(now)

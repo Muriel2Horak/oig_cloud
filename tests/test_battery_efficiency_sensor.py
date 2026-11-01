@@ -290,9 +290,13 @@ async def test_async_added_to_hass_runs_initial_flow(monkeypatch):
     await sensor.async_added_to_hass()
 
     sensor._restore_from_state.assert_called_once()
-    sensor._finalize_last_month.assert_awaited()
+    sensor._finalize_last_month.assert_not_awaited()
     sensor._update_current_month_metrics.assert_called_once()
     sensor._publish_state.assert_called_once()
+
+    await sensor._finish_startup()
+
+    sensor._finalize_last_month.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -388,7 +392,7 @@ def test_restore_from_state_loads_last_month(monkeypatch):
 
     assert sensor._last_month_metrics is not None
     assert sensor._last_month_key == "2026-01"
-    assert sensor._last_month_metrics["efficiency_pct"] == 88.5
+    assert sensor._last_month_metrics["efficiency_pct"] == 85.0
     assert sensor._current_month_start_kwh == 5.0
 
 
@@ -932,3 +936,27 @@ def test_rollover_keeps_the_start_on_a_restart_later_that_day(monkeypatch):
     sensor._rollover_month(datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc), "2026-10")
 
     assert sensor._current_month_start_kwh == 3.0
+
+
+def test_restored_month_is_recomputed_without_the_database(monkeypatch):
+    """A value stored with the wrong sign corrects itself on restart, in memory."""
+    sensor = _make_sensor(monkeypatch, DummyHass())
+    sensor._hass = sensor.hass
+    sensor.hass.states.async_set(
+        sensor.entity_id,
+        100.0,
+        {
+            "last_month_year": 2026,
+            "last_month_month": 10,
+            "efficiency_last_month_pct": 100.0,
+            "last_month_charge_kwh": 467.61,
+            "last_month_discharge_kwh": 465.95,
+            "last_month_battery_start_kwh": 5.97,
+            "last_month_battery_end_kwh": 1.08,
+        },
+    )
+
+    sensor._restore_from_state()
+
+    assert sensor._last_month_metrics["efficiency_pct"] == 98.6
+    assert sensor._last_month_metrics["year"] == 2026

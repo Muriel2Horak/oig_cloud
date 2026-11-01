@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .shared.background import start_background
 from .const import DOMAIN
 from .entities.ai_eval_sensor import OigCloudAiEvalSensor
 from .entities.ai_status_sensor import OigCloudAiStatusSensor
@@ -1622,7 +1623,7 @@ def _schedule_deferred_sensor_registration(
         _register_all_sensors(async_add_entities, deferred_sensors)
         return
 
-    hass.async_create_task(_register_later())
+    start_background(hass, _register_later(), "oig_cloud_deferred_sensors")
 
 
 def _apply_legacy_entity_naming(entities: List[Any]) -> None:

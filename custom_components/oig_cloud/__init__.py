@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
+from .shared.background import start_background
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 from .const import (
     CONF_AUTO_MODE_SWITCH,
@@ -1034,7 +1035,7 @@ async def _schedule_invalid_device_cleanup(
         await _cleanup_invalid_empty_devices(hass, entry)
         return
 
-    hass.async_create_task(_cleanup_invalid_empty_devices(hass, entry))
+    start_background(hass, _cleanup_invalid_empty_devices(hass, entry), "oig_cloud_cleanup_empty_devices")
 
 
 def _migrate_enable_spot_prices_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -1461,7 +1462,11 @@ async def _init_boiler_coordinator(
         if getattr(hass, "loop", None) is None:
             await coordinator.async_config_entry_first_refresh()
         else:
-            hass.async_create_task(coordinator.async_config_entry_first_refresh())
+            start_background(
+                hass,
+                coordinator.async_config_entry_first_refresh(),
+                "oig_cloud_boiler_first_refresh",
+            )
 
         _LOGGER.info("Boiler coordinator successfully initialized")
         return coordinator
@@ -1728,7 +1733,7 @@ async def _schedule_entry_startup_completion(
         await coro
         return
 
-    hass.async_create_task(coro)
+    start_background(hass, coro, "oig_cloud_entry_startup_completion")
 
 
 async def async_setup_entry(

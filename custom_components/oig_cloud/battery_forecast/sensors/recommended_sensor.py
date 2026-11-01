@@ -18,6 +18,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from ...shared.background import start_background
 from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -739,7 +740,9 @@ class OigCloudPlannerRecommendedModeSensor(
         async def _on_forecast_updated() -> None:
             await asyncio.sleep(0)
             if self.hass:
-                self.hass.async_create_task(self._async_recompute())
+                start_background(
+                    self.hass, self._async_recompute(), "oig_cloud_recommended_mode"
+                )
 
         try:
             self._unsubs.append(
@@ -750,7 +753,9 @@ class OigCloudPlannerRecommendedModeSensor(
 
         async def _on_tick(_now: datetime) -> None:
             await asyncio.sleep(0)
-            self.hass.async_create_task(self._async_recompute())
+            start_background(
+                    self.hass, self._async_recompute(), "oig_cloud_recommended_mode"
+                )
 
         try:
             for minute in [0, 15, 30, 45]:
@@ -762,7 +767,11 @@ class OigCloudPlannerRecommendedModeSensor(
         except Exception:  # nosec B110
             pass
 
-        await self._async_recompute()
+        start_background(
+
+            self.hass, self._async_recompute(), "oig_cloud_recommended_mode"
+
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         for unsub in getattr(self, "_unsubs", []) or []:

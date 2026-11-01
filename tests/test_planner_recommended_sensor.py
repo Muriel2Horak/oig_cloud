@@ -6,6 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.battery_forecast.sensors import (
+    recommended_sensor as rec_module,
+)
+
 from homeassistant.util import dt as dt_util
 
 from custom_components.oig_cloud.battery_forecast.sensors import recommended_sensor
@@ -567,10 +571,19 @@ async def test_async_added_to_hass_setup_and_recompute(monkeypatch):
         "homeassistant.helpers.event.async_track_time_change",
         lambda *_a, **_k: (lambda: None),
     )
+    started = []
+    monkeypatch.setattr(
+        rec_module,
+        "start_background",
+        lambda _hass, coro, _name: started.append(coro),
+    )
+
 
     await sensor.async_added_to_hass()
 
     assert sensor._precomputed_store is not None
+    for coro in started:
+        await coro
     assert called["recompute"] == 1
     assert len(sensor._unsubs) == 5
 

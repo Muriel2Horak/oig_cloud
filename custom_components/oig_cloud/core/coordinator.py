@@ -12,6 +12,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from ..shared.background import start_background
 from .data_source import DATA_SOURCE_CLOUD_ONLY, get_data_source_state
 
 if TYPE_CHECKING:
@@ -179,7 +180,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 except Exception as err:
                     _LOGGER.debug("Failed to load OTE cache asynchronously: %s", err)
 
-            self.hass.async_create_task(_async_load_ote_cache())
+            start_background(self.hass, _async_load_ote_cache(), "oig_cloud_ote_cache")
 
             # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
             # OPRAVA: Použít zoneinfo místo pytz
@@ -195,7 +196,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             # NOVĚ: Aktivovat i hlavní plánovač a provést první fetch asynchronně
             self._schedule_spot_price_update()
-            self.hass.async_create_task(self._update_spot_prices())
+            start_background(self.hass, self._update_spot_prices(), "oig_cloud_spot_prices")
 
         except Exception as e:
             _LOGGER.error("Failed to initialize OTE API: %s", e)
@@ -380,7 +381,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Spustit každou hodinu (handle uchován kvůli zrušení při unload/shutdown)
         self._hourly_timer = self.hass.loop.call_later(
             3600,  # 1 hodina
-            lambda: self.hass.async_create_task(self._hourly_fallback_check()),
+            lambda: start_background(self.hass, self._hourly_fallback_check(), "oig_cloud__hourly_fallback_check"),
         )
 
     async def _hourly_fallback_check(self) -> None:
@@ -875,8 +876,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             return
 
         if not self._battery_forecast_task or self._battery_forecast_task.done():
-            self._battery_forecast_task = self.hass.async_create_task(
-                self._update_battery_forecast()
+            self._battery_forecast_task = start_background(
+                self.hass, self._update_battery_forecast(), "oig_cloud_battery_forecast"
             )
         else:
             _LOGGER.debug("Battery forecast task already running, skipping")

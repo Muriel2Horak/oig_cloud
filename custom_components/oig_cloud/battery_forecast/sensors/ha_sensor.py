@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 from propcache import cached_property
 
+from ...shared.background import start_background
 from ...entities.base_sensor import OigCloudSensor
 from .. import storage as plan_storage_module
 from .. import task_utils as task_utils_module
@@ -206,8 +207,10 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
         if not hasattr(self.hass, "loop_thread_id"):
             await sensor_lifecycle_module.async_added_to_hass(self)
             return
-        startup_task = self.hass.async_create_task(
-            sensor_lifecycle_module.async_added_to_hass(self)
+        startup_task = start_background(
+            self.hass,
+            sensor_lifecycle_module.async_added_to_hass(self),
+            "oig_cloud_forecast_startup",
         )
         if startup_task is None:
             await sensor_lifecycle_module.async_added_to_hass(self)
