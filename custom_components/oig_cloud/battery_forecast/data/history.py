@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set
 
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..types import (
@@ -44,6 +45,10 @@ def _safe_float(value: Any) -> Optional[float]:
         return None
 
 
+# Bump when an interval's content changes, so stored values are not reused.
+INTERVAL_CACHE_VERSION = 1
+# A whole recompute adds many intervals; write them once it has settled.
+INTERVAL_CACHE_SAVE_DELAY_SECONDS = 60
 # Three days of intervals covers yesterday and today, whatever the time of day.
 INTERVAL_CACHE_SIZE = 288
 # The recorder commits in batches, so a just-closed interval may still change.
@@ -332,21 +337,49 @@ async def fetch_interval_from_history(
     if end_time.tzinfo is None:
         now = now.replace(tzinfo=None)
     settled = end_time <= now - INTERVAL_SETTLE_TIME
-    key = (start_time.isoformat(), end_time.isoformat())
+    key = f"{start_time.isoformat()}|{end_time.isoformat()}"
 
-    cache = getattr(sensor, "_interval_history_cache", None)
-    if not isinstance(cache, dict):
-        cache = {}
-        sensor._interval_history_cache = cache  # pylint: disable=protected-access
-    if settled and key in cache:
+    cache = await _interval_cache(sensor) if settled else None
+    if cache is not None and key in cache:
         return dict(cache[key])
 
     result = await _fetch_interval_uncached(sensor, start_time, end_time)
-    if settled and result:
+    if cache is not None and result:
         cache[key] = dict(result)
         while len(cache) > INTERVAL_CACHE_SIZE:
             cache.pop(next(iter(cache)))
+        _schedule_interval_cache_save(sensor, cache)
     return result
+
+
+async def _interval_cache(sensor: Any) -> Dict[str, Dict[str, Any]]:
+    """The sensor's closed intervals, loaded from storage on first use."""
+    cache = getattr(sensor, "_interval_history_cache", None)
+    if isinstance(cache, dict):
+        return cache
+
+    cache = {}
+    sensor._interval_history_cache = cache  # pylint: disable=protected-access
+    try:
+        store = Store(
+            sensor._hass,  # pylint: disable=protected-access
+            INTERVAL_CACHE_VERSION,
+            f"oig_cloud.interval_history_{sensor._box_id}",  # pylint: disable=protected-access
+        )
+        sensor._interval_history_store = store  # pylint: disable=protected-access
+        stored = await store.async_load()
+    except Exception as err:  # pylint: disable=broad-except
+        _LOGGER.debug("Interval history cache not loaded: %s", err)
+        return cache
+    if isinstance(stored, dict):
+        cache.update(stored)
+    return cache
+
+
+def _schedule_interval_cache_save(sensor: Any, cache: Dict[str, Any]) -> None:
+    store = getattr(sensor, "_interval_history_store", None)
+    if store is not None:
+        store.async_delay_save(lambda: cache, INTERVAL_CACHE_SAVE_DELAY_SECONDS)
 
 
 async def _fetch_interval_uncached(  # noqa: C901

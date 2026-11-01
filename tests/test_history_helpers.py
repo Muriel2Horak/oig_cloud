@@ -643,8 +643,23 @@ def test_running_interval_counts_only_the_time_that_passed(monkeypatch):
     assert lookup[start.strftime(history_module.DATETIME_FMT)]["mode"] == 0
 
 
+class _FakeStore:
+    stored = None
+    saved = []
+
+    def __init__(self, _hass, _version, _key):
+        pass
+
+    async def async_load(self):
+        return _FakeStore.stored
+
+    def async_delay_save(self, data_func, _delay):
+        _FakeStore.saved.append(dict(data_func()))
+
+
 class _CachingSensor:
     _hass = object()
+    _box_id = "123"
 
 
 @pytest.fixture
@@ -656,6 +671,9 @@ def uncached_reads(monkeypatch):
         return {"mode": 0, "at": start}
 
     monkeypatch.setattr(history_module, "_fetch_interval_uncached", _read)
+    monkeypatch.setattr(history_module, "Store", _FakeStore)
+    _FakeStore.stored = None
+    _FakeStore.saved = []
     monkeypatch.setattr(
         history_module.dt_util,
         "now",
@@ -733,3 +751,32 @@ async def test_interval_cache_stays_bounded(uncached_reads):
         )
 
     assert len(sensor._interval_history_cache) == history_module.INTERVAL_CACHE_SIZE
+
+
+@pytest.mark.asyncio
+async def test_closed_intervals_survive_a_restart(uncached_reads):
+    """Regression: the first recompute after a restart re-read everything, 133 s."""
+    start, end = _interval(10)
+    await history_module.fetch_interval_from_history(_CachingSensor(), start, end)
+    _FakeStore.stored = _FakeStore.saved[-1]
+    uncached_reads.clear()
+
+    result = await history_module.fetch_interval_from_history(_CachingSensor(), start, end)
+
+    assert uncached_reads == []
+    assert result["mode"] == 0
+
+
+@pytest.mark.asyncio
+async def test_unavailable_storage_only_costs_the_cache(monkeypatch, uncached_reads):
+    def _broken(*_args):
+        raise RuntimeError("no storage")
+
+    monkeypatch.setattr(history_module, "Store", _broken)
+    start, end = _interval(10)
+    sensor = _CachingSensor()
+
+    assert await history_module.fetch_interval_from_history(sensor, start, end)
+    await history_module.fetch_interval_from_history(sensor, start, end)
+
+    assert len(uncached_reads) == 1
