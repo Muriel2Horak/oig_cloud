@@ -9,12 +9,31 @@ from homeassistant.util import dt as dt_util
 
 from ...physics import simulate_interval
 from ..data.input import get_solar_for_timestamp
+from ..economic_planner import (
+    REASON_END_OF_HORIZON,
+    REASON_FLOOR_DEFENSE,
+    REASON_FLOOR_RECOVERY,
+    REASON_HOLD_FOR_LATER,
+    REASON_PRICE_SPREAD,
+    REASON_SWITCH_NOT_WORTH_IT,
+)
 from ..types import (
     CBB_MODE_HOME_II,
     CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
 )
+
+# Why the optimizer holds a slot in UPS. No price here: a block's summary adds its
+# own average to the text (detail_tabs_blocks._summarize_dominant_code).
+_UPS_REASON_TEXTS: Dict[str, str] = {
+    REASON_FLOOR_RECOVERY: "Nabíjení ze sítě, baterie je pod plánovacím minimem",
+    REASON_FLOOR_DEFENSE: "Nabíjení ze sítě, aby baterie neklesla pod plánovací minimum",
+    REASON_PRICE_SPREAD: "Nabíjení ze sítě, později bude elektřina dražší",
+    REASON_END_OF_HORIZON: "Nabíjení ze sítě do zásoby, spotřebuje se až po konci plánu",
+    REASON_HOLD_FOR_LATER: "Plná baterie čeká na dražší hodiny, spotřeba jde ze sítě",
+    REASON_SWITCH_NOT_WORTH_IT: "UPS zůstává, přepnutí by se nevyplatilo",
+}
 
 
 def build_planner_timeline(
@@ -136,7 +155,7 @@ def format_planner_reason(
     if reason_code in {"negative_price_consume", "auto_negative_consume"}:
         return "Negativní cena: maximalizace spotřeby"
 
-    return None
+    return _UPS_REASON_TEXTS.get(reason_code)
 
 
 def attach_planner_reasons(
