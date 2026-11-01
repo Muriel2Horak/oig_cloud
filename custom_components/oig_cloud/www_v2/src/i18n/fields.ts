@@ -154,7 +154,6 @@ const CS_LABELS: Record<string, string> = {
   'simulator.chart.draw.label': 'Odběr teplé vody',
   'simulator.battery.charge_rate_kw.label': 'Nabíjecí výkon ze sítě',
   'simulator.boiler.target_temp_c.label': 'Cílová teplota',
-  'simulator.boiler.min_temp_c.label': 'Minimální teplota',
   'simulator.box.capacity_kwh.label': 'Kapacita baterie',
   'simulator.box.hw_min_soc_percent.label': 'Minimální SoC (HW)',
   'simulator.box.top_temp_c.label': 'Teplota nahoře',
@@ -263,7 +262,6 @@ const CS_HINTS: Record<string, string> = {
   // Simulator overlay (F1)
   'simulator.battery.charge_rate_kw.hint': 'Kolik box bere při nabíjení v režimu UPS. Vyšší = stihne nabít v kratším levném okně.',
   'simulator.boiler.target_temp_c.hint': 'Na kolik stupňů se bojler snaží ohřát v levných/solárních oknech.',
-  'simulator.boiler.min_temp_c.hint': 'Pod tohle nesmí spadnout — ohřeje se hned, i za draho. Komfortní pojistka.',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */

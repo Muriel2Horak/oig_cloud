@@ -500,22 +500,32 @@ describe('oig-simulator', () => {
       expect(lastDraft(fetcher).charge_rate_kw).toBe(3.3);
     });
 
-    it('shows the boiler target and minimum the draft carries', async () => {
-      const { el, fetcher } = await mountSimulator('boiler', { boiler_target_temp_c: 63, min_temp_c: 47 });
+    it('shows the boiler target the draft carries', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', { boiler_target_temp_c: 63 });
 
       expect(slider(el, 'slider-target-temp').value).toBe('63');
-      expect(slider(el, 'slider-min-temp').value).toBe('47');
       expect(settings(el)).toContain('63 °C');
-      expect(settings(el)).toContain('47 °C');
       expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(lastDraft(fetcher)).toMatchObject({ boiler_target_temp_c: 63, min_temp_c: 47 });
+      expect(lastDraft(fetcher).boiler_target_temp_c).toBe(63);
     });
 
-    it('falls back to 60 and 45 °C when the boiler draft is empty', async () => {
+    // simulate_water_day has no minimum-temperature input, so a slider for one
+    // could only move a line in the chart.
+    it('offers the target as the only boiler control', async () => {
+      const { el, fetcher } = await mountSimulator('boiler', {});
+
+      const sliders = [...el.shadowRoot!.querySelectorAll('input[type="range"]')];
+      expect(sliders.map((input) => input.getAttribute('data-testid'))).toEqual(['slider-target-temp']);
+      expect(lastDraft(fetcher)).toEqual({ boiler_target_temp_c: 60 });
+      expect(el.shadowRoot!.textContent).not.toContain('Minimální teplota');
+      expect(el.shadowRoot!.querySelector('[data-testid="chart-temp"]')!.textContent).toContain('cíl 60 °C');
+      expect(el.shadowRoot!.querySelector('[data-testid="chart-temp"]')!.textContent).not.toContain('minimum');
+    });
+
+    it('falls back to 60 °C when the boiler draft is empty', async () => {
       const { el } = await mountSimulator('boiler', {});
 
       expect(slider(el, 'slider-target-temp').value).toBe('60');
-      expect(slider(el, 'slider-min-temp').value).toBe('45');
     });
 
     // simulate_water_day drops every override_config key outside
@@ -643,7 +653,7 @@ describe('oig-simulator', () => {
     const el = await fixture<HTMLElement & Record<string, any>>(html`
       <oig-simulator
         .domain=${'boiler'}
-        .draft=${{ boiler_target_temp_c: 61, min_temp_c: 46 }}
+        .draft=${{ boiler_target_temp_c: 61 }}
         .presets=${boilerPresets}
         .activePresetId=${'vsedni'}
         .bootstrapPayload=${{ top_temp_c: 58.8, bottom_temp_c: 46.0, cold_inlet_c: 12 }}

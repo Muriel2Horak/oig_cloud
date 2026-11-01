@@ -116,6 +116,7 @@ const BATTERY_CAPACITY_KWH = 17.4;
 // planner_simulate; these numbers only give the overlay's tests a stable day.
 const MOCK_CHEAP_HOURS_SHARE = 0.3;
 const MOCK_KEEP_SOC_PERCENT = 50;
+const MOCK_MIN_TEMP_C = 45;
 
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -160,12 +161,10 @@ function resolveBatteryControls(draft: Record<string, unknown>): {
 
 function resolveBoilerControls(draft: Record<string, unknown>): {
   targetTempC: number;
-  minTempC: number;
   coldInletC: number | null;
 } {
   return {
     targetTempC: numberFrom(draft.boiler_target_temp_c) ?? 60,
-    minTempC: numberFrom(draft.min_temp_c ?? draft.boiler_min_temp_c) ?? 45,
     coldInletC: numberFrom(draft.cold_inlet_c ?? draft.boiler_cold_inlet_c),
   };
 }
@@ -261,7 +260,7 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
     let source: 'solar' | 'grid' = 'grid';
 
     if (
-      temp < controls.minTempC ||
+      temp < MOCK_MIN_TEMP_C ||
       ((solarWin || cheapWin) && temp < targetToday - 1) ||
       (preset.legionella && hour >= 13 && hour <= 15 && temp < 70)
     ) {

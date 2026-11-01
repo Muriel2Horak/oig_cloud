@@ -25,7 +25,6 @@ const u = unsafeCSS;
 // Where the sliders stand when the draft holds no value for them.
 const FALLBACK_CHARGE_RATE_KW = 2.6;
 const FALLBACK_BOILER_TARGET_TEMP_C = 60;
-const FALLBACK_BOILER_MIN_TEMP_C = 45;
 
 export interface BootstrapPayload {
   capacity_kwh?: number;
@@ -72,7 +71,6 @@ export class OigSimulator extends LitElement {
   @state() private response: SimResponse | null = null;
   @state() private chargeRateKw = FALLBACK_CHARGE_RATE_KW;
   @state() private boilerTargetTempC = FALLBACK_BOILER_TARGET_TEMP_C;
-  @state() private boilerMinTempC = FALLBACK_BOILER_MIN_TEMP_C;
 
   private initialized = false;
   private initialPropsSettled = false;
@@ -470,8 +468,7 @@ export class OigSimulator extends LitElement {
 
     if (
       changed.has('chargeRateKw') ||
-      changed.has('boilerTargetTempC') ||
-      changed.has('boilerMinTempC')
+      changed.has('boilerTargetTempC')
     ) {
       this.scheduleFetch(false);
     }
@@ -511,7 +508,6 @@ export class OigSimulator extends LitElement {
 
     this.chargeRateKw = seeded('charge_rate_kw', this.chargeRateKw, FALLBACK_CHARGE_RATE_KW);
     this.boilerTargetTempC = seeded('boiler_target_temp_c', this.boilerTargetTempC, FALLBACK_BOILER_TARGET_TEMP_C);
-    this.boilerMinTempC = seeded('min_temp_c', this.boilerMinTempC, FALLBACK_BOILER_MIN_TEMP_C);
   }
 
   private buildControlOverrides(): Record<string, unknown> {
@@ -523,7 +519,6 @@ export class OigSimulator extends LitElement {
 
     return {
       boiler_target_temp_c: this.boilerTargetTempC,
-      min_temp_c: this.boilerMinTempC,
     };
   }
 
@@ -655,10 +650,6 @@ export class OigSimulator extends LitElement {
     this.boilerTargetTempC = Number((event.currentTarget as HTMLInputElement).value);
   }
 
-  private handleBoilerMinInput(event: Event): void {
-    this.boilerMinTempC = Number((event.currentTarget as HTMLInputElement).value);
-  }
-
   private renderPresetChips(): unknown {
     return html`
       <div class="presets" data-testid="preset-list">
@@ -727,23 +718,6 @@ export class OigSimulator extends LitElement {
             @input=${this.handleBoilerTargetInput}
           />
           <div class="exp">${fieldHint('target_temp_c', 'simulator.boiler.target_temp_c.hint') ?? ''}</div>
-        </div>
-
-        <div class="row">
-          <div class="l">
-            <b>${fieldLabel('min_temp_c', 'simulator.boiler.min_temp_c.label')}</b>
-            <span class="val">${formatNumber(this.boilerMinTempC, 0)} °C</span>
-          </div>
-          <input
-            data-testid="slider-min-temp"
-            type="range"
-            min="35"
-            max="55"
-            step="1"
-            .value=${String(this.boilerMinTempC)}
-            @input=${this.handleBoilerMinInput}
-          />
-          <div class="exp">${fieldHint('min_temp_c', 'simulator.boiler.min_temp_c.hint') ?? ''}</div>
         </div>
       </section>
     `;
@@ -892,9 +866,9 @@ export class OigSimulator extends LitElement {
         <h4>
           ${fieldLabel('water_temp', 'simulator.chart.water_temp.label')}
           <span class="key"><span class="sw" style="background:var(--boil)"></span>°C</span>
-          <span class="key" style="color:var(--mut)">··· minimum ${formatNumber(this.boilerMinTempC, 0)} °C · cíl ${formatNumber(this.boilerTargetTempC, 0)} °C</span>
+          <span class="key" style="color:var(--mut)">··· cíl ${formatNumber(this.boilerTargetTempC, 0)} °C</span>
         </h4>
-        <div class="chart-body">${unsafeHTML(renderBoilerTempSvg(intervals, this.boilerMinTempC))}</div>
+        <div class="chart-body">${unsafeHTML(renderBoilerTempSvg(intervals, this.boilerTargetTempC))}</div>
       </div>
 
       <div class="chart" data-testid="chart-draw">

@@ -48,7 +48,6 @@ describe('simulator i18n copy', () => {
     expect(fieldLabel('retry', 'simulator.common.retry.label')).toBe('Zkusit znovu');
     expect(fieldLabel('charge_rate_kw', 'simulator.battery.charge_rate_kw.label')).toBe('Nabíjecí výkon ze sítě');
     expect(fieldLabel('target_temp_c', 'simulator.boiler.target_temp_c.label')).toBe('Cílová teplota');
-    expect(fieldLabel('min_temp_c', 'simulator.boiler.min_temp_c.label')).toBe('Minimální teplota');
     expect(fieldLabel('capacity_kwh', 'simulator.box.capacity_kwh.label')).toBe('Kapacita baterie');
     expect(fieldLabel('hw_min_soc_percent', 'simulator.box.hw_min_soc_percent.label')).toBe('Minimální SoC (HW)');
     expect(fieldLabel('top_temp_c', 'simulator.box.top_temp_c.label')).toBe('Teplota nahoře');
@@ -138,6 +137,13 @@ describe('battery price chart with real presets', () => {
 });
 
 describe('boiler simulator chart helpers', () => {
+  // The target slider reaches 85 °C.
+  it('raises the temperature scale for a target above it', () => {
+    const svg = renderBoilerTempSvg(boilerIntervals(), 85);
+    expect(svg).toContain('85 °C');
+    expect(svg).not.toContain('75 °C');
+  });
+
   it('renders 24 hourly heating rects with titles and aria labels', () => {
     const svg = renderBoilerModeBandSvg(boilerIntervals());
     expect(svg.match(/<rect\b/g)).toHaveLength(24);
@@ -146,11 +152,13 @@ describe('boiler simulator chart helpers', () => {
     expect(svg).toContain('var(--boil)');
   });
 
-  it('renders the temperature chart with a single axis and threshold line', () => {
-    const svg = renderBoilerTempSvg(boilerIntervals(), 45);
+  it('renders the temperature chart with a single axis and the target as its line', () => {
+    const svg = renderBoilerTempSvg(boilerIntervals(), 60);
     expect(svg).toContain('75 °C');
     expect(svg).toContain('30 °C');
-    expect(svg).toContain('minimum');
+    expect(svg).toContain('stroke-dasharray="3 4"');
+    expect(svg).toContain('cíl 60 °C');
+    expect(svg).not.toContain('minimum');
     expect(svg.match(/data-sim-point="/g)).toHaveLength(24);
   });
 

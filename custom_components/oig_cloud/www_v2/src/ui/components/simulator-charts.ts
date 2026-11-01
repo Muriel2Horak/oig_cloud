@@ -274,13 +274,14 @@ export function renderBatterySocSvg(intervals: BatteryInterval[]): string {
   });
 }
 
-export function renderBoilerTempSvg(intervals: BoilerInterval[], minTempC: number): string {
+export function renderBoilerTempSvg(intervals: BoilerInterval[], targetTempC: number): string {
+  const max = Math.max(75, targetTempC);
   return renderLineChart(intervals.map((interval) => interval.temp), {
     min: 30,
-    max: 75,
+    max,
     lineColor: 'var(--boil)',
-    threshold: { value: minTempC, label: `minimum ${minTempC} °C` },
-    topLabel: '75 °C',
+    threshold: { value: targetTempC, label: `cíl ${targetTempC} °C` },
+    topLabel: `${max} °C`,
     bottomLabel: '30 °C',
     seriesLabel: '°C',
   });
