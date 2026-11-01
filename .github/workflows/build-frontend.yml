@@ -47,8 +47,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -f -- dist/
-          if git diff --staged --quiet; then
-            echo "No changes to dist/, skipping commit."
+          # Source maps differ between machines. A commit with only those would put an
+          # unchecked commit on main, and the release gate refuses to tag one.
+          if git diff --staged --quiet -- . ':(exclude)*.map'; then
+            echo "No changes to the shipped dist/, skipping commit."
           else
             git commit -m "build: update www_v2 dist [skip ci]"
             git push

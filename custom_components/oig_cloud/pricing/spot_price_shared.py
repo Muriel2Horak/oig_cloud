@@ -8,6 +8,7 @@ from typing import Any, Callable
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util.dt import now as dt_now
 
+from ..shared.background import start_background
 from ..const import OTE_SPOT_PRICE_CACHE_FILE
 
 
@@ -40,7 +41,7 @@ def schedule_daily_fetch(hass, fetch_coro: Callable[[], Any]) -> Any:
     daily_update_time = DAILY_FETCH_HOUR * 60 + DAILY_FETCH_MINUTE
 
     if current_minutes >= daily_update_time:
-        hass.async_create_task(fetch_coro())
+        start_background(hass, fetch_coro(), "oig_cloud_spot_fetch")
 
     async def _scheduled_fetch(_now) -> None:
         await fetch_coro()
@@ -76,4 +77,4 @@ def schedule_retry_task(
         logger.info("[%s] Retry timer fired!", entity_id)
         await fetch_coro()
 
-    return hass.async_create_task(_retry_after_delay())
+    return start_background(hass, _retry_after_delay(), "oig_cloud_spot_retry")

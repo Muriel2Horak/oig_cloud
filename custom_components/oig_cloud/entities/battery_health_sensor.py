@@ -26,6 +26,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from ..shared.background import start_background
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1132,14 +1133,14 @@ class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
         if not hasattr(self.hass, "loop_thread_id"):
             await self._async_initialize_tracker()
         else:
-            startup_task = self.hass.async_create_task(self._async_initialize_tracker())
+            startup_task = start_background(self.hass, self._async_initialize_tracker(), "oig_cloud_battery_health")
             if startup_task is None:
                 await self._async_initialize_tracker()
             elif asyncio.iscoroutine(startup_task):
                 await startup_task
 
         # Spustit analýzu na pozadí (po startu HA)
-        self.hass.async_create_task(self._initial_analysis())
+        start_background(self.hass, self._initial_analysis(), "oig_cloud_battery_health")
 
     async def _async_initialize_tracker(self) -> None:
         if not self._tracker:

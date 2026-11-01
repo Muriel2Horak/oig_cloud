@@ -641,3 +641,95 @@ def test_running_interval_counts_only_the_time_that_passed(monkeypatch):
     )
 
     assert lookup[start.strftime(history_module.DATETIME_FMT)]["mode"] == 0
+
+
+class _CachingSensor:
+    _hass = object()
+
+
+@pytest.fixture
+def uncached_reads(monkeypatch):
+    reads = []
+
+    async def _read(_sensor, start, _end):
+        reads.append(start)
+        return {"mode": 0, "at": start}
+
+    monkeypatch.setattr(history_module, "_fetch_interval_uncached", _read)
+    monkeypatch.setattr(
+        history_module.dt_util,
+        "now",
+        lambda: datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    return reads
+
+
+def _interval(hour, minute=0):
+    start = datetime(2026, 11, 1, hour, minute, tzinfo=timezone.utc)
+    return start, start + timedelta(minutes=15)
+
+
+@pytest.mark.asyncio
+async def test_closed_interval_is_read_from_the_database_once(uncached_reads):
+    """Regression: each plan recompute re-read every past interval, 100+ queries."""
+    sensor = _CachingSensor()
+    start, end = _interval(10)
+
+    first = await history_module.fetch_interval_from_history(sensor, start, end)
+    second = await history_module.fetch_interval_from_history(sensor, start, end)
+
+    assert len(uncached_reads) == 1
+    assert first == second
+
+
+@pytest.mark.asyncio
+async def test_cached_interval_cannot_be_changed_by_the_caller(uncached_reads):
+    sensor = _CachingSensor()
+    start, end = _interval(10)
+
+    first = await history_module.fetch_interval_from_history(sensor, start, end)
+    first["mode"] = 3
+
+    second = await history_module.fetch_interval_from_history(sensor, start, end)
+    assert second["mode"] == 0
+
+
+@pytest.mark.asyncio
+async def test_running_interval_is_always_read_again(uncached_reads):
+    sensor = _CachingSensor()
+    start, end = _interval(11, 50)
+
+    await history_module.fetch_interval_from_history(sensor, start, end)
+    await history_module.fetch_interval_from_history(sensor, start, end)
+
+    assert len(uncached_reads) == 2
+
+
+@pytest.mark.asyncio
+async def test_missing_interval_is_tried_again(monkeypatch, uncached_reads):
+    sensor = _CachingSensor()
+    start, end = _interval(10)
+    calls = []
+
+    async def _nothing(_sensor, _start, _end):
+        calls.append(1)
+
+    monkeypatch.setattr(history_module, "_fetch_interval_uncached", _nothing)
+
+    assert await history_module.fetch_interval_from_history(sensor, start, end) is None
+    assert await history_module.fetch_interval_from_history(sensor, start, end) is None
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_interval_cache_stays_bounded(uncached_reads):
+    sensor = _CachingSensor()
+    day = datetime(2026, 10, 20, tzinfo=timezone.utc)
+
+    for index in range(history_module.INTERVAL_CACHE_SIZE + 5):
+        start = day + timedelta(minutes=15 * index)
+        await history_module.fetch_interval_from_history(
+            sensor, start, start + timedelta(minutes=15)
+        )
+
+    assert len(sensor._interval_history_cache) == history_module.INTERVAL_CACHE_SIZE

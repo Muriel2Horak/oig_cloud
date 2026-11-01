@@ -14,13 +14,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..shared.background import start_background
 from ..shared.statistics_storage import StatisticsStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -234,7 +235,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                     self.entity_id,
                 )
             try:
-                async_call_later(self.hass, 180, self._daily_statistics_update)
+                async_call_later(self.hass, 180, self._schedule_startup_statistics)
             except AttributeError:
                 _LOGGER.debug(
                     "[%s] Skipping deferred statistics startup calculation; hass loop not available",
@@ -242,6 +243,20 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 )
 
         self._schedule_startup_load()
+
+    @callback
+    def _schedule_startup_statistics(self, _now: datetime) -> None:
+        start_background(
+            self.hass,
+            self._startup_statistics_update(),
+            f"oig_cloud_statistics_{self._sensor_type}",
+        )
+
+    async def _startup_statistics_update(self) -> None:
+        """Read 30 days of history after a restart only if today has no value yet."""
+        if datetime.now().strftime("%Y-%m-%d") in self._interval_data:
+            return
+        await self._daily_statistics_update(None)
 
     def _schedule_startup_load(self) -> None:
         if not self.hass:

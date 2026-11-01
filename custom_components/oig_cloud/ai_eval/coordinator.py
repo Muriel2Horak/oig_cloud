@@ -20,6 +20,7 @@ from homeassistant.helpers.recorder import get_instance
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..shared.background import start_background
 from . import detector, ledger, payload
 
 _LOGGER = logging.getLogger(__name__)
@@ -309,7 +310,7 @@ class AiEvalCoordinator:
                 return
             await self._async_on_tick(dt_util.utcnow())
 
-        task = self.hass.async_create_task(_initial_tick())
+        task = start_background(self.hass, _initial_tick(), "oig_cloud_ai_eval_tick")
         self._initial_task = task
 
         def _clear_initial_task(done: asyncio.Task[None]) -> None:

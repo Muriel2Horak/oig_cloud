@@ -235,3 +235,24 @@ async def test_sensor_async_setup_entry_no_box_id(monkeypatch):
     await sensor_module.async_setup_entry(hass, entry, _add_entities)
 
     assert not added
+
+
+@pytest.mark.asyncio
+async def test_deferred_groups_register_in_separate_batches():
+    """Regression: one slow entity in a shared batch hid the prices after a restart."""
+    batches = []
+    tasks = []
+    hass = SimpleNamespace(
+        loop=object(),
+        async_create_task=lambda coro: tasks.append(coro),
+    )
+    extended, prices = SimpleNamespace(), SimpleNamespace()
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        lambda sensors, _update: batches.append(list(sensors)),
+        [lambda: [extended], lambda: [], lambda: [prices]],
+    )
+    await tasks[0]
+
+    assert batches == [[extended], [prices]]

@@ -16,6 +16,9 @@ import { oigLog } from '@/core/logger';
 // TYPES
 // ============================================================================
 
+/** A few days of charging say too little to compare with a whole month. */
+const MIN_DAYS_FOR_EFFICIENCY_TREND = 7;
+
 export interface BatteryEfficiencyData {
   /** Current or last-month efficiency (%) */
   efficiency: number;
@@ -145,7 +148,9 @@ function extractEfficiency(_inverterSn: string): BatteryEfficiencyData | null {
   if (!primary) return null;
 
   const period = lastMonth ? 'last_month' as const : 'current_month' as const;
-  const trend = (lastMonth && currentMonth)
+  const comparable = attrs.current_month_delta_kwh != null
+    && Number(attrs.current_month_days ?? 0) >= MIN_DAYS_FOR_EFFICIENCY_TREND;
+  const trend = (lastMonth && currentMonth && comparable)
     ? currentMonth.efficiency - lastMonth.efficiency
     : 0;
 

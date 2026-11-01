@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.6] - 2026-11-01
+
+### Fixed
+- **Battery efficiency used the wrong sign.** Energy taken from the battery over the
+  month was added instead of subtracted, so October read 100.7 %, capped to a
+  lossless 100 %. It now balances to 98.6 % with 6.55 kWh of losses. The figures are
+  still DC, at the cells, so inverter losses are not in them.
+- **The running month ignored what stayed in the battery**, so the first of the month
+  read 32 % and "-68 % vs last month". It now counts the stored energy, and the
+  comparison waits for a week of data and a known battery balance.
+- **Home Assistant waited minutes for this integration at startup.** Its second stage
+  timed out on tracked tasks of this integration, mainly ten statistics sensors each
+  reading 30 days of history. Work that outlives setup now runs in the background, a
+  restart skips that read when today already has a value, and a closed month comes
+  from long-term statistics. One start went from 507 s to 99 s, with this integration
+  at 2.9 s.
+- **Each plan recompute re-read all past intervals** from the database, one query per
+  interval, so it took from half a minute to ten. A closed interval is now read once.
+- **Prices were missing for minutes after a restart.** All optional sensors were added
+  in one batch, so a slow one hid the rest, including the prices the Flow tab needs.
+  Each group now has its own batch, and prices appear within two minutes.
+
+### Changed
+- The frontend build no longer commits to `main` when only source maps changed, which
+  blocked releasing from `main`.
+
 ## [2.4.5] - 2026-11-01
 
 The Plan & reality view disagreed with what the box was doing. All of this is in

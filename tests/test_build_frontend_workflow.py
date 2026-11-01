@@ -71,3 +71,42 @@ def test_commit_step_pushes_ignored_frontend_dist(tmp_path: Path) -> None:
         cwd=tmp_path,
     )
     assert stored.stdout == "release artifact\n"
+
+
+def test_commit_step_skips_a_build_that_only_changes_source_maps(tmp_path: Path) -> None:
+    """A maps-only commit lands unchecked on main, where the release gate blocks."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    commit_step = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name") == "Commit and push dist"
+    )
+
+    repo = tmp_path / "repo"
+    frontend = repo / commit_step["working-directory"]
+    (frontend / "dist").mkdir(parents=True)
+    (repo / ".gitignore").write_text("dist/\n", encoding="utf-8")
+    (frontend / "dist" / "index.js").write_text("code\n", encoding="utf-8")
+    (frontend / "dist" / "index.js.map").write_text("one\n", encoding="utf-8")
+
+    _git("init", "-b", "main", cwd=repo)
+    _git("config", "user.name", "Test User", cwd=repo)
+    _git("config", "user.email", "test@example.invalid", cwd=repo)
+    _git("add", "-f", ".", cwd=repo)
+    _git("commit", "-m", "initial", cwd=repo)
+    before = _git("rev-parse", "HEAD", cwd=repo).stdout
+
+    (frontend / "dist" / "index.js.map").write_text("two\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path)
+    result = subprocess.run(
+        ("bash", "-e", "-c", commit_step["run"]),
+        cwd=frontend,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _git("rev-parse", "HEAD", cwd=repo).stdout == before

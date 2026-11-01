@@ -176,7 +176,7 @@ export class OigBatteryEfficiency extends LitElement {
       </div>
 
       ${this.data.trend !== 0 ? html`
-        <div class="comparison ${trendClass}">
+        <div class="comparison ${trendClass}" data-testid="efficiency-trend">
           ${trendSign}${formatPercent(this.data.trend)} vs minulý měsíc
         </div>
       ` : null}

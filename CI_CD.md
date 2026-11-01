@@ -2,6 +2,19 @@
 
 Tento dokumentace popisuje všechny CI/CD workflow, konfigurace a nastavení pro security, quality, maintainability a code coverage.
 
+## Who starts a release
+
+The operator decided on 2026-11-01 that an agent working with the operator may
+start a release when the operator asks for it, after verifying the change on the
+live install: dispatch `release.yml` without the bypass, then publish the draft
+with `RELEASE_NOTES_v<version>.md`. The `.fleet/deploy.toml` executor still refuses
+to publish on its own.
+
+Dispatch from the release branch. Its tip is the commit CI and the verification
+covered. The build workflow only commits to `main` when the shipped bundle differs,
+so source maps alone no longer add an unchecked commit there, but any bot commit
+still has no CI results and the gate refuses it.
+
 ## What gates release
 
 The manually triggered release workflow gates `github.sha` and the release job

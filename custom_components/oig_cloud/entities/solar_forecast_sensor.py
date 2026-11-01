@@ -21,6 +21,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..shared.background import start_background
 from ..config.solar_key_store import SolarKeyStore, get_solar_transaction_lock
 from ..config.solar_transaction import async_solar_request_snapshot
 from ..config.solar_rules import legacy_azimuth_read_model
@@ -272,7 +273,7 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
     def _create_refresh_task(self, coroutine: Any) -> Any:
         """Create and immediately track refresh work owned by this entity."""
-        created = self.hass.async_create_task(coroutine)
+        created = start_background(self.hass, coroutine, "oig_cloud_solar_forecast")
         if isinstance(created, asyncio.Task):
             self._active_refresh_tasks.add(created)
             created.add_done_callback(self._active_refresh_tasks.discard)

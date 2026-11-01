@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util.dt import now as dt_now
 
+from ..shared.background import start_background
 from ..api.ote_api import OteApi
 from ..entities.base_sensor import OigCloudSensor
 from ..sensors.SENSOR_TYPES_SPOT import SENSOR_TYPES_SPOT
@@ -123,7 +124,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
             await self._async_initialize_after_add()
             return
 
-        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        startup_task = start_background(self.hass, self._async_initialize_after_add(), "oig_cloud_spot_hourly")
         if startup_task is None:
             await self._async_initialize_after_add()
         elif asyncio.iscoroutine(startup_task):
