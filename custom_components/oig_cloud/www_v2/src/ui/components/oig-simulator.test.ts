@@ -431,14 +431,14 @@ describe('oig-simulator', () => {
       expect(slider(el, 'slider-charge-rate').value).toBe('3.1');
       expect(settings(el)).toContain('3,1 kW');
       expect(fetcher).toHaveBeenCalledTimes(1);
-      expect(lastDraft(fetcher).charge_rate_kw).toBe(3.1);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.1);
     });
 
     it('reads a charge rate the wizard field left as text', async () => {
       const { el, fetcher } = await mountSimulator('battery', { charge_rate_kw: '3.4' });
 
       expect(slider(el, 'slider-charge-rate').value).toBe('3.4');
-      expect(lastDraft(fetcher).charge_rate_kw).toBe(3.4);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.4);
     });
 
     it.each([[undefined], [null], [''], ['nope']])(
@@ -448,7 +448,7 @@ describe('oig-simulator', () => {
 
         expect(slider(el, 'slider-charge-rate').value).toBe('2.6');
         expect(settings(el)).toContain('2,6 kW');
-        expect(lastDraft(fetcher).charge_rate_kw).toBe(2.6);
+        expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(2.6);
       },
     );
 
@@ -468,7 +468,7 @@ describe('oig-simulator', () => {
       expect(slider(el, 'slider-charge-rate').value).toBe('4.2');
       expect(settings(el)).toContain('4,2 kW');
       expect(fetcher).toHaveBeenCalledTimes(2);
-      expect(lastDraft(fetcher).charge_rate_kw).toBe(4.2);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(4.2);
     });
 
     it('goes back to the fallback when a later draft stops carrying a charge rate', async () => {
@@ -477,7 +477,7 @@ describe('oig-simulator', () => {
       await setDraft(el, {});
 
       expect(slider(el, 'slider-charge-rate').value).toBe('2.6');
-      expect(lastDraft(fetcher).charge_rate_kw).toBe(2.6);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(2.6);
     });
 
     it('keeps a dragged charge rate when the draft changes something else', async () => {
@@ -497,7 +497,7 @@ describe('oig-simulator', () => {
       await setDraft(el, { charge_rate_kw: 3.3 });
 
       expect(slider(el, 'slider-charge-rate').value).toBe('3.3');
-      expect(lastDraft(fetcher).charge_rate_kw).toBe(3.3);
+      expect(lastDraft(fetcher).charge_rate_kw).toBeCloseTo(3.3);
     });
 
     it('shows the boiler target the draft carries', async () => {

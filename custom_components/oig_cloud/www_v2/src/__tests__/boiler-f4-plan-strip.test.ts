@@ -52,10 +52,11 @@ function joinTemplate(el: { render(): unknown }): string {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const T0 = '2026-06-11T00:00:00.000Z'; // plan horizon start (midnight UTC)
-const T1 = '2026-06-11T06:00:00.000Z'; // +6h → 0.25
-const T2 = '2026-06-11T12:00:00.000Z'; // +12h → 0.5
-const T_END = '2026-06-12T00:00:00.000Z'; // +24h → 1.0
+// The axis starts at local midnight, so the fixtures are local times.
+const T0 = new Date(2026, 5, 11, 0, 0, 0).toISOString(); // plan horizon start (local midnight)
+const T1 = new Date(2026, 5, 11, 6, 0, 0).toISOString(); // +6h → 0.25
+const T2 = new Date(2026, 5, 11, 12, 0, 0).toISOString(); // +12h → 0.5
+const T_END = new Date(2026, 5, 12, 0, 0, 0).toISOString(); // +24h → 1.0
 
 function makeSlot(
   start: string,
@@ -121,11 +122,11 @@ describe('isoToFraction', () => {
   });
 
   it('clamps to 0 before plan start', () => {
-    expect(isoToFraction('2026-06-10T23:00:00Z', T0)).toBe(0);
+    expect(isoToFraction(new Date(2026, 5, 10, 23, 0, 0).toISOString(), T0)).toBe(0);
   });
 
   it('clamps to 1 after plan end', () => {
-    expect(isoToFraction('2026-06-12T12:00:00Z', T0)).toBe(1);
+    expect(isoToFraction(new Date(2026, 5, 12, 12, 0, 0).toISOString(), T0)).toBe(1);
   });
 });
 
@@ -133,7 +134,7 @@ describe('isoToFraction', () => {
 
 describe('planMidnightMs', () => {
   it('returns midnight of calendar day for midnight-UTC start', () => {
-    const ms = planMidnightMs('2026-06-11T00:00:00.000Z');
+    const ms = planMidnightMs(new Date(2026, 5, 11, 0, 0, 0).toISOString());
     const d = new Date(ms);
     expect(d.getHours()).toBe(0);
     expect(d.getMinutes()).toBe(0);
@@ -195,8 +196,8 @@ describe('groupSlotsToBands', () => {
   });
 
   it('merges contiguous slots with same source', () => {
-    const s1 = makeSlot(T0, '2026-06-11T03:00:00Z', 'grid', 0.5);
-    const s2 = makeSlot('2026-06-11T03:00:00Z', T1, 'grid', 0.5);
+    const s1 = makeSlot(T0, new Date(2026, 5, 11, 3, 0, 0).toISOString(), 'grid', 0.5);
+    const s2 = makeSlot(new Date(2026, 5, 11, 3, 0, 0).toISOString(), T1, 'grid', 0.5);
     const bands = groupSlotsToBands([s1, s2], T0);
     expect(bands).toHaveLength(1);
     expect(bands[0].heatingKwh).toBeCloseTo(1.0, 5);
@@ -205,8 +206,8 @@ describe('groupSlotsToBands', () => {
   });
 
   it('splits bands when source changes', () => {
-    const s1 = makeSlot(T0, '2026-06-11T03:00:00Z', 'fve', 0.5);
-    const s2 = makeSlot('2026-06-11T03:00:00Z', T1, 'grid', 0.5);
+    const s1 = makeSlot(T0, new Date(2026, 5, 11, 3, 0, 0).toISOString(), 'fve', 0.5);
+    const s2 = makeSlot(new Date(2026, 5, 11, 3, 0, 0).toISOString(), T1, 'grid', 0.5);
     const bands = groupSlotsToBands([s1, s2], T0);
     expect(bands).toHaveLength(2);
     expect(bands[0].source).toBe('fve');
@@ -214,9 +215,9 @@ describe('groupSlotsToBands', () => {
   });
 
   it('splits band at zero-heating gap', () => {
-    const s1 = makeSlot(T0, '2026-06-11T02:00:00Z', 'fve', 0.5);
-    const s2 = makeSlot('2026-06-11T02:00:00Z', '2026-06-11T04:00:00Z', 'fve', 0); // gap
-    const s3 = makeSlot('2026-06-11T04:00:00Z', T1, 'fve', 0.5);
+    const s1 = makeSlot(T0, new Date(2026, 5, 11, 2, 0, 0).toISOString(), 'fve', 0.5);
+    const s2 = makeSlot(new Date(2026, 5, 11, 2, 0, 0).toISOString(), new Date(2026, 5, 11, 4, 0, 0).toISOString(), 'fve', 0); // gap
+    const s3 = makeSlot(new Date(2026, 5, 11, 4, 0, 0).toISOString(), T1, 'fve', 0.5);
     const bands = groupSlotsToBands([s1, s2, s3], T0);
     expect(bands).toHaveLength(2);
   });
@@ -257,8 +258,8 @@ describe('groupSlotsToBands', () => {
   });
 
   it('propagates hasLegionella to band that has mixed slots', () => {
-    const s1 = makeSlot(T0, '2026-06-11T03:00:00Z', 'fve', 0.5, 'comfort');
-    const s2 = makeSlot('2026-06-11T03:00:00Z', T1, 'fve', 0.5, 'legionella');
+    const s1 = makeSlot(T0, new Date(2026, 5, 11, 3, 0, 0).toISOString(), 'fve', 0.5, 'comfort');
+    const s2 = makeSlot(new Date(2026, 5, 11, 3, 0, 0).toISOString(), T1, 'fve', 0.5, 'legionella');
     const bands = groupSlotsToBands([s1, s2], T0);
     expect(bands).toHaveLength(1);
     expect(bands[0].hasLegionella).toBe(true);
@@ -274,12 +275,12 @@ describe('nowFraction', () => {
   });
 
   it('returns null when now is before plan start', () => {
-    const nowMs = new Date('2026-06-10T23:59:59Z').getTime();
+    const nowMs = new Date(new Date(2026, 5, 10, 23, 59, 59).toISOString()).getTime();
     expect(nowFraction(T0, nowMs)).toBeNull();
   });
 
   it('returns null when now is after plan end', () => {
-    const nowMs = new Date('2026-06-12T01:00:00Z').getTime();
+    const nowMs = new Date(new Date(2026, 5, 12, 1, 0, 0).toISOString()).getTime();
     expect(nowFraction(T0, nowMs)).toBeNull();
   });
 
@@ -306,7 +307,7 @@ describe('deadlineFraction', () => {
   it('deadline at 06:00 for plan starting 12:00 is at 6/24 on midnight axis', () => {
     // Axis is always midnight-anchored (00–24), so deadline 06:00 = fraction 0.25
     // regardless of when the plan was computed.
-    const planStart = '2026-06-11T12:00:00.000Z';
+    const planStart = new Date(2026, 5, 11, 12, 0, 0).toISOString();
     const f = deadlineFraction(planStart, '06:00');
     expect(f).toBeCloseTo(0.25, 5);
   });
@@ -438,8 +439,8 @@ describe('OigBoilerPlanStrip component', () => {
 
   it('renders legend entries for present sources', () => {
     el.slots = [
-      makeSlot(T0, '2026-06-11T06:00:00Z', 'fve', 1.0),
-      makeSlot('2026-06-11T06:00:00Z', '2026-06-11T12:00:00Z', 'grid', 0.5),
+      makeSlot(T0, new Date(2026, 5, 11, 6, 0, 0).toISOString(), 'fve', 1.0),
+      makeSlot(new Date(2026, 5, 11, 6, 0, 0).toISOString(), new Date(2026, 5, 11, 12, 0, 0).toISOString(), 'grid', 0.5),
     ];
     const out = joinTemplate(el);
     expect(out).toContain('plan-strip-legend');
@@ -457,7 +458,7 @@ describe('OigBoilerPlanStrip component', () => {
 
   it('renders circulation legend when circulationRuns present', () => {
     el.slots = [makeSlot(T0, T1, 'fve', 1.0)];
-    el.circulationRuns = [{ start: T0, end: '2026-06-11T00:15:00Z', label: 'circ' }];
+    el.circulationRuns = [{ start: T0, end: new Date(2026, 5, 11, 0, 15, 0).toISOString(), label: 'circ' }];
     const out = joinTemplate(el);
     expect(out).toContain('cirkulace');
   });
