@@ -262,30 +262,68 @@ def _normalize_mode_history(mode_history: List[Dict[str, Any]]) -> list[dict[str
     return mode_changes
 
 
+def _prevailing_mode(
+    mode_changes: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+) -> Optional[dict[str, Any]]:
+    """The mode that held longest in [start, end); a tie goes to the later one."""
+    active = None
+    for change in mode_changes:
+        if change["time"] <= start:
+            active = change
+        else:
+            break
+
+    best = None
+    best_seconds = -1.0
+    cursor = start
+    for change in mode_changes:
+        if change["time"] <= start:
+            continue
+        if change["time"] >= end:
+            break
+        if active:
+            seconds = (change["time"] - cursor).total_seconds()
+            if seconds >= best_seconds:
+                best, best_seconds = active, seconds
+        active, cursor = change, change["time"]
+
+    if active and (end - cursor).total_seconds() >= best_seconds:
+        best = active
+    return best
+
+
 def _expand_modes_to_intervals(
     mode_changes: list[dict[str, Any]],
     day_start: datetime,
     fetch_end: datetime,
 ) -> Dict[str, Dict[str, Any]]:
+    """Give each interval the mode that prevailed in it.
+
+    The box follows a command about a minute late, so the mode at the interval's
+    start would put every switch one interval behind the plan.
+    """
     historical_modes_lookup: Dict[str, Dict[str, Any]] = {}
+    now = dt_util.now()
+    if day_start.tzinfo is None:
+        now = now.replace(tzinfo=None)
     interval_time = day_start
     while interval_time <= fetch_end:
-        active_mode = None
-        for change in mode_changes:
-            if change["time"] <= interval_time:
-                active_mode = change
-            else:
-                break
+        interval_end = interval_time + timedelta(minutes=15)
+        # A running interval is judged on the part that already happened.
+        end = interval_end if interval_time >= now else min(interval_end, now)
+        prevailing = _prevailing_mode(mode_changes, interval_time, end)
 
-        if active_mode:
+        if prevailing:
             interval_time_str = interval_time.strftime(DATETIME_FMT)
             historical_modes_lookup[interval_time_str] = {
                 "time": interval_time_str,
-                "mode": active_mode["mode"],
-                "mode_name": active_mode["mode_name"],
+                "mode": prevailing["mode"],
+                "mode_name": prevailing["mode_name"],
             }
 
-        interval_time += timedelta(minutes=15)
+        interval_time = interval_end
     return historical_modes_lookup
 
 
