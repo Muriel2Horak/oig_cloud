@@ -117,3 +117,12 @@ def test_required_set_includes_blocking_secret_and_pre_commit_workflows() -> Non
     for required_workflow in ("secret-scanning.yml", "pre-commit.yml"):
         assert required_workflow in workflow
         assert required_workflow in docs
+
+
+def test_tag_step_sets_a_git_identity() -> None:
+    """Regression: an annotated tag needs an identity, which runners do not have."""
+    lines = [line.strip() for line in WORKFLOW.read_text(encoding="utf-8").splitlines()]
+    tag_index = next(i for i, line in enumerate(lines) if line.startswith("git tag -a"))
+
+    assert lines[tag_index - 2].startswith("git config user.name ")
+    assert lines[tag_index - 1].startswith("git config user.email ")
