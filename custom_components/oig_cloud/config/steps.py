@@ -3009,6 +3009,63 @@ Kliknutím na "Odeslat" spustíte průvodce.
         # This will be overridden in ConfigFlow and OptionsFlow
         raise NotImplementedError("Must be implemented in subclass")
 
+    async def _async_credentials_step(
+        self,
+        step_id: str,
+        entry: Optional[config_entries.ConfigEntry],
+        user_input: Optional[Dict[str, Any]],
+        success_reason: str,
+    ) -> ConfigFlowResult:
+        """Change the OIG Cloud login of an existing entry.
+
+        The new login is verified first, so a mistyped password leaves the working
+        one in place. The stored password is never put into the form.
+        """
+        if entry is None:
+            return self.async_abort(reason="unknown")
+
+        errors: Dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await validate_input(self.hass, user_input)
+            except LiveDataNotEnabled:
+                errors["base"] = "live_data_not_enabled"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception while changing the login")
+                errors["base"] = "unknown"
+
+            if not errors:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason=success_reason)
+
+        username = (user_input or entry.data).get(CONF_USERNAME, "")
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=username): str,
+                    vol.Required(CONF_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
 
 class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
     """Handle a config flow for OIG Cloud."""
@@ -3063,65 +3120,21 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
     async def async_step_reauth_confirm(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
-        reauth_entry_id = self.context.get("entry_id")
-        existing_entry = (
-            self.hass.config_entries.async_get_entry(reauth_entry_id)
-            if reauth_entry_id
-            else None
+        return await self._async_credentials_step(
+            "reauth_confirm", self._context_entry(), user_input, "reauth_successful"
         )
 
-        if existing_entry is None:
-            return self.async_abort(reason="unknown")
+    async def async_step_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Home Assistant's own "Reconfigure" entry: change the OIG Cloud login."""
+        return await self._async_credentials_step(
+            "reconfigure", self._context_entry(), user_input, "reconfigure_successful"
+        )
 
-        if user_input is None:
-            return self.async_show_form(
-                step_id="reauth_confirm",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_USERNAME,
-                            default=existing_entry.data.get(CONF_USERNAME, ""),
-                        ): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
-                ),
-            )
-
-        errors: Dict[str, str] = {}
-        try:
-            await validate_input(self.hass, user_input)
-        except LiveDataNotEnabled:
-            errors["base"] = "live_data_not_enabled"
-        except CannotConnect:
-            errors["base"] = "cannot_connect"
-        except InvalidAuth:
-            errors["base"] = "invalid_auth"
-        except Exception:
-            _LOGGER.exception("Unexpected exception during reauth")
-            errors["base"] = "unknown"
-
-        if errors:
-            return self.async_show_form(
-                step_id="reauth_confirm",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_USERNAME,
-                            default=user_input.get(CONF_USERNAME, ""),
-                        ): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    }
-                ),
-                errors=errors,
-            )
-
-        updated_data = dict(existing_entry.data)
-        updated_data[CONF_USERNAME] = user_input[CONF_USERNAME]
-        updated_data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
-
-        self.hass.config_entries.async_update_entry(existing_entry, data=updated_data)
-        await self.hass.config_entries.async_reload(existing_entry.entry_id)
-        return self.async_abort(reason="reauth_successful")
+    def _context_entry(self) -> Optional[config_entries.ConfigEntry]:
+        entry_id = self.context.get("entry_id")
+        return self.hass.config_entries.async_get_entry(entry_id) if entry_id else None
 
     async def async_step_quick_setup(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3390,7 +3403,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         Previously this re-ran the WHOLE wizard (up to ~12 steps) even for a
         single value change. Each section now ends at the summary (save).
         """
-        menu = ["section_modules", "section_intervals"]
+        menu = ["section_modules", "section_credentials", "section_intervals"]
         if self._wizard_data.get("enable_solar_forecast"):
             menu.append("section_solar")
         if self._wizard_data.get("enable_battery_prediction"):
@@ -3449,6 +3462,16 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
         return await self._enter_section("modules", "wizard_modules")
+
+    async def async_step_section_credentials(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._async_credentials_step(
+            "section_credentials",
+            self._config_entry_cache,
+            user_input,
+            "credentials_updated",
+        )
 
     async def async_step_section_intervals(
         self, user_input: Optional[Dict[str, Any]] = None

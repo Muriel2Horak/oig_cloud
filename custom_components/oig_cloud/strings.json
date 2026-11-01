@@ -278,6 +278,22 @@
       "solar_string2": {
         "title": "Solar Forecast - String 2",
         "description": "Parametry panelů na String 2."
+      },
+      "reconfigure": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "🔑 OIG Cloud login expired",
+        "description": "OIG Cloud no longer accepts the stored login. Enter the current one.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -327,7 +343,10 @@
     },
     "abort": {
       "already_configured": "Integrace OIG Cloud je již nakonfigurována",
-      "not_implemented": "Tato funkce ještě není implementována"
+      "not_implemented": "Tato funkce ještě není implementována",
+      "reconfigure_successful": "✅ The login was changed and the integration reloaded.",
+      "reauth_successful": "✅ The login was renewed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
     }
   },
   "options": {
@@ -583,6 +602,7 @@
         "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
         "menu_options": {
           "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_credentials": "🔑 OIG Cloud login",
           "section_intervals": "⏱️ Připojení a intervaly",
           "section_solar": "☀️ Solární předpověď",
           "section_battery": "🔋 Baterie a plánovač",
@@ -591,10 +611,26 @@
           "section_ai": "🤖 AI pomocník (volitelný)",
           "section_all": "🧙 Celý průvodce znovu"
         }
+      },
+      "section_credentials": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
       }
     },
     "abort": {
-      "reconfigure_successful": "Nastavení bylo úspěšně uloženo"
+      "reconfigure_successful": "Nastavení bylo úspěšně uloženo",
+      "credentials_updated": "✅ The login was changed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
+    },
+    "error": {
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "cannot_connect": "Nepodařilo se připojit k OIG Cloud API",
+      "live_data_not_enabled": "V OIG Cloud aplikaci nejsou zapnutá 'Živá data'. Zapněte je v nastavení aplikace!",
+      "unknown": "Neočekávaná chyba"
     }
   },
   "entity": {

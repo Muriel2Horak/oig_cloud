@@ -2,7 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "OIG Cloud integration is already configured",
-      "not_implemented": "This feature is not yet implemented"
+      "not_implemented": "This feature is not yet implemented",
+      "reconfigure_successful": "✅ The login was changed and the integration reloaded.",
+      "reauth_successful": "✅ The login was renewed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ For updates every 4 hours or every hour, API key from Forecast.Solar is required",
@@ -375,6 +378,22 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
+      },
+      "reconfigure": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "🔑 OIG Cloud login expired",
+        "description": "OIG Cloud no longer accepts the stored login. Enter the current one.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
       }
     }
   },
@@ -418,7 +437,9 @@
   },
   "options": {
     "abort": {
-      "reconfigure_successful": "✅ Settings saved and integration reloaded."
+      "reconfigure_successful": "✅ Settings saved and integration reloaded.",
+      "credentials_updated": "✅ The login was changed and the integration reloaded.",
+      "unknown": "Unexpected error. Please try again."
     },
     "step": {
       "basic_config": {
@@ -906,6 +927,7 @@
         "description": "Pick the section you want to change. Saving a section applies immediately.",
         "menu_options": {
           "section_modules": "🧩 Modules (enable/disable)",
+          "section_credentials": "🔑 OIG Cloud login",
           "section_intervals": "⏱️ Connection & intervals",
           "section_solar": "☀️ Solar forecast",
           "section_battery": "🔋 Battery & planner",
@@ -914,7 +936,21 @@
           "section_ai": "🤖 AI helper (optional)",
           "section_all": "🧙 Full wizard"
         }
+      },
+      "section_credentials": {
+        "title": "🔑 OIG Cloud login",
+        "description": "Enter the new login, for example after a password change. It is verified before saving; if it fails, the current one stays in place. The integration then reloads.",
+        "data": {
+          "username": "E-mail or username",
+          "password": "Password"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect": "Failed to connect to OIG Cloud API",
+      "live_data_not_enabled": "'Live Data' is not enabled in OIG Cloud app. Enable it in app settings!",
+      "unknown": "Unexpected error"
     }
   },
   "selector": {

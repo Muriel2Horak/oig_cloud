@@ -2,7 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "Integrace OIG Cloud je již nakonfigurována",
-      "not_implemented": "Tato funkce ještě není implementována"
+      "not_implemented": "Tato funkce ještě není implementována",
+      "reconfigure_successful": "✅ Přihlašovací údaje byly změněny a integrace se znovu načetla.",
+      "reauth_successful": "✅ Přihlášení bylo obnoveno a integrace se znovu načetla.",
+      "unknown": "Neočekávaná chyba. Zkuste to prosím znovu."
     },
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ Pro aktualizaci každé 4 hodiny nebo každou hodinu je vyžadován API klíč z Forecast.Solar",
@@ -375,6 +378,22 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení.",
         "title": "🔧 Změna nastavení OIG Cloud"
+      },
+      "reconfigure": {
+        "title": "🔑 Přihlášení k OIG Cloud",
+        "description": "Zadejte nové přihlašovací údaje, například po změně hesla. Před uložením je ověříme, při chybě zůstanou platit ty stávající. Integrace se potom znovu načte.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
+      },
+      "reauth_confirm": {
+        "title": "🔑 Přihlášení k OIG Cloud vypršelo",
+        "description": "Stávající údaje už OIG Cloud nepřijímá. Zadejte aktuální přihlašovací údaje.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
       }
     }
   },
@@ -418,7 +437,9 @@
   },
   "options": {
     "abort": {
-      "reconfigure_successful": "✅ Nastavení bylo uloženo a integrace byla znovu načtena."
+      "reconfigure_successful": "✅ Nastavení bylo uloženo a integrace byla znovu načtena.",
+      "credentials_updated": "✅ Přihlašovací údaje byly změněny a integrace se znovu načetla.",
+      "unknown": "Neočekávaná chyba. Zkuste to prosím znovu."
     },
     "step": {
       "battery_prediction": {
@@ -784,6 +805,7 @@
         "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
         "menu_options": {
           "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_credentials": "🔑 Přihlášení k OIG Cloud",
           "section_intervals": "⏱️ Připojení a intervaly",
           "section_solar": "☀️ Solární předpověď",
           "section_battery": "🔋 Baterie a plánovač",
@@ -792,7 +814,21 @@
           "section_ai": "🤖 AI pomocník (volitelný)",
           "section_all": "🧙 Celý průvodce znovu"
         }
+      },
+      "section_credentials": {
+        "title": "🔑 Přihlášení k OIG Cloud",
+        "description": "Zadejte nové přihlašovací údaje, například po změně hesla. Před uložením je ověříme, při chybě zůstanou platit ty stávající. Integrace se potom znovu načte.",
+        "data": {
+          "username": "E-mail nebo uživatelské jméno",
+          "password": "Heslo"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "cannot_connect": "Nepodařilo se připojit k OIG Cloud API",
+      "live_data_not_enabled": "V OIG Cloud aplikaci nejsou zapnutá 'Živá data'. Zapněte je v nastavení aplikace!",
+      "unknown": "Neočekávaná chyba"
     }
   },
   "selector": {
