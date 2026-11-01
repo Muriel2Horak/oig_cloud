@@ -361,7 +361,6 @@ class WizardMixin:
         payload.update(self._build_boiler_options(wizard_data))
         return payload
 
-
     @staticmethod
     def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         """Build basic options from FIELD_REGISTRY.
