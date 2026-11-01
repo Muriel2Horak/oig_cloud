@@ -14,7 +14,6 @@ from typing import Any, Optional, Protocol
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from ..shared.background import start_background
 from ..const import (
     CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
@@ -3233,10 +3232,10 @@ def create_boiler_runtime(
     # persisted override/config state is restored. start() is idempotent and
     # destroy_boiler_runtime() stops it on teardown.
     if hasattr(hass, "async_create_task"):
-        start_background(hass, serializer.start(), "oig_cloud_boiler_serializer")
+        hass.async_create_task(serializer.start())
         # Restore today's per-source energy attribution so a restart/deploy does
         # not zero the day's counter (it would otherwise "start counting now").
-        start_background(hass, runtime.async_load_daily_source(), "oig_cloud_boiler_daily")
+        hass.async_create_task(runtime.async_load_daily_source())
 
     return runtime
 
@@ -3274,8 +3273,8 @@ def _create_runtime_for_coordinator(
 
     # H2: start the serializer for the lazily-created (service-call) runtime too.
     if hasattr(hass, "async_create_task"):
-        start_background(hass, serializer.start(), "oig_cloud_boiler_serializer")
-        start_background(hass, runtime.async_load_daily_source(), "oig_cloud_boiler_daily")
+        hass.async_create_task(serializer.start())
+        hass.async_create_task(runtime.async_load_daily_source())
 
     return runtime
 

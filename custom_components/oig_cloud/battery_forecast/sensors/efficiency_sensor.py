@@ -533,22 +533,9 @@ async def _load_month_metrics(
     end_utc = dt_util.as_utc(end_local)
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
-    history = await hass.async_add_executor_job(
-        _get_history,
-        start_utc,
-        end_utc,
-        [charge_sensor, discharge_sensor, battery_sensor],
-    )
-    battery_start = await _get_battery_start(
-        hass, start_utc, battery_sensor, _get_history
-    )
-    if not history:  # pragma: no cover
-        history = {}
 
-    charge_wh = _history_value(history.get(charge_sensor))
-    discharge_wh = _history_value(history.get(discharge_sensor))
-    battery_end = _history_value(history.get(battery_sensor))
-
+    # Long-term statistics answer from a few rows; a month of state history took
+    # minutes on a NAS. History only fills in what the statistics do not have.
     charge_wh, discharge_wh, battery_start, battery_end = await _fallback_to_statistics(
         hass,
         start_utc,
@@ -556,11 +543,29 @@ async def _load_month_metrics(
         charge_sensor,
         discharge_sensor,
         battery_sensor,
-        charge_wh,
-        discharge_wh,
-        battery_start,
-        battery_end,
+        None,
+        None,
+        None,
+        None,
     )
+    if None in (charge_wh, discharge_wh, battery_end):
+        history = await hass.async_add_executor_job(
+            _get_history,
+            start_utc,
+            end_utc,
+            [charge_sensor, discharge_sensor, battery_sensor],
+        )
+        history = history or {}
+        if charge_wh is None:
+            charge_wh = _history_value(history.get(charge_sensor))
+        if discharge_wh is None:
+            discharge_wh = _history_value(history.get(discharge_sensor))
+        if battery_end is None:
+            battery_end = _history_value(history.get(battery_sensor))
+    if battery_start is None:
+        battery_start = await _get_battery_start(
+            hass, start_utc, battery_sensor, _get_history
+        )
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end

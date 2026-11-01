@@ -1463,11 +1463,7 @@ async def _init_boiler_coordinator(
         if getattr(hass, "loop", None) is None:
             await coordinator.async_config_entry_first_refresh()
         else:
-            start_background(
-                hass,
-                coordinator.async_config_entry_first_refresh(),
-                "oig_cloud_boiler_first_refresh",
-            )
+            hass.async_create_task(coordinator.async_config_entry_first_refresh())
 
         _LOGGER.info("Boiler coordinator successfully initialized")
         return coordinator
