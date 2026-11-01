@@ -487,6 +487,14 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             self._logger.error(f"Error: {e}", stack_info=True)
             raise e
 
+    async def set_home6_window_start(self, hour: int) -> bool:
+        """Set the hour the Home 6 window starts."""
+        return await self.set_box_params_internal("box_prm2", "hgvi_s", str(hour))
+
+    async def set_home6_window_end(self, hour: int) -> bool:
+        """Set the hour the Home 6 window ends."""
+        return await self.set_box_params_internal("box_prm2", "hgvi_e", str(hour))
+
     async def set_grid_delivery_limit(self, limit: int) -> bool:
         """Set grid delivery limit."""
         try:

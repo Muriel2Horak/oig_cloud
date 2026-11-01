@@ -359,7 +359,20 @@ class WizardMixin:
         payload.update(self._build_battery_options(wizard_data))
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
+        payload.update(self._build_home56_options(wizard_data))
         return payload
+
+    @staticmethod
+    def _build_home56_options(wizard_data: Dict[str, Any]) -> Dict[str, int]:
+        """The box reads equal times as no window, so store that one way only."""
+        fields = fields_for_section("home56")
+        start = int(
+            wizard_data.get("home6_window_start", fields["home6_window_start"].default)
+        )
+        end = int(wizard_data.get("home6_window_end", fields["home6_window_end"].default))
+        if start == end:
+            start = end = 0
+        return {"home6_window_start": start, "home6_window_end": end}
 
     @staticmethod
     def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1095,6 +1108,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             total += 1
         if self._wizard_data.get("enable_battery_prediction", False):
             total += 1
+        if self._wizard_data.get("box_has_home56", False):
+            total += 1
         if self._wizard_data.get("enable_pricing", False):
             total += 3
         if self._wizard_data.get("enable_boiler", False):
@@ -1158,6 +1173,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             steps.append("wizard_solar")
         if self._wizard_data.get("enable_battery_prediction", False):
             steps.append("wizard_battery")
+        if self._wizard_data.get("box_has_home56", False):
+            steps.append("wizard_home56")
         if self._wizard_data.get("enable_pricing", False):
             steps.extend(
                 [
@@ -1220,6 +1237,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         "intervals": "wizard_intervals",
         "solar": "wizard_solar",
         "battery": "wizard_battery",
+        "home56": "wizard_home56",
         "pricing": "wizard_pricing_distribution",
         # boiler chains already end right before the summary
     }
@@ -1245,6 +1263,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_intervals",
             "wizard_solar",
             "wizard_battery",
+            "wizard_home56",
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
@@ -1290,6 +1309,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             return not self._wizard_data.get("enable_solar_forecast")
         if step == "wizard_battery":
             return not self._wizard_data.get("enable_battery_prediction")
+        if step == "wizard_home56":
+            return not self._wizard_data.get("box_has_home56")
         if step in {
             "wizard_pricing_import",
             "wizard_pricing_export",
@@ -1965,6 +1986,53 @@ Kliknutím na "Odeslat" spustíte průvodce.
         )
 
         return vol.Schema(schema_fields)
+
+    async def async_step_wizard_home56(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Wizard step: the Home 6 window, offered once the box has Home 5/6."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_home56")
+
+            self._wizard_data.update(
+                self._build_home56_options(
+                    {
+                        "home6_window_start": user_input["home6_window_start"],
+                        "home6_window_end": user_input["home6_window_end"],
+                    }
+                )
+            )
+            self._step_history.append("wizard_home56")
+            next_step = self._get_next_step("wizard_home56")
+            return await getattr(self, f"async_step_{next_step}")()
+
+        hours = [
+            selector.SelectOptionDict(value=str(hour), label=f"{hour:02d}:00")
+            for hour in range(24)
+        ]
+        hour_select = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=hours, mode=selector.SelectSelectorMode.DROPDOWN
+            )
+        )
+        return self.async_show_form(
+            step_id="wizard_home56",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "home6_window_start",
+                        default=str(self._wizard_data.get("home6_window_start", 0)),
+                    ): hour_select,
+                    vol.Required(
+                        "home6_window_end",
+                        default=str(self._wizard_data.get("home6_window_end", 0)),
+                    ): hour_select,
+                    vol.Optional("go_back", default=False): bool,
+                }
+            ),
+            description_placeholders=self._get_step_placeholders("wizard_home56"),
+        )
 
     async def async_step_wizard_pricing_import(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -3408,6 +3476,8 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             menu.append("section_solar")
         if self._wizard_data.get("enable_battery_prediction"):
             menu.append("section_battery")
+        if self._wizard_data.get("box_has_home56"):
+            menu.append("section_home56")
         if self._wizard_data.get("enable_pricing"):
             menu.append("section_pricing")
         if self._wizard_data.get("enable_boiler") or self._wizard_data.get(
@@ -3422,6 +3492,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     _STEP_MODULE = {
         "wizard_solar": "enable_solar_forecast",
         "wizard_battery": "enable_battery_prediction",
+        "wizard_home56": "box_has_home56",
         "wizard_pricing_import": "enable_pricing",
         "wizard_pricing_export": "enable_pricing",
         "wizard_pricing_distribution": "enable_pricing",
@@ -3435,7 +3506,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         "wizard_boiler_simple_8": "enable_boiler",
         "wizard_boiler": "enable_boiler",
     }
-    _MODULE_FLAGS = ("enable_solar_forecast", "enable_battery_prediction", "enable_pricing", "enable_boiler")
+    _MODULE_FLAGS = (
+        "enable_solar_forecast",
+        "enable_battery_prediction",
+        "enable_pricing",
+        "enable_boiler",
+        "box_has_home56",
+    )
 
     def _newly_enabled_modules(self) -> set:
         """Module flags that are ON now but were OFF when the section was entered."""
@@ -3472,6 +3549,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             user_input,
             "credentials_updated",
         )
+
+    async def async_step_section_home56(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("home56", "wizard_home56")
 
     async def async_step_section_intervals(
         self, user_input: Optional[Dict[str, Any]] = None

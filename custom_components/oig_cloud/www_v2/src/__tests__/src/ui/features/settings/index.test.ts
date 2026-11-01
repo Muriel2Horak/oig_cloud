@@ -188,6 +188,7 @@ function registryWith(extraFields: Partial<FieldRegistry['fields']>): FieldRegis
 }
 
 type ModuleConfigOverrides = {
+  home56?: ModuleConfig['home56'];
   modules?: Partial<ModuleConfig['modules']>;
   battery?: Partial<ModuleConfig['battery']>;
   solar?: Partial<ModuleConfig['solar']>;
@@ -202,6 +203,7 @@ function moduleConfigWith(partial: ModuleConfigOverrides = {}): ModuleConfig {
     battery: { ...MODULE_CONFIG.battery, ...partial.battery } as ModuleConfig['battery'],
     solar: { ...MODULE_CONFIG.solar, ...partial.solar } as ModuleConfig['solar'],
     boiler: { ...MODULE_CONFIG.boiler, ...partial.boiler } as ModuleConfig['boiler'],
+    home56: partial.home56 as ModuleConfig['home56'],
     pricing_supplier: { ...MODULE_CONFIG.pricing_supplier, ...partial.pricing_supplier } as ModuleConfig['pricing_supplier'],
   };
 }
@@ -559,6 +561,30 @@ describe('Home 5/6 switch', () => {
     const settings = await mountSettings();
 
     expect(cardText(settings, 'Bojler')).toContain('Plánovač použije baterii');
+  });
+
+  it('hides the Home 6 window while the box has no Home 5/6', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(home56Fields);
+
+    const settings = await mountSettings();
+
+    expect(settings.shadowRoot!.querySelector('[data-testid="settings-home6"]')).toBeNull();
+  });
+
+  it('offers the Home 6 window once the box has Home 5/6', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(home56Fields);
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({
+        modules: { box_has_home56: true },
+        home56: { home6_window_start: 22, home6_window_end: 6 },
+      }),
+    );
+
+    const settings = await mountSettings();
+    const picker = settings.shadowRoot!.querySelector('oig-home6-window')!;
+
+    expect(picker.start).toBe(22);
+    expect(picker.end).toBe(6);
   });
 });
 

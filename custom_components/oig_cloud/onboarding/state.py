@@ -38,7 +38,7 @@ _FINISH_LOCKS_KEY = "onboarding_finish_locks"
 #: Prodej ("pricing_supplier_sell", new).
 ONBOARDING_STEPS = (
     "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
-    "pricing_supplier_sell", "battery", "boiler", "connection",
+    "pricing_supplier_sell", "battery", "home56", "boiler", "connection",
 )
 
 

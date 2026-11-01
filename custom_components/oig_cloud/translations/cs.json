@@ -394,6 +394,15 @@
           "username": "E-mail nebo uživatelské jméno",
           "password": "Heslo"
         }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 a Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo. Stejný čas začátku a konce znamená, že pásmo není nastavené a box se chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.\n\nPásmo se projeví, až když v ovládacím panelu zapnete Home 6.",
+        "data": {
+          "home6_window_start": "Začátek pásma Home 6",
+          "home6_window_end": "Konec pásma Home 6",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        }
       }
     }
   },
@@ -809,6 +818,7 @@
           "section_intervals": "⏱️ Připojení a intervaly",
           "section_solar": "☀️ Solární předpověď",
           "section_battery": "🔋 Baterie a plánovač",
+          "section_home56": "🌙 Home 5/6",
           "section_pricing": "💰 Ceny energie",
           "section_boiler": "🔥 Bojler",
           "section_ai": "🤖 AI pomocník (volitelný)",
@@ -821,6 +831,15 @@
         "data": {
           "username": "E-mail nebo uživatelské jméno",
           "password": "Heslo"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 a Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo. Stejný čas začátku a konce znamená, že pásmo není nastavené a box se chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.\n\nPásmo se projeví, až když v ovládacím panelu zapnete Home 6.",
+        "data": {
+          "home6_window_start": "Začátek pásma Home 6",
+          "home6_window_end": "Konec pásma Home 6",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         }
       }
     },

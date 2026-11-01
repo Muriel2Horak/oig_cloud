@@ -17,6 +17,9 @@ how far apart they were.
   behind Home Assistant's Reconfigure entry. Until now it was only reachable after
   authentication had already failed. The new login is verified before saving, so a
   typo keeps the working one.
+- **A Home 5/6 step in setup with the Home 6 time window**, chosen in the same hour
+  grid as NT/VT. The switch in Modules opens the step, and the window is written to
+  the box only when it changes, so a window set in the portal stays until then.
 - **Plan versus reality.** Each finished day is archived with what actually
   happened, intraday revisions are recorded without moving the day's baseline, and
   forecast accuracy is measured.

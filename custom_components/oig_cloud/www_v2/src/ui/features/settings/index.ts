@@ -47,6 +47,7 @@ import {
   type AiValidationState,
 } from '@/ui/features/onboarding';
 import { resolveLang, t, type Lang } from '@/i18n/onboarding';
+import '@/ui/features/onboarding/home6-window';
 
 const u = unsafeCSS;
 const INVERTER_SN = new URLSearchParams(window.location.search).get('sn')
@@ -190,6 +191,7 @@ export class OigSettings extends LitElement {
   @state() private pending: Record<string, Record<string, unknown>> = {};
   @state() private saving: string | null = null;
   @state() private toast: { section: string; ok: boolean; text: string } | null = null;
+  @state() private home6WindowInvalid = false;
   @state() private aiState: AiState | null = null;
   @state() private aiValidation: AiValidationState = { kind: 'idle' };
   /** True while a RELOAD_SECTIONS save waits out the backend's config-entry reload (fix D). */
@@ -662,6 +664,35 @@ export class OigSettings extends LitElement {
     this.aiValidation = { kind: 'error', code: result.data?.code ?? 'error' };
   }
 
+  /** Hour grid instead of number inputs, the same way NT/VT are chosen. */
+  private renderHome6Card() {
+    if (!this.currentCrossSection('home56', 'box_has_home56')) return nothing;
+    const section: SettingsSection = 'home56';
+    const toast = this.toast?.section === section ? this.toast : null;
+    return html`
+      <div class="card" data-testid="settings-home6">
+        <h2>🌙 Home 5/6</h2>
+        <div class="sub">Časové pásmo Home 6. Vypne záložní výstup a FVE nevyrábí, projeví se po zapnutí Home 6 v ovládacím panelu.</div>
+        <oig-home6-window
+          .start=${Number(this.current(section, 'home6_window_start') ?? 0)}
+          .end=${Number(this.current(section, 'home6_window_end') ?? 0)}
+          @window-change=${(e: CustomEvent<{ start: number; end: number; invalid: boolean }>) => {
+            this.home6WindowInvalid = e.detail.invalid;
+            if (e.detail.invalid) return;
+            this.setPending(section, 'home6_window_start', e.detail.start);
+            this.setPending(section, 'home6_window_end', e.detail.end);
+          }}
+        ></oig-home6-window>
+        <div class="actions">
+          <button class="save" ?disabled=${!this.isDirty(section) || this.home6WindowInvalid || this.saving === section}
+            @click=${() => this.save(section)}>
+            ${this.saving === section ? 'Ukládám…' : 'Uložit'}
+          </button>
+          ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
+        </div>
+      </div>`;
+  }
+
   private renderCard(section: SettingsSection | 'ai', title: string, sub: string, fields: FieldDef[]) {
     if (!this.registry && section !== 'ai') {
       return this.renderRegistryUnavailable(section, title, sub);
@@ -936,6 +967,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
         ${this.renderAiCard()}
         ${this.renderCard('pricing_supplier', '💳 Dodavatelské a distribuční ceny', 'Obchodní podmínky vaší smlouvy s dodavatelem a distributorem elektřiny.', this.fieldsFor('pricing_supplier'))}
+        ${this.renderHome6Card()}
         ${this.renderBoilerCard()}
       </div>
     `;

@@ -394,6 +394,15 @@
           "username": "E-mail or username",
           "password": "Password"
         }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 and Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. For Home 6, choose a time window. Equal start and end times mean no window, and the box then behaves as in Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.\n\nThe window takes effect only once you turn on Home 6 in the control panel.",
+        "data": {
+          "home6_window_start": "Home 6 window start",
+          "home6_window_end": "Home 6 window end",
+          "go_back": "⬅️ Go back (tick and submit)"
+        }
       }
     }
   },
@@ -931,6 +940,7 @@
           "section_intervals": "⏱️ Connection & intervals",
           "section_solar": "☀️ Solar forecast",
           "section_battery": "🔋 Battery & planner",
+          "section_home56": "🌙 Home 5/6",
           "section_pricing": "💰 Energy pricing",
           "section_boiler": "🔥 Boiler",
           "section_ai": "🤖 AI helper (optional)",
@@ -943,6 +953,15 @@
         "data": {
           "username": "E-mail or username",
           "password": "Password"
+        }
+      },
+      "wizard_home56": {
+        "title": "🌙 Home 5 and Home 6",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. For Home 6, choose a time window. Equal start and end times mean no window, and the box then behaves as in Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.\n\nThe window takes effect only once you turn on Home 6 in the control panel.",
+        "data": {
+          "home6_window_start": "Home 6 window start",
+          "home6_window_end": "Home 6 window end",
+          "go_back": "⬅️ Go back (tick and submit)"
         }
       }
     },

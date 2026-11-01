@@ -11,6 +11,12 @@ Kdo si změnil heslo, neměl dosud kde zadat nové, dokud integrace nenahlásila
 Přihlášení je teď v **Nastavení integrace → Přihlášení k OIG Cloud** a také pod položkou
 **Překonfigurovat** v Home Assistantu. Nové údaje se před uložením ověří, takže překlep nic nerozbije.
 
+## 🌙 **Samostatný krok pro Home 5 a Home 6**
+
+Přepínač **Box má Home 5/6** v Modulech teď otevře vlastní krok průvodce. Pásmo Home 6 se v něm vybírá
+ve stejné hodinové mřížce jako NT a VT a zapíše se do boxu. Projeví se až po zapnutí Home 6 v ovládacím
+panelu. V pásmu se vypne záložní výstup a FVE nevyrábí, takže při výpadku sítě tehdy nefunguje záloha.
+
 ## 🔋 **Plánovač vybírá nabíjení optimalizátorem**
 
 Přehrání na roce skutečných dat: **11 822 Kč místo 12 305 Kč**, 1 741 přepnutí režimu místo 4 728

@@ -63,6 +63,7 @@ import {
 } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
+import './home6-window';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import { ergoStyles } from './ergo-styles';
@@ -514,7 +515,7 @@ declare global {
  */
 const WIZARD_STEPS: ReadonlyArray<OnboardingStepId> = [
   'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-  'pricing_supplier_sell', 'battery', 'boiler', 'connection', 'summary',
+  'pricing_supplier_sell', 'battery', 'home56', 'boiler', 'connection', 'summary',
 ];
 
 /**
@@ -532,6 +533,7 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   pricing_supplier: 'Nákup',
   pricing_supplier_sell: 'Prodej',
   battery: 'Baterie',
+  home56: 'Home 5/6',
   boiler: 'Bojler',
   connection: 'Připojení',
   summary: 'Shrnutí',
@@ -547,6 +549,7 @@ const STEP_SUBTITLES: Record<OnboardingStepId, string> = {
   pricing_supplier: 'Nákupní cena od dodavatele elektřiny',
   pricing_supplier_sell: 'Prodejní (výkupní) cena do sítě',
   battery: 'Nabíjení baterie ze sítě',
+  home56: 'Časové pásmo režimu Home 6',
   boiler: 'Nastavení ohřevu vody',
   connection: 'Připojení k OIG Cloud a Home Assistantu',
   summary: 'Kontrola a dokončení nastavení',
@@ -564,6 +567,7 @@ const STEP_COLOR_VAR: Record<OnboardingStepId, string> = {
   pricing_supplier: 'var(--c-price)',
   pricing_supplier_sell: 'var(--c-price)',
   battery: 'var(--c-batt)',
+  home56: 'var(--c-batt)',
   boiler: 'var(--c-boiler)',
   connection: 'var(--c-conn)',
   summary: 'var(--c-sum)',
@@ -578,6 +582,7 @@ const STEP_ICON: Record<OnboardingStepId, string> = {
   pricing_supplier: '🛒',
   pricing_supplier_sell: '📤',
   battery: '🔋',
+  home56: '🌙',
   boiler: '🔥',
   connection: '📡',
   summary: '📋',
@@ -594,6 +599,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
   pricing_supplier: STEP_PRICING_SUPPLIER.skippable,
   pricing_supplier_sell: STEP_PRICING_SUPPLIER_SELL.skippable,
   battery: STEP_BATTERY.skippable,
+  home56: true,
   boiler: STEP_BOILER.skippable,
   connection: STEP_CONNECTION.skippable,
   summary: false,
@@ -607,7 +613,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
  * grid cell tied to nav button positions.
  */
 const STEP_PHASE: Partial<Record<OnboardingStepId, 'A' | 'B'>> = {
-  modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', boiler: 'A', connection: 'A',
+  modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', home56: 'A', boiler: 'A', connection: 'A',
   pricing_supplier: 'B', pricing_supplier_sell: 'B', battery: 'B',
 };
 const PHASE_LABELS = { A: 'Nastavuje se jednou', B: 'Mění se v čase' } as const;
@@ -620,6 +626,7 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   pricing_supplier: 'enable_pricing',
   pricing_supplier_sell: 'enable_pricing',
   battery: 'enable_battery_prediction',
+  home56: 'box_has_home56',
   boiler: 'enable_boiler',
 };
 
@@ -666,9 +673,10 @@ const MODULE_SOFT_DEPS: Record<string, readonly string[]> = {
  */
 const MODULES_GROUP_HLAVNI = [
   'enable_solar_forecast', 'enable_pricing', 'enable_battery_prediction', 'enable_boiler',
+  'box_has_home56',
 ] as const;
 const MODULES_GROUP_DOPLNKOVE = [
-  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings', 'box_has_home56',
+  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
 ] as const;
 
 /**
@@ -895,6 +903,9 @@ export class OigOnboardingWizard extends LitElement {
    * section — seeded from `entry.options` FIRST, registry `default` otherwise
    * (`seedConnectionDraft`, same rule as `seedSolarDraft`). */
   @state() private connectionDraft: Record<string, unknown> = {};
+  @state() private home56Draft: Record<string, unknown> = {};
+  /** The Home 6 grid holds a paint the box cannot store: blocks Next, like the NT/VT grid. */
+  @state() private home6WindowInvalid = false;
 
   /**
    * Boiler step: local edits only (Task 19) — read-seeded per field at render
@@ -1825,6 +1836,7 @@ export class OigOnboardingWizard extends LitElement {
       case 'boiler':
       case 'pricing':
       case 'pricing_supplier':
+      case 'home56':
         return this._registry!.fields[key].section as SettingsSection;
       default:
         return fallback;
@@ -1847,6 +1859,7 @@ export class OigOnboardingWizard extends LitElement {
       ['pricing_supplier', STEP_PRICING_SUPPLIER.fields(reg)],
       ['pricing_supplier_sell', STEP_PRICING_SUPPLIER_SELL.fields(reg)],
       ['battery', STEP_BATTERY.fields(reg)],
+      ['home56', fieldsFromRegistry(reg, 'home56')],
       ['boiler', STEP_BOILER.fields(reg)],
       ['connection', STEP_CONNECTION.fields(reg)],
     ];
@@ -1891,6 +1904,9 @@ export class OigOnboardingWizard extends LitElement {
     }
     if (this._registry?.sections.includes('battery')) {
       collectChanged('battery', this.batteryDraft);
+    }
+    if (this._registry?.sections.includes('home56')) {
+      collectChanged('home56', this.home56Draft);
     }
     if (this._registry?.sections.includes('basic')) {
       collectChanged('basic', this.connectionDraft);
@@ -2227,6 +2243,8 @@ export class OigOnboardingWizard extends LitElement {
     this.seedBatteryDraft();
     this.seedModulesDraft();
     this.seedConnectionDraft();
+    this.home56Draft = {};
+    this.home6WindowInvalid = false;
     const resetPricing: Record<string, unknown> = {};
     for (const key of Object.keys(this.pricingDraft)) {
       resetPricing[key] = this.originalValues[key];
@@ -3012,6 +3030,7 @@ export class OigOnboardingWizard extends LitElement {
    * wizard's "Next"/"Uložit" button (owner brief: "block save of this step,
    * not the wizard" — Back/Přeskočit stay enabled, only advancing is blocked). */
   private hasBlockingTariffMatrixError(): boolean {
+    if (this.currentStep === 'home56') return this.home6WindowInvalid;
     return this.currentStep === 'pricing_distribution'
       && (this.tariffMatrixError.weekday !== undefined || this.tariffMatrixError.weekend !== undefined);
   }
@@ -3808,6 +3827,37 @@ export class OigOnboardingWizard extends LitElement {
               validationState: this.aiValidation,
               onValidate: () => void this.validateAiConfig(),
             })}
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'home56') {
+      const hour = (key: string) => Number(this.home56Draft[key] ?? this.originalValues[key] ?? 0);
+      return html`
+        <section class="step step-home56" data-step="home56" style=${`--sc:${STEP_COLOR_VAR.home56}`}>
+          ${this.renderStepHead('home56')}
+          <div class="step-card">
+            <div class="oneliner" data-testid="home56-explainer">
+              Home 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo, ve kterém má box přejít do úsporného režimu.
+              <details class="inline"><summary>co to znamená</summary>
+                <p>V pásmu se vypne záložní výstup, FVE nevyrábí, zátěž jede ze sítě a baterie se nevybíjí. Při výpadku sítě v té době nefunguje záloha.</p>
+                <p>Pásmo se projeví, až když v ovládacím panelu zapnete Home 6.</p>
+              </details>
+            </div>
+            <oig-home6-window
+              data-testid="home6-window"
+              .start=${hour('home6_window_start')}
+              .end=${hour('home6_window_end')}
+              @window-change=${(e: CustomEvent<{ start: number; end: number; invalid: boolean }>) => {
+                this.home6WindowInvalid = e.detail.invalid;
+                if (e.detail.invalid) return;
+                this.home56Draft = {
+                  home6_window_start: e.detail.start,
+                  home6_window_end: e.detail.end,
+                };
+              }}
+            ></oig-home6-window>
           </div>
         </section>
       `;

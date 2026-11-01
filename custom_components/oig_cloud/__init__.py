@@ -17,6 +17,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady,
 from homeassistant.helpers import config_validation as cv
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
+from .home6_window import async_sync_home6_window
 from .const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -1906,6 +1907,7 @@ async def async_setup_entry(
 
         # Přidáme listener pro změny konfigurace - OPRAVEN callback na async funkci
         entry.async_on_unload(entry.add_update_listener(async_update_options))
+        hass.async_create_task(async_sync_home6_window(hass, entry))
 
         await _register_entry_services(hass, entry, service_shield)
         _register_api_endpoints(hass, boiler_coordinator)
@@ -2275,6 +2277,8 @@ async def async_update_options(
     hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ) -> None:
     """Update options with dashboard management."""
+    hass.async_create_task(async_sync_home6_window(hass, config_entry))
+
     hass_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
     old_options = hass_data.get("config", {}) or config_entry.options
     new_options = dict(config_entry.options)

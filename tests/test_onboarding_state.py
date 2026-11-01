@@ -42,6 +42,7 @@ async def test_fresh_state_is_versioned_and_all_steps_pending(store):
         "pricing_distribution": "pending",
         "pricing_supplier": "pending",
         "pricing_supplier_sell": "pending",
+        "home56": "pending",
         "battery": "pending",
         "boiler": "pending",
         "connection": "pending",
@@ -134,7 +135,7 @@ def test_onboarding_steps_cover_wizard_v2_content_steps():
     from custom_components.oig_cloud.onboarding.state import ONBOARDING_STEPS
     assert ONBOARDING_STEPS == (
         "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
-        "pricing_supplier_sell", "battery", "boiler", "connection",
+        "pricing_supplier_sell", "battery", "home56", "boiler", "connection",
     )
 
 

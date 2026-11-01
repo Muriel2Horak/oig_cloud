@@ -67,7 +67,7 @@ def test_registry_keys_match_field_keys():
     for key, field in FIELD_REGISTRY.items():
         assert key == field.key
         assert field.section in (
-            "modules", "battery", "solar", "boiler", "basic", "ai", "pricing",
+            "home56", "modules", "battery", "solar", "boiler", "basic", "ai", "pricing",
             "pricing_supplier",
         )
 

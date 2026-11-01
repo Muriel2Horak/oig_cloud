@@ -634,6 +634,14 @@ class OigCloudSessionManager:
         """Set box_prm2.app with retry logic."""
         return await self._call_with_retry(self._api.set_box_prm2_app, value)
 
+    async def set_home6_window_start(self, hour: int) -> bool:
+        """Set the Home 6 window start with retry logic."""
+        return await self._call_with_retry(self._api.set_home6_window_start, hour)
+
+    async def set_home6_window_end(self, hour: int) -> bool:
+        """Set the Home 6 window end with retry logic."""
+        return await self._call_with_retry(self._api.set_home6_window_end, hour)
+
     async def set_grid_delivery_limit(
         self,
         limit: int,
