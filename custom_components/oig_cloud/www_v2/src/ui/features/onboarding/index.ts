@@ -60,6 +60,7 @@ import {
   BATTERY_GROUPS,
   BATTERY_HARDWARE_CHIPS,
   getBatteryHardwareValue,
+  batterySimulatorBootstrap,
 } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
@@ -3314,6 +3315,7 @@ export class OigOnboardingWizard extends LitElement {
             domain: 'battery',
             box: this.inverterSn,
             draft: { ...this.batteryDraft },
+            bootstrap: batterySimulatorBootstrap(this.hass, this.inverterSn),
           },
         }));
       };

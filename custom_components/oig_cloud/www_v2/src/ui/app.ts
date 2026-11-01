@@ -1139,9 +1139,9 @@ export class OigApp extends LitElement {
     return target == null ? {} : { boiler_target_temp_c: target };
   }
 
-  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): Promise<void> {
+  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown>; bootstrap?: BootstrapPayload }>): Promise<void> {
     e.stopPropagation();
-    const { domain, box, draft } = e.detail ?? {};
+    const { domain, box, draft, bootstrap } = e.detail ?? {};
     this.simulatorDomain = domain ?? 'battery';
     // simulator-fetcher.ts resolves the box id from draft.box_id/boxId/
     // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
@@ -1155,7 +1155,7 @@ export class OigApp extends LitElement {
           bottom_temp_c: this.boilerV2Data?.status?.temperatureBottom ?? undefined,
           cold_inlet_c: this.boilerConfig?.coldInletTempC,
         }
-      : null;
+      : bootstrap ?? null;
     // Open the overlay (shows the loading state) before resolving presets so
     // <oig-simulator> mounts only once a preset id is known — its firstUpdated
     // fires the initial simulate immediately, and a blank preset 400s upstream.

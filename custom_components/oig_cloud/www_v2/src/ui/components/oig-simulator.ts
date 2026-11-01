@@ -778,22 +778,20 @@ export class OigSimulator extends LitElement {
           <b>${fieldLabel('day_cost', 'simulator.kpi.day_cost.label')}</b>
           <div class="n">${formatNumber(summary.cost, 0)} <small>Kč</small></div>
         </div>
-        <div class="tile" data-testid="kpi-base-cost">
-          <b>${fieldLabel('base_cost', 'simulator.kpi.base_cost.label')}</b>
-          <div class="n">
-            ${hasBaseCost
-              ? html`${formatNumber(summary.base_cost as number, 0)} <small>Kč</small>`
-              : html`<small>—</small>`}
-          </div>
-        </div>
-        <div class="tile" data-testid="kpi-savings">
-          <b>${fieldLabel('savings', 'simulator.kpi.savings.label')}</b>
-          <div class="n price">
-            ${savings != null
-              ? html`${savingsLabel}${formatNumber(Math.abs(savings), 0)} <small>Kč</small>`
-              : html`<small>—</small>`}
-          </div>
-        </div>
+        ${hasBaseCost
+          ? html`
+              <div class="tile" data-testid="kpi-base-cost">
+                <b>${fieldLabel('base_cost', 'simulator.kpi.base_cost.label')}</b>
+                <div class="n">${formatNumber(summary.base_cost as number, 0)} <small>Kč</small></div>
+              </div>
+              <div class="tile" data-testid="kpi-savings">
+                <b>${fieldLabel('savings', 'simulator.kpi.savings.label')}</b>
+                <div class="n price">
+                  ${savingsLabel}${formatNumber(Math.abs(savings as number), 0)} <small>Kč</small>
+                </div>
+              </div>
+            `
+          : nothing}
         <div class="tile" data-testid="kpi-ups-hours">
           <b>${fieldLabel('ups_hours', 'simulator.kpi.ups_hours.label')}</b>
           <div class="n">${formatNumber(summary.ups_hours, 0)} <small>h</small></div>

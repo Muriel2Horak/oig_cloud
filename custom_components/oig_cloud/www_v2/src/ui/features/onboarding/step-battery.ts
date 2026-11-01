@@ -54,6 +54,20 @@ export function getBatteryHardwareValue(
   return Number.isFinite(value) ? value : null;
 }
 
+/** What the simulator shows as read from the box, in the units it displays. */
+export function batterySimulatorBootstrap(
+  hass: any,
+  inverterSn: string,
+): { capacity_kwh?: number; hw_min_soc_percent?: number } {
+  const capacity = getBatteryHardwareValue(hass, inverterSn, 'max_capacity_kwh');
+  const hwMin = getBatteryHardwareValue(hass, inverterSn, 'min_capacity_kwh');
+  return {
+    capacity_kwh: capacity ?? undefined,
+    hw_min_soc_percent:
+      capacity && hwMin != null ? Math.round((hwMin / capacity) * 100) : undefined,
+  };
+}
+
 export function isBatteryWizardField(key: string): boolean {
   return BATTERY_WIZARD_KEY_SET.has(key);
 }
