@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.4] - 2026-11-01
+
+The planner now decides when to hold the battery on UPS with an optimizer, and it
+charges against the real tariff. Most of the rest of this release is the plan
+record that made those problems measurable: what was planned, what happened, and
+how far apart they were.
+
+### Added
+- **The OIG Cloud login can be changed in setup.** It is in the options menu and
+  behind Home Assistant's Reconfigure entry. Until now it was only reachable after
+  authentication had already failed. The new login is verified before saving, so a
+  typo keeps the working one.
+- **Plan versus reality.** Each finished day is archived with what actually
+  happened, intraday revisions are recorded without moving the day's baseline, and
+  forecast accuracy is measured.
+- **Boiler progress strip** comparing plan and actual use on the boiler tab.
+- **The optimizer's reasons are named in Czech** in the plan.
+
+### Changed
+- **UPS slots are picked by an optimizer** instead of a greedy defence of the
+  minimum. Replayed over a year of data: 11,822 Kč against 12,305 Kč, 1,741 mode
+  switches against 4,728, and no forced charging against 5 cases.
+- **The Home 5/6 switch moved to the module settings.** It was hidden in the boiler
+  section and unreachable without the boiler module. The stored value is kept.
+- **Retired the comfort SoC and expensive percentile options**, which the optimizer
+  makes unnecessary.
+- **The solar correction learns from the day archive.**
+- **Mode-switch guards are shortened to five minutes.**
+
+### Fixed
+- **Charging was priced with the wrong tariff.** The configured NT/VT distribution
+  price is now applied to the right hours.
+- **A flat 0.5 kWh plan after every restart.** The first run found no consumption
+  data and published a fallback plan. The planner now waits for the data, for at
+  most 20 minutes, keeping the box in its last mode.
+- **The simulator** starts its sliders from the current draft and charts the real
+  preset data.
+- **Planner and boiler plan fixes:** a rebuild no longer replaces a plan with a
+  worse one, solar arriving after the low point no longer excuses the dip, and
+  guarded charging windows are preserved.
+
 ## [2.4.3] - 2026-09-06
 
 The hourly AI evaluation had never once received the data it reasons about, and
