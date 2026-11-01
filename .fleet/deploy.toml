@@ -28,6 +28,10 @@
 #
 # THE OPERATOR'S STANDING DECISION (binding on the executor)
 # ==========================================================
+# Operator's decision of 2026-11-01 (CI_CD.md, "Who starts a release"): an agent
+# working with the operator may dispatch release.yml when the operator asks. This
+# executor gains no such right, and everything below still holds for it.
+#
 # oig-cloud STOPS BEFORE PUBLISH. The [[publish]] stage below is a single
 # step that refuses unconditionally — no override env var exists, and no
 # release command (tag, push, release create) appears anywhere in this
