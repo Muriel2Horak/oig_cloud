@@ -1606,12 +1606,14 @@ def _schedule_deferred_sensor_registration(
         return
 
     async def _register_later() -> None:
+        # One batch per group: entities of a batch are added in turn, and one slow
+        # entity would hide the groups behind it, such as prices, for minutes.
         await asyncio.sleep(0)
-        deferred_sensors: List[Any] = []
         for factory in deferred_factories:
-            deferred_sensors.extend(factory())
+            sensors = factory()
+            if sensors:
+                _register_all_sensors(async_add_entities, sensors)
             await asyncio.sleep(0)
-        _register_all_sensors(async_add_entities, deferred_sensors)
 
     if getattr(hass, "loop", None) is None:
         deferred_sensors: List[Any] = []
