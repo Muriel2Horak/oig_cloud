@@ -1483,7 +1483,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
         )
         for section in (
             "basic", "modules", "battery", "solar", "boiler", "pricing",
-            "pricing_supplier", "home56",
+            "pricing_supplier",
         ):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():

@@ -359,20 +359,8 @@ class WizardMixin:
         payload.update(self._build_battery_options(wizard_data))
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
-        payload.update(self._build_home56_options(wizard_data))
         return payload
 
-    @staticmethod
-    def _build_home56_options(wizard_data: Dict[str, Any]) -> Dict[str, int]:
-        """The box reads equal times as no window, so store that one way only."""
-        fields = fields_for_section("home56")
-        start = int(
-            wizard_data.get("home6_window_start", fields["home6_window_start"].default)
-        )
-        end = int(wizard_data.get("home6_window_end", fields["home6_window_end"].default))
-        if start == end:
-            start = end = 0
-        return {"home6_window_start": start, "home6_window_end": end}
 
     @staticmethod
     def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1990,47 +1978,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
     async def async_step_wizard_home56(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
-        """Wizard step: the Home 6 window, offered once the box has Home 5/6."""
+        """Wizard step: how Home 5 and 6 work; the window is set on the box itself."""
         if user_input is not None:
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_home56")
 
-            self._wizard_data.update(
-                self._build_home56_options(
-                    {
-                        "home6_window_start": user_input["home6_window_start"],
-                        "home6_window_end": user_input["home6_window_end"],
-                    }
-                )
-            )
             self._step_history.append("wizard_home56")
             next_step = self._get_next_step("wizard_home56")
             return await getattr(self, f"async_step_{next_step}")()
 
-        hours = [
-            selector.SelectOptionDict(value=str(hour), label=f"{hour:02d}:00")
-            for hour in range(24)
-        ]
-        hour_select = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=hours, mode=selector.SelectSelectorMode.DROPDOWN
-            )
-        )
         return self.async_show_form(
             step_id="wizard_home56",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        "home6_window_start",
-                        default=str(self._wizard_data.get("home6_window_start", 0)),
-                    ): hour_select,
-                    vol.Required(
-                        "home6_window_end",
-                        default=str(self._wizard_data.get("home6_window_end", 0)),
-                    ): hour_select,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            ),
+            data_schema=vol.Schema({vol.Optional("go_back", default=False): bool}),
             description_placeholders=self._get_step_placeholders("wizard_home56"),
         )
 

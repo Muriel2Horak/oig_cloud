@@ -397,10 +397,8 @@
       },
       "wizard_home56": {
         "title": "🌙 Home 5 and Home 6",
-        "description": "{step}\n{progress}\n\nHome 5 needs no times. For Home 6, choose a time window. Equal start and end times mean no window, and the box then behaves as in Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.\n\nThe window takes effect only once you turn on Home 6 in the control panel.",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. The Home 6 window is set on the box display: User settings → Expert settings → Home Grid VI Off/On. It cannot be set through OIG Cloud.\n\nWhile the window is 0:00-0:00, Home 6 behaves as Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.",
         "data": {
-          "home6_window_start": "Home 6 window start",
-          "home6_window_end": "Home 6 window end",
           "go_back": "⬅️ Go back (tick and submit)"
         }
       }
@@ -957,10 +955,8 @@
       },
       "wizard_home56": {
         "title": "🌙 Home 5 and Home 6",
-        "description": "{step}\n{progress}\n\nHome 5 needs no times. For Home 6, choose a time window. Equal start and end times mean no window, and the box then behaves as in Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.\n\nThe window takes effect only once you turn on Home 6 in the control panel.",
+        "description": "{step}\n{progress}\n\nHome 5 needs no times. The Home 6 window is set on the box display: User settings → Expert settings → Home Grid VI Off/On. It cannot be set through OIG Cloud.\n\nWhile the window is 0:00-0:00, Home 6 behaves as Home 1.\n\n⚠️ During the window the backup output is off, PV does not produce and the load runs from the grid. A grid outage in that time has no backup.",
         "data": {
-          "home6_window_start": "Home 6 window start",
-          "home6_window_end": "Home 6 window end",
           "go_back": "⬅️ Go back (tick and submit)"
         }
       }

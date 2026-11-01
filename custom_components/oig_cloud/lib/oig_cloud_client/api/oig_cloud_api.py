@@ -23,9 +23,6 @@ from ..models import OigCloudData
 _logger = logging.getLogger(__name__)
 
 
-PORTAL_ERROR_MESSAGE = "Nastala chyba"
-
-
 def _extract_response_message(response_json: Any) -> str:
     if (
         isinstance(response_json, list)
@@ -490,18 +487,6 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             self._logger.error(f"Error: {e}", stack_info=True)
             raise e
 
-    async def set_home6_window_start(self, hour: int) -> bool:
-        """Set the hour the Home 6 window starts."""
-        return await self.set_box_params_internal(
-            "box_prm2", "hgvi_s", str(hour * 60), reject_portal_error=True
-        )
-
-    async def set_home6_window_end(self, hour: int) -> bool:
-        """Set the hour the Home 6 window ends."""
-        return await self.set_box_params_internal(
-            "box_prm2", "hgvi_e", str(hour * 60), reject_portal_error=True
-        )
-
     async def set_grid_delivery_limit(self, limit: int) -> bool:
         """Set grid delivery limit."""
         try:
@@ -550,7 +535,7 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             raise e
 
     async def set_box_params_internal(
-        self, table: str, column: str, value: str, reject_portal_error: bool = False
+        self, table: str, column: str, value: str
     ) -> bool:
         """Internal method to set box parameters."""
         async with self.get_session() as session:
@@ -586,9 +571,6 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                     response_json = json.loads(response_content)
                     message = _extract_response_message(response_json)
                     self._logger.info(f"Response: {message}")
-                    # The portal also reports a refused write as HTTP 200.
-                    if reject_portal_error and PORTAL_ERROR_MESSAGE in message:
-                        raise OigCloudApiError(f"Portal refused {table}.{column}: {message}")
                     return True
                 else:
                     raise Exception(

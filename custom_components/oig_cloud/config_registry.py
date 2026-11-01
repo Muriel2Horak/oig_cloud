@@ -311,12 +311,6 @@ _register(
     # A capability of the box, not of the boiler: it decides whether the control
     # panel offers the Home 5 and Home 6 toggles.
     Field("box_has_home56", "modules", bool, default=False, reload_on_change=True),
-
-    # --- Home 5/6: the box reads equal times as no window, so 0-0 means "none".
-    Field("home6_window_start", "home56", int, default=0, min=0, max=23),
-    Field("home6_window_end", "home56", int, default=0, min=0, max=23),
-    # The window last written to the box, so only a real change writes again.
-    Field("home6_window_applied", "home56", str, default="0-0", hidden=True),
 )
 
 # --- section: battery -------------------------------------------------------

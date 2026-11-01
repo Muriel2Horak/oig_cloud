@@ -63,8 +63,6 @@ const CS_LABELS: Record<string, string> = {
   'field.boiler_alt_energy_sensor.label': 'Senzor energie alt. zdroje',
   'field.boiler_alt_energy_daily.label': 'Denní přírůstek energie',
   'field.box_has_home56.label': 'Box má Home 5/6',
-  'field.home6_window_start.label': 'Začátek pásma Home 6',
-  'field.home6_window_end.label': 'Konec pásma Home 6',
   'field.boiler_home5_maneuver_enabled.label': '🔋→🔥 Ohřev z baterie',
   'field.boiler_battery_cycle_cost_czk_kwh.label': 'Cena cyklu baterie (Kč/kWh)',
   'field.boiler_circulation_enabled.label': 'Cirkulace teplé vody',

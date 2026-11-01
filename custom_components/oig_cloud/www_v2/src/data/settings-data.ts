@@ -145,7 +145,6 @@ export interface ModuleConfig {
   solar: SolarConfig;
   boiler: BoilerConfig;
   pricing?: PricingConfig;
-  home56?: { home6_window_start: number; home6_window_end: number };
   pricing_supplier?: PricingSupplierConfig;
   _meta?: { legacy_fields?: LegacySolarFields };
 }
@@ -167,8 +166,7 @@ export type SettingsSection =
   | 'solar'
   | 'boiler'
   | 'pricing'
-  | 'pricing_supplier'
-  | 'home56';
+  | 'pricing_supplier';
 
 export async function loadModuleConfig(signal?: AbortSignal): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(

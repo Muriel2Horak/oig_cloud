@@ -215,7 +215,7 @@ describe('boiler step (Task 19 — single registry-driven form, UX-SPEC §Step 7
     expect(rendered).toBe(true);
   });
 
-  it('offers the Home 5/6 step only with the switch on and keeps the painted window', async () => {
+  it('offers the Home 5/6 step only with the switch on', async () => {
     const el = await openWizard();
     const steps = () => [...el.shadowRoot!.querySelectorAll('[data-testid="wizard-steps"] button')]
       .map((b: Element) => (b as HTMLElement).dataset.step);
@@ -228,18 +228,7 @@ describe('boiler step (Task 19 — single registry-driven form, UX-SPEC §Step 7
     el.currentStep = 'home56';
     await el.updateComplete;
     expect(steps()).toContain('home56');
-
-    const picker = el.shadowRoot!.querySelector('oig-home6-window')! as HTMLElement & {
-      updateComplete: Promise<boolean>;
-      shadowRoot: ShadowRoot;
-    };
-    await picker.updateComplete;
-    picker.shadowRoot
-      .querySelector('[data-testid="home6-cell-23"]')!
-      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    await el.updateComplete;
-
-    expect(el.home56Draft).toEqual({ home6_window_start: 23, home6_window_end: 0 });
+    expect(el.shadowRoot!.querySelector('oig-home6-guide')).not.toBeNull();
   });
 
   it('renders the core boiler fields first and keeps advanced boiler expanders collapsed by default', async () => {

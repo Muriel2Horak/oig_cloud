@@ -13,9 +13,10 @@ Přihlášení je teď v **Nastavení integrace → Přihlášení k OIG Cloud**
 
 ## 🌙 **Samostatný krok pro Home 5 a Home 6**
 
-Přepínač **Box má Home 5/6** v Modulech teď otevře vlastní krok průvodce. Pásmo Home 6 se v něm vybírá
-ve stejné hodinové mřížce jako NT a VT a zapíše se do boxu. Projeví se až po zapnutí Home 6 v ovládacím
-panelu. V pásmu se vypne záložní výstup a FVE nevyrábí, takže při výpadku sítě tehdy nefunguje záloha.
+Přepínač **Box má Home 5/6** v Modulech teď otevře vlastní krok průvodce. Vysvětlí oba režimy a řekne,
+kde se nastavuje pásmo Home 6: přímo na displeji boxu, protože přes OIG Cloud to nejde. S OIG Proxy
+krok ukáže i aktuální pásmo. V pásmu se vypne záložní výstup a FVE nevyrábí, takže při výpadku sítě
+tehdy nefunguje záloha.
 
 ## 🔋 **Plánovač vybírá nabíjení optimalizátorem**
 

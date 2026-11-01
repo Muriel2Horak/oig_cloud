@@ -503,7 +503,6 @@ async def test_module_config_no_legacy_helpers_in_runtime_path(monkeypatch):
     assert get_response.status == 200
     assert fields_seen == [
         "basic", "modules", "battery", "solar", "boiler", "pricing", "pricing_supplier",
-        "home56",
     ]
 
     coerce_seen = []

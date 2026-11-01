@@ -397,10 +397,8 @@
       },
       "wizard_home56": {
         "title": "🌙 Home 5 a Home 6",
-        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo. Stejný čas začátku a konce znamená, že pásmo není nastavené a box se chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.\n\nPásmo se projeví, až když v ovládacím panelu zapnete Home 6.",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pásmo Home 6 se nastavuje přímo na displeji boxu: Uživatelské nastavení → Expertní nastavení → Home Grid VI Vypnutí/Zapnutí. Přes OIG Cloud ho nastavit nejde.\n\nDokud je pásmo 0:00-0:00, box se v Home 6 chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.",
         "data": {
-          "home6_window_start": "Začátek pásma Home 6",
-          "home6_window_end": "Konec pásma Home 6",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         }
       }
@@ -835,10 +833,8 @@
       },
       "wizard_home56": {
         "title": "🌙 Home 5 a Home 6",
-        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo. Stejný čas začátku a konce znamená, že pásmo není nastavené a box se chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.\n\nPásmo se projeví, až když v ovládacím panelu zapnete Home 6.",
+        "description": "{step}\n{progress}\n\nHome 5 žádné časy nepotřebuje. Pásmo Home 6 se nastavuje přímo na displeji boxu: Uživatelské nastavení → Expertní nastavení → Home Grid VI Vypnutí/Zapnutí. Přes OIG Cloud ho nastavit nejde.\n\nDokud je pásmo 0:00-0:00, box se v Home 6 chová jako v Home 1.\n\n⚠️ V pásmu se vypne záložní výstup, FVE nevyrábí a zátěž jede ze sítě. Při výpadku sítě v té době nefunguje záloha.",
         "data": {
-          "home6_window_start": "Začátek pásma Home 6",
-          "home6_window_end": "Konec pásma Home 6",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         }
       }

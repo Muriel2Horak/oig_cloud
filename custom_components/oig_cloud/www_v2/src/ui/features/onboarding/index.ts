@@ -63,7 +63,7 @@ import {
 } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
-import './home6-window';
+import './home6-guide';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import { ergoStyles } from './ergo-styles';
@@ -549,7 +549,7 @@ const STEP_SUBTITLES: Record<OnboardingStepId, string> = {
   pricing_supplier: 'Nákupní cena od dodavatele elektřiny',
   pricing_supplier_sell: 'Prodejní (výkupní) cena do sítě',
   battery: 'Nabíjení baterie ze sítě',
-  home56: 'Časové pásmo režimu Home 6',
+  home56: 'Jak fungují režimy Home 5 a Home 6',
   boiler: 'Nastavení ohřevu vody',
   connection: 'Připojení k OIG Cloud a Home Assistantu',
   summary: 'Kontrola a dokončení nastavení',
@@ -903,9 +903,6 @@ export class OigOnboardingWizard extends LitElement {
    * section — seeded from `entry.options` FIRST, registry `default` otherwise
    * (`seedConnectionDraft`, same rule as `seedSolarDraft`). */
   @state() private connectionDraft: Record<string, unknown> = {};
-  @state() private home56Draft: Record<string, unknown> = {};
-  /** The Home 6 grid holds a paint the box cannot store: blocks Next, like the NT/VT grid. */
-  @state() private home6WindowInvalid = false;
 
   /**
    * Boiler step: local edits only (Task 19) — read-seeded per field at render
@@ -1836,7 +1833,6 @@ export class OigOnboardingWizard extends LitElement {
       case 'boiler':
       case 'pricing':
       case 'pricing_supplier':
-      case 'home56':
         return this._registry!.fields[key].section as SettingsSection;
       default:
         return fallback;
@@ -1859,7 +1855,6 @@ export class OigOnboardingWizard extends LitElement {
       ['pricing_supplier', STEP_PRICING_SUPPLIER.fields(reg)],
       ['pricing_supplier_sell', STEP_PRICING_SUPPLIER_SELL.fields(reg)],
       ['battery', STEP_BATTERY.fields(reg)],
-      ['home56', fieldsFromRegistry(reg, 'home56')],
       ['boiler', STEP_BOILER.fields(reg)],
       ['connection', STEP_CONNECTION.fields(reg)],
     ];
@@ -1904,9 +1899,6 @@ export class OigOnboardingWizard extends LitElement {
     }
     if (this._registry?.sections.includes('battery')) {
       collectChanged('battery', this.batteryDraft);
-    }
-    if (this._registry?.sections.includes('home56')) {
-      collectChanged('home56', this.home56Draft);
     }
     if (this._registry?.sections.includes('basic')) {
       collectChanged('basic', this.connectionDraft);
@@ -2243,8 +2235,6 @@ export class OigOnboardingWizard extends LitElement {
     this.seedBatteryDraft();
     this.seedModulesDraft();
     this.seedConnectionDraft();
-    this.home56Draft = {};
-    this.home6WindowInvalid = false;
     const resetPricing: Record<string, unknown> = {};
     for (const key of Object.keys(this.pricingDraft)) {
       resetPricing[key] = this.originalValues[key];
@@ -3030,7 +3020,6 @@ export class OigOnboardingWizard extends LitElement {
    * wizard's "Next"/"Uložit" button (owner brief: "block save of this step,
    * not the wizard" — Back/Přeskočit stay enabled, only advancing is blocked). */
   private hasBlockingTariffMatrixError(): boolean {
-    if (this.currentStep === 'home56') return this.home6WindowInvalid;
     return this.currentStep === 'pricing_distribution'
       && (this.tariffMatrixError.weekday !== undefined || this.tariffMatrixError.weekend !== undefined);
   }
@@ -3833,32 +3822,10 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'home56') {
-      const hour = (key: string) => Number(this.home56Draft[key] ?? this.originalValues[key] ?? 0);
       return html`
         <section class="step step-home56" data-step="home56" style=${`--sc:${STEP_COLOR_VAR.home56}`}>
           ${this.renderStepHead('home56')}
-          <div class="step-card">
-            <div class="oneliner" data-testid="home56-explainer">
-              Home 5 žádné časy nepotřebuje. Pro Home 6 vyberte časové pásmo, ve kterém má box přejít do úsporného režimu.
-              <details class="inline"><summary>co to znamená</summary>
-                <p>V pásmu se vypne záložní výstup, FVE nevyrábí, zátěž jede ze sítě a baterie se nevybíjí. Při výpadku sítě v té době nefunguje záloha.</p>
-                <p>Pásmo se projeví, až když v ovládacím panelu zapnete Home 6.</p>
-              </details>
-            </div>
-            <oig-home6-window
-              data-testid="home6-window"
-              .start=${hour('home6_window_start')}
-              .end=${hour('home6_window_end')}
-              @window-change=${(e: CustomEvent<{ start: number; end: number; invalid: boolean }>) => {
-                this.home6WindowInvalid = e.detail.invalid;
-                if (e.detail.invalid) return;
-                this.home56Draft = {
-                  home6_window_start: e.detail.start,
-                  home6_window_end: e.detail.end,
-                };
-              }}
-            ></oig-home6-window>
-          </div>
+          <div class="step-card"><oig-home6-guide></oig-home6-guide></div>
         </section>
       `;
     }
