@@ -37,7 +37,7 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
 
     Formula:
     efficiency = (effective_discharge / charge) * 100
-    where: effective_discharge = discharge - (battery_end - battery_start)
+    where: effective_discharge = discharge + (battery_end - battery_start)
     """
 
     def __init__(
@@ -259,13 +259,26 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
     def _rollover_month(self, now_local: datetime, prev_key: str) -> None:
         if self._month_snapshot and self._month_snapshot.get("month_key") == prev_key:
             self._month_snapshot = None
-        self._current_month_key = _month_key(now_local.year, now_local.month)
+        current_key = _month_key(now_local.year, now_local.month)
+        if self._current_month_key != current_key:
+            self._current_month_key = current_key
+            self._current_month_start_kwh = None
 
     def _update_current_month_metrics(self) -> None:
         now_local = dt_util.as_local(dt_util.utcnow())
         current_key = _month_key(now_local.year, now_local.month)
         if self._current_month_key != current_key:
             self._current_month_key = current_key
+            self._current_month_start_kwh = None
+
+        battery_now_kwh = self._get_sensor("remaining_usable_capacity")
+        # Only the first hour of a month counts as its start; later is a guess.
+        if (
+            self._current_month_start_kwh is None
+            and now_local.day == 1
+            and now_local.hour == 0
+        ):
+            self._current_month_start_kwh = battery_now_kwh
 
         charge_wh = self._get_sensor("computed_batt_charge_energy_month")
         discharge_wh = self._get_sensor("computed_batt_discharge_energy_month")
@@ -295,7 +308,9 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
             self._current_month_status = "missing charge/discharge data"
             return
 
-        metrics = _compute_metrics_from_wh(charge_wh, discharge_wh, None, None)
+        metrics = _compute_metrics_from_wh(
+            charge_wh, discharge_wh, self._current_month_start_kwh, battery_now_kwh
+        )
         self._current_month_metrics = metrics or _empty_metrics(
             charge_wh, discharge_wh, None, None
         )
@@ -357,14 +372,14 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
             "current_month_days": now_local.day,
             "current_month_status": self._current_month_status,
             # Battery tracking
-            "battery_kwh_month_start": None,
+            "battery_kwh_month_start": self._current_month_start_kwh,
             "battery_kwh_now": None,
             # Metadata
             "last_update": self._last_update_iso,
-            "calculation_method": "Discharge/charge ratio",
+            "calculation_method": "Effective discharge/charge ratio",
             "data_source": "snapshot + statistics",
-            "formula": "discharge / charge * 100",
-            "formula_losses": "max(charge - discharge, 0)",
+            "formula": "(discharge + battery_delta) / charge * 100",
+            "formula_losses": "max(charge - (discharge + battery_delta), 0)",
             # Internal (for restore)
             "_current_month_key": self._current_month_key,
             "_month_snapshot": self._month_snapshot,
@@ -673,7 +688,8 @@ def _compute_metrics_from_wh(
     effective_discharge = discharge_kwh
     if battery_start_kwh is not None and battery_end_kwh is not None:
         delta_kwh = battery_end_kwh - battery_start_kwh
-        effective_discharge = discharge_kwh - delta_kwh
+        # Energy still stored came from this month's charge, as if already discharged.
+        effective_discharge = discharge_kwh + delta_kwh
         if effective_discharge <= 0:
             effective_discharge = discharge_kwh
             delta_kwh = None

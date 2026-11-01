@@ -162,7 +162,7 @@ async def test_finalize_last_month_uses_snapshot(monkeypatch):
 
     await sensor._finalize_last_month(now_local, force=True)
     assert sensor._last_month_metrics is not None
-    assert sensor._last_month_metrics["efficiency_pct"] == 65.0
+    assert sensor._last_month_metrics["efficiency_pct"] == 85.0
     assert sensor._last_month_key == "2026-01"
 
 
@@ -843,3 +843,92 @@ async def test_load_month_metrics_from_statistics_no_recorder_instance(monkeypat
         "sensor.b",
     )
     assert result is None
+
+
+def _sensor_with_month(monkeypatch, now, charge, discharge, remaining):
+    sensor = _make_sensor(monkeypatch, DummyHass())
+    monkeypatch.setattr(eff_module.dt_util, "utcnow", lambda: now)
+    monkeypatch.setattr(eff_module.dt_util, "as_local", lambda value: value)
+    values = {
+        "computed_batt_charge_energy_month": charge,
+        "computed_batt_discharge_energy_month": discharge,
+        "remaining_usable_capacity": remaining,
+    }
+    monkeypatch.setattr(sensor, "_get_sensor", values.get)
+    sensor._publish_state = Mock()
+    return sensor, values
+
+
+def test_current_month_counts_energy_left_in_the_battery(monkeypatch):
+    """Regression: 16.7 kWh charged and 5.4 discharged read as 32 %, with the rest
+    still stored in the battery."""
+    now = datetime(2026, 11, 1, 0, 5, tzinfo=timezone.utc)
+    sensor, values = _sensor_with_month(monkeypatch, now, 100.0, 50.0, 2.0)
+    sensor._update_current_month_metrics()
+    assert sensor._current_month_start_kwh == 2.0
+
+    later = datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(eff_module.dt_util, "utcnow", lambda: later)
+    values.update(
+        {
+            "computed_batt_charge_energy_month": 16740.0,
+            "computed_batt_discharge_energy_month": 5410.0,
+            "remaining_usable_capacity": 12.5,
+        }
+    )
+    sensor._update_current_month_metrics()
+
+    metrics = sensor._current_month_metrics
+    assert metrics["delta_kwh"] == 10.5
+    assert metrics["efficiency_pct"] == 95.0
+
+
+def test_month_start_is_not_guessed_mid_month(monkeypatch):
+    now = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
+    sensor, _values = _sensor_with_month(monkeypatch, now, 16740.0, 5410.0, 12.5)
+    sensor._current_month_key = "2026-11"
+
+    sensor._update_current_month_metrics()
+
+    assert sensor._current_month_start_kwh is None
+    assert sensor._current_month_metrics["delta_kwh"] is None
+
+
+def test_month_start_of_an_earlier_month_is_dropped(monkeypatch):
+    now = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
+    sensor, _values = _sensor_with_month(monkeypatch, now, 16740.0, 5410.0, 12.5)
+    sensor._current_month_key = "2026-10"
+    sensor._current_month_start_kwh = 3.0
+
+    sensor._update_current_month_metrics()
+
+    assert sensor._current_month_start_kwh is None
+
+
+def test_october_balances_the_energy_taken_from_the_battery():
+    """Regression: the wrong sign gave 100.7 %, capped to a lossless 100 %."""
+    metrics = eff_module._compute_metrics_from_wh(467610.0, 465950.0, 5.97, 1.08)
+
+    assert metrics["effective_discharge_kwh"] == 461.06
+    assert metrics["efficiency_pct"] == 98.6
+    assert metrics["losses_kwh"] == 6.55
+
+
+def test_rollover_drops_the_previous_month_start(monkeypatch):
+    sensor = _make_sensor(monkeypatch, DummyHass())
+    sensor._current_month_key = "2026-10"
+    sensor._current_month_start_kwh = 3.0
+
+    sensor._rollover_month(datetime(2026, 11, 1, 0, 10, tzinfo=timezone.utc), "2026-10")
+
+    assert sensor._current_month_start_kwh is None
+
+
+def test_rollover_keeps_the_start_on_a_restart_later_that_day(monkeypatch):
+    sensor = _make_sensor(monkeypatch, DummyHass())
+    sensor._current_month_key = "2026-11"
+    sensor._current_month_start_kwh = 3.0
+
+    sensor._rollover_month(datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc), "2026-10")
+
+    assert sensor._current_month_start_kwh == 3.0
