@@ -149,7 +149,7 @@ def calculate_tab_summary(
     summary = _build_base_summary(
         total_cost=totals["total_cost"],
         overall_adherence=overall_adherence,
-        total_blocks=totals["total_blocks"],
+        mode_switches=_count_mode_switches(mode_blocks),
         intervals=intervals,
     )
     _attach_completed_planned_summary(summary, completed_blocks, planned_blocks)
@@ -240,18 +240,29 @@ def _calculate_overall_adherence(adherent_blocks: int, total_blocks: int) -> flo
     return round((adherent_blocks / total_blocks) * 100, 1)
 
 
+def _count_mode_switches(mode_blocks: List[Dict[str, Any]]) -> int:
+    """Count real mode changes; past and planned blocks also split at now."""
+    modes = [
+        block.get("mode_planned")
+        if block.get("mode_historical") in (None, "", "Unknown")
+        else block.get("mode_historical")
+        for block in mode_blocks
+    ]
+    return sum(1 for previous, mode in zip(modes, modes[1:]) if previous != mode)
+
+
 def _build_base_summary(
     *,
     total_cost: float,
     overall_adherence: float,
-    total_blocks: int,
+    mode_switches: int,
     intervals: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     metrics = aggregate_interval_metrics(intervals)
     return {
         "total_cost": round(total_cost, 2),
         "overall_adherence": overall_adherence,
-        "mode_switches": max(0, total_blocks - 1),
+        "mode_switches": mode_switches,
         "metrics": metrics,
     }
 

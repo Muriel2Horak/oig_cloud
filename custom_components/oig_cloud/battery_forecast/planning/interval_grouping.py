@@ -26,12 +26,17 @@ def group_intervals_by_mode(
             continue
 
         mode = _resolve_interval_mode(interval, data_type, mode_names, len(groups))
+        # Today's tab mixes what happened with what is planned; a block must not.
+        happened = interval.get("actual") is not None if data_type == "both" else None
+        if current_group is not None and current_group.get("happened") != happened:
+            current_group = None
         current_group = _append_interval_group(
             groups,
             current_group,
             mode,
             interval,
         )
+        current_group["happened"] = happened
 
     for group in groups:
         group["interval_count"] = len(group["intervals"])

@@ -665,10 +665,20 @@ def _populate_mode_costs(
         block["cost_delta"] = group.get("delta", 0.0)
 
         historical_mode = get_mode_from_intervals(group_intervals, "actual", mode_names)
-        planned_mode = get_mode_from_intervals(group_intervals, "planned", mode_names)
+        planned_modes = [
+            get_mode_from_intervals([interval], "planned", mode_names)
+            for interval in group_intervals
+        ]
+        known_planned = [mode for mode in planned_modes if mode]
         block["mode_historical"] = historical_mode or "Unknown"
-        block["mode_planned"] = planned_mode or "Unknown"
-        block["mode_match"] = historical_mode == planned_mode
+        block["mode_planned"] = (
+            Counter(known_planned).most_common(1)[0][0] if known_planned else "Unknown"
+        )
+        block["mode_match"] = all(
+            get_mode_from_intervals([interval], "actual", mode_names) == planned
+            for interval, planned in zip(group_intervals, planned_modes)
+            if interval.get("actual")
+        )
     else:
         block["cost_planned"] = group.get("planned_cost", 0.0)
         block["cost_historical"] = None

@@ -62,8 +62,18 @@ def test_calculate_tab_summary_empty():
 
 def test_calculate_tab_summary_with_blocks():
     mode_blocks = [
-        {"status": "completed", "adherence_pct": 100, "cost_historical": 1.2},
-        {"status": "planned", "adherence_pct": 80, "cost_planned": 2.3},
+        {
+            "status": "completed",
+            "adherence_pct": 100,
+            "cost_historical": 1.2,
+            "mode_historical": "HOME I",
+        },
+        {
+            "status": "planned",
+            "adherence_pct": 80,
+            "cost_planned": 2.3,
+            "mode_planned": "HOME UPS",
+        },
     ]
     summary = summary_module.calculate_tab_summary(None, mode_blocks, [])
 
@@ -72,3 +82,15 @@ def test_calculate_tab_summary_with_blocks():
     assert summary["mode_switches"] == 1
     assert summary["completed_summary"]["count"] == 1
     assert summary["planned_summary"]["count"] == 1
+
+
+def test_mode_switches_ignore_a_boundary_inside_one_mode():
+    """Past and planned blocks split at now, which is not a switch of the box."""
+    blocks = [
+        {"mode_historical": "HOME I", "mode_planned": "HOME I"},
+        {"mode_historical": "HOME UPS", "mode_planned": "HOME I"},
+        {"mode_historical": "Unknown", "mode_planned": "HOME UPS"},
+        {"mode_historical": "Unknown", "mode_planned": "HOME I"},
+    ]
+
+    assert summary_module._count_mode_switches(blocks) == 2

@@ -4,6 +4,7 @@ import { CSS_VARS } from '@/ui/theme';
 import type { TimelineTab, TimelineDayData, ModeBlock, MetricTile } from './types';
 import { TIMELINE_TAB_LABELS, TIMELINE_MODE_CONFIG } from './types';
 import { formatCurrency } from '@/utils/format';
+import { blockDisplayCost, blockDisplayMode } from '@/data/timeline-data';
 
 const u = unsafeCSS;
 
@@ -395,21 +396,23 @@ export class OigTimelineDialog extends LitElement {
   }
 
   private renderModeBlock(block: ModeBlock) {
-    const cfg = this.getModeConfig(block.modePlanned || block.modeHistorical);
+    const cfg = this.getModeConfig(blockDisplayMode(block));
     const isCurrent = block.status === 'current';
+    const cost = blockDisplayCost(block);
+    const planNote = block.modeMatch ? '' : ` | Plán: ${this.getModeConfig(block.modePlanned).label}`;
 
     return html`
       <div
         class="mode-block ${isCurrent ? 'current' : ''}"
         style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
-        title="${block.startTime}–${block.endTime} | ${cfg.label}"
+        title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
       >
         ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
         <span class="mode-icon">${cfg.icon}</span>
         <span class="mode-name">${cfg.label}</span>
         <span class="mode-time">${block.startTime}–${block.endTime}</span>
-        ${block.costPlanned != null ? html`
-          <span class="mode-cost">${formatCurrency(block.costPlanned)}</span>
+        ${cost != null ? html`
+          <span class="mode-cost">${formatCurrency(cost)}</span>
         ` : null}
       </div>
     `;
@@ -934,21 +937,23 @@ export class OigTimelineTile extends LitElement {
   }
 
   private renderModeBlock(block: ModeBlock) {
-    const cfg = this.getModeConfig(block.modePlanned || block.modeHistorical);
+    const cfg = this.getModeConfig(blockDisplayMode(block));
     const isCurrent = block.status === 'current';
+    const cost = blockDisplayCost(block);
+    const planNote = block.modeMatch ? '' : ` | Plán: ${this.getModeConfig(block.modePlanned).label}`;
 
     return html`
       <div
         class="mode-block ${isCurrent ? 'current' : ''}"
         style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
-        title="${block.startTime}–${block.endTime} | ${cfg.label}"
+        title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
       >
         ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
         <span class="mode-icon">${cfg.icon}</span>
         <span class="mode-name">${cfg.label}</span>
         <span class="mode-time">${block.startTime}–${block.endTime}</span>
-        ${block.costPlanned != null ? html`
-          <span class="mode-cost">${formatCurrency(block.costPlanned)}</span>
+        ${cost != null ? html`
+          <span class="mode-cost">${formatCurrency(cost)}</span>
         ` : null}
       </div>
     `;
