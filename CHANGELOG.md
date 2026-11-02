@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.8] - 2026-11-02
+
+### Added
+- **Upcoming UPS tiles say what Home 1 would cost instead.** The figure is the plan's
+  own comparison, with charging and discharging losses, wear, mode switches and the
+  value of energy left at the end of the plan.
+
+### Fixed
+- **Energy left at the end of the plan was overvalued.** It took its value from the
+  day's median price, so after an expensive day the plan held the battery instead of
+  going down and recharging in the cheap closing hours. It is now worth at most what
+  buying it again would cost. In a year's replay this saves about 5 Kč and changes
+  neither mode switches nor box interventions.
+
 ## [2.4.7] - 2026-11-01
 
 ### Fixed
