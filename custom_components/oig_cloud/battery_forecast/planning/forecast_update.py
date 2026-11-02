@@ -1341,7 +1341,7 @@ def _run_planner(
             log_rate_limited=sensor._log_rate_limited,
         )
         attach_planner_reasons(timeline, result.decisions)
-        attach_home1_extra_costs(timeline, result.home1_extra_costs)
+        attach_home1_extra_costs(timeline, getattr(result, "home1_extra_costs", []))
         add_decision_reasons_to_timeline(
             timeline,
             current_capacity=current_capacity,
