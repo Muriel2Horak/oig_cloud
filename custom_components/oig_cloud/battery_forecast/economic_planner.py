@@ -26,6 +26,8 @@ from .types import (
 _LOGGER = logging.getLogger(__name__)
 _HOME_1 = CBBMode.HOME_I.value
 _HOME_UPS = CBBMode.HOME_UPS.value
+# The horizon's last four hours: one slot would swing with a single price.
+_CLOSING_PRICE_SLOTS = 16
 # Resolution of the optimizer's SoC grid: a numerical setting, not a preference.
 # One UPS slot stores about twelve of these at 2.6 kW. A finer grid no longer
 # changes what the plan costs: a year replayed on the box's data comes to
@@ -252,14 +254,18 @@ def _stored_energy_value(inputs: PlannerInputs) -> float:
 
     Without a value the cheapest way to finish is an empty battery, whatever the
     last slots cost. A stored kWh will later replace DEFAULT_EFFICIENCY kWh of
-    purchase and wear the battery on its way out. The prices after the horizon
-    are unknown, so the horizon's own median stands in for them: it does not
-    swing with a single peak or a single cheap hour.
+    purchase and wear the battery on its way out; the prices after the horizon are
+    unknown, so the horizon's median stands in for them. It is never worth more than
+    buying it again at the horizon's closing price, or the plan would hold energy
+    through an expensive day instead of going down and recharging at the cheap end.
     """
     if not inputs.prices:
         return 0.0
-    typical_price = float(np.median(np.maximum(inputs.prices, 0.0)))
-    return max(0.0, DEFAULT_EFFICIENCY * typical_price - inputs.battery_wear_czk_per_kwh)
+    prices = np.maximum(inputs.prices, 0.0)
+    worth_later = DEFAULT_EFFICIENCY * float(np.median(prices))
+    worth_later -= inputs.battery_wear_czk_per_kwh
+    closing_price = float(np.mean(prices[-_CLOSING_PRICE_SLOTS:]))
+    return max(0.0, min(worth_later, closing_price / DEFAULT_CHARGE_EFFICIENCY))
 
 
 def _switch_cost(from_mode: Optional[int], to_mode: int, price: float) -> float:
@@ -646,6 +652,10 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
 
         return PlannerResult(
             modes=modes,
+            home1_extra_costs=[
+                slot.home1_extra_cost_czk if slot.mode == _HOME_UPS else None
+                for slot in slots
+            ],
             states=states,
             total_cost=total_cost,
             decisions=decisions,

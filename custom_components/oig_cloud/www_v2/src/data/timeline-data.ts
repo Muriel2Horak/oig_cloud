@@ -49,6 +49,8 @@ export interface ModeBlock {
   gridImportKwh: number;
   gridExportKwh: number;
   intervalReasons: Array<{ time: string; reason: string }>;
+  /** What Home 1 would cost instead of an upcoming UPS block, if the plan knows. */
+  home1ExtraCostCzk?: number | null;
 }
 
 export interface MetricTile {
@@ -160,6 +162,7 @@ function transformModeBlock(raw: any): ModeBlock {
     gridImportKwh: raw.grid_import_total_kwh ?? 0,
     gridExportKwh: raw.grid_export_total_kwh ?? 0,
     intervalReasons: Array.isArray(raw.interval_reasons) ? raw.interval_reasons : [],
+    ...(raw.home1_extra_cost_czk != null ? { home1ExtraCostCzk: raw.home1_extra_cost_czk } : {}),
   };
 }
 

@@ -195,6 +195,18 @@ def attach_planner_reasons(
                 timeline[slot]["decision_reason"] = reason_text
 
 
+def attach_home1_extra_costs(
+    timeline: List[Dict[str, Any]],
+    extra_costs: List[Optional[float]],
+) -> None:
+    """Note on each UPS slot what Home 1 would cost there instead."""
+    for entry, extra_cost in zip(timeline, extra_costs):
+        if extra_cost is not None:
+            metrics = entry.get("decision_metrics") or {}
+            metrics["home1_extra_cost_czk"] = round(extra_cost, 3)
+            entry["decision_metrics"] = metrics
+
+
 def add_decision_reasons_to_timeline(
     timeline: List[Dict[str, Any]],
     *,

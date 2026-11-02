@@ -30,12 +30,16 @@ function renderModeTile(block: ModeBlock) {
   const isCurrent = block.status === 'current';
   const cost = blockDisplayCost(block);
   const planNote = block.modeMatch ? '' : ` | Plán: ${modeConfig(block.modePlanned).label}`;
+  const extraCost = block.home1ExtraCostCzk;
+  const extraNote = extraCost != null
+    ? ` | Home 1 místo UPS na začátku bloku by plán prodražilo o ${formatCurrency(extraCost)}, včetně ztrát nabíjení a vybíjení, opotřebení, přepnutí a hodnoty energie na konci plánu`
+    : '';
 
   return html`
     <div
       class="mode-block ${isCurrent ? 'current' : ''}"
       style="background: ${cfg.color}; flex: ${Math.max(block.durationHours, 0.5)}"
-      title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}"
+      title="${block.startTime}–${block.endTime} | ${cfg.label}${planNote}${extraNote}"
     >
       ${!block.modeMatch ? html`<span class="mode-mismatch">!</span>` : null}
       <span class="mode-icon">${cfg.icon}</span>
@@ -43,6 +47,9 @@ function renderModeTile(block: ModeBlock) {
       <span class="mode-time">${block.startTime}–${block.endTime}</span>
       ${cost != null ? html`
         <span class="mode-cost">${formatCurrency(cost)}</span>
+      ` : null}
+      ${extraCost != null ? html`
+        <span class="mode-cost" data-testid="home1-extra-cost">Home 1: +${formatCurrency(extraCost)}</span>
       ` : null}
     </div>
   `;

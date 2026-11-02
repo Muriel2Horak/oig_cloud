@@ -772,3 +772,41 @@ def test_full_horizon_plans_within_the_event_loop_budget() -> None:
     elapsed = (time.perf_counter() - started) / 5
 
     assert elapsed < 0.25, f"one plan took {elapsed * 1000:.0f} ms"
+
+
+def test_stored_energy_is_not_worth_more_than_buying_it_again_at_the_end():
+    """Regression: an expensive day's median valued energy that a cheap night refills,
+    so the plan held the battery instead of going down and recharging."""
+    prices = [12.0] * 60 + [8.5] * 16
+
+    value = ep._stored_energy_value(_inputs(prices))
+
+    assert value == pytest.approx(8.5 / ep.DEFAULT_CHARGE_EFFICIENCY)
+
+
+def test_stored_energy_keeps_its_later_use_value_when_the_plan_ends_expensive():
+    prices = [8.5] * 60 + [12.0] * 16
+
+    value = ep._stored_energy_value(_inputs(prices))
+
+    assert value == pytest.approx(ep.DEFAULT_EFFICIENCY * 8.5)
+
+
+def test_plan_goes_down_through_expensive_hours_when_the_end_is_cheap():
+    """A kWh served at 11 Kc needs 1.13 kWh from the battery, refilled at the end for
+    less than it saves. The old value held the battery full through those hours."""
+    prices = [11.0] * 40 + [12.0] * 40 + [8.0] * 16
+    inputs = _inputs(prices)
+
+    result = ep.plan_battery_schedule(inputs)
+
+    assert 0 in result.modes[:40]
+
+
+def test_result_names_what_home_1_costs_only_on_ups_slots():
+    result = ep.plan_battery_schedule(_inputs([12.0] * 40 + [8.0] * 16))
+
+    assert len(result.home1_extra_costs) == len(result.modes)
+    for mode, extra_cost in zip(result.modes, result.home1_extra_costs):
+        if mode != 3:
+            assert extra_cost is None

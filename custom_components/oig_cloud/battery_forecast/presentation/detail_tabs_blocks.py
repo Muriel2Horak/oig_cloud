@@ -626,6 +626,7 @@ def _build_mode_block(
     stats = _accumulate_energy_stats(group_intervals)
     _apply_energy_stats(block, stats)
     _apply_block_reason(sensor, group_intervals, block)
+    _apply_home1_extra_cost(block, group_intervals)
     _apply_adherence(block, data_type)
     return block
 
@@ -829,6 +830,20 @@ def _apply_block_reason(
                 "reason": block_reason,
             }
         ]
+
+
+def _apply_home1_extra_cost(
+    block: Dict[str, Any], group_intervals: List[Dict[str, Any]]
+) -> None:
+    """How much the plan says Home 1 would cost instead of an upcoming UPS block."""
+    if block.get("status") == "completed" or "UPS" not in str(block.get("mode_planned")):
+        return
+    for interval in group_intervals:
+        metrics = (interval.get("planned") or {}).get("decision_metrics") or {}
+        extra_cost = metrics.get("home1_extra_cost_czk")
+        if extra_cost is not None:
+            block["home1_extra_cost_czk"] = round(extra_cost, 2)
+            return
 
 
 def _apply_adherence(block: Dict[str, Any], data_type: str) -> None:

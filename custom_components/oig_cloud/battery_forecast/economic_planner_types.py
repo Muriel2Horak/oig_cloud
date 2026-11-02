@@ -146,3 +146,6 @@ class PlannerResult:
     states: List[SimulatedState]
     total_cost: float
     decisions: List[Decision] = field(default_factory=list)
+    # Per slot, what Home 1 would cost instead of the planned UPS; None elsewhere.
+    # Everything the plan weighs is in it: losses, wear, switches, end-of-plan value.
+    home1_extra_costs: List[Optional[float]] = field(default_factory=list)
