@@ -169,9 +169,7 @@ def attach_planner_reasons(
     """
     for idx, decision in enumerate(decisions):
         reason_code = getattr(decision, "reason", None)
-        evidence = getattr(decision, "evidence", None) or {}
-        slots = getattr(decision, "charge_intervals", None) or [idx]
-        for slot in slots:
+        for slot in getattr(decision, "charge_intervals", None) or [idx]:
             if slot >= len(timeline):
                 continue
             metrics = timeline[slot].get("decision_metrics") or {}
@@ -188,10 +186,6 @@ def attach_planner_reasons(
                 "planner_is_negative_price",
                 bool(getattr(decision, "is_negative_price", False)),
             )
-            # What leaving UPS costs in the run's first slot; it does not add up.
-            extra_cost = evidence.get("home1_extra_cost_czk")
-            if slot == slots[0] and extra_cost is not None:
-                metrics["home1_extra_cost_czk"] = extra_cost
             timeline[slot]["decision_metrics"] = metrics
 
             reason_text = format_planner_reason(
@@ -199,6 +193,18 @@ def attach_planner_reasons(
             )
             if reason_text:
                 timeline[slot]["decision_reason"] = reason_text
+
+
+def attach_home1_extra_costs(
+    timeline: List[Dict[str, Any]],
+    extra_costs: List[Optional[float]],
+) -> None:
+    """Note on each UPS slot what Home 1 would cost there instead."""
+    for entry, extra_cost in zip(timeline, extra_costs):
+        if extra_cost is not None:
+            metrics = entry.get("decision_metrics") or {}
+            metrics["home1_extra_cost_czk"] = round(extra_cost, 3)
+            entry["decision_metrics"] = metrics
 
 
 def add_decision_reasons_to_timeline(

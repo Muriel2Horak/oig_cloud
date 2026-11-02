@@ -41,6 +41,7 @@ from ..forecast_accuracy import apply_correction_to_forecast, compute_correction
 from ..storage.plan_storage_io import get_plans_store_lock
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
+    attach_home1_extra_costs,
     attach_planner_reasons,
     build_planner_timeline,
 )
@@ -1340,6 +1341,7 @@ def _run_planner(
             log_rate_limited=sensor._log_rate_limited,
         )
         attach_planner_reasons(timeline, result.decisions)
+        attach_home1_extra_costs(timeline, result.home1_extra_costs)
         add_decision_reasons_to_timeline(
             timeline,
             current_capacity=current_capacity,

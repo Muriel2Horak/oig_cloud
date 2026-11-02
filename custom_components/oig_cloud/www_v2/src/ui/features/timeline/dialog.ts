@@ -32,7 +32,7 @@ function renderModeTile(block: ModeBlock) {
   const planNote = block.modeMatch ? '' : ` | Plán: ${modeConfig(block.modePlanned).label}`;
   const extraCost = block.home1ExtraCostCzk;
   const extraNote = extraCost != null
-    ? ` | Home 1 místo UPS na začátku bloku by plán prodražilo o ${formatCurrency(extraCost)}`
+    ? ` | Home 1 místo UPS na začátku bloku by plán prodražilo o ${formatCurrency(extraCost)}, včetně ztrát nabíjení a vybíjení, opotřebení, přepnutí a hodnoty energie na konci plánu`
     : '';
 
   return html`

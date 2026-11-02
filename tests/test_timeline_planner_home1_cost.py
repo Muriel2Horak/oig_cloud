@@ -1,36 +1,28 @@
-"""The cost of Home 1 instead of UPS reaches the slot that opens a UPS run."""
+"""What Home 1 would cost instead of UPS reaches every UPS slot of the timeline."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from custom_components.oig_cloud.battery_forecast.timeline.planner import (
-    attach_planner_reasons,
+    attach_home1_extra_costs,
 )
 
 
-def _decision(slots, extra_cost):
-    return SimpleNamespace(
-        reason="HOLD_FOR_LATER",
-        charge_intervals=slots,
-        evidence={"home1_extra_cost_czk": extra_cost},
-    )
+def test_each_ups_slot_gets_its_own_figure():
+    """A block that starts later than its run must still have a figure."""
+    timeline = [{"decision_metrics": {"planner_reason": "x"}}, {}]
+
+    attach_home1_extra_costs(timeline, [1.2345, 2.0])
+
+    assert timeline[0]["decision_metrics"] == {
+        "planner_reason": "x",
+        "home1_extra_cost_czk": 1.234,
+    }
+    assert timeline[1]["decision_metrics"]["home1_extra_cost_czk"] == 2.0
 
 
-def test_figure_is_on_the_first_slot_only():
-    """It is the cost of leaving UPS in that slot, so slots must not add it up."""
-    timeline = [{"spot_price": 1.0} for _ in range(3)]
+def test_slot_without_a_figure_stays_clean():
+    timeline = [{}]
 
-    attach_planner_reasons(timeline, [_decision([0, 1, 2], 1.5)])
+    attach_home1_extra_costs(timeline, [None])
 
-    assert timeline[0]["decision_metrics"]["home1_extra_cost_czk"] == 1.5
-    assert "home1_extra_cost_czk" not in timeline[1]["decision_metrics"]
-
-
-def test_missing_figure_is_left_out():
-    """Home 1 impossible there, for example under the minimum."""
-    timeline = [{"spot_price": 1.0}]
-
-    attach_planner_reasons(timeline, [_decision([0], None)])
-
-    assert "home1_extra_cost_czk" not in timeline[0]["decision_metrics"]
+    assert timeline == [{}]
