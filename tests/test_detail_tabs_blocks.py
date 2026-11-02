@@ -654,3 +654,35 @@ def test_block_without_actuals_has_nothing_to_disagree_with():
 
 def test_block_matches_only_when_every_interval_does():
     assert _costs([_interval("2026-11-01T15:00:00", 3, 3)])["mode_match"] is True
+
+
+def _planned_interval(time, extra_cost=None):
+    metrics = {} if extra_cost is None else {"home1_extra_cost_czk": extra_cost}
+    return {"time": time, "planned": {"mode": 3, "decision_metrics": metrics}, "actual": None}
+
+
+def test_ups_block_says_what_home_1_would_cost():
+    block = {"status": "planned", "mode_planned": "HOME UPS"}
+
+    blocks_module._apply_home1_extra_cost(
+        block, [_planned_interval("07:15"), _planned_interval("07:30", 1.234)]
+    )
+
+    assert block["home1_extra_cost_czk"] == 1.23
+
+
+def test_home_1_block_has_no_such_figure():
+    block = {"status": "planned", "mode_planned": "HOME I"}
+
+    blocks_module._apply_home1_extra_cost(block, [_planned_interval("14:15", 1.0)])
+
+    assert "home1_extra_cost_czk" not in block
+
+
+def test_finished_block_has_no_such_figure():
+    """The tile of a finished block says what happened, not what the plan weighed."""
+    block = {"status": "completed", "mode_planned": "HOME UPS"}
+
+    blocks_module._apply_home1_extra_cost(block, [_planned_interval("07:15", 1.0)])
+
+    assert "home1_extra_cost_czk" not in block

@@ -1337,6 +1337,22 @@ describe('Režimy tile shows what the box did', () => {
     expect(block.querySelector('.mode-name')!.textContent).toContain('UPS');
   });
 
+  it('says what Home 1 would cost instead of an upcoming UPS block', async () => {
+    const block = await tile({
+      modeHistorical: 'Unknown', modePlanned: 'HOME UPS', modeMatch: true, status: 'planned',
+      home1ExtraCostCzk: 1.23,
+    });
+    const line = block.querySelector('[data-testid="home1-extra-cost"]')!;
+    expect(line.textContent).toContain('Home 1');
+    expect(line.textContent).toContain('1');
+    expect(block.title).toContain('prodražilo');
+  });
+
+  it('adds no such line without a figure', async () => {
+    const block = await tile({ modePlanned: 'HOME I', status: 'planned', home1ExtraCostCzk: null });
+    expect(block.querySelector('[data-testid="home1-extra-cost"]')).toBeNull();
+  });
+
   it('names a future block after the plan, with no mismatch', async () => {
     const block = await tile({
       modeHistorical: 'Unknown', modePlanned: 'HOME UPS', modeMatch: true, status: 'planned',

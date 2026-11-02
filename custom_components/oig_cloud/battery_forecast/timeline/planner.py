@@ -169,7 +169,9 @@ def attach_planner_reasons(
     """
     for idx, decision in enumerate(decisions):
         reason_code = getattr(decision, "reason", None)
-        for slot in getattr(decision, "charge_intervals", None) or [idx]:
+        evidence = getattr(decision, "evidence", None) or {}
+        slots = getattr(decision, "charge_intervals", None) or [idx]
+        for slot in slots:
             if slot >= len(timeline):
                 continue
             metrics = timeline[slot].get("decision_metrics") or {}
@@ -186,6 +188,10 @@ def attach_planner_reasons(
                 "planner_is_negative_price",
                 bool(getattr(decision, "is_negative_price", False)),
             )
+            # What leaving UPS costs in the run's first slot; it does not add up.
+            extra_cost = evidence.get("home1_extra_cost_czk")
+            if slot == slots[0] and extra_cost is not None:
+                metrics["home1_extra_cost_czk"] = extra_cost
             timeline[slot]["decision_metrics"] = metrics
 
             reason_text = format_planner_reason(
