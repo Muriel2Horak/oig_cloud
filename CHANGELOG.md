@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.9] - 2026-11-04
+
+### Fixed
+- **Grid import cost and export earnings were counted twice.** Since 2.4.7 the
+  `computed_grid_import_cost_*` and `computed_grid_export_earnings_*` sensors could show
+  about double the real amount. Two code paths added up the same interval, each with its
+  own clock, whenever a grid cost sensor was updated before the battery sensors. Both now
+  share one clock. Today's value resets at midnight; month and year totals keep the excess
+  until their own reset.
+
 ## [2.4.8] - 2026-11-02
 
 ### Added
