@@ -598,23 +598,27 @@ def test_standalone_fallback_accumulates_when_battery_stalled():
 
 
 def test_standalone_fallback_no_double_count_when_battery_ran():
-    """When the battery-driven path already ran in this cycle (elapsed < 5 s),
-    _accumulate_grid_cost() must NOT run the standalone path (no double-count).
+    """When the battery-driven path already ran in this cycle, the standalone
+    path adds only the time since then (here ~1 s), never the battery interval
+    again: both paths share one grid-cost clock.
     """
     sensor = _make_sensor("computed_grid_import_cost_l1_today")
     sensor.hass = _make_hass_with_prices(buy=2.0, sell=1.5, l1=1000.0)
     module._energy_cache_loaded[BOX_ID] = True
     module._energy_data_cache[BOX_ID] = sensor._energy
 
-    # Battery path ran 1 second ago (within 5 s tolerance → no standalone path).
+    # Battery path ran 1 second ago and advanced the shared clock.
     t_recent = datetime.now(timezone.utc) - timedelta(seconds=1)
     module._grid_cost_last_update_cache[BOX_ID] = t_recent
 
     result = sensor._accumulate_grid_cost()
 
-    # Cost must remain zero — the standalone path should NOT have fired.
+    # Only the ~1 s since the battery path: 1000 W x 1 s at 2 CZK/kWh ~ 0.00056.
+    one_second = 1000.0 * (1.0 / 3600.0) / 1000.0 * 2.0
     assert result is not None
-    assert sensor._energy["grid_import_cost_l1_today"] == 0.0
+    assert sensor._energy["grid_import_cost_l1_today"] == pytest.approx(
+        one_second, rel=0.2
+    )
 
 
 def test_standalone_fallback_first_call_no_integration():
@@ -634,3 +638,64 @@ def test_standalone_fallback_first_call_no_integration():
     assert sensor._energy["grid_import_cost_l1_today"] == 0.0
     # Timestamp must now be set
     assert BOX_ID in module._grid_cost_last_update_cache
+
+
+# ---------------------------------------------------------------------------
+# 13. One clock for both integration paths (no double count by update order)
+# ---------------------------------------------------------------------------
+
+
+class _FakeClock:
+    """Stand-in for computed_sensor.datetime whose now() the test advances."""
+
+    current = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.current
+
+
+def _run_ticks(monkeypatch, order: tuple[str, ...], ticks: int = 10, step_s: int = 30):
+    """Read sensor states in the given order once per coordinator tick.
+
+    Both sensors share one box cache, as in production: a battery energy
+    sensor (drives the battery path) and the total import cost sensor
+    (drives the standalone fallback path).
+    """
+    monkeypatch.setattr(module, "datetime", _FakeClock)
+    _FakeClock.current = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+    module._grid_cost_last_update_cache.pop(BOX_ID, None)
+
+    cost = _make_sensor("computed_grid_import_cost_today")
+    energy = OigCloudComputedSensor(_make_coord(), "computed_batt_charge_energy_today")
+    energy._box_id = BOX_ID
+    hass = _make_hass_with_prices(buy=2.0, sell=1.5, l1=1000.0)
+    hass.states._m[f"sensor.oig_{BOX_ID}_batt_batt_comp_p"] = DummyState("500")
+    cost.hass = energy.hass = hass
+    _seed_cache(cost)
+    sensors = {"cost": cost, "energy": energy}
+
+    for _ in range(ticks + 1):
+        for name in order:
+            sensors[name].state  # noqa: B018 - HA reads state on every update
+        _FakeClock.current += timedelta(seconds=step_s)
+
+    return module._energy_data_cache[BOX_ID]["grid_import_cost_l1_today"]
+
+
+@pytest.mark.parametrize(
+    "order",
+    [("energy", "cost"), ("cost", "energy")],
+    ids=["battery-sensor-first", "cost-sensor-first"],
+)
+def test_import_cost_counted_once_whatever_the_update_order(monkeypatch, order):
+    """10 ticks x 30 s of 1 kW import at 2 CZK/kWh = 300 s -> 0.1667 CZK.
+
+    v2.4.7 registers the grid cost sensors in their own batch, so they can
+    receive coordinator updates before the battery energy sensors.  The
+    standalone path then integrated each 30 s tick and the battery path
+    integrated the same 30 s again: the counter charged twice the slot price.
+    """
+    expected = 1000.0 * (10 * 30 / 3600.0) / 1000.0 * 2.0
+    total = _run_ticks(monkeypatch, order)
+    assert total == pytest.approx(expected, rel=1e-6)
