@@ -530,6 +530,25 @@ class OigCloudComputedSensor(_ComputedBase):
                     k = f"grid_export_earn_{phase}_{period}"
                     self._energy[k] = self._energy.get(k, 0.0) + earn
 
+    def _integrate_grid_cost(
+        self, now: datetime, fallback_last: Optional[datetime] = None
+    ) -> None:
+        """Integrate grid cost up to ``now`` from the box's one grid-cost clock.
+
+        Both the battery-driven path and the standalone fallback in
+        _accumulate_grid_cost() call this, so whichever runs first in a
+        coordinator tick covers the elapsed time and the other finds nothing
+        left.  The two paths used to keep separate clocks (battery Δt and the
+        grid-cost timestamp), and when a grid cost sensor received the update
+        before the battery sensors, both integrated the same interval.
+        """
+        last = _grid_cost_last_update_cache.get(self._box_id) or fallback_last
+        if last is not None:
+            elapsed = (now - last).total_seconds()
+            if elapsed > 0:
+                self._apply_grid_cost_delta(elapsed)
+        _grid_cost_last_update_cache[self._box_id] = now
+
     def _get_grid_cost_total_value(self) -> Optional[float]:
         """Return total (L1+L2+L3) for the aggregate grid cost/earnings sensors."""
         total_map: Dict[str, tuple[str, ...]] = {
@@ -986,12 +1005,7 @@ class OigCloudComputedSensor(_ComputedBase):
             self._apply_discharge_delta(wh_increment)
 
         self._apply_nonbackup_delta(delta_seconds)
-        # Grid cost integration: same Δt, runs for all sensors sharing this box's energy cache.
-        # We update the standalone grid-cost timestamp so _accumulate_grid_cost() knows
-        # this cycle was already covered and won't double-count.
-        self._apply_grid_cost_delta(delta_seconds)
-        if self._box_id and self._box_id != "unknown":
-            _grid_cost_last_update_cache[self._box_id] = now
+        self._integrate_grid_cost(now, fallback_last=last_update)
 
         _LOGGER.debug(
             "[%s] Δt=%.1fs bat=%.1fW fv=%.1fW -> ΔWh=%.4f",
@@ -1028,10 +1042,9 @@ class OigCloudComputedSensor(_ComputedBase):
         Fallback path: when batt_batt_comp_p is unavailable (comms hiccup, HA
         restart, firmware update), the battery-driven path stalls.  To prevent
         silent gaps in grid cost accounting we maintain a standalone per-box
-        timestamp (_grid_cost_last_update_cache) and integrate directly here
-        whenever the shared cache is stale (i.e., the battery sensor skipped
-        this cycle).  A 5-second tolerance avoids double-counting when both
-        paths run in the same coordinator tick.
+        timestamp (_grid_cost_last_update_cache) and integrate directly here.
+        Both paths advance that one timestamp (_integrate_grid_cost), so each
+        interval is counted once whichever sensor gets the update first.
         """
         self._update_shared_energy_cache()
         try:
@@ -1040,30 +1053,12 @@ class OigCloudComputedSensor(_ComputedBase):
                 # double-counting when historical data is loaded from storage.
                 pass
             else:
-                now = datetime.now(timezone.utc)
-                last_gc = _grid_cost_last_update_cache.get(self._box_id)
-                if last_gc is None:
-                    # First call — record the timestamp but don't integrate yet
-                    # (no valid Δt reference yet).
-                    _grid_cost_last_update_cache[self._box_id] = now
-                else:
-                    elapsed = (now - last_gc).total_seconds()
-                    # Only run the standalone path if the battery-driven path
-                    # has NOT already updated the grid-cost cache in this cycle
-                    # (tolerance: 5 s to account for sub-second HA scheduling).
-                    battery_ran_this_cycle = elapsed < 5.0
-                    if not battery_ran_this_cycle and elapsed > 0:
-                        # Battery sensor was unavailable — drive integration ourselves.
-                        _LOGGER.debug(
-                            "[%s] grid-cost standalone fallback: Δt=%.1f s (battery stalled)",
-                            self.entity_id,
-                            elapsed,
-                        )
-                        self._apply_grid_cost_delta(elapsed)
-                        _grid_cost_last_update_cache[self._box_id] = now
-                        # Persist updated cache so other sensors in this box see it.
-                        if self._box_id and self._box_id != "unknown":
-                            _energy_data_cache[self._box_id] = self._energy
+                # Shares one clock with the battery path: the first of the two
+                # in a tick integrates the elapsed time, the other adds ~0.
+                # The very first call only records the timestamp.
+                self._integrate_grid_cost(datetime.now(timezone.utc))
+                if self._box_id and self._box_id != "unknown":
+                    _energy_data_cache[self._box_id] = self._energy
 
             self._attr_extra_state_attributes = {
                 k: round(v, 4)
