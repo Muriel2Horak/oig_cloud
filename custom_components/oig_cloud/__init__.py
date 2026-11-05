@@ -2095,6 +2095,23 @@ async def _register_entry_services(
 
     # Setup entry-specific služeb s shield ochranou
     await async_setup_entry_services_with_shield(hass, entry, service_shield)
+    await _setup_battery_export(hass, entry)
+
+
+async def _setup_battery_export(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Own the battery export window of this entry (needed for its automatic end)."""
+    try:
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return
+        from .control.battery_export import BatteryExportManager
+
+        manager = BatteryExportManager(hass, entry, box_id)
+        await manager.async_setup()
+        hass.data[DOMAIN].setdefault(entry.entry_id, {})["battery_export"] = manager
+        entry.async_on_unload(manager.async_unload)
+    except Exception as err:
+        _LOGGER.warning("Battery export manager setup failed: %s", err)
 
 
 def _register_api_endpoints(hass: HomeAssistant, boiler_coordinator: Any | None) -> None:

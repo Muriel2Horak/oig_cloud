@@ -76,7 +76,10 @@
           "data_source_mode": "Zdroj telemetrie (cloud vs. lokální)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "local_event_debounce_ms": "Local event debounce (ms)",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "control_via_proxy": "Řídit přes OIG Proxy",
+          "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
         },
         "data_description": {
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
@@ -86,7 +89,10 @@
           "data_source_mode": "☁️ Cloud only = jen OIG Cloud; 🏠 Local only = lokální senzory, při výpadku proxy automaticky fallback na cloud a po obnovení se vrátí",
           "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit (platí pro Local only)",
           "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
+          "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
         }
       },
       "wizard_solar": {
@@ -405,7 +411,10 @@
           "data_source_mode": "Zdroj telemetrie (cloud vs. lokální)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "local_event_debounce_ms": "Local event debounce (ms)",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "control_via_proxy": "Řídit přes OIG Proxy",
+          "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
         },
         "data_description": {
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
@@ -415,7 +424,10 @@
           "data_source_mode": "☁️ Cloud only = jen OIG Cloud; 🏠 Local only = lokální senzory, při výpadku proxy automaticky fallback na cloud a po obnovení se vrátí",
           "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit (platí pro Local only)",
           "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
+          "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
         }
       },
       "wizard_solar": {
