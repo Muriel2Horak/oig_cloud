@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.4.12] - 2026-11-05
+## [2.5.0] - 2026-11-05
+
+### Added
+- **Box control through the OIG Proxy.** With the new option "Řídit přes OIG Proxy" on and the data
+  source local, `set_box_mode`, `set_grid_delivery` and `set_boiler_mode` write the proxy's
+  settings entities instead of the cloud portal; when the integration falls back to cloud, writes
+  go to the cloud as before. Everything still runs through the service shield queue, and a local
+  write the shield does not confirm in time is retried once through the cloud where possible.
+- `set_box_mode` accepts `charge_current` (A): the shield sets Home UPS, waits for the box to
+  confirm it, then writes the charge current (entering Home UPS resets it to 50 A). Capped by the
+  box's own limit and an optional user cap.
+- New services `battery_export` and `stop_battery_export` sell battery energy to the grid with a
+  power limit. An export always ends: at its end time, at an HA restart (retried until the box
+  reports it stopped) or when SoC reaches the minimum; the previous export limit is restored.
 
 ### Changed
 - **The AI evaluation became a situation-aware advisor.** It used to speak only when the anomaly
@@ -21,8 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chosen sensors change, on anomalies, and on demand with the tile's "Obnovit" button (at most
   once per 5 minutes, admin-only `POST /api/oig_cloud/{box}/ai/eval/refresh`).
 - The Groq model chain drops `qwen/qwen3.6-27b`, which now answers 404 `model_not_found`.
+- Dashboard build tooling moved to vite 7 and vitest 4 (npm audit: 23 advisories, 2 critical, down
+  to 7 moderate in lint tooling). The build keeps the previous browser target, so older Home
+  Assistant app webviews still load the dashboard.
 
 ### Fixed
+- After a Home Assistant restart the box mode sensor showed "Home UPS" for 5-7 s because the
+  integration fetched stale cloud data before the proxy came up. In local mode it now waits for
+  local telemetry (at most the existing startup grace period) before falling back to the cloud.
+- With several boxes, the service shield confirmed `set_boiler_mode` against the default box's
+  sensor instead of the box the call targets (from PR #50).
 - The AI prompt showed the battery in kWh under a "SoC %" heading.
 - A grid jump inside a planned HOME UPS grid-charging slot is no longer reported as an anomaly.
 - Setup and the first tick both armed the hourly AI timer, so every hour ran two AI calls.
