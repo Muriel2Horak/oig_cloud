@@ -145,3 +145,123 @@ def test_runs_now_when_already_running(monkeypatch) -> None:
     mr.async_schedule_release(hass)
 
     assert calls == ["oig_cloud_marketplace_release"]
+
+
+# --- Orphaned update entities -------------------------------------------------
+# Releasing the record by hand (File editor or terminal) clears ``installed`` but
+# leaves the old record's update entity behind as unavailable, with the
+# "area but no name" repair. It is removed once the record is no longer installed.
+
+
+def _registries(monkeypatch, entities):
+    removed_entities, removed_devices = [], []
+    ent_reg = SimpleNamespace(async_remove=lambda entity_id: removed_entities.append(entity_id))
+    dev_reg = SimpleNamespace(async_remove_device=lambda device_id: removed_devices.append(device_id))
+    monkeypatch.setattr(
+        mr,
+        "er",
+        SimpleNamespace(
+            async_get=lambda _hass: ent_reg,
+            async_entries_for_config_entry=lambda _reg, _entry_id: list(entities),
+        ),
+    )
+    monkeypatch.setattr(mr, "dr", SimpleNamespace(async_get=lambda _hass: dev_reg))
+    return removed_entities, removed_devices
+
+
+def _entity(entity_id, unique_id, device_id="dev1", domain="update"):
+    return SimpleNamespace(entity_id=entity_id, unique_id=unique_id, device_id=device_id, domain=domain)
+
+
+def _hass_with_entry(*installed):
+    hass, manager = _hass(*installed)
+    entry = hass.config_entries.async_entries("marketplace")[0]
+    entry.entry_id = "mp_entry"
+    manager.repositories.list_all = list(installed)
+    return hass, manager
+
+
+@pytest.mark.asyncio
+async def test_removes_the_orphaned_psimsa_update_entity(monkeypatch) -> None:
+    removed_entities, removed_devices = _registries(
+        monkeypatch, [_entity("update.oig_cloud_cbb_update", "658267172", device_id="dev_psimsa")]
+    )
+    ours = _repo("Muriel2Horak/oig_cloud")
+    ours.data.id = "1133009999"
+    hass, _ = _hass_with_entry(ours)
+
+    removed = await mr.async_remove_orphaned_entities(hass)
+
+    assert removed == ["update.oig_cloud_cbb_update"]
+    assert removed_devices == ["dev_psimsa"]
+
+
+@pytest.mark.asyncio
+async def test_keeps_the_entity_of_an_installed_record(monkeypatch) -> None:
+    psimsa = _repo("psimsa/oig_cloud")
+    removed_entities, removed_devices = _registries(
+        monkeypatch, [_entity("update.oig_cloud_cbb_update", "658267172")]
+    )
+    hass, _ = _hass_with_entry(psimsa)
+
+    assert await mr.async_remove_orphaned_entities(hass) == []
+    assert removed_devices == removed_entities == []
+
+
+@pytest.mark.asyncio
+async def test_keeps_our_own_and_other_update_entities(monkeypatch) -> None:
+    removed_entities, removed_devices = _registries(
+        monkeypatch,
+        [
+            _entity("update.oig_cloud_cbb_cez_battery_box_update", "1133009999"),
+            _entity("update.grocy_update", "123456"),
+            _entity("switch.oig_cloud_cbb_beta", "658267172", domain="switch"),
+        ],
+    )
+    hass, _ = _hass_with_entry()
+
+    assert await mr.async_remove_orphaned_entities(hass) == []
+    assert removed_devices == removed_entities == []
+
+
+@pytest.mark.asyncio
+async def test_finds_other_foreign_records_through_the_catalog(monkeypatch) -> None:
+    fork = _repo("someone/oig_cloud")
+    fork.data.id = "777"
+    fork.data.installed = False
+    removed_entities, removed_devices = _registries(
+        monkeypatch, [_entity("update.oig_cloud_fork_update", "777", device_id=None)]
+    )
+    hass, manager = _hass_with_entry()
+    manager.repositories.list_all = [fork]
+
+    assert await mr.async_remove_orphaned_entities(hass) == ["update.oig_cloud_fork_update"]
+    assert removed_entities == ["update.oig_cloud_fork_update"]
+    assert removed_devices == []
+
+
+@pytest.mark.asyncio
+async def test_orphan_cleanup_without_marketplace_never_raises(monkeypatch) -> None:
+    hass = SimpleNamespace(config_entries=SimpleNamespace(async_entries=lambda _domain: []))
+
+    assert await mr.async_remove_orphaned_entities(hass) == []
+
+
+@pytest.mark.asyncio
+async def test_startup_releases_then_removes_orphans(monkeypatch) -> None:
+    calls = []
+
+    async def _release(_hass):
+        calls.append("release")
+        return []
+
+    async def _orphans(_hass):
+        calls.append("orphans")
+        return []
+
+    monkeypatch.setattr(mr, "async_release_foreign_records", _release)
+    monkeypatch.setattr(mr, "async_remove_orphaned_entities", _orphans)
+
+    await mr.async_run_cleanup(SimpleNamespace())
+
+    assert calls == ["release", "orphans"]

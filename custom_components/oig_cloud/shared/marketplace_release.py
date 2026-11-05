@@ -21,6 +21,8 @@ import logging
 from typing import Any
 
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from ..const import DOMAIN
 from .background import start_background
@@ -29,18 +31,27 @@ _LOGGER = logging.getLogger(__name__)
 
 MARKETPLACE_DOMAIN = "marketplace"
 OWN_REPOSITORY = "muriel2horak/oig_cloud"
+OWN_REPOSITORY_ID = "1133009999"
+# psimsa/oig_cloud: once it is released the Marketplace may not know it until
+# its catalog loads, so its GitHub id is known here.
+KNOWN_FOREIGN_REPOSITORY_IDS = frozenset({"658267172"})
 _SCHEDULED_KEY = f"{DOMAIN}_marketplace_release_scheduled"
 
 
-def _is_foreign_record(repository: Any) -> bool:
+def _claims_our_domain(repository: Any) -> bool:
     data = getattr(repository, "data", None)
-    if data is None or not getattr(data, "installed", False):
+    if data is None:
         return False
     if str(getattr(data, "category", "")) != "integration":
         return False
     if getattr(data, "domain", None) != DOMAIN:
         return False
     return str(getattr(data, "full_name", "")).lower() != OWN_REPOSITORY
+
+
+def _is_foreign_record(repository: Any) -> bool:
+    data = getattr(repository, "data", None)
+    return bool(getattr(data, "installed", False)) and _claims_our_domain(repository)
 
 
 async def _async_release(repository: Any) -> None:
@@ -106,6 +117,69 @@ async def async_release_foreign_records(hass: Any) -> list[str]:
     return released
 
 
+async def async_remove_orphaned_entities(hass: Any) -> list[str]:
+    """Remove update entities left behind by foreign records no longer installed.
+
+    A record released by hand (File editor or terminal) keeps its update entity
+    as unavailable, and with an area set it raises the "area but no name"
+    repair. The Marketplace only removes the entity when it uninstalls.
+    """
+    removed: list[str] = []
+    try:
+        entries = hass.config_entries.async_entries(MARKETPLACE_DOMAIN)
+    except Exception as err:  # noqa: BLE001 - the Marketplace is optional
+        _LOGGER.debug("Marketplace not available: %s", err)
+        return removed
+
+    for entry in entries:
+        manager: Any = getattr(entry, "runtime_data", None)
+        try:
+            installed_ids = {
+                str(repo.data.id) for repo in manager.repositories.list_installed
+            }
+            foreign_ids = set(KNOWN_FOREIGN_REPOSITORY_IDS) | {
+                str(repo.data.id)
+                for repo in getattr(manager.repositories, "list_all", [])
+                if _claims_our_domain(repo)
+            }
+            entity_registry = er.async_get(hass)
+            device_registry = dr.async_get(hass)
+            entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        except Exception as err:  # noqa: BLE001 - internal API may change
+            _LOGGER.debug("Marketplace entities not readable: %s", err)
+            continue
+
+        foreign_ids -= installed_ids | {OWN_REPOSITORY_ID}
+        for entity in entities:
+            if entity.domain != "update" or str(entity.unique_id) not in foreign_ids:
+                continue
+            try:
+                if entity.device_id:
+                    # The record's own device; removing it removes the entity too
+                    device_registry.async_remove_device(entity.device_id)
+                else:
+                    entity_registry.async_remove(entity.entity_id)
+            except Exception as err:  # noqa: BLE001 - never break our setup
+                _LOGGER.warning("Could not remove %s: %s", entity.entity_id, err)
+                continue
+            removed.append(entity.entity_id)
+
+    if removed:
+        _LOGGER.warning(
+            "Removed %s, left behind by a Marketplace record that no longer claims "
+            "the %s folder",
+            ", ".join(removed),
+            DOMAIN,
+        )
+    return removed
+
+
+async def async_run_cleanup(hass: Any) -> None:
+    """Release foreign records, then remove what released records left behind."""
+    await async_release_foreign_records(hass)
+    await async_remove_orphaned_entities(hass)
+
+
 def async_schedule_release(hass: Any) -> None:
     """Release stale records once, after the Marketplace restored its data."""
     if hass.data.get(_SCHEDULED_KEY):
@@ -116,9 +190,7 @@ def async_schedule_release(hass: Any) -> None:
     # task it starts there is destroyed while still pending.
     @callback
     def _start(_event: Any = None) -> None:
-        start_background(
-            hass, async_release_foreign_records(hass), "oig_cloud_marketplace_release"
-        )
+        start_background(hass, async_run_cleanup(hass), "oig_cloud_marketplace_release")
 
     if hass.is_running:
         _start()
