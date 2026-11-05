@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional, cast
 
@@ -20,8 +21,10 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import VolSchemaType
+from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
+from ..control import proxy_control as pc
 from ..core.box_mode_composite import build_app_value
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
@@ -129,10 +132,19 @@ def _validate_box_mode(value: str) -> str:
 def _validate_box_mode_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     has_mode = data.get("mode") is not None
     has_toggles = data.get("home_grid_v") is not None or data.get("home_grid_vi") is not None
-    if not has_mode and not has_toggles:
+    has_charge = data.get("charge_current") is not None
+    if not has_mode and not has_toggles and not has_charge:
         raise vol.Invalid(
-            "At least one of mode, home_grid_v, or home_grid_vi must be provided."
+            "At least one of mode, home_grid_v, home_grid_vi or charge_current must be provided."
         )
+    if has_charge and has_mode and BASE_HOME_MODE_VALUES.get(data["mode"]) != "3":
+        raise vol.Invalid("charge_current jde nastavit jen s režimem Home UPS.")
+    return data
+
+
+def _validate_export_window(data: Dict[str, Any]) -> Dict[str, Any]:
+    if (data.get("duration_minutes") is None) == (data.get("until") is None):
+        raise vol.Invalid("Zadejte právě jedno z duration_minutes nebo until.")
     return data
 
 
@@ -172,10 +184,30 @@ SET_BOX_MODE_SCHEMA = vol.All(
             vol.Optional("mode"): _validate_box_mode,
             vol.Optional("home_grid_v"): cv.boolean,
             vol.Optional("home_grid_vi"): cv.boolean,
+            vol.Optional("charge_current"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Required("acknowledgement"): vol.In([True]),
         }
     ),
     _validate_box_mode_payload,
+)
+BATTERY_EXPORT_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional("device_id"): cv.string,
+            vol.Required("limit"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("until"): cv.datetime,
+            vol.Required("acknowledgement"): vol.In([True]),
+            vol.Required("warning"): vol.In([True]),
+        }
+    ),
+    _validate_export_window,
+)
+STOP_BATTERY_EXPORT_SCHEMA = vol.Schema(
+    {
+        vol.Optional("device_id"): cv.string,
+        vol.Required("acknowledgement"): vol.In([True]),
+    }
 )
 SET_GRID_DELIVERY_SCHEMA = vol.Schema(
     {
@@ -738,13 +770,36 @@ async def _action_set_box_mode(
         mode,
         mode_value,
     )
+    charge_current = service_data.get("charge_current")
     try:
         if mode in LEGACY_HOME_5_6_ALIASES:
             raise vol.Invalid(LEGACY_HOME_5_6_ERROR)
         if mode is not None and mode_value is None:
             raise vol.Invalid("Neplatný režim boxu.")
+        if mode_value is not None and charge_current is not None:
+            # The box resets the charge current when it enters Home UPS, so the
+            # current must follow a confirmed mode change. Only the shield's
+            # ordered steps can guarantee that.
+            raise pc.ProxyControlError(
+                "Režim a nabíjecí proud v jednom kroku nejdou; použijte frontu shieldu."
+            )
         if mode_value is not None:
-            await client.set_box_mode(mode_value)
+            if pc.use_local_route(hass, entry, box_id, service_data):
+                await pc.async_write(
+                    hass, box_id, pc.KEY_BOX_MODE, pc.BOX_MODE_OPTIONS[mode_value]
+                )
+                service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
+            else:
+                await client.set_box_mode(mode_value)
+                service_data[pc.ROUTE_KEY] = pc.ROUTE_CLOUD
+
+        if charge_current is not None:
+            pc.require_local_route(hass, entry, "Nabíjecí proud")
+            if not pc.box_mode_is_ups(hass, box_id):
+                raise pc.ProxyControlError("Nabíjecí proud jde nastavit jen v režimu Home UPS.")
+            amps = pc.validate_charge_current(hass, entry, box_id, charge_current)
+            await pc.async_write(hass, box_id, pc.KEY_CHARGE_CURRENT, amps)
+            service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
 
         if home_grid_v is not None or home_grid_vi is not None:
             entry_data = hass.data[DOMAIN][entry.entry_id]
@@ -786,7 +841,12 @@ async def _action_set_boiler_mode(
     )
     if mode_value is None:
         raise vol.Invalid("Neplatný režim bojleru.")
+    if pc.use_local_route(hass, entry, box_id, service_data):
+        await pc.async_write(hass, box_id, pc.KEY_BOILER_MANUAL, bool(mode_value))
+        service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
+        return
     await client.set_boiler_mode(str(mode_value))
+    service_data[pc.ROUTE_KEY] = pc.ROUTE_CLOUD
 
 
 async def _action_set_grid_delivery(
@@ -813,12 +873,20 @@ async def _action_set_grid_delivery(
         limit,
     )
 
+    local = pc.use_local_route(hass, entry, box_id, service_data)
+    service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL if local else pc.ROUTE_CLOUD
     if grid_mode is not None:
         mode_value: Optional[int] = GRID_DELIVERY.get(grid_mode)
         if mode_value is None:
             raise vol.Invalid("Neplatný režim přetoků.")
-        await client.set_grid_delivery(mode_value)
+        if local:
+            await pc.async_write(hass, box_id, pc.KEY_TO_GRID, bool(mode_value))
+        else:
+            await client.set_grid_delivery(mode_value)
     if limit is not None:
+        if local:
+            await pc.async_write(hass, box_id, pc.KEY_EXPORT_LIMIT, int(limit))
+            return
         success = await client.set_grid_delivery_limit(int(limit))
         if enforce_limit_success and not success:
             raise vol.Invalid("Limit se nepodařilo nastavit.")
@@ -854,6 +922,141 @@ async def _action_set_formating_mode(
         mode_value: Optional[int] = FORMAT_BATTERY.get(mode) if mode else None
         if mode_value is not None:
             await client.set_formating_mode(str(mode_value))
+
+
+def _export_manager(hass: HomeAssistant, entry: ConfigEntry) -> Any:
+    manager = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("battery_export")
+    if manager is None:
+        raise pc.ProxyControlError("Prodej z baterie není připravený (chybí box_id).")
+    return manager
+
+
+def _local_datetime(value: Any) -> Any:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt_util.get_default_time_zone())
+    return dt_util.as_utc(value)
+
+
+async def _precheck_set_box_mode(
+    hass: HomeAssistant, entry: ConfigEntry, data: Dict[str, Any]
+) -> None:
+    if data.get("charge_current") is None:
+        return
+    box_id = _resolve_box_id_from_service(hass, entry, data, "set_box_mode")
+    if not box_id:
+        raise pc.ProxyControlError("Nelze určit box.")
+    pc.require_local_route(hass, entry, "Nabíjecí proud")
+    if data.get("mode") is None and not pc.box_mode_is_ups(hass, box_id):
+        raise pc.ProxyControlError("Nabíjecí proud jde nastavit jen v režimu Home UPS.")
+    data["charge_current"] = pc.validate_charge_current(
+        hass, entry, box_id, data["charge_current"]
+    )
+
+
+async def _precheck_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, data: Dict[str, Any]
+) -> None:
+    box_id = _resolve_box_id_from_service(hass, entry, data, "battery_export")
+    if not box_id:
+        raise pc.ProxyControlError("Nelze určit box.")
+    pc.require_local_route(hass, entry, "Prodej z baterie")
+    manager = _export_manager(hass, entry)
+    if pc.read_proxy_state(hass, box_id, pc.KEY_TO_GRID) != "on":
+        raise pc.ProxyControlError("Dodávka do sítě je na boxu vypnutá.")
+    if manager.soc_at_minimum():
+        raise pc.ProxyControlError("Baterie je na minimu pro vybíjení.")
+    restore = manager.restore_limit(pc.read_proxy_number(hass, box_id, pc.KEY_EXPORT_LIMIT))
+    cap = pc.export_limit_cap(entry, restore)
+    if cap is None:
+        raise pc.ProxyControlError("Nelze zjistit současný limit přetoků.")
+    if int(data["limit"]) > cap:
+        raise pc.ProxyControlError(
+            f"Limit {int(data['limit'])} W je nad povoleným limitem {cap:.0f} W."
+        )
+    now = dt_util.utcnow()
+    if data.get("until") is not None:
+        until = _local_datetime(data["until"])
+    else:
+        until = now + timedelta(minutes=int(data["duration_minutes"]))
+    if until <= now:
+        raise pc.ProxyControlError("Konec prodeje musí být v budoucnosti.")
+    data.pop("until", None)
+    data.pop("duration_minutes", None)
+    data["_until"] = until.isoformat()
+    data["_restore_limit"] = restore
+    # Arm before any write: whatever happens next, the export is stopped at the end.
+    await manager.async_arm(until, restore)
+
+
+async def _precheck_stop_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, data: Dict[str, Any]
+) -> None:
+    pc.require_local_route(hass, entry, "Ukončení prodeje")
+    lease = _export_manager(hass, entry).lease
+    data["_restore_limit"] = lease.get("restore_limit") if lease else None
+
+
+SERVICE_PRECHECKS: Dict[
+    str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]]
+] = {
+    "set_box_mode": _precheck_set_box_mode,
+    "battery_export": _precheck_battery_export,
+    "stop_battery_export": _precheck_stop_battery_export,
+}
+
+EXPORT_START_STEPS = ("limit", "pv_off_on", "pv_on_on")
+EXPORT_STOP_STEPS = ("pv_on_off", "pv_off_off", "finish")
+
+
+async def _action_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any], log_prefix: str = ""
+) -> None:
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "battery_export")
+    if not box_id:
+        return
+    step = service_data.get("_export_step")
+    for current in [step] if step else EXPORT_START_STEPS:
+        _LOGGER.info("%sBattery export step %s for %s", log_prefix, current, box_id)
+        if current == "limit":
+            await pc.async_write(hass, box_id, pc.KEY_EXPORT_LIMIT, int(service_data["limit"]))
+        elif current == "pv_off_on":
+            await pc.async_write(hass, box_id, pc.KEY_GRID_PV_OFF, True)
+        elif current == "pv_on_on":
+            await pc.async_write(hass, box_id, pc.KEY_GRID_PV_ON, True)
+    service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
+
+
+async def _action_stop_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any], log_prefix: str = ""
+) -> None:
+    box_id = _resolve_box_id_from_service(hass, entry, service_data, "stop_battery_export")
+    if not box_id:
+        return
+    step = service_data.get("_export_step")
+    for current in [step] if step else EXPORT_STOP_STEPS:
+        _LOGGER.info("%sBattery export stop step %s for %s", log_prefix, current, box_id)
+        if current == "pv_on_off":
+            await pc.async_write(hass, box_id, pc.KEY_GRID_PV_ON, False)
+        elif current == "pv_off_off":
+            await pc.async_write(hass, box_id, pc.KEY_GRID_PV_OFF, False)
+        elif current == "finish":
+            restore = service_data.get("_restore_limit")
+            if restore is not None:
+                await pc.async_write(hass, box_id, pc.KEY_EXPORT_LIMIT, int(float(restore)))
+            await _export_manager(hass, entry).async_clear()
+    service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
+
+
+async def _shield_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_battery_export(hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX))
+
+
+async def _shield_stop_battery_export(
+    hass: HomeAssistant, entry: ConfigEntry, service_data: Dict[str, Any]
+) -> None:
+    await _action_stop_battery_export(hass, entry, service_data, _log_prefix(SHIELD_LOG_PREFIX))
 
 
 async def _shield_set_box_mode(
@@ -943,9 +1146,12 @@ def _wrap_with_shield(
     action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
 ) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
     shield_handler = _make_shield_action(hass, entry, action)
+    precheck = SERVICE_PRECHECKS.get(service_name)
 
     async def wrapper(call: ServiceCall) -> None:
         data: Dict[str, Any] = dict(call.data)
+        if precheck is not None:
+            await precheck(hass, entry, data)
         await shield.intercept_service_call(
             DOMAIN,
             service_name,
@@ -962,9 +1168,14 @@ def _make_fallback_handler(
     hass: HomeAssistant,
     entry: ConfigEntry,
     action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+    service_name: str = "",
 ) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
+    precheck = SERVICE_PRECHECKS.get(service_name)
+
     async def handler(call: ServiceCall) -> None:
         data: Dict[str, Any] = dict(call.data)
+        if precheck is not None:
+            await precheck(hass, entry, data)
         await action(hass, entry, data)
 
     return handler
@@ -1100,7 +1311,9 @@ async def async_setup_entry_services_fallback(
         hass,
         entry,
         services_to_register,
-        lambda _service_name, action: _make_fallback_handler(hass, entry, action),
+        lambda service_name, action: _make_fallback_handler(
+            hass, entry, action, service_name
+        ),
     )
 
     _LOGGER.info("All fallback services registration completed")
@@ -1121,12 +1334,16 @@ def _entry_service_actions(
             ("set_grid_delivery", _shield_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
             ("set_boiler_mode", _shield_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
             ("set_formating_mode", _shield_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
+            ("battery_export", _shield_battery_export, BATTERY_EXPORT_SCHEMA),
+            ("stop_battery_export", _shield_stop_battery_export, STOP_BATTERY_EXPORT_SCHEMA),
         ]
     return [
         ("set_box_mode", _fallback_set_box_mode, SET_BOX_MODE_SCHEMA),
         ("set_boiler_mode", _fallback_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
         ("set_grid_delivery", _fallback_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
         ("set_formating_mode", _fallback_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
+        ("battery_export", _action_battery_export, BATTERY_EXPORT_SCHEMA),
+        ("stop_battery_export", _action_stop_battery_export, STOP_BATTERY_EXPORT_SCHEMA),
     ]
 
 
@@ -1388,6 +1605,8 @@ async def async_unload_services(hass: HomeAssistant) -> None:
         "set_grid_delivery",
         "set_boiler_mode",
         "set_formating_mode",
+        "battery_export",
+        "stop_battery_export",
         "plan_boiler_heating",
         "apply_boiler_plan",
         "cancel_boiler_plan",

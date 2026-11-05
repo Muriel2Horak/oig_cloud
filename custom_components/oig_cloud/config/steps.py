@@ -1357,6 +1357,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 "extended_scan_interval",
                 "local_proxy_stale_minutes",
                 "local_event_debounce_ms",
+                "control_via_proxy",
+                "proxy_max_charge_current_a",
+                "proxy_export_limit_w",
             )
         }
         values["data_source_mode"] = self._sanitize_data_source_mode(
@@ -1381,6 +1384,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ("extended_scan_interval", "extended_interval_too_short", "extended_interval_too_long"),
             ("local_proxy_stale_minutes", "interval_too_short", "interval_too_long"),
             ("local_event_debounce_ms", "interval_too_short", "interval_too_long"),
+            ("proxy_max_charge_current_a", "interval_too_short", "interval_too_long"),
+            ("proxy_export_limit_w", "interval_too_short", "interval_too_long"),
         )
         for key, too_low, too_high in checks:
             field = basic[key]
@@ -1475,6 +1480,26 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     default=defaults.get(
                         "local_event_debounce_ms",
                         basic["local_event_debounce_ms"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "control_via_proxy",
+                    default=defaults.get(
+                        "control_via_proxy", basic["control_via_proxy"].default
+                    ),
+                ): bool,
+                vol.Optional(
+                    "proxy_max_charge_current_a",
+                    default=defaults.get(
+                        "proxy_max_charge_current_a",
+                        basic["proxy_max_charge_current_a"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "proxy_export_limit_w",
+                    default=defaults.get(
+                        "proxy_export_limit_w",
+                        basic["proxy_export_limit_w"].default,
                     ),
                 ): int,
                 vol.Optional("go_back", default=False): bool,

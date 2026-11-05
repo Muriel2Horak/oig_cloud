@@ -8,7 +8,7 @@ import logging
 import re
 import time
 import voluptuous as vol
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -39,6 +39,7 @@ from .core.data_source import (
     DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
     DEFAULT_PROXY_STALE_MINUTES,
     DataSourceController,
+    get_configured_mode,
     get_data_source_state,
     init_data_source_state,
 )
@@ -55,6 +56,9 @@ from .config_deprecation import (
 )
 from .config.promote_defaults import promote_blank_enum_defaults
 from .shared.logging import resolve_no_telemetry
+
+if TYPE_CHECKING:
+    from .core.data_source import DataSourceState
 
 
 BalancingManager: Any = None
@@ -1646,6 +1650,53 @@ async def _start_data_source_controller(
         return None
 
 
+# How often startup re-checks whether the proxy's MQTT entities have arrived.
+# It only bounds detection latency; the total wait is the startup_grace_seconds
+# option. One second keeps the wait at most a second longer than needed.
+_STARTUP_LOCAL_POLL_S = 1.0
+
+
+async def _wait_for_local_telemetry(
+    hass: HomeAssistant, entry: ConfigEntry, state: DataSourceState
+) -> DataSourceState:
+    """Give the proxy's MQTT entities time to appear before falling back to cloud.
+
+    At HA startup the proxy entities are restored only after MQTT connects, a few
+    seconds after this integration starts. Evaluated that early, a local-mode entry
+    looks like cloud fallback, and fetching the cloud payload then publishes
+    whatever the portal last saw: on 2026-11-05 a stale "Home UPS" for 5-7 s after
+    every restart. Wait up to the startup_grace_seconds option for local data.
+    """
+    if state.effective_mode != DATA_SOURCE_CLOUD_ONLY:
+        return state
+    if get_configured_mode(entry) == DATA_SOURCE_CLOUD_ONLY:
+        return state
+
+    try:
+        timeout_s = float(entry.options.get("startup_grace_seconds", 30))
+    except (TypeError, ValueError):
+        timeout_s = 30.0
+
+    waited = 0.0
+    while waited < timeout_s:
+        await asyncio.sleep(_STARTUP_LOCAL_POLL_S)
+        waited += _STARTUP_LOCAL_POLL_S
+        state = init_data_source_state(hass, entry)
+        if state.effective_mode != DATA_SOURCE_CLOUD_ONLY:
+            _LOGGER.info(
+                "Background startup: local telemetry ready after %.0fs, skipping cloud refresh",
+                waited,
+            )
+            return state
+
+    _LOGGER.info(
+        "Background startup: no local telemetry within %.0fs (%s), using cloud",
+        timeout_s,
+        state.reason,
+    )
+    return state
+
+
 async def _complete_entry_startup(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1656,7 +1707,9 @@ async def _complete_entry_startup(
     battery_prediction_enabled: bool,
 ) -> None:
     try:
-        state = get_data_source_state(hass, entry.entry_id)
+        state = await _wait_for_local_telemetry(
+            hass, entry, get_data_source_state(hass, entry.entry_id)
+        )
         should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
         if should_check_cloud_now:
@@ -2042,6 +2095,23 @@ async def _register_entry_services(
 
     # Setup entry-specific služeb s shield ochranou
     await async_setup_entry_services_with_shield(hass, entry, service_shield)
+    await _setup_battery_export(hass, entry)
+
+
+async def _setup_battery_export(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Own the battery export window of this entry (needed for its automatic end)."""
+    try:
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return
+        from .control.battery_export import BatteryExportManager
+
+        manager = BatteryExportManager(hass, entry, box_id)
+        await manager.async_setup()
+        hass.data[DOMAIN].setdefault(entry.entry_id, {})["battery_export"] = manager
+        entry.async_on_unload(manager.async_unload)
+    except Exception as err:
+        _LOGGER.warning("Battery export manager setup failed: %s", err)
 
 
 def _register_api_endpoints(hass: HomeAssistant, boiler_coordinator: Any | None) -> None:

@@ -43,26 +43,70 @@ def _split_grid_delivery_params(params: Dict[str, Any]) -> Optional[list[Dict[st
 
 
 _TOGGLE_KEYS = ("home_grid_v", "home_grid_vi")
+_CHARGE_KEY = "charge_current"
 
 
 def _split_box_mode_params(params: Dict[str, Any]) -> Optional[list[Dict[str, Any]]]:
-    """Split mode+toggles into ordered steps: mode first, then app toggles.
+    """Split mode, toggles and charge current into ordered steps.
 
     The box can only process one value change at a time, so composite box mode
     calls must stay split. Order is critical: main mode must be set BEFORE
-    supplementary app bits are applied.
+    supplementary app bits are applied, and the charge current only after the
+    box confirmed Home UPS, because entering Home UPS resets it.
     """
     has_mode = "mode" in params
     has_toggles = any(k in params for k in _TOGGLE_KEYS)
-    if has_mode and has_toggles:
-        mode_params = {k: v for k, v in params.items() if k not in _TOGGLE_KEYS}
+    has_charge = params.get(_CHARGE_KEY) is not None
+    steps: list[Dict[str, Any]] = []
+    if has_mode:
+        mode_params = {
+            k: v for k, v in params.items() if k not in _TOGGLE_KEYS and k != _CHARGE_KEY
+        }
         mode_params["_box_mode_step"] = "mode"
-
-        app_params = {k: v for k, v in params.items() if k != "mode"}
+        steps.append(mode_params)
+    if has_toggles:
+        app_params = {k: v for k, v in params.items() if k not in ("mode", _CHARGE_KEY)}
         app_params["_box_mode_step"] = "app"
+        steps.append(app_params)
+    if has_charge:
+        charge_params = {
+            k: v for k, v in params.items() if k != "mode" and k not in _TOGGLE_KEYS
+        }
+        charge_params["_box_mode_step"] = "charge"
+        steps.append(charge_params)
+    return steps if len(steps) > 1 else None
 
-        return [mode_params, app_params]
-    return None
+
+# Ordered steps of the battery export services (see services.EXPORT_*_STEPS).
+_EXPORT_STEPS = {
+    "oig_cloud.battery_export": ("limit", "pv_off_on", "pv_on_on"),
+    "oig_cloud.stop_battery_export": ("pv_on_off", "pv_off_off", "finish"),
+}
+
+
+def _split_export_params(
+    service_name: str, params: Dict[str, Any]
+) -> Optional[list[Dict[str, Any]]]:
+    steps = _EXPORT_STEPS.get(service_name)
+    if not steps or params.get("_export_step"):
+        return None
+    return [{**params, "_export_step": step} for step in steps]
+
+
+def _always_proceed(params: Optional[Dict[str, Any]]) -> bool:
+    """Steps that must run even when the readback already shows the target.
+
+    - charge current: the readback can show a stale value after the box reset
+      the current on entering Home UPS (seen 2026-11-05: 100 A shown, 49 A charged);
+    - export finish: it clears the export window.
+    """
+    if not params:
+        return False
+    if params.get("_box_mode_step") == "charge":
+        return True
+    if params.get(_CHARGE_KEY) is not None and "mode" not in params:
+        return True
+    return params.get("_export_step") == "finish"
 
 
 # `_is_duplicate` reports WHERE the duplicate sits ("queue" / "running"), but the
@@ -124,6 +168,9 @@ def _entities_already_match(
     even if the mode is already 'limited' - the limit value itself needs
     to be applied. The step metadata in params helps identify this case.
     """
+    if _always_proceed(params):
+        return False
+
     # For grid delivery limit step, always proceed (don't skip early)
     if params and params.get("_grid_delivery_step") == "limit":
         _LOGGER.debug(
@@ -211,41 +258,39 @@ async def _handle_split_box_mode(
     split_params = _split_box_mode_params(params)
     if not split_params:
         return False
-
-    mode_step = split_params[0]
-    app_step = split_params[1]
-
-    _LOGGER.info(
-        "[Box Mode] Splitting mode+toggles into ordered steps: "
-        "mode='%s' (step 1) → app='%s' (step 2)",
-        mode_step.get("mode"),
-        {k: v for k, v in app_step.items() if not k.startswith("_")},
+    await _queue_steps(
+        shield, "Box Mode", "_box_mode_step", split_params,
+        domain, service, original_call, blocking, context,
     )
-
-    _LOGGER.info("[Box Mode] Step 1/2: Setting main mode")
-    await intercept_service_call(
-        shield,
-        domain,
-        service,
-        {"params": mode_step},
-        original_call,
-        blocking,
-        context,
-    )
-
-    _LOGGER.info("[Box Mode] Step 2/2: Setting app toggles")
-    await intercept_service_call(
-        shield,
-        domain,
-        service,
-        {"params": app_step},
-        original_call,
-        blocking,
-        context,
-    )
-
-    _LOGGER.info("[Box Mode] Both ordered steps queued successfully")
     return True
+
+
+async def _queue_steps(
+    shield: Any,
+    label: str,
+    step_key: str,
+    steps: list[Dict[str, Any]],
+    domain: str,
+    service: str,
+    original_call: Any,
+    blocking: bool,
+    context: Optional[Context],
+) -> None:
+    total = len(steps)
+    for index, step_params in enumerate(steps, start=1):
+        _LOGGER.info(
+            "[%s] Step %s/%s: %s", label, index, total, step_params.get(step_key)
+        )
+        await intercept_service_call(
+            shield,
+            domain,
+            service,
+            {"params": step_params},
+            original_call,
+            blocking,
+            context,
+        )
+    _LOGGER.info("[%s] All %s ordered steps queued", label, total)
 
 
 async def _handle_duplicate(
@@ -398,6 +443,14 @@ async def intercept_service_call(
     ):
         return
 
+    export_steps = _split_export_params(service_name, params)
+    if export_steps:
+        await _queue_steps(
+            shield, "Battery Export", "_export_step", export_steps,
+            domain, service, original_call, blocking, context,
+        )
+        return
+
     expected_entities = shield.extract_expected_entities(service_name, params)
 
     _LOGGER.debug("Intercept service: %s", service_name)
@@ -529,6 +582,8 @@ async def start_call(
         "called_at": datetime.now(),
         "power_monitor": power_monitor,
         "trace_id": resolved_trace_id,
+        # Kept so a timed-out local write can be retried through the cloud.
+        "call": (original_call, domain, service, blocking, context),
     }
 
     shield.running = service_name

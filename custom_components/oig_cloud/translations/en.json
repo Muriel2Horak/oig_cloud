@@ -202,7 +202,10 @@
           "local_event_debounce_ms": "Local event debounce (ms)",
           "local_proxy_stale_minutes": "Fallback to cloud after (minutes)",
           "notifications_scan_interval": "Notifications interval (seconds)",
-          "standard_scan_interval": "Basic data (seconds)"
+          "standard_scan_interval": "Basic data (seconds)",
+          "control_via_proxy": "Control through OIG Proxy",
+          "proxy_max_charge_current_a": "Charge current cap via proxy (A)",
+          "proxy_export_limit_w": "Battery export cap via proxy (W)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = always read from cloud; Local only = read mapped local entities (if proxy is stale > this limit, temporarily fall back to cloud until it recovers)",
@@ -212,7 +215,10 @@
           "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster response, higher = fewer updates)",
           "local_proxy_stale_minutes": "Switch back to cloud after this many minutes without local data; switch back to local automatically when proxy resumes",
           "notifications_scan_interval": "How often to poll cloud notifications (recommended 300-900 seconds)",
-          "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)"
+          "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)",
+          "control_via_proxy": "While the integration reads locally, writes (mode, grid delivery, boiler) go through the OIG Proxy. After falling back to cloud they go through the cloud. Charge current and battery export work only through the proxy.",
+          "proxy_max_charge_current_a": "0 = the box limit (A_MAX_CHRG). Otherwise the lower of the two.",
+          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value."
         },
         "description": "{step}\n{progress}\n\nSet how often data should be loaded from OIG Cloud.\n\n💡 **Tip:** Shorter interval = more current data, but higher load on API servers.",
         "title": "⏱️ Data Loading Intervals"
@@ -734,7 +740,10 @@
           "local_event_debounce_ms": "Local event debounce (ms)",
           "local_proxy_stale_minutes": "Fallback to cloud after (minutes)",
           "notifications_scan_interval": "Notifications interval (seconds)",
-          "standard_scan_interval": "Basic data (seconds)"
+          "standard_scan_interval": "Basic data (seconds)",
+          "control_via_proxy": "Control through OIG Proxy",
+          "proxy_max_charge_current_a": "Charge current cap via proxy (A)",
+          "proxy_export_limit_w": "Battery export cap via proxy (W)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = always cloud; Local only = mapped local entities (falls back to cloud when proxy is stale/unavailable)",
@@ -744,7 +753,10 @@
           "local_event_debounce_ms": "Debounce for event-driven refresh from local entities (lower = faster updates, higher = fewer updates)",
           "local_proxy_stale_minutes": "Fallback to cloud if the local proxy has not sent any data for longer than this limit",
           "notifications_scan_interval": "How often to poll cloud notifications (recommended 300-900 seconds)",
-          "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)"
+          "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)",
+          "control_via_proxy": "While the integration reads locally, writes (mode, grid delivery, boiler) go through the OIG Proxy. After falling back to cloud they go through the cloud. Charge current and battery export work only through the proxy.",
+          "proxy_max_charge_current_a": "0 = the box limit (A_MAX_CHRG). Otherwise the lower of the two.",
+          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value."
         },
         "description": "{step}\n{progress}\n\nSet how often data should be loaded from OIG Cloud.\n\n💡 **Tip:** Shorter interval = more current data, but higher load on API servers.",
         "title": "⏱️ Data Loading Intervals"
@@ -1043,6 +1055,36 @@
       },
       "name": "Apply heating plan"
     },
+    "battery_export": {
+      "name": "Battery export to grid",
+      "description": "Discharges the battery to the grid up to the limit, only through the OIG Proxy. An export always has an end.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "Battery Box, when you have more than one."
+        },
+        "limit": {
+          "name": "Limit (W)",
+          "description": "Export power limit. At most the configured cap, else the current export limit."
+        },
+        "duration_minutes": {
+          "name": "Duration (min)",
+          "description": "How long to export. Give this or an end time."
+        },
+        "until": {
+          "name": "Until",
+          "description": "End time of the export. Give this or a duration."
+        },
+        "acknowledgement": {
+          "name": "Acknowledgement",
+          "description": "I acknowledge this changes a live system."
+        },
+        "warning": {
+          "name": "Grid export warning",
+          "description": "Export to the grid must be approved by the distribution operator."
+        }
+      }
+    },
     "cancel_boiler_plan": {
       "description": "Cancels the active boiler heating plan and removes planned automations.",
       "fields": {
@@ -1123,6 +1165,10 @@
         "mode": {
           "description": "Battery Box mode",
           "name": "Mode"
+        },
+        "charge_current": {
+          "name": "Charge current",
+          "description": "Grid charging current in Home UPS (A). Only through the OIG Proxy."
         }
       },
       "name": "Set Battery Box Mode"
@@ -1174,6 +1220,20 @@
         }
       },
       "name": "Set Grid Delivery Mode"
+    },
+    "stop_battery_export": {
+      "name": "Stop battery export",
+      "description": "Turns off battery export to the grid and restores the previous export limit.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "Battery Box, when you have more than one."
+        },
+        "acknowledgement": {
+          "name": "Acknowledgement",
+          "description": "I acknowledge this changes a live system."
+        }
+      }
     }
   },
   "issues": {
