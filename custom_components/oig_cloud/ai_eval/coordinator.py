@@ -564,7 +564,10 @@ class AiEvalCoordinator:
                 f"Události {cur_from}–{cur_to}:\n"
                 + "\n".join(f"{e['at']} {e['kind']}: {e['detail']}" for e in notable_events)
                 + f"\n\nRejstřík anomálií dnes:\n{ledger_str}"
-                + f"\n\nDetail ~20s snímků kolem událostí:\n{detail_csv}"
+                + "\n\nDetail ~20s snímků kolem událostí (výkony ve W; znaménka: "
+                "grid + = odběr ze sítě, − = přetok do sítě; bat + = baterie se nabíjí, "
+                "− = baterie se vybíjí; zal = záloha, nez = nezáloha):\n"
+                + detail_csv
             )
 
         last_generated = _parse_iso(self._kept.get("report_generated_at"))

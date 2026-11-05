@@ -52,3 +52,7 @@ def test_advisor_prompt_tells_the_model_tagged_charging_is_planned():
 
 def test_advisor_prompt_points_flexible_loads_to_the_precomputed_window():
     assert "PRAČKA, MYČKA, BOJLER" in P.ADVISOR_SYSTEM_PROMPT
+
+
+def test_advisor_prompt_states_the_battery_sign_convention():
+    assert "bat > 0" in P.ADVISOR_SYSTEM_PROMPT and "CHARGING" in P.ADVISOR_SYSTEM_PROMPT

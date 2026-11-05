@@ -786,3 +786,22 @@ async def test_advice_run_without_an_event_carries_no_anomalies(monkeypatch):
     await coord._async_run_tick(now)
     assert store.saved["report_kind"] == "advice"
     assert store.saved["report"]["anomalie"] == []
+
+
+@pytest.mark.asyncio
+async def test_anomaly_detail_explains_the_power_signs(monkeypatch):
+    """Live 16:18: bat +6355 W (charging from grid in Home UPS) was read as
+    "the battery supplied 6.4 kW". The detail must state the sign convention."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _make_states(box_id, now), [],
+          ADVICE_JSON, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+    message = ai_calls[0][1]
+    assert "bat + = baterie se nabíjí" in message
+    assert "grid + = odběr ze sítě" in message
