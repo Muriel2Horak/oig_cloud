@@ -217,9 +217,9 @@ def _proxy_readback(shield: Any, key: str) -> Optional[str]:
 
 
 def _expected_charge_current(shield: Any, data: Dict[str, Any]) -> Dict[str, str]:
-    from ..control.proxy_control import KEY_CHARGE_CURRENT
+    from ..control.proxy_control import PARAM_CHARGE_CURRENT
 
-    entity_id = _proxy_readback(shield, KEY_CHARGE_CURRENT)
+    entity_id = _proxy_readback(shield, PARAM_CHARGE_CURRENT)
     if not entity_id:
         return {}
     return {entity_id: str(int(data["charge_current"]))}
@@ -230,17 +230,17 @@ def _expected_battery_export(shield: Any, data: Dict[str, Any]) -> Dict[str, str
 
     step = data.get("_export_step")
     targets: Dict[str, tuple[str, Optional[str]]] = {
-        "limit": (pc.KEY_EXPORT_LIMIT, str(int(data["limit"])) if "limit" in data else None),
-        "pv_off_on": (pc.KEY_GRID_PV_OFF, "on"),
-        "pv_on_on": (pc.KEY_GRID_PV_ON, "on"),
-        "pv_on_off": (pc.KEY_GRID_PV_ON, "off"),
-        "pv_off_off": (pc.KEY_GRID_PV_OFF, "off"),
+        "limit": (pc.PARAM_EXPORT_LIMIT, str(int(data["limit"])) if "limit" in data else None),
+        "pv_off_on": (pc.PARAM_GRID_PV_OFF, "on"),
+        "pv_on_on": (pc.PARAM_GRID_PV_ON, "on"),
+        "pv_on_off": (pc.PARAM_GRID_PV_ON, "off"),
+        "pv_off_off": (pc.PARAM_GRID_PV_OFF, "off"),
     }
     if step == "finish":
         restore = data.get("_restore_limit")
         if restore is None:
             return {}
-        targets["finish"] = (pc.KEY_EXPORT_LIMIT, str(int(float(restore))))
+        targets["finish"] = (pc.PARAM_EXPORT_LIMIT, str(int(float(restore))))
     if step not in targets:
         return {}
     key, expected = targets[step]

@@ -1656,6 +1656,11 @@ async def _start_data_source_controller(
 _STARTUP_LOCAL_POLL_S = 1.0
 
 
+def _entry_still_loaded(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """False once the entry was unloaded (e.g. reload after saving options)."""
+    return entry.entry_id in hass.data.get(DOMAIN, {})
+
+
 async def _wait_for_local_telemetry(
     hass: HomeAssistant, entry: ConfigEntry, state: DataSourceState
 ) -> DataSourceState:
@@ -1681,6 +1686,8 @@ async def _wait_for_local_telemetry(
     while waited < timeout_s:
         await asyncio.sleep(_STARTUP_LOCAL_POLL_S)
         waited += _STARTUP_LOCAL_POLL_S
+        if not _entry_still_loaded(hass, entry):
+            return state
         state = init_data_source_state(hass, entry)
         if state.effective_mode != DATA_SOURCE_CLOUD_ONLY:
             _LOGGER.info(
@@ -1710,6 +1717,9 @@ async def _complete_entry_startup(
         state = await _wait_for_local_telemetry(
             hass, entry, get_data_source_state(hass, entry.entry_id)
         )
+        if not _entry_still_loaded(hass, entry):
+            _LOGGER.info("Background startup: entry %s was unloaded, stopping", entry.entry_id)
+            return
         should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
         if should_check_cloud_now:
@@ -2109,7 +2119,7 @@ async def _setup_battery_export(hass: HomeAssistant, entry: ConfigEntry) -> None
         manager = BatteryExportManager(hass, entry, box_id)
         await manager.async_setup()
         hass.data[DOMAIN].setdefault(entry.entry_id, {})["battery_export"] = manager
-        entry.async_on_unload(manager.async_unload)
+        entry.async_on_unload(manager.unload)
     except Exception as err:
         _LOGGER.warning("Battery export manager setup failed: %s", err)
 

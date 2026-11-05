@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import voluptuous as vol
 
 from custom_components.oig_cloud import services as svc
 from custom_components.oig_cloud.control import battery_export as be
@@ -125,28 +127,28 @@ def test_entities_found_by_unique_id_in_registry(hass, monkeypatch):
     )
     monkeypatch.setattr(pc, "_entity_registry", lambda _h: registry)
     assert (
-        pc.find_proxy_entity(hass, BOX, pc.KEY_CHARGE_CURRENT, control=True)
+        pc.find_proxy_entity(hass, BOX, pc.PARAM_CHARGE_CURRENT, control=True)
         == "number.renamed_charge"
     )
 
 
 def test_entities_found_with_and_without_oig_local_prefix(hass):
     assert (
-        pc.find_proxy_entity(hass, BOX, pc.KEY_GRID_PV_ON, control=True)
+        pc.find_proxy_entity(hass, BOX, pc.PARAM_GRID_PV_ON, control=True)
         == "switch.2206237016_tbl_invertor_prms_grid_pv_on_cfg"
     )
     assert (
-        pc.find_proxy_entity(hass, BOX, pc.KEY_GRID_PV_ON, control=False)
+        pc.find_proxy_entity(hass, BOX, pc.PARAM_GRID_PV_ON, control=False)
         == "binary_sensor.oig_local_2206237016_tbl_invertor_prms_grid_pv_on"
     )
 
 
 @pytest.mark.asyncio
 async def test_write_uses_the_entity_domain_service(hass):
-    await pc.async_write(hass, BOX, pc.KEY_BOX_MODE, "Home UPS")
-    await pc.async_write(hass, BOX, pc.KEY_CHARGE_CURRENT, 121)
-    await pc.async_write(hass, BOX, pc.KEY_GRID_PV_OFF, True)
-    await pc.async_write(hass, BOX, pc.KEY_GRID_PV_OFF, False)
+    await pc.async_write(hass, BOX, pc.PARAM_BOX_MODE, "Home UPS")
+    await pc.async_write(hass, BOX, pc.PARAM_CHARGE_CURRENT, 121)
+    await pc.async_write(hass, BOX, pc.PARAM_GRID_PV_OFF, True)
+    await pc.async_write(hass, BOX, pc.PARAM_GRID_PV_OFF, False)
     assert hass.services.calls == [
         ("select", "select_option", {"entity_id": "select.oig_local_2206237016_tbl_box_prms_mode_cfg", "option": "Home UPS"}),
         ("number", "set_value", {"entity_id": "number.2206237016_tbl_invertor_prm1_aac_max_chrg_cfg", "value": 121}),
@@ -159,25 +161,28 @@ async def test_write_uses_the_entity_domain_service(hass):
 async def test_write_refuses_unavailable_entity(hass):
     hass.states.set("select.oig_local_2206237016_tbl_box_prms_mode_cfg", "unavailable")
     with pytest.raises(pc.ProxyControlError):
-        await pc.async_write(hass, BOX, pc.KEY_BOX_MODE, "Home 1")
+        await pc.async_write(hass, BOX, pc.PARAM_BOX_MODE, "Home 1")
 
 
 def test_charge_current_limit_is_the_lowest_of_box_entity_and_user_cap(hass):
-    assert pc.validate_charge_current(hass, _entry(), BOX, 121) == 121
-    with pytest.raises(pc.ProxyControlError):
-        pc.validate_charge_current(hass, _entry(), BOX, 126)
-    with pytest.raises(pc.ProxyControlError):
-        pc.validate_charge_current(hass, _entry(proxy_max_charge_current_a=80), BOX, 100)
+    entry = _entry()
+    capped = _entry(proxy_max_charge_current_a=80)
+    assert pc.validate_charge_current(hass, entry, BOX, 121) == 121
+    with pytest.raises(pc.ProxyControlError, match="nad limitem 125"):
+        pc.validate_charge_current(hass, entry, BOX, 126)
+    with pytest.raises(pc.ProxyControlError, match="nad limitem 80"):
+        pc.validate_charge_current(hass, capped, BOX, 100)
     hass.states.set("sensor.oig_local_2206237016_tbl_invertor_prm1_a_max_chrg", "90")
-    with pytest.raises(pc.ProxyControlError):
-        pc.validate_charge_current(hass, _entry(), BOX, 100)
+    with pytest.raises(pc.ProxyControlError, match="nad limitem 90"):
+        pc.validate_charge_current(hass, entry, BOX, 100)
 
 
 def test_charge_current_needs_a_known_box_limit(hass):
+    entry = _entry()
     hass.states.set("sensor.oig_local_2206237016_tbl_invertor_prm1_a_max_chrg", "unknown")
     hass.states.set("number.2206237016_tbl_invertor_prm1_aac_max_chrg_cfg", "50.0")
-    with pytest.raises(pc.ProxyControlError):
-        pc.validate_charge_current(hass, _entry(), BOX, 60)
+    with pytest.raises(pc.ProxyControlError, match="nehlásí"):
+        pc.validate_charge_current(hass, entry, BOX, 60)
 
 
 # --- service actions -----------------------------------------------------------
@@ -226,8 +231,9 @@ async def test_box_mode_goes_to_cloud_when_forced_or_reading_from_cloud(hass, ac
 
 @pytest.mark.asyncio
 async def test_charge_step_needs_home_ups_then_writes_current(hass, actions):
-    with pytest.raises(pc.ProxyControlError):
-        await svc._action_set_box_mode(hass, _entry(), {"charge_current": 121}, "")
+    entry = _entry()
+    with pytest.raises(pc.ProxyControlError, match="Home UPS"):
+        await svc._action_set_box_mode(hass, entry, {"charge_current": 121}, "")
     hass.states.set("sensor.oig_local_2206237016_tbl_box_prms_mode", "Home UPS")
     await svc._action_set_box_mode(
         hass, _entry(), {"charge_current": 121, "_box_mode_step": "charge"}, ""
@@ -241,10 +247,10 @@ async def test_charge_step_needs_home_ups_then_writes_current(hass, actions):
 
 @pytest.mark.asyncio
 async def test_mode_and_current_in_one_unshielded_call_is_refused(hass, actions):
-    with pytest.raises(pc.ProxyControlError):
-        await svc._action_set_box_mode(
-            hass, _entry(), {"mode": "home_ups", "charge_current": 100}, ""
-        )
+    entry = _entry()
+    data = {"mode": "home_ups", "charge_current": 100}
+    with pytest.raises(pc.ProxyControlError, match="jednom kroku"):
+        await svc._action_set_box_mode(hass, entry, data, "")
     assert hass.services.calls == []
 
 
@@ -264,17 +270,18 @@ async def test_grid_delivery_and_boiler_go_to_proxy(hass, actions):
 def test_charge_current_requires_home_ups_in_schema():
     svc.SET_BOX_MODE_SCHEMA({"mode": "home_ups", "charge_current": 100, "acknowledgement": True})
     svc.SET_BOX_MODE_SCHEMA({"charge_current": 100, "acknowledgement": True})
-    with pytest.raises(Exception):
+    with pytest.raises(vol.Invalid):
         svc.SET_BOX_MODE_SCHEMA({"mode": "home_1", "charge_current": 100, "acknowledgement": True})
 
 
 def test_export_needs_exactly_one_end():
     base = {"limit": 2000, "acknowledgement": True, "warning": True}
     svc.BATTERY_EXPORT_SCHEMA({**base, "duration_minutes": 30})
-    with pytest.raises(Exception):
+    both = {**base, "duration_minutes": 30, "until": "2026-11-06 18:00"}
+    with pytest.raises(vol.Invalid):
         svc.BATTERY_EXPORT_SCHEMA(base)
-    with pytest.raises(Exception):
-        svc.BATTERY_EXPORT_SCHEMA({**base, "duration_minutes": 30, "until": "2026-11-06 18:00"})
+    with pytest.raises(vol.Invalid):
+        svc.BATTERY_EXPORT_SCHEMA(both)
 
 
 # --- battery export -------------------------------------------------------------
@@ -284,8 +291,17 @@ class _Manager:
     def __init__(self) -> None:
         self.armed: list[Any] = []
         self.cleared = 0
+        self.failed = 0
         self.lease: Any = None
         self.at_min = False
+        self.stop_in_progress = False
+
+    @property
+    def lease_id(self):
+        return "lease-1" if self.lease else None
+
+    def stop_failed(self):
+        self.failed += 1
 
     def restore_limit(self, current):
         return self.lease["restore_limit"] if self.lease else current
@@ -297,9 +313,10 @@ class _Manager:
         self.armed.append((until, restore))
         self.lease = {"restore_limit": restore}
 
-    async def async_clear(self):
+    async def async_clear(self, lease_id=None):
         self.cleared += 1
         self.lease = None
+        return True
 
 
 @pytest.fixture
@@ -314,28 +331,59 @@ async def test_export_precheck_arms_window_and_keeps_restore_limit(hass, manager
     data = {"limit": 2000, "duration_minutes": 30}
     await svc._precheck_battery_export(hass, _entry(), data)
     assert data["_restore_limit"] == 5333
-    assert "duration_minutes" not in data and "_until" in data
+    assert "duration_minutes" not in data
+    assert "_until" in data
     assert manager.armed[0][1] == 5333
 
 
 @pytest.mark.asyncio
 async def test_export_precheck_refusals(hass, manager, monkeypatch):
-    with pytest.raises(pc.ProxyControlError):
-        await svc._precheck_battery_export(hass, _entry(), {"limit": 6000, "duration_minutes": 5})
+    entry = _entry()
+    over = {"limit": 6000, "duration_minutes": 5}
+    with pytest.raises(pc.ProxyControlError, match="nad povoleným"):
+        await svc._precheck_battery_export(hass, entry, over)
     await svc._precheck_battery_export(
         hass, _entry(proxy_export_limit_w=8000), {"limit": 6000, "duration_minutes": 5}
     )
     manager.at_min = True
-    with pytest.raises(pc.ProxyControlError):
-        await svc._precheck_battery_export(hass, _entry(), {"limit": 1000, "duration_minutes": 5})
+    small = {"limit": 1000, "duration_minutes": 5}
+    with pytest.raises(pc.ProxyControlError, match="minimu"):
+        await svc._precheck_battery_export(hass, entry, small)
     manager.at_min = False
+    manager.stop_in_progress = True
+    with pytest.raises(pc.ProxyControlError, match="ukončuje"):
+        await svc._precheck_battery_export(hass, entry, dict(small))
+    manager.stop_in_progress = False
     hass.states.set("binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid", "off")
-    with pytest.raises(pc.ProxyControlError):
-        await svc._precheck_battery_export(hass, _entry(), {"limit": 1000, "duration_minutes": 5})
+    with pytest.raises(pc.ProxyControlError, match="vypnutá"):
+        await svc._precheck_battery_export(hass, entry, dict(small))
     hass.states.set("binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid", "on")
     set_source(monkeypatch, local=False)
-    with pytest.raises(pc.ProxyControlError):
-        await svc._precheck_battery_export(hass, _entry(), {"limit": 1000, "duration_minutes": 5})
+    with pytest.raises(pc.ProxyControlError, match="čte z cloudu"):
+        await svc._precheck_battery_export(hass, entry, dict(small))
+
+
+@pytest.mark.asyncio
+async def test_stop_is_allowed_with_the_option_off_but_not_from_cloud(hass, manager, monkeypatch):
+    data: dict[str, Any] = {}
+    await svc._precheck_stop_battery_export(hass, _entry(control_via_proxy=False), data)
+    assert data["_lease_id"] is None
+    set_source(monkeypatch, local=False)
+    with pytest.raises(pc.ProxyControlError, match="čte z cloudu"):
+        await svc._precheck_stop_battery_export(hass, _entry(), {})
+
+
+@pytest.mark.asyncio
+async def test_finish_keeps_window_when_a_flag_is_still_on(hass, manager):
+    entry = _entry()
+    manager.lease = {"restore_limit": 5333}
+    hass.states.set("binary_sensor.oig_local_2206237016_tbl_invertor_prms_grid_pv_on", "on")
+    data = {"_export_step": "finish", "_restore_limit": 5333, "_lease_id": "lease-1"}
+    with pytest.raises(pc.ProxyControlError, match="nepodařilo vypnout"):
+        await svc._action_stop_battery_export(hass, entry, data)
+    assert manager.cleared == 0
+    assert manager.failed == 1
+    assert hass.services.calls == []
 
 
 @pytest.mark.asyncio
@@ -368,12 +416,36 @@ async def test_manager_stops_export_left_active_by_a_restart(hass, monkeypatch):
             return None
 
     monkeypatch.setattr(be, "Store", _Store)
+    monkeypatch.setattr(be, "async_track_state_change_event", lambda *_a, **_k: (lambda: None))
     hass.bus = SimpleNamespace(async_listen=lambda *_a: (lambda: None))
     manager = be.BatteryExportManager(hass, _entry(), BOX)
     await manager.async_setup()
     assert manager.active
+    assert manager.stop_in_progress
     assert manager.restore_limit(2000) == 5333
     assert len(hass.created) == 1  # stop requested
+
+
+@pytest.mark.asyncio
+async def test_stop_of_an_older_window_does_not_clear_a_newer_one(hass, monkeypatch):
+    class _Store:
+        def __init__(self, *_a, **_k):
+            pass
+
+        async def async_save(self, _data):
+            return None
+
+    monkeypatch.setattr(be, "Store", _Store)
+    monkeypatch.setattr(be, "async_track_point_in_utc_time", lambda *_a, **_k: (lambda: None))
+    monkeypatch.setattr(be, "async_track_state_change_event", lambda *_a, **_k: (lambda: None))
+    manager = be.BatteryExportManager(hass, _entry(), BOX)
+    await manager.async_arm(be.dt_util.utcnow() + timedelta(minutes=30), 5333)
+    old_id = manager.lease_id
+    manager._lease["started"] = "older"  # a new export re-armed the window
+    assert await manager.async_clear(old_id) is False
+    assert manager.active
+    assert await manager.async_clear("older") is True
+    assert not manager.active
 
 
 def test_manager_soc_floor(hass):
@@ -392,7 +464,11 @@ def test_box_mode_with_current_splits_mode_then_charge():
         {"mode": "home_ups", "charge_current": 121, "acknowledgement": True}
     )
     assert [s["_box_mode_step"] for s in steps] == ["mode", "charge"]
-    assert "charge_current" not in steps[0] and "mode" not in steps[1]
+    assert "charge_current" not in steps[0]
+    assert "mode" not in steps[1]
+    # The mode step must end on the box's readback, not on a power jump.
+    assert steps[0]["_await_readback"] is True
+    assert dispatch._init_power_monitor(None, "oig_cloud.set_box_mode", steps[0]) is None
 
 
 def test_export_services_split_into_ordered_steps():

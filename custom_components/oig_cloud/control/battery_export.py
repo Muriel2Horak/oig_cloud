@@ -9,8 +9,11 @@ back to its value before the export) when:
 - the battery reaches the box's discharge minimum (``bat_min``).
 
 The stop goes through the ``stop_battery_export`` service, so it is queued and
-confirmed by the service shield like any other write. If the proxy is not
-reachable at that moment, the stop waits until the data source is local again.
+confirmed by the service shield like any other write. The window is forgotten
+only after the box reports both grid_pv flags off. Until then the stop stays
+pending and is retried on every data push from the proxy (its heartbeat entity),
+as soon as the data source is local, e.g. right after an HA restart once the
+proxy entities are back.
 """
 
 from __future__ import annotations
@@ -30,14 +33,14 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
-from ..core.data_source import EVENT_DATA_SOURCE_CHANGED
+from ..core.data_source import EVENT_DATA_SOURCE_CHANGED, PROXY_LAST_DATA_ENTITY_ID
 from . import proxy_control as pc
 
 _LOGGER = logging.getLogger(__name__)
 
 STORE_VERSION = 1
-KEY_SOC = "tbl_batt_bat_c"
-KEY_BAT_MIN = "tbl_batt_prms_bat_min"
+PARAM_SOC = "tbl_batt_bat_c"
+PARAM_BAT_MIN = "tbl_batt_prms_bat_min"
 
 
 class BatteryExportManager:
@@ -64,6 +67,16 @@ class BatteryExportManager:
         return self._lease is not None
 
     @property
+    def stop_in_progress(self) -> bool:
+        """True while a stop is wanted and not yet confirmed by the box."""
+        return self._stop_pending or self._stop_queued
+
+    @property
+    def lease_id(self) -> Optional[str]:
+        """Identity of the current window (its start time)."""
+        return str(self._lease.get("started")) if self._lease else None
+
+    @property
     def lease(self) -> Optional[dict[str, Any]]:
         """Copy of the stored window: until, restore_limit, started."""
         return dict(self._lease) if self._lease else None
@@ -84,6 +97,11 @@ class BatteryExportManager:
         self._unsubs.append(
             self.hass.bus.async_listen(EVENT_DATA_SOURCE_CHANGED, self._on_data_source_changed)
         )
+        self._unsubs.append(
+            async_track_state_change_event(
+                self.hass, [PROXY_LAST_DATA_ENTITY_ID], self._on_proxy_heartbeat
+            )
+        )
         if isinstance(stored, dict) and stored.get("until"):
             self._lease = stored
             _LOGGER.warning(
@@ -93,7 +111,8 @@ class BatteryExportManager:
             self._stop_pending = True
             self.hass.async_create_task(self.async_request_stop("restart"))
 
-    async def async_unload(self) -> None:
+    @callback
+    def unload(self) -> None:
         """Drop listeners; the stored window stays for the next start."""
         self._cancel_watchers()
         for unsub in self._unsubs:
@@ -106,7 +125,7 @@ class BatteryExportManager:
         self._lease = {
             "until": dt_util.as_utc(until).isoformat(),
             "restore_limit": keep_restore,
-            "started": dt_util.utcnow().isoformat(),
+            "started": dt_util.utcnow().isoformat(timespec="microseconds"),
         }
         self._stop_pending = False
         self._stop_queued = False
@@ -118,13 +137,27 @@ class BatteryExportManager:
             keep_restore,
         )
 
-    async def async_clear(self) -> None:
-        """Forget the window after the export was stopped."""
+    async def async_clear(self, lease_id: Optional[str] = None) -> bool:
+        """Forget the window after its export was stopped.
+
+        A stop clears only the window it was started for: a new export armed
+        while an older stop was still queued keeps its own window.
+        """
+        if lease_id is not None and lease_id != self.lease_id:
+            _LOGGER.info("[OIG Proxy] Stop belongs to an older export window, keeping the current one")
+            return False
         self._lease = None
         self._stop_pending = False
         self._stop_queued = False
         self._cancel_watchers()
         await self._save()
+        return True
+
+    @callback
+    def stop_failed(self) -> None:
+        """The stop did not turn the export off; keep the window and retry."""
+        self._stop_queued = False
+        self._stop_pending = True
 
     async def _save(self) -> None:
         try:
@@ -139,7 +172,7 @@ class BatteryExportManager:
             self._timer_unsub = async_track_point_in_utc_time(
                 self.hass, self._on_end_time, until
             )
-        soc_entity = pc.find_proxy_entity(self.hass, self.box_id, KEY_SOC, control=False)
+        soc_entity = pc.find_proxy_entity(self.hass, self.box_id, PARAM_SOC, control=False)
         if soc_entity:
             self._soc_unsub = async_track_state_change_event(
                 self.hass, [soc_entity], self._on_soc_change
@@ -167,13 +200,24 @@ class BatteryExportManager:
         data = getattr(event, "data", {}) or {}
         if data.get("entry_id") != self.entry.entry_id:
             return
-        if self._stop_pending and self.active:
-            self.hass.async_create_task(self.async_request_stop("retry"))
+        self._retry_pending_stop()
+
+    @callback
+    def _on_proxy_heartbeat(self, _event: Any) -> None:
+        self._retry_pending_stop()
+
+    @callback
+    def _retry_pending_stop(self) -> None:
+        if not (self._stop_pending and not self._stop_queued and self.active):
+            return
+        if not pc.data_source_is_local(self.hass, self.entry):
+            return
+        self.hass.async_create_task(self.async_request_stop("retry"))
 
     def soc_at_minimum(self) -> bool:
         """True when the battery is at or below the box's discharge minimum."""
-        soc = pc.read_proxy_number(self.hass, self.box_id, KEY_SOC)
-        bat_min = pc.read_proxy_number(self.hass, self.box_id, KEY_BAT_MIN)
+        soc = pc.read_proxy_number(self.hass, self.box_id, PARAM_SOC)
+        bat_min = pc.read_proxy_number(self.hass, self.box_id, PARAM_BAT_MIN)
         return soc is not None and bat_min is not None and soc <= bat_min
 
     async def async_request_stop(self, reason: str) -> bool:

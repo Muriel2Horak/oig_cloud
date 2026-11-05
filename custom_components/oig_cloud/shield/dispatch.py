@@ -63,6 +63,10 @@ def _split_box_mode_params(params: Dict[str, Any]) -> Optional[list[Dict[str, An
             k: v for k, v in params.items() if k not in _TOGGLE_KEYS and k != _CHARGE_KEY
         }
         mode_params["_box_mode_step"] = "mode"
+        if has_charge:
+            # The charge step needs the box to report Home UPS, so this step must
+            # end on the mode readback, never on a power jump.
+            mode_params["_await_readback"] = True
         steps.append(mode_params)
     if has_toggles:
         app_params = {k: v for k, v in params.items() if k not in ("mode", _CHARGE_KEY)}
@@ -768,7 +772,7 @@ def _capture_original_states(
 def _init_power_monitor(
     shield: Any, service_name: str, data: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
-    if service_name != SERVICE_SET_BOX_MODE:
+    if service_name != SERVICE_SET_BOX_MODE or data.get("_await_readback"):
         return None
     box_id = _resolve_box_id_for_power_monitor(shield)
     if not box_id:

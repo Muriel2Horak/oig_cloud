@@ -158,3 +158,21 @@ async def test_local_mode_with_proxy_ready_at_startup_does_not_wait(startup):
     assert startup.coordinator.refreshes == 0
     assert startup.polls == []
     assert startup.sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_unloaded_entry_stops_background_startup(startup, monkeypatch):
+    cloud = _state(DATA_SOURCE_CLOUD_ONLY, False)
+    startup.set_states(cloud, [cloud])
+
+    async def _sleep_then_unload(seconds: float) -> None:
+        startup.sleeps.append(seconds)
+        startup.hass.data[DOMAIN].pop("entry1", None)  # reload removed the entry
+
+    monkeypatch.setattr(init_module.asyncio, "sleep", _sleep_then_unload)
+    await startup.run()
+
+    assert startup.sleeps == [1.0]
+    assert startup.coordinator.refreshes == 0
+    assert startup.controller_starts == []
+    assert "entry1" not in startup.hass.data[DOMAIN]
