@@ -359,7 +359,6 @@ def test_ai_step_has_labels_and_co_equal_menu_copy(relative_path):
     assert "doporuč" not in copy
 
 
-
 # --------------------------------------------------------------- extra entities
 
 def test_extra_entities_field_is_an_optional_entity_list():

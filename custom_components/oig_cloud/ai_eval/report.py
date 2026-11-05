@@ -93,7 +93,7 @@ def _items(raw: Any, kind: str) -> List[Dict[str, Any]]:
     for entry in raw:
         if not isinstance(entry, Mapping):
             continue
-        item = {f: _text(entry.get(f)) for f in _FIELDS[kind]}
+        item: Dict[str, Any] = {f: _text(entry.get(f)) for f in _FIELDS[kind]}
         if any(not item[f] for f in _REQUIRED[kind]):
             continue
         if _is_filler(*item.values()):

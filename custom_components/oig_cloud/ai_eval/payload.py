@@ -15,6 +15,7 @@ DETAIL_COLS = [
 ]
 _FLOAT_COLS = {"v_r", "v_s", "v_t", "freq", "invT", "batT"}
 
+
 def _cell(grid: Dict[str, List[Optional[Any]]], key: str, i: int,
           label: Callable[[int], str]) -> str:
     if key == "t":

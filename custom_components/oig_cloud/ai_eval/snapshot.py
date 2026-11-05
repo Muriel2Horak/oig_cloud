@@ -163,13 +163,10 @@ def _plan_blocks(rows, capacity, today) -> List[Dict[str, Any]]:
         prices = [p for p in (_num(i.get("spot_price")) for _, i in current) if p is not None]
         reasons = Counter(str(i.get("decision_reason") or "").strip() for _, i in current)
         reasons.pop("", None)
-        lo, hi = (min(prices), max(prices)) if prices else (None, None)
-        if lo is None:
-            price = None
-        elif abs(hi - lo) < 0.005:
-            price = f"{lo:.2f}"
-        else:
-            price = f"{lo:.2f}–{hi:.2f}"
+        price: Optional[str] = None
+        if prices:
+            lo, hi = min(prices), max(prices)
+            price = f"{lo:.2f}" if abs(hi - lo) < 0.005 else f"{lo:.2f}–{hi:.2f}"
         block = {
             "od": _when(current[0][0], today),
             "do": _when(current[-1][0] + _SLOT, today),
@@ -255,7 +252,8 @@ def _windows(hourly: List[Dict[str, Any]], today: date) -> Dict[str, Any]:
 def _solar(solar: Mapping[str, Any], now: datetime) -> Dict[str, Any]:
     if not solar:
         return {}
-    daily = solar.get("daily") if isinstance(solar.get("daily"), Mapping) else {}
+    raw_daily = solar.get("daily")
+    daily: Mapping[str, Any] = raw_daily if isinstance(raw_daily, Mapping) else {}
     today = now.date()
 
     def day_total(offset: int) -> Optional[float]:
@@ -273,8 +271,11 @@ def _solar(solar: Mapping[str, Any], now: datetime) -> Dict[str, Any]:
         if t >= now.replace(minute=0, second=0, microsecond=0):
             remaining += value
     peak = None
-    tomorrow = [(t, _num(v)) for t, v in ((_parse_dt(k), v) for k, v in (solar.get("tomorrow_hourly") or {}).items())
-                if t is not None and _num(v) is not None]
+    tomorrow: List[Tuple[datetime, float]] = []
+    for key, kw in (solar.get("tomorrow_hourly") or {}).items():
+        t, value = _parse_dt(key), _num(kw)
+        if t is not None and value is not None:
+            tomorrow.append((t, value))
     if tomorrow:
         best = max(tomorrow, key=lambda tv: tv[1])
         if best[1] > 0:
@@ -342,7 +343,7 @@ def _extra(items: Iterable[Any]) -> List[Dict[str, Any]]:
         state = str(item.get("state") or "").strip()[:40]
         if not name or state in ("", "unknown", "unavailable"):
             continue
-        row = {"nazev": name, "stav": state}
+        row: Dict[str, Any] = {"nazev": name, "stav": state}
         unit = str(item.get("unit") or "").strip()
         if unit:
             row["jednotka"] = unit[:10]
@@ -384,11 +385,10 @@ def build_snapshot(inputs: Mapping[str, Any]) -> Dict[str, Any]:
     hourly = _hourly(rows, capacity, today, nt, vt)
 
     soc_min = None
-    if rows and capacity:
-        t_min, i_min = min(rows, key=lambda r: _num(r[1].get("battery_soc")) if _num(r[1].get("battery_soc")) is not None else 1e9)
-        kwh = _num(i_min.get("battery_soc"))
-        if kwh is not None:
-            soc_min = {"pct": _pct(kwh, capacity), "kwh": round(kwh, 1), "kdy": _when(t_min, today)}
+    socs = [(t, kwh) for t, kwh in ((t, _num(i.get("battery_soc"))) for t, i in rows) if kwh is not None]
+    if socs and capacity:
+        t_min, kwh = min(socs, key=lambda tk: tk[1])
+        soc_min = {"pct": _pct(kwh, capacity), "kwh": round(kwh, 1), "kdy": _when(t_min, today)}
 
     soc_pct = _num(inputs.get("soc_pct"))
     ted = {
