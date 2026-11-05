@@ -176,3 +176,62 @@ async def test_unloaded_entry_stops_background_startup(startup, monkeypatch):
     assert startup.coordinator.refreshes == 0
     assert startup.controller_starts == []
     assert "entry1" not in startup.hass.data[DOMAIN]
+
+
+class _Tracker:
+    instances: list["_Tracker"] = []
+
+    def __init__(self, hass: Any, box_id: str) -> None:
+        self.box_id = box_id
+        self.set_up = False
+        _Tracker.instances.append(self)
+
+    async def async_setup(self) -> None:
+        self.set_up = True
+
+
+class _Shield:
+    def __init__(self) -> None:
+        self.mode_tracker = None
+        self.notified = 0
+
+    def _notify_state_change(self) -> None:
+        self.notified += 1
+
+
+@pytest.mark.asyncio
+async def test_mode_tracker_starts_in_local_mode_without_cloud_notifications(startup, monkeypatch):
+    """Live 2026-11-05: with local data ready the cloud notification manager is
+    (rightly) skipped, and the mode tracker, created only inside it, never
+    started: mode_reaction_time stayed unknown after the restart."""
+    _Tracker.instances = []
+    monkeypatch.setattr("custom_components.oig_cloud.shield.core.ModeTransitionTracker", _Tracker)
+    startup.entry.options["box_id"] = "2206237016"
+    local = _state(DATA_SOURCE_LOCAL_ONLY, True)
+    startup.set_states(local, [local])
+    shield = _Shield()
+
+    await init_module._complete_entry_startup(
+        startup.hass, startup.entry, startup.coordinator, startup.session_manager,
+        shield, None, False,
+    )
+
+    assert shield.mode_tracker is _Tracker.instances[0]
+    assert shield.mode_tracker.box_id == "2206237016"
+    assert shield.mode_tracker.set_up is True
+    assert shield.notified == 1
+
+
+@pytest.mark.asyncio
+async def test_mode_tracker_is_created_once(startup, monkeypatch):
+    _Tracker.instances = []
+    monkeypatch.setattr("custom_components.oig_cloud.shield.core.ModeTransitionTracker", _Tracker)
+    startup.entry.options["box_id"] = "2206237016"
+    local = _state(DATA_SOURCE_LOCAL_ONLY, True)
+    startup.set_states(local, [local])
+    shield = _Shield()
+
+    await init_module._init_mode_tracker(startup.hass, startup.entry, startup.coordinator, shield)
+    await init_module._init_mode_tracker(startup.hass, startup.entry, startup.coordinator, shield)
+
+    assert len(_Tracker.instances) == 1

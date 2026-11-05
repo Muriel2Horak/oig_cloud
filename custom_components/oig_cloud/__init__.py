@@ -1303,6 +1303,37 @@ def _resolve_entry_box_id(entry: ConfigEntry, coordinator: OigCloudCoordinator |
     return None
 
 
+async def _init_mode_tracker(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    service_shield: Any,
+) -> None:
+    """Start the shield's mode transition tracker (mode_reaction_time).
+
+    It used to be created inside the cloud notification manager, which is
+    skipped when data are local; once startup waited for local telemetry
+    (no stale cloud fetch), the tracker never started and the reaction time
+    sensor stayed unknown. It depends only on the shield and the box id.
+    """
+    if not service_shield or getattr(service_shield, "mode_tracker", None):
+        return
+    device_id = _resolve_entry_box_id(entry, coordinator)
+    if not device_id:
+        _LOGGER.debug("Mode Transition Tracker: box id unknown, not started")
+        return
+    try:
+        from .shield.core import ModeTransitionTracker
+
+        service_shield.mode_tracker = ModeTransitionTracker(hass, device_id)
+        await service_shield.mode_tracker.async_setup()
+        # The reaction time sensor was added before this history arrived.
+        service_shield._notify_state_change()
+        _LOGGER.info("Mode Transition Tracker inicializován pro box %s", device_id)
+    except Exception as tracker_error:
+        _LOGGER.warning("Failed to initialize Mode Transition Tracker: %s", tracker_error)
+
+
 async def _init_notification_manager(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1344,22 +1375,6 @@ async def _init_notification_manager(
 
         manager.set_device_id(device_id)
         _LOGGER.debug("Set notification manager device_id to: %s", device_id)
-
-        if service_shield:
-            try:
-                from .shield.core import ModeTransitionTracker
-
-                service_shield.mode_tracker = ModeTransitionTracker(hass, device_id)
-                await service_shield.mode_tracker.async_setup()
-                # The reaction time sensor was added before this history arrived.
-                service_shield._notify_state_change()
-                _LOGGER.info(
-                    "Mode Transition Tracker inicializován pro box %s", device_id
-                )
-            except Exception as tracker_error:
-                _LOGGER.warning(
-                    "Failed to initialize Mode Transition Tracker: %s", tracker_error
-                )
 
         try:
             await manager.update_from_api()
@@ -1730,6 +1745,8 @@ async def _complete_entry_startup(
                 await coordinator.async_refresh()
             else:
                 await coordinator.async_config_entry_first_refresh()
+
+        await _init_mode_tracker(hass, entry, coordinator, service_shield)
 
         notification_manager = await _init_notification_manager(
             hass, entry, coordinator, session_manager, service_shield
