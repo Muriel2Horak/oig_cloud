@@ -171,6 +171,12 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
             "original_states": info.get("original_states", {}),
         },
     )
+    if _cloud_retry_allowed(service_name, info):
+        retries = getattr(shield, "cloud_retries", None)
+        if retries is None:
+            retries = []
+            shield.cloud_retries = retries
+        retries.append((service_name, info))
     await emit_shield_decision_event(
         shield,
         event_name="shield_call_timeout",
@@ -179,6 +185,56 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
         expected_entities=info.get("entities", {}),
         detail_result_reason="timeout_exceeded",
     )
+
+
+# Services whose local write has a cloud equivalent. The charge-current step and
+# the battery export exist only on the proxy, so they are never retried.
+_CLOUD_RETRY_SERVICES = (
+    "oig_cloud.set_box_mode",
+    "oig_cloud.set_grid_delivery",
+    "oig_cloud.set_boiler_mode",
+)
+
+
+def _cloud_retry_allowed(service_name: str, info: Dict[str, Any]) -> bool:
+    from ..control.proxy_control import FORCE_CLOUD_KEY, ROUTE_KEY, ROUTE_LOCAL
+
+    params = info.get("params") or {}
+    if service_name not in _CLOUD_RETRY_SERVICES:
+        return False
+    if params.get(ROUTE_KEY) != ROUTE_LOCAL or params.get(FORCE_CLOUD_KEY):
+        return False
+    if params.get("_box_mode_step") == "charge" or params.get("charge_current") is not None:
+        return False
+    return info.get("call") is not None
+
+
+async def _dispatch_cloud_retries(shield: Any) -> None:
+    """Re-queue timed-out local writes once through the cloud (after pending is cleared)."""
+    from ..control.proxy_control import FORCE_CLOUD_KEY, ROUTE_KEY
+
+    retries = getattr(shield, "cloud_retries", None)
+    if not retries:
+        return
+    shield.cloud_retries = []
+    for service_name, info in retries:
+        original_call, domain, service, blocking, context = info["call"]
+        params = {k: v for k, v in info["params"].items() if k != ROUTE_KEY}
+        params[FORCE_CLOUD_KEY] = True
+        _LOGGER.warning(
+            "[OIG Shield] Local write of %s not confirmed, retrying through the cloud",
+            service_name,
+        )
+        await shield._log_event(
+            "change_requested",
+            service_name,
+            {"params": params, "entities": info.get("entities", {})},
+            reason="Lokální zápis nepotvrzen – opakuji přes cloud",
+            context=context,
+        )
+        await shield.intercept_service_call(
+            domain, service, {"params": params}, original_call, blocking, context
+        )
 
 
 def _get_power_monitor_state(
@@ -282,6 +338,7 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
 
         finished = await _collect_finished_pending(shield)
         _clear_finished_pending(shield, finished)
+        await _dispatch_cloud_retries(shield)
         await _maybe_start_next_call(shield)
 
         if finished:
@@ -650,6 +707,16 @@ def _normalize_entity_values(
         # Use empty string for unavailable current values
         safe_current = "" if _is_unavailable_value(current_value) else str(current_value or "")
         return (str(expected_value), safe_current)
+
+    # Proxy numbers report floats ("121.0") for integer targets ("121").
+    if _is_numeric_value(expected_value) and _is_numeric_value(current_value):
+        try:
+            return (
+                str(round(float(expected_value), 3)),
+                str(round(float(current_value), 3)),
+            )
+        except (ValueError, TypeError):
+            pass
 
     norm_expected = shield._normalize_value(expected_value)
     norm_current = shield._normalize_value(current_value)

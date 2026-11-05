@@ -35,6 +35,17 @@ set_box_mode:
       required: false
       selector:
         boolean:
+    charge_current:
+      description: |
+        Charging current from the grid in Home UPS (A). Only through the OIG Proxy.
+        Written after the box confirms Home UPS, because entering Home UPS resets it.
+        Nabíjecí proud ze sítě v Home UPS (A). Jen přes OIG Proxy.
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: "A"
     acknowledgement:
       description: |
         I acknowledge that calling the service will result in parameter modification of a live system.
@@ -193,6 +204,77 @@ set_formating_mode:
         I take on full responsibility for the changes and any effect they may have, expected or otherwise.
         Beru na vědomí, že volání této služby povede ke změně parametrů živého systému.
         Přebírám plnou odpovědnost za změny a jakýkoli jejich účinek, očekávaný nebo neočekávaný a to i v případě chyby.
+      required: true
+      selector:
+        boolean:
+
+battery_export:
+  name: Prodej z baterie do sítě
+  description: |
+    Vybíjí baterii do sítě až do zadaného limitu, jen přes OIG Proxy. Prodej má vždy konec:
+    po něm, po restartu Home Assistant nebo při baterii na minimu integrace prodej vypne
+    a vrátí původní limit přetoků.
+  fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
+    limit:
+      description: Limit výkonu do sítě (W). Nejvýš strop z nastavení, jinak současný limit přetoků.
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: "W"
+    duration_minutes:
+      description: Jak dlouho prodávat (minuty). Zadejte toto nebo čas konce.
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: "min"
+    until:
+      description: Čas konce prodeje. Zadejte toto nebo délku.
+      required: false
+      selector:
+        datetime:
+    acknowledgement:
+      description: |
+        I acknowledge that calling the service will result in parameter modification of a live system.
+        Beru na vědomí, že volání této služby povede ke změně parametrů živého systému.
+      required: true
+      selector:
+        boolean:
+    warning:
+      description: |
+        Prodej do distribuční sítě musí být schválený provozovatelem DS (Smlouva o připojení, PPP).
+        Za případné sankce odpovídáte vy.
+      required: true
+      selector:
+        boolean:
+
+stop_battery_export:
+  name: Ukončit prodej z baterie
+  description: Vypne vybíjení baterie do sítě a vrátí limit přetoků na hodnotu před prodejem.
+  fields:
+    device_id:
+      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
+      required: false
+      selector:
+        device:
+          filter:
+            - integration: oig_cloud
+              manufacturer: OIG
+              model: ČEZ Battery Box Home
+    acknowledgement:
+      description: Potvrzení změny živého systému.
       required: true
       selector:
         boolean:

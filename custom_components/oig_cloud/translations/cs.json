@@ -202,7 +202,10 @@
           "local_event_debounce_ms": "Local event debounce (ms)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "notifications_scan_interval": "Notifikace interval (sekund)",
-          "standard_scan_interval": "Základní data (sekund)"
+          "standard_scan_interval": "Základní data (sekund)",
+          "control_via_proxy": "Řídit přes OIG Proxy",
+          "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = všechny senzory čtou z cloudu; Local only = čtení z lokálních entit (při výpadku proxy > limit minut se dočasně vrátí na cloud)",
@@ -212,7 +215,10 @@
           "local_event_debounce_ms": "Debounce pro event-driven refresh z lokálních entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "local_proxy_stale_minutes": "Po kolika minutách bez lokálních dat se přepnout do cloudu. Jakmile proxy znovu odpoví, vrátí se zpět na local.",
           "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
-          "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)"
+          "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
+          "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
+          "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
         },
         "description": "{step}\n{progress}\n\nNastavte, jak často se mají načítat data z OIG Cloud.\n\n💡 **Tip:** Kratší interval = aktuálnější data, ale vyšší zátěž na API servery.",
         "title": "⏱️ Intervaly načítání dat"
@@ -612,7 +618,10 @@
           "local_event_debounce_ms": "Local event debounce (ms)",
           "local_proxy_stale_minutes": "Fallback na cloud po (minut)",
           "notifications_scan_interval": "Notifikace interval (sekund)",
-          "standard_scan_interval": "Základní data (sekund)"
+          "standard_scan_interval": "Základní data (sekund)",
+          "control_via_proxy": "Řídit přes OIG Proxy",
+          "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = vše z cloudu; Local only = lokální mapping (při výpadku/zastarání proxy automaticky fallback na cloud)",
@@ -622,7 +631,10 @@
           "local_event_debounce_ms": "Debounce pro event-driven refresh z local entit (nižší = rychlejší reakce, vyšší = méně aktualizací)",
           "local_proxy_stale_minutes": "Fallback na cloud, pokud lokální proxy neposlala data déle než tento limit",
           "notifications_scan_interval": "Jak často kontrolovat cloud notifikace (doporučeno 300-900 sekund)",
-          "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)"
+          "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
+          "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
+          "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
         },
         "description": "{step}\n{progress}\n\nNastavte, jak často se mají načítat data z OIG Cloud.\n\n💡 **Tip:** Kratší interval = aktuálnější data, ale vyšší zátěž na API servery.",
         "title": "⏱️ Intervaly načítání dat"
@@ -919,6 +931,36 @@
       },
       "name": "Aplikovat plán ohřevu"
     },
+    "battery_export": {
+      "name": "Prodej z baterie do sítě",
+      "description": "Vybíjí baterii do sítě až do limitu, jen přes OIG Proxy. Prodej má vždy konec.",
+      "fields": {
+        "device_id": {
+          "name": "Zařízení",
+          "description": "Battery Box, pokud jich máte víc."
+        },
+        "limit": {
+          "name": "Limit (W)",
+          "description": "Limit výkonu do sítě. Nejvýš strop z nastavení, jinak současný limit přetoků."
+        },
+        "duration_minutes": {
+          "name": "Délka (min)",
+          "description": "Jak dlouho prodávat. Zadejte toto nebo čas konce."
+        },
+        "until": {
+          "name": "Konec",
+          "description": "Čas konce prodeje. Zadejte toto nebo délku."
+        },
+        "acknowledgement": {
+          "name": "Potvrzení",
+          "description": "Beru na vědomí změnu parametrů živého systému."
+        },
+        "warning": {
+          "name": "Upozornění PPDS",
+          "description": "Prodej do sítě musí být schválený provozovatelem DS."
+        }
+      }
+    },
     "cancel_boiler_plan": {
       "description": "Zruší aktivní plán ohřevu bojleru a odstraní naplánované automatizace.",
       "fields": {
@@ -999,6 +1041,10 @@
         "mode": {
           "description": "Režim Battery Boxu.",
           "name": "Režim"
+        },
+        "charge_current": {
+          "name": "Nabíjecí proud",
+          "description": "Nabíjecí proud ze sítě v Home UPS (A). Jen přes OIG Proxy."
         }
       },
       "name": "Nastavit režim Battery Boxu"
@@ -1050,6 +1096,20 @@
         }
       },
       "name": "Nastavit přetoky do sítě"
+    },
+    "stop_battery_export": {
+      "name": "Ukončit prodej z baterie",
+      "description": "Vypne vybíjení baterie do sítě a vrátí původní limit přetoků.",
+      "fields": {
+        "device_id": {
+          "name": "Zařízení",
+          "description": "Battery Box, pokud jich máte víc."
+        },
+        "acknowledgement": {
+          "name": "Potvrzení",
+          "description": "Beru na vědomí změnu parametrů živého systému."
+        }
+      }
     }
   },
   "issues": {
