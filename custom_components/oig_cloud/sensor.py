@@ -14,6 +14,7 @@ from .const import DOMAIN
 from .entities.ai_eval_sensor import OigCloudAiEvalSensor
 from .entities.ai_status_sensor import OigCloudAiStatusSensor
 from .entities.base_sensor import resolve_box_id
+from .shared.device_links import is_device_info
 from .entities.data_source_sensor import OigCloudDataSourceSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -579,14 +580,8 @@ def _create_basic_sensors(coordinator: Any) -> List[Any]:
 
                 sensor = OigCloudDataSensor(coordinator, sensor_type)
 
-                if hasattr(sensor, "device_info") and sensor.device_info is not None:
-                    if not isinstance(sensor.device_info, dict):
-                        _LOGGER.error(
-                            "Sensor %s has invalid device_info type: %s",
-                            sensor_type,
-                            type(sensor.device_info),
-                        )
-                        continue
+                if not _is_sensor_device_info_valid(sensor, "Data", sensor_type):
+                    continue
 
                 basic_sensors.append(sensor)
                 _LOGGER.debug("Created data sensor: %s", sensor_type)
@@ -628,15 +623,8 @@ def _create_computed_sensors(coordinator: Any) -> List[Any]:
 
                 sensor = OigCloudComputedSensor(coordinator, sensor_type)
 
-                sensor_device_info = getattr(sensor, "device_info", None)
-                if sensor_device_info is not None:
-                    if not isinstance(sensor_device_info, dict):
-                        _LOGGER.error(
-                            "Computed sensor %s has invalid device_info type: %s",
-                            sensor_type,
-                            type(sensor_device_info),
-                        )
-                        continue
+                if not _is_sensor_device_info_valid(sensor, "Computed", sensor_type):
+                    continue
 
                 computed_sensors.append(sensor)
                 _LOGGER.debug("Created computed sensor: %s", sensor_type)
@@ -926,7 +914,7 @@ def _try_create_category_sensor(
 def _is_sensor_device_info_valid(sensor: Any, log_label: str, sensor_type: str) -> bool:
     if not hasattr(sensor, "device_info") or sensor.device_info is None:
         return True
-    if isinstance(sensor.device_info, dict):
+    if is_device_info(sensor.device_info):
         return True
     _LOGGER.error(
         "%s sensor %s has invalid device_info type: %s",
