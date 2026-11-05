@@ -101,9 +101,9 @@ describe('STEP_CONNECTION (Task 20)', () => {
 // Component render — full wizard, connection step (F1 Wizard v2 Stage S3 Task 20)
 // ============================================================================
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: []) => Promise<FieldRegistry | null>>());
 const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
   modules: {}, battery: {}, solar: {}, boiler: {},
 }));

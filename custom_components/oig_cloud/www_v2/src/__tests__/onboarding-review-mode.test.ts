@@ -11,9 +11,9 @@ import { html } from 'lit';
 import type { FieldRegistry } from '@/data/registry-data';
 import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>());
 const saveModuleConfigMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/data/ha-client', () => ({

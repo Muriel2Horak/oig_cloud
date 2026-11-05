@@ -38,6 +38,9 @@ export default defineConfig({
   },
 
   build: {
+    // Vite 7 raised its default target to chrome107/safari16; keep the
+    // previous baseline so older HA app webviews still load the dashboard.
+    target: ['es2020', 'edge88', 'firefox78', 'chrome87', 'safari14'],
     outDir: 'dist',
     sourcemap: true,
     rollupOptions: {

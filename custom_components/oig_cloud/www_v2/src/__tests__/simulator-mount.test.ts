@@ -18,17 +18,17 @@ import type { FieldRegistry } from '@/data/registry-data';
 // --- mocks mirrored from onboarding-mount.test.ts (same app surface) -------
 
 const fetchOIGAPI = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>().mockResolvedValue(null),
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>().mockResolvedValue(null),
 );
 const fetchOIGAPITyped = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<any>>().mockResolvedValue({
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<any>>().mockResolvedValue({
     ok: true,
     status: 200,
     data: null,
   }),
 );
 const loadFieldRegistryMock = vi.hoisted(() =>
-  vi.fn<[], Promise<FieldRegistry | null>>().mockResolvedValue(null),
+  vi.fn<(...args: []) => Promise<FieldRegistry | null>>().mockResolvedValue(null),
 );
 
 vi.mock('@/data/ha-client', () => ({

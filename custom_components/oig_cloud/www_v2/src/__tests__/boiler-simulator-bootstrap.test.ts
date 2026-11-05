@@ -19,10 +19,10 @@ import { html } from 'lit';
 import type { BoilerConfig, BoilerV2Data } from '@/ui/features/boiler/types';
 
 const fetchOIGAPI = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>().mockResolvedValue(null),
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>().mockResolvedValue(null),
 );
 const fetchOIGAPITyped = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<any>>().mockResolvedValue({
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<any>>().mockResolvedValue({
     ok: true,
     status: 200,
     data: null,

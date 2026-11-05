@@ -3,8 +3,8 @@ import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import type { FieldRegistry } from '@/data/registry-data';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string]) => Promise<unknown>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: []) => Promise<FieldRegistry | null>>());
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {

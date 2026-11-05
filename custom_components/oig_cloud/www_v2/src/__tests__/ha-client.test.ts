@@ -6,14 +6,14 @@ const STALE_TOKEN = 'stale-token-sentinel';
 const CURRENT_TOKEN = 'current-token-sentinel';
 const FRESH_TOKEN = 'fresh-token-sentinel';
 
-type Dispatch = ReturnType<typeof vi.fn<[string, RequestInit?], Promise<Response>>>;
+type Dispatch = ReturnType<typeof vi.fn<(...args: [string, RequestInit?]) => Promise<Response>>>;
 
 interface HaFake {
   hass: Hass;
   dispatch: Dispatch;
-  transport: ReturnType<typeof vi.fn<[string, RequestInit?], Promise<Response>>>;
-  haOwnedRefresh: ReturnType<typeof vi.fn<[], Promise<void>>>;
-  forbiddenOigRefresh: ReturnType<typeof vi.fn<[], Promise<void>>>;
+  transport: ReturnType<typeof vi.fn<(...args: [string, RequestInit?]) => Promise<Response>>>;
+  haOwnedRefresh: ReturnType<typeof vi.fn<(...args: []) => Promise<void>>>;
+  forbiddenOigRefresh: ReturnType<typeof vi.fn<(...args: []) => Promise<void>>>;
 }
 
 interface HaFakeOptions {
@@ -35,14 +35,14 @@ function createHaFake(options: HaFakeOptions = {}): HaFake {
   const dispatch: Dispatch = vi.fn().mockResolvedValue(response());
   let activeToken = options.expired ? STALE_TOKEN : CURRENT_TOKEN;
 
-  const forbiddenOigRefresh = vi.fn<[], Promise<void>>().mockResolvedValue(undefined);
-  const haOwnedRefresh = vi.fn<[], Promise<void>>(async () => {
+  const forbiddenOigRefresh = vi.fn<(...args: []) => Promise<void>>().mockResolvedValue(undefined);
+  const haOwnedRefresh = vi.fn<(...args: []) => Promise<void>>(async () => {
     if (options.refreshReject) throw options.refreshReject;
     activeToken = FRESH_TOKEN;
     hass.auth.expired = false;
   });
 
-  const transport = vi.fn<[string, RequestInit?], Promise<Response>>(
+  const transport = vi.fn<(...args: [string, RequestInit?]) => Promise<Response>>(
     async (path, init = {}) => {
       if (hass.auth.expired) await haOwnedRefresh();
 

@@ -4,7 +4,7 @@ import { html } from 'lit';
 import type { FieldRegistry } from '@/data/registry-data';
 
 const loadFieldRegistryMock = vi.hoisted(() =>
-  vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>().mockResolvedValue(null),
+  vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>().mockResolvedValue(null),
 );
 
 vi.mock('@/data/ha-client', () => ({

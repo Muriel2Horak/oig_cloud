@@ -24,9 +24,9 @@ import { t, type OnboardingKey } from '@/i18n/onboarding';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>());
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {

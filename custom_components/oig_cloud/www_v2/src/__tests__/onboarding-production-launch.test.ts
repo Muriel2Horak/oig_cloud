@@ -32,8 +32,8 @@ import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 // set, is the only way to control that ordering.
 const TEST_SN = 'SN123';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
-const fetchOIGAPITyped = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<any>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>());
+const fetchOIGAPITyped = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<any>>());
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {

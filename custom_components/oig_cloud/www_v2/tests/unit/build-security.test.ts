@@ -110,7 +110,9 @@ afterEach(() => {
   }
 });
 
-describe('secure deterministic v2 build', () => {
+// These tests run real tsc + vite builds synchronously (10 s and more each).
+// Vitest 1 never enforced the 5 s default on synchronous tests; Vitest 4 does.
+describe('secure deterministic v2 build', { timeout: 120_000 }, () => {
   it('reports the exact sorted executable input list and excludes planned test paths', () => {
     const root = fixtureProject();
 

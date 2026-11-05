@@ -7,10 +7,10 @@ import type { ModuleConfig } from '@/data/settings-data';
 const fetchOIGAPI = vi.hoisted(() => vi.fn());
 const getHassSyncMock = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() =>
-  vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>(),
+  vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>(),
 );
 const loadModuleConfigMock = vi.hoisted(() =>
-  vi.fn<[signal?: AbortSignal], Promise<ModuleConfig | null>>(),
+  vi.fn<(...args: [signal?: AbortSignal]) => Promise<ModuleConfig | null>>(),
 );
 const saveModuleConfigMock = vi.hoisted(() => vi.fn());
 

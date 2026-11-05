@@ -27,16 +27,16 @@ type AiValidateTypedResult = {
 };
 
 const fetchOIGAPI = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>(),
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>(),
 );
 const fetchOIGAPITyped = vi.hoisted(() =>
-  vi.fn<[path: string, options?: RequestInit], Promise<AiValidateTypedResult>>(),
+  vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<AiValidateTypedResult>>(),
 );
 const loadFieldRegistryMock = vi.hoisted(() =>
-  vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>(),
+  vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>(),
 );
 const loadModuleConfigMock = vi.hoisted(() =>
-  vi.fn<[], Promise<Record<string, unknown>>>(),
+  vi.fn<(...args: []) => Promise<Record<string, unknown>>>(),
 );
 
 vi.mock('@/data/ha-client', () => ({

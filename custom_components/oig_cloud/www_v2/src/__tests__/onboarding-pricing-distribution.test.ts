@@ -19,9 +19,9 @@ import type { FieldRegistry } from '@/data/registry-data';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>());
 const saveModuleConfigMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/data/ha-client', () => ({
@@ -549,9 +549,12 @@ describe('owner UX rev — distributor names, tariff description, editable price
 
   it('bundles official SVG logo assets for CEZ, EG.D, and PRE', () => {
     expect(Object.keys(DISTRIBUTOR_LOGO_ASSETS).sort()).toEqual(['cez', 'egd', 'pre']);
-    expect(DISTRIBUTOR_LOGO_ASSETS.cez).toMatch(/\.svg$/);
-    expect(DISTRIBUTOR_LOGO_ASSETS.egd).toMatch(/\.svg$/);
-    expect(DISTRIBUTOR_LOGO_ASSETS.pre).toMatch(/\.svg$/);
+    // A bundled SVG is either an emitted .svg URL or, when Vite inlines a small
+    // asset (Vitest 4 does so in tests), an SVG data URI.
+    const svgAsset = /(\.svg$)|(^data:image\/svg\+xml)/;
+    expect(DISTRIBUTOR_LOGO_ASSETS.cez).toMatch(svgAsset);
+    expect(DISTRIBUTOR_LOGO_ASSETS.egd).toMatch(svgAsset);
+    expect(DISTRIBUTOR_LOGO_ASSETS.pre).toMatch(svgAsset);
   });
 
   it('shows the tariff description from the dataset and the constant invoice hint', async () => {

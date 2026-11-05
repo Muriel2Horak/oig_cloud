@@ -11,9 +11,9 @@ import type { FieldRegistry } from '@/data/registry-data';
 import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 import { SOLAR_PROVIDER_GUIDES } from '@/ui/features/onboarding/step-solar';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: []) => Promise<FieldRegistry | null>>());
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {

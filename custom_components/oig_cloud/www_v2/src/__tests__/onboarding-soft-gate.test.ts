@@ -5,7 +5,7 @@ import type { FieldRegistry } from '@/data/registry-data';
 import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 
 const loadFieldRegistryMock = vi.hoisted(() =>
-  vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>().mockResolvedValue(null),
+  vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>().mockResolvedValue(null),
 );
 const fetchOIGAPITypedMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: true, status: 200, data: null }),

@@ -27,6 +27,12 @@ async function flush(): Promise<void> {
 }
 
 describe('simulator fetcher', () => {
+  // Vitest 4 hands back the SAME spy when a method is spied again, so calls
+  // would accumulate across tests without a restore.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns deterministic battery data for a preset', async () => {
     const result = await mockFetcher({ kind: 'battery', presetId: 'zima', draft: {} });
     expect(result.kind).toBe('battery');
@@ -407,7 +413,7 @@ describe('oig-simulator', () => {
       el.shadowRoot!.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
     const settings = (el: SimElement) =>
       el.shadowRoot!.querySelector('[data-testid="simulator-settings"]')!.textContent;
-    const lastDraft = (fetcher: Mock<[SimRequest], Promise<SimResponse>>) => fetcher.mock.lastCall![0].draft;
+    const lastDraft = (fetcher: Mock<(req: SimRequest) => Promise<SimResponse>>) => fetcher.mock.lastCall![0].draft;
 
     async function drag(el: SimElement, testId: string, value: string) {
       const input = slider(el, testId);

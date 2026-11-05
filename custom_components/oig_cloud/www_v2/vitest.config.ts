@@ -13,6 +13,8 @@ export default defineConfig({
     ],
     setupFiles: ['./src/__tests__/setup.ts'],
     coverage: {
+      // Vitest 4 dropped coverage.all: list sources so untested files still count.
+      include: ['src/**/*.ts'],
       reportsDirectory: './coverage',
       reporter: ['text', 'html', 'clover', 'lcov'],
     },

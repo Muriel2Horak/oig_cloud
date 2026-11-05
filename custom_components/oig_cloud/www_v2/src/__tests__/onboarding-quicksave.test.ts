@@ -13,16 +13,13 @@ import { html } from 'lit';
 import type { FieldRegistry } from '@/data/registry-data';
 import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
 
-const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
+const fetchOIGAPI = vi.hoisted(() => vi.fn<(...args: [path: string, options?: RequestInit]) => Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
-const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<(...args: [signal?: AbortSignal]) => Promise<FieldRegistry | null>>());
 const saveModuleConfigMock = vi.hoisted(() => vi.fn());
 const waitForModuleConfigAfterReloadMock = vi.hoisted(() => vi.fn());
 const realWaitForModuleConfigAfterReload = vi.hoisted(() =>
-  vi.fn<
-    Parameters<typeof import('@/data/settings-data').waitForModuleConfigAfterReload>,
-    ReturnType<typeof import('@/data/settings-data').waitForModuleConfigAfterReload>
-  >(),
+  vi.fn<typeof import('@/data/settings-data').waitForModuleConfigAfterReload>(),
 );
 
 vi.mock('@/data/ha-client', () => ({
