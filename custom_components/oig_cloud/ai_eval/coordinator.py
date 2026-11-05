@@ -325,6 +325,18 @@ def _advice_due(
     return now_local.hour in ADVICE_HOURS and age >= timedelta(minutes=50)
 
 
+def _event_moment(label: str, now_local: datetime) -> Optional[datetime]:
+    """Detector labels are local 'HH:MM' within the last hour; map to a datetime."""
+    try:
+        hour, minute = (int(x) for x in str(label).split(":")[:2])
+        moment = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    except (TypeError, ValueError):
+        return None
+    if moment > now_local:
+        moment -= timedelta(days=1)
+    return moment
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     try:
         parsed = datetime.fromisoformat(str(value))
@@ -490,7 +502,27 @@ class AiEvalCoordinator:
                 prior_low_soc_minutes += detector.STEP_S / 60.0
 
         events = detector.detect_events(grid, n, label, prior_low_soc_minutes)
-        notable_events = [e for e in events if e.get("kind") in NOTABLE_EVENT_KINDS]
+        now_local = dt_util.as_local(now)
+        precomputed = await _fetch_precomputed(self.hass, self.box_id)
+
+        # A grid jump inside a planned HOME UPS grid-charging slot IS the
+        # planned charge, not an appliance: tag it for the ledger and keep it
+        # out of the anomaly gate. Other kinds (bypass, phase limit) stay.
+        naive_now = now_local.replace(tzinfo=None)
+        for event in events:
+            if event.get("kind") != "grid_skok":
+                continue
+            moment = _event_moment(str(event.get("at", "")), naive_now)
+            hit = snapshot.planned_charge_at(precomputed.get("timeline") or [], moment) if moment else None
+            if hit:
+                event["planned"] = True
+                event["detail"] = (
+                    f"{event.get('detail', '')} [plánované nabíjení: {hit['rezim']} "
+                    f"od {hit['od']}, {hit['ze_site_kwh']:g} kWh ze sítě]"
+                )
+        notable_events = [
+            e for e in events if e.get("kind") in NOTABLE_EVENT_KINDS and not e.get("planned")
+        ]
 
         # Update the rolling ledger every tick — cheap, deterministic memory.
         now_ts = now.timestamp()
@@ -500,8 +532,6 @@ class AiEvalCoordinator:
         # The situation snapshot: plan, prices, solar, boiler, ČHMÚ, opted-in
         # sensors. Built every tick (cheap, local) so the fingerprint can tell
         # whether the facts behind the last advice still hold.
-        now_local = dt_util.as_local(now)
-        precomputed = await _fetch_precomputed(self.hass, self.box_id)
         options = getattr(self.config_entry, "options", None) or {}
         inputs = _collect_inputs(
             self.hass, self.box_id, precomputed,

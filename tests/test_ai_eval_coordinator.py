@@ -682,3 +682,69 @@ def test_only_one_hourly_timer_is_ever_armed(monkeypatch):
     coord._schedule_next_tick()
     coord._schedule_next_tick()
     assert cancelled == [0, 1]
+
+
+def _ups_timeline_around(now: datetime) -> List[Dict[str, Any]]:
+    """Plan with HOME UPS grid charging covering the hour before `now`."""
+    from homeassistant.util import dt as dt_util
+
+    local = dt_util.as_local(now).replace(tzinfo=None, second=0, microsecond=0)
+    start = local - timedelta(minutes=75)
+    rows = []
+    for i in range(16):
+        t = start + timedelta(minutes=15 * i)
+        ups = t < local - timedelta(minutes=45)
+        rows.append({"time": t.strftime("%Y-%m-%dT%H:%M:%S"),
+                     "mode_name": "HOME UPS" if ups else "HOME I",
+                     "grid_charge_kwh": 0.6 if ups else 0.0,
+                     "spot_price": 8.3, "battery_soc": 10.0, "solar_kwh": 0, "load_kwh": 0.2})
+    return rows
+
+
+@pytest.mark.asyncio
+async def test_grid_jump_inside_planned_ups_charging_is_not_an_anomaly(monkeypatch):
+    """Seen live: the planned 14:00 UPS charge was reported as an appliance."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    # grid jump at now-60min+40s, inside the UPS block of the plan
+    _wire(monkeypatch, coordinator, _make_states(box_id, now), _ups_timeline_around(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._kept.update({"advice_fingerprint": None})
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    # an advice run may happen (first tick), but never as an anomaly report
+    assert all("ANOMALIE (právě teď)" not in msg for _, msg in ai_calls)
+    assert store.saved["report_kind"] != "anomaly"
+    assert "grid_skok" in store.saved["ledger"]           # still remembered
+    assert "plánované nabíjení" in store.saved["ledger"]
+
+
+@pytest.mark.asyncio
+async def test_grid_jump_outside_planned_charging_stays_an_anomaly(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _make_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    assert "ANOMALIE (právě teď)" in ai_calls[0][1]
+    assert store.saved["report_kind"] == "anomaly"
+
+
+def test_event_moment_maps_a_clock_label_to_the_last_occurrence():
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    now = datetime(2026, 11, 5, 0, 10)
+    assert coordinator._event_moment("23:55", now) == datetime(2026, 11, 4, 23, 55)
+    assert coordinator._event_moment("00:05", now) == datetime(2026, 11, 5, 0, 5)
+    assert coordinator._event_moment("junk", now) is None

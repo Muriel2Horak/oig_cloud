@@ -247,3 +247,21 @@ def test_lookback_keeps_the_last_hour_of_plan_for_anomaly_runs():
     s = snap.build_snapshot(_inputs(lookback_minutes=60))
     assert s["plan_bloky"][0]["od"] == "dnes 13:45"
     assert s["hodiny"][0]["h"] == "dnes 13"
+
+
+def test_planned_charge_at_finds_the_ups_slot_with_grid_charging():
+    tl = _timeline()
+    hit = snap.planned_charge_at(tl, datetime(2026, 11, 6, 2, 7))
+    assert hit == {"rezim": "HOME UPS", "ze_site_kwh": 0.7, "od": "02:00"}
+    assert snap.planned_charge_at(tl, datetime(2026, 11, 5, 18, 0)) is None   # HOME I
+    assert snap.planned_charge_at(tl, datetime(2026, 11, 9, 2, 0)) is None    # outside plan
+    assert snap.planned_charge_at([], datetime(2026, 11, 6, 2, 7)) is None
+
+
+def test_planned_charging_entries_are_not_counted_as_anomalies():
+    entries = [
+        {"at": "14:02", "kind": "grid_skok", "detail": "sit +3700W [plánované nabíjení: HOME UPS od 14:00, 0.65 kWh ze sítě]"},
+        {"at": "19:10", "kind": "grid_skok", "detail": "sit +2000W"},
+    ]
+    s = snap.build_snapshot(_inputs(anomalies=entries))
+    assert s["anomalie"] == [{"druh": "grid_skok", "pocet": 1, "naposledy": "19:10"}]

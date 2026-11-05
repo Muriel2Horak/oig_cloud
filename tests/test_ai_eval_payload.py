@@ -44,3 +44,7 @@ def test_advisor_prompt_explains_surplus_and_keeps_texts_short():
     assert "export" in sp.lower() and "sell price" in sp
     assert "boiler" in sp
     assert "220 characters" in sp
+
+
+def test_advisor_prompt_tells_the_model_tagged_charging_is_planned():
+    assert "plánované nabíjení" in P.ADVISOR_SYSTEM_PROMPT

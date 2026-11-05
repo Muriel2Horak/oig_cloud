@@ -146,6 +146,26 @@ def _upcoming(timeline: Sequence[Mapping[str, Any]], now: datetime,
     return rows
 
 
+def planned_charge_at(timeline: Sequence[Mapping[str, Any]], moment: datetime) -> Optional[Dict[str, Any]]:
+    """The plan slot covering `moment` when it is a HOME UPS slot charging from grid.
+
+    Lets the anomaly path recognise a grid jump that IS the planned charge
+    (seen live: a 14:00 UPS block reported as "a big appliance switched on").
+    """
+    moment = _naive(moment)
+    for item in timeline or []:
+        if not isinstance(item, Mapping):
+            continue
+        t = _parse_dt(item.get("time") or item.get("timestamp"))
+        if t is None or not t <= moment < t + _SLOT:
+            continue
+        charge = _num(item.get("grid_charge_kwh")) or 0.0
+        if item.get("mode_name") == "HOME UPS" and charge > 0:
+            return {"rezim": "HOME UPS", "ze_site_kwh": round(charge, 2), "od": t.strftime("%H:%M")}
+        return None
+    return None
+
+
 def _home1_extra(item: Mapping[str, Any]) -> float:
     metrics = item.get("decision_metrics")
     if isinstance(metrics, Mapping):
@@ -362,8 +382,8 @@ def _anomalies(entries: Iterable[Any]) -> List[Dict[str, Any]]:
         if not isinstance(e, Mapping):
             continue
         kind = str(e.get("kind") or "").strip()
-        if not kind:
-            continue
+        if not kind or "plánované nabíjení" in str(e.get("detail") or ""):
+            continue  # a planned UPS charge is not an anomaly
         row = summary.setdefault(kind, {"druh": kind, "pocet": 0, "naposledy": ""})
         row["pocet"] += 1
         row["naposledy"] = str(e.get("at") or "")
