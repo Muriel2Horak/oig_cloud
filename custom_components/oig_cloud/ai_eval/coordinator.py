@@ -600,6 +600,10 @@ class AiEvalCoordinator:
             return
 
         parsed = report.parse_report(answer)
+        if parsed is not None and not notable_events:
+            # Anomalies are reported only by a run an event triggered; a quiet
+            # advice run once invented one from the 23 h summary.
+            parsed["anomalie"] = []
         if parsed is not None:
             fakta, lidsky = report.to_legacy_text(parsed)
             urgent = report.is_urgent(parsed) or bool(notable_events)

@@ -767,3 +767,22 @@ async def test_each_tick_logs_one_line_with_timings_and_outcome(monkeypatch, cap
     lines = [r.getMessage() for r in caplog.records if "AI eval tick" in r.getMessage()]
     assert len(lines) == 1
     assert "history=" in lines[0] and "ai=" in lines[0] and "outcome=ai_unavailable" in lines[0]
+
+
+@pytest.mark.asyncio
+async def test_advice_run_without_an_event_carries_no_anomalies(monkeypatch):
+    """Live: a quiet advice run invented an anomaly from the 23 h summary."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    answer = ADVICE_JSON.replace(
+        '"anomalie": []', '"anomalie": [{"kdy": "dnes 15:44", "co": "Nerovnováha fází", "vyznam": "x"}]')
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          answer, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+    assert store.saved["report_kind"] == "advice"
+    assert store.saved["report"]["anomalie"] == []

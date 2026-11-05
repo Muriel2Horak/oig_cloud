@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -222,6 +223,29 @@ def _classify_http_status(status: int) -> str:
     return "invalid_response"
 
 
+_PROVIDER_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,48}$")
+
+
+async def _provider_error_code(resp: Any) -> str:
+    """The provider's own short error code (e.g. model_decommissioned), or '-'.
+
+    Only the closed identifier is returned — never the message, which can
+    echo request content.
+    """
+    try:
+        body = await resp.json(content_type=None)
+    except Exception:  # noqa: BLE001 — diagnostics must never raise
+        return "-"
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return "-"
+    for key in ("code", "type"):
+        value = error.get(key)
+        if isinstance(value, str) and _PROVIDER_CODE.match(value):
+            return value
+    return "-"
+
+
 def _validated_task(task: str) -> str:
     if not isinstance(task, str) or task not in ALLOWED_TASKS:
         raise ValueError("unknown AI task")
@@ -411,7 +435,12 @@ class OpenAiCompatBackend:
                 json=payload, timeout=DEFAULT_TIMEOUT_S,
             ) as resp:
                 if resp.status != 200:
-                    return None, _classify_http_status(resp.status)
+                    code = _classify_http_status(resp.status)
+                    _LOGGER.warning(
+                        "AI text: provider=%s model=%s http=%s provider_code=%s",
+                        self._provider, model, resp.status, await _provider_error_code(resp),
+                    )
+                    return None, code
                 try:
                     content_length = resp.headers.get("Content-Length")
                     if content_length is not None and int(content_length) > MAX_TEXT_RESPONSE_BYTES:

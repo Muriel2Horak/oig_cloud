@@ -559,3 +559,45 @@ async def test_text_path_logs_each_failed_model_with_its_code_and_no_secret(capl
     assert "m-one" in text and "m-two" in text
     assert "no_credits" in text or "rate" in text or "429" in text
     assert "gsk_SecretValue123" not in text
+
+
+class _ErrResp:
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body
+        self.headers = {}
+
+    async def json(self, **_kw):
+        return self._body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_text_failure_log_names_http_status_and_provider_error_code(caplog):
+    """invalid_response alone hid WHY the primary Groq model fails: the log
+    must carry the HTTP status and the provider's own error code."""
+    body = {"error": {"message": "The model `m-one` has been decommissioned. key gsk_Leak",
+                      "type": "invalid_request_error", "code": "model_decommissioned"}}
+    backend = OpenAiCompatBackend(
+        session=_Session(_ErrResp(400, body)), base_url="https://api.groq.com/openai/v1",
+        api_key="gsk_SecretValue123", models=("m-one",), provider="groq")
+    with caplog.at_level(logging.WARNING):
+        await backend.async_generate_text("system", "user")
+    assert "http=400" in caplog.text
+    assert "model_decommissioned" in caplog.text
+    assert "gsk_" not in caplog.text            # provider message is never logged
+
+
+@pytest.mark.asyncio
+async def test_text_failure_log_survives_a_junk_error_body(caplog):
+    backend = OpenAiCompatBackend(
+        session=_Session(_ErrResp(404, ["not", "a", "dict"])), base_url="https://api.groq.com/openai/v1",
+        api_key="gsk_x", models=("m-one",), provider="groq")
+    with caplog.at_level(logging.WARNING):
+        assert await backend.async_generate_text("system", "user") is None
+    assert "http=404" in caplog.text
