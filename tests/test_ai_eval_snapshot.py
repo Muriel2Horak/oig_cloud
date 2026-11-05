@@ -225,3 +225,25 @@ def test_fingerprint_changes_on_new_warning_but_not_on_price_noise():
     assert a == b
     c = snap.fingerprint(snap.build_snapshot(_inputs(chmu=[])))
     assert a != c
+
+
+def test_hourly_rows_show_energy_exported_to_grid():
+    # The surplus that leaves at the sell price is what a boiler or a washing
+    # machine can use almost for free; the model must see when it happens.
+    tl = _timeline()
+    for row in tl:
+        if row["time"].startswith("2026-11-06T14"):
+            row["grid_export"] = 0.5
+    rows = {r["h"]: r for r in snap.build_snapshot(_inputs(timeline=tl))["hodiny"]}
+    assert rows["zítra 14"]["export_kwh"] == 2.0
+    assert rows["zítra 13"]["export_kwh"] == 0.0
+    text = snap.render_snapshot(snap.build_snapshot(_inputs(timeline=tl)))
+    assert "export do sítě kWh" in text
+
+
+def test_lookback_keeps_the_last_hour_of_plan_for_anomaly_runs():
+    # An anomaly at 14:02 is judged against the 14:00 block; without lookback
+    # that block is already gone and planned grid charging looks like a fault.
+    s = snap.build_snapshot(_inputs(lookback_minutes=60))
+    assert s["plan_bloky"][0]["od"] == "dnes 13:45"
+    assert s["hodiny"][0]["h"] == "dnes 13"

@@ -130,8 +130,10 @@ def _tariff_at(moment: datetime, nt: Sequence[Tuple[datetime, datetime]],
 
 # --------------------------------------------------------------------------- timeline
 
-def _upcoming(timeline: Sequence[Mapping[str, Any]], now: datetime) -> List[Tuple[datetime, Mapping[str, Any]]]:
+def _upcoming(timeline: Sequence[Mapping[str, Any]], now: datetime,
+              lookback_minutes: int = 0) -> List[Tuple[datetime, Mapping[str, Any]]]:
     slot_start = now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
+    slot_start -= timedelta(minutes=max(0, int(lookback_minutes)))
     rows = []
     for item in timeline or []:
         if not isinstance(item, Mapping):
@@ -209,6 +211,7 @@ def _hourly(rows, capacity, today, nt, vt) -> List[Dict[str, Any]]:
             "fve_kwh": round(sum(_num(i.get("solar_kwh")) or 0.0 for i in items), 1),
             "spotreba_kwh": round(sum(_num(i.get("load_kwh")) or 0.0 for i in items), 1),
             "ze_site_nabiti_kwh": round(sum(_num(i.get("grid_charge_kwh")) or 0.0 for i in items), 1),
+            "export_kwh": round(sum(_num(i.get("grid_export")) or 0.0 for i in items), 1),
             "soc_pct": _pct(_num(items[-1].get("battery_soc")), capacity),
             "rezim": _MODE_SHORT.get(mode, mode[:6]),
             "tarif": _tariff_at(hour, nt, vt),
@@ -377,7 +380,7 @@ def build_snapshot(inputs: Mapping[str, Any]) -> Dict[str, Any]:
     nt = _parse_tariff_intervals(tariff.get("nt_intervals") or [], now.year)
     vt = _parse_tariff_intervals(tariff.get("vt_intervals") or [], now.year)
 
-    rows = _upcoming(inputs.get("timeline") or [], now)
+    rows = _upcoming(inputs.get("timeline") or [], now, int(_num(inputs.get("lookback_minutes")) or 0))
     hourly = _hourly(rows, capacity, today, nt, vt)
 
     soc_min = None
@@ -467,11 +470,11 @@ def render_snapshot(s: Mapping[str, Any]) -> str:
     hourly = s.get("hodiny") or []
     if hourly:
         lines.append("HODINY (hodina, nákup Kč, prodej Kč, FVE kWh, spotřeba kWh, "
-                     "nabití ze sítě kWh, SoC %, režim, tarif):")
+                     "nabití ze sítě kWh, export do sítě kWh, SoC %, režim, tarif):")
         for r in hourly:
             lines.append("  " + " ".join(_fmt(r.get(k)) for k in (
                 "h", "nakup", "prodej", "fve_kwh", "spotreba_kwh",
-                "ze_site_nabiti_kwh", "soc_pct", "rezim", "tarif")))
+                "ze_site_nabiti_kwh", "export_kwh", "soc_pct", "rezim", "tarif")))
     windows = s.get("okna") or {}
     if windows:
         lines.append("CENOVÁ OKNA (3 h, průměr nákupní ceny): " + "; ".join(

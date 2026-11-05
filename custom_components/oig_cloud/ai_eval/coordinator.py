@@ -475,6 +475,10 @@ class AiEvalCoordinator:
             _extra_entity_ids(options),
             self._ledger_entries, now_local,
         )
+        if notable_events:
+            # Judge the event against the plan that was active when it
+            # happened (e.g. a planned UPS charge at 14:00 seen at 15:00).
+            inputs["lookback_minutes"] = HISTORY_MINUTES
         snap = snapshot.strip_private(snapshot.build_snapshot(inputs))
         fp = snapshot.fingerprint(snap)
         has_plan = bool(snap.get("hodiny"))

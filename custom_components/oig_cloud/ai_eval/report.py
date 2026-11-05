@@ -12,7 +12,7 @@ import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 MAX_ITEMS = 3
-MAX_TEXT = 300
+MAX_TEXT = 400
 
 FILLER = (
     "vše v pořádku",
@@ -63,7 +63,13 @@ def _extract_json(text: str) -> Optional[Any]:
 def _text(value: Any) -> str:
     if value is None:
         return ""
-    return re.sub(r"\s+", " ", str(value)).strip()[:MAX_TEXT]
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if len(text) <= MAX_TEXT:
+        return text
+    cut = text[:MAX_TEXT - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;:") + "…"
 
 
 def _is_filler(*parts: str) -> bool:

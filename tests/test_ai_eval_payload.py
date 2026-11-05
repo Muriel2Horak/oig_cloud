@@ -37,3 +37,10 @@ def test_assemble_advice_puts_snapshot_first_and_anomaly_optional():
     assert "ANOMALIE" not in plain
     full = P.assemble_advice("TEĎ: soc_pct=80", "12:19 grid_skok")
     assert full.index("SNAPSHOT") < full.index("ANOMALIE") < full.index("12:19 grid_skok")
+
+
+def test_advisor_prompt_explains_surplus_and_keeps_texts_short():
+    sp = P.ADVISOR_SYSTEM_PROMPT
+    assert "export" in sp.lower() and "sell price" in sp
+    assert "boiler" in sp
+    assert "220 characters" in sp

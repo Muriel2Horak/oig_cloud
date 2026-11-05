@@ -88,3 +88,12 @@ def test_is_urgent_on_high_priority_or_risk():
         {"kdy": "zítra 11:00", "akce": "Spusť pračku", "duvod": "levno",
          "prinos_kc": 5, "priorita": "nizka"}])
     assert rep.is_urgent(rep.parse_report(json.dumps(calm))) is False
+
+
+def test_long_text_is_cut_on_a_word_boundary_with_an_ellipsis():
+    long = "slovo " * 120
+    data = dict(GOOD, situace=long)
+    r = rep.parse_report(json.dumps(data))
+    assert len(r["situace"]) <= rep.MAX_TEXT
+    assert r["situace"].endswith("…")
+    assert not r["situace"].endswith("slov…")
