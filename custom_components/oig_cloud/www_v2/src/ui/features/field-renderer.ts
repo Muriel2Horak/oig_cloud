@@ -11,10 +11,14 @@ import { html, css, unsafeCSS, nothing } from 'lit';
 import type { TemplateResult } from 'lit';
 import { CSS_VARS } from '@/ui/theme';
 import type { EntityEntry } from '@/ui/components/entity-picker';
+import { resolveDisplayName } from '@/ui/components/entity-picker';
 import '@/ui/components/entity-picker';
 import type { FieldDef } from '@/ui/features/settings';
 
 const u = unsafeCSS;
+
+/** Upper bound of the entity_list widget; matches the backend's MAX_EXTRA_ENTITIES. */
+export const ENTITY_LIST_MAX = 10;
 
 export interface FieldPresenterContext {
   value: unknown;
@@ -148,6 +152,39 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
       </div>`;
   }
 
+  // entity_list — several entities stored as comma-separated ids (AI extra sensors)
+  if (f.type === 'entity_list') {
+    const ids = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const write = (next: string[]) => onChange(next.join(','));
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control entity-list">
+          ${ids.map((id) => html`
+            <span class="entity-chip" data-testid="entity-chip" title=${id}>
+              ${resolveDisplayName(id, entityCatalog)}
+              <button type="button" aria-label="Odebrat"
+                @click=${() => write(ids.filter((x) => x !== id))}>✕</button>
+            </span>`)}
+          ${ids.length < ENTITY_LIST_MAX ? html`
+            <oig-entity-picker
+              .value=${''}
+              .domain=${''}
+              .optional=${true}
+              .entities=${entityCatalog}
+              placeholder="přidat entitu…"
+              @entity-change=${(e: CustomEvent) => {
+                const picked = String(e.detail?.value ?? '');
+                const picker = e.target as { value?: string } | null;
+                if (picker) picker.value = '';
+                if (picked && !ids.includes(picked)) write([...ids, picked]);
+              }}
+            ></oig-entity-picker>` : nothing}
+        </div>
+        ${renderDiffHint(f, ctx)}
+      </div>`;
+  }
+
   // text — may be entity field or plain text / secret
   if (f.entity) {
     const currentVal = String(raw ?? '');
@@ -228,6 +265,18 @@ export const fieldStyles = css`
     border-bottom: 1px dashed ${u(CSS_VARS.divider)};
   }
   .row:last-of-type { border-bottom: none; }
+
+  /* entity_list widget: chips of chosen entities + an add picker */
+  .entity-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .entity-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 12px;
+    background: rgba(127, 127, 127, 0.15); color: ${u(CSS_VARS.textPrimary)};
+  }
+  .entity-chip button {
+    border: none; background: none; cursor: pointer; font-size: 11px;
+    color: ${u(CSS_VARS.textSecondary)}; padding: 0 2px;
+  }
 
   /* Review-mode diff hint (UX-SPEC §3/§6) — full-width, directly under the
      control, muted like the existing field-help .hint treatment. */

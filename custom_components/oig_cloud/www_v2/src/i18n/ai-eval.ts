@@ -15,6 +15,10 @@ const STRINGS: Record<AiEvalLang, Record<string, string>> = {
     'ai_eval.all_ok': 'Vše v normě — nic k řešení.',
     'ai_eval.ledger_toggle': 'Zobrazit protokol',
     'ai_eval.ledger_hide': 'Skrýt protokol',
+    'ai_eval.risks_heading': 'Rizika',
+    'ai_eval.actions_heading': 'Co udělat',
+    'ai_eval.anomalies_heading': 'Co se stalo',
+    'ai_eval.no_actions': 'Teď není co měnit, plán to zvládá sám.',
   },
   en: {
     'ai_eval.title': 'AI Evaluation',
@@ -25,6 +29,10 @@ const STRINGS: Record<AiEvalLang, Record<string, string>> = {
     'ai_eval.unavailable': 'AI evaluation unavailable',
     'ai_eval.ledger_toggle': 'Show ledger',
     'ai_eval.ledger_hide': 'Hide ledger',
+    'ai_eval.risks_heading': 'Risks',
+    'ai_eval.actions_heading': 'What to do',
+    'ai_eval.anomalies_heading': 'What happened',
+    'ai_eval.no_actions': 'Nothing to change right now, the plan handles it.',
   },
 };
 

@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from ..ai.key_store import AiKeyStore
+from ..ai_eval.snapshot import split_entity_ids as _split_entity_csv
 from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
@@ -3621,6 +3622,10 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     "ai_consent_cross_provider_fallback",
                     default=defaults.get("ai_consent_cross_provider_fallback", False),
                 ): bool,
+                vol.Optional(
+                    "ai_extra_entities",
+                    default=_split_entity_csv(defaults.get("ai_extra_entities")),
+                ): selector.EntitySelector(selector.EntitySelectorConfig(multiple=True)),
             }
         )
 
@@ -3639,6 +3644,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             values = dict(user_input)
             api_key = values.pop("ai_api_key", "")
             api_key = api_key.strip() if isinstance(api_key, str) else ""
+            values["ai_extra_entities"] = ",".join(
+                _split_entity_csv(values.get("ai_extra_entities"))
+            )
             fallback_provider = values.pop("ai_fallback_provider", "") or ""
             fallback_api_key = values.pop("ai_fallback_api_key", "")
             fallback_api_key = (

@@ -592,7 +592,8 @@
           "ai_api_key": "API klíč",
           "ai_fallback_provider": "Záložní poskytovatel AI",
           "ai_fallback_api_key": "API klíč záložního poskytovatele",
-          "ai_consent_cross_provider_fallback": "Souhlasím s odesíláním anonymizovaných dat i záložnímu poskytovateli"
+          "ai_consent_cross_provider_fallback": "Souhlasím s odesíláním anonymizovaných dat i záložnímu poskytovateli",
+          "ai_extra_entities": "Další senzory pro AI"
         },
         "data_description": {
           "ai_provider": "Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.",
@@ -601,7 +602,8 @@
           "ai_api_key": "Prázdné pole zachová dříve uložený klíč.",
           "ai_fallback_provider": "Volitelné; použije se pouze při selhání hlavního poskytovatele.",
           "ai_fallback_api_key": "Vyžadován spolu se záložním poskytovatelem; prázdné pole nic neuloží.",
-          "ai_consent_cross_provider_fallback": "Bez tohoto souhlasu se záložní poskytovatel nikdy nepoužije, i když je uložen."
+          "ai_consent_cross_provider_fallback": "Bez tohoto souhlasu se záložní poskytovatel nikdy nepoužije, i když je uložen.",
+          "ai_extra_entities": "Nejvýše 10 entit (počasí, teploty, velké spotřebiče), které AI uvidí. Posílá se jen název, stav a jednotka."
         }
       },
       "init": {

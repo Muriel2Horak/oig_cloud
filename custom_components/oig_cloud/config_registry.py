@@ -53,6 +53,7 @@ class Field:
     optional: bool = False              # may be left blank
     entity_domain: Optional[str] = None  # render an entity picker for this domain
     hidden: bool = False                # excluded from /config_registry (FE never renders it)
+    max_len: int = 200                  # str fields: longer input is truncated
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -95,7 +96,7 @@ def coerce_value(f: Field, raw: Any) -> Any:
     # str
     if not isinstance(raw, str):
         raise ValueError(f"{f.key}: expected string")
-    value = raw[:200]
+    value = raw[:f.max_len]
     if f.enum is not None and value not in f.enum:
         raise ValueError(f"{f.key}: must be one of {f.enum}")
     return value
@@ -446,6 +447,12 @@ _register(
         label="field.ai_consent_cross_provider_fallback.label",
         hint="field.ai_consent_cross_provider_fallback.hint",
     ),
+    # Up to 10 HA entities the owner chooses to share with the AI advisor
+    # (weather, temperatures, big loads). Stored as comma-separated entity ids
+    # so the registry/REST stay scalar; the advisor sends only name, state and
+    # unit — never the entity id.
+    Field("ai_extra_entities", "ai", str, default="", optional=True,
+          widget="entity_list", max_len=1000),
 )
 
 

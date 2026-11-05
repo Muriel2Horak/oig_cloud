@@ -179,3 +179,45 @@ describe('renderFieldPresenter (Task 1 — shared field renderer/presenter)', ()
     expect(settingsEdit.querySelector('[data-testid="diff-hint"]')).toBeNull();
   });
 });
+
+describe('entity_list widget (AI extra sensors)', () => {
+  const catalog: EntityEntry[] = [
+    { entity_id: 'sensor.venku', friendly_name: 'Venkovní teplota' },
+    { entity_id: 'weather.domov', friendly_name: 'Domov' },
+  ];
+  const f: FieldDef = { key: 'ai_extra_entities', label: 'Další senzory pro AI', type: 'entity_list', optional: true };
+
+  it('shows one chip per stored entity with its friendly name', () => {
+    const el = mount(f, baseCtx({ value: 'sensor.venku,weather.domov', entityCatalog: catalog }));
+    const chips = Array.from(el.querySelectorAll('[data-testid="entity-chip"]'));
+    expect(chips.map((c) => c.textContent)).toEqual([
+      expect.stringContaining('Venkovní teplota'),
+      expect.stringContaining('Domov'),
+    ]);
+  });
+
+  it('removing a chip writes the remaining ids back as CSV', () => {
+    const onChange = vi.fn();
+    const el = mount(f, baseCtx({ value: 'sensor.venku,weather.domov', entityCatalog: catalog, onChange }));
+    (el.querySelector('[data-testid="entity-chip"] button') as HTMLButtonElement).click();
+    expect(onChange).toHaveBeenCalledWith('weather.domov');
+  });
+
+  it('picking an entity appends it once', () => {
+    const onChange = vi.fn();
+    const el = mount(f, baseCtx({ value: 'sensor.venku', entityCatalog: catalog, onChange }));
+    const picker = el.querySelector('oig-entity-picker')!;
+    picker.dispatchEvent(new CustomEvent('entity-change', { detail: { value: 'weather.domov' } }));
+    expect(onChange).toHaveBeenCalledWith('sensor.venku,weather.domov');
+    onChange.mockClear();
+    picker.dispatchEvent(new CustomEvent('entity-change', { detail: { value: 'sensor.venku' } }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('hides the picker once ten entities are chosen', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `sensor.s${i}`).join(',');
+    const el = mount(f, baseCtx({ value: ten, entityCatalog: catalog }));
+    expect(el.querySelectorAll('[data-testid="entity-chip"]')).toHaveLength(10);
+    expect(el.querySelector('oig-entity-picker')).toBeNull();
+  });
+});

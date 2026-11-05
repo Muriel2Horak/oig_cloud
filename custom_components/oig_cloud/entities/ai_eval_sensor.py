@@ -12,7 +12,18 @@ from ..const import DEFAULT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-_FROZEN_ATTR_KEYS = ("report_fakta", "report_lidsky", "ledger", "last_run")
+_FROZEN_ATTR_KEYS = (
+    "report_fakta",
+    "report_lidsky",
+    "ledger",
+    "last_run",
+    # Structured advice (situace / rizika / doporuceni / anomalie) the
+    # dashboard renders; a few hundred bytes, well under the recorder cap.
+    "report",
+    "report_kind",
+    "report_generated_at",
+    "status",
+)
 
 
 class OigCloudAiEvalSensor(SensorEntity):

@@ -128,8 +128,10 @@ async def test_ai_step_form_contains_provider_connection_and_masked_key():
         "ai_fallback_provider",
         "ai_fallback_api_key",
         "ai_consent_cross_provider_fallback",
+        "ai_extra_entities",
     }
     assert fields["ai_api_key"].config["type"] == "password"
+    assert fields["ai_extra_entities"].config["multiple"] is True
     assert fields["ai_fallback_api_key"].config["type"] == "password"
 
 
@@ -349,9 +351,48 @@ def test_ai_step_has_labels_and_co_equal_menu_copy(relative_path):
 
     assert steps["init"]["menu_options"]["section_ai"]
     ai_step = steps["ai"]
-    assert {"ai_provider", "ai_base_url", "ai_model", "ai_api_key"} <= set(
-        ai_step["data"]
-    )
+    assert {"ai_provider", "ai_base_url", "ai_model", "ai_api_key",
+            "ai_extra_entities"} <= set(ai_step["data"])
+    assert "ai_extra_entities" in ai_step["data_description"]
     copy = json.dumps(ai_step, ensure_ascii=False).lower()
     assert "recommended" not in copy
     assert "doporuč" not in copy
+
+
+
+# --------------------------------------------------------------- extra entities
+
+def test_extra_entities_field_is_an_optional_entity_list():
+    from custom_components.oig_cloud.config_registry import coerce_value
+
+    field = FIELD_REGISTRY["ai_extra_entities"]
+    assert field.section == "ai"
+    assert field.type is str
+    assert field.optional is True
+    assert field.default == ""
+    assert field.widget == "entity_list"
+    # ten long entity ids must not be silently truncated at the 200-char cap
+    long_csv = ",".join(f"sensor.some_rather_long_entity_name_{i:02d}" for i in range(10))
+    assert len(long_csv) > 200
+    assert coerce_value(field, long_csv) == long_csv
+
+
+@pytest.mark.asyncio
+async def test_ai_step_stores_selected_entities_as_bounded_csv(spy_key_store):
+    _, hass, flow = _flow()
+    picked = [f"sensor.s{i}" for i in range(14)]
+    await flow.async_step_ai({"ai_provider": "", "ai_api_key": "",
+                              "ai_extra_entities": picked})
+    _, kwargs = hass.config_entries.async_update_entry.call_args
+    stored = kwargs["options"]["ai_extra_entities"]
+    assert stored == ",".join(picked[:10])
+
+
+@pytest.mark.asyncio
+async def test_ai_step_form_preselects_stored_entities():
+    _, _, flow = _flow({"ai_extra_entities": "sensor.a, weather.home"})
+    result = await flow.async_step_ai()
+    schema = result["data_schema"].schema
+    defaults = {marker.schema: marker.default() for marker in schema
+                if hasattr(marker, "default") and callable(marker.default)}
+    assert defaults["ai_extra_entities"] == ["sensor.a", "weather.home"]

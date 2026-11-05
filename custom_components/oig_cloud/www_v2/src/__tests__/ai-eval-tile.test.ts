@@ -209,6 +209,8 @@ const POPULATED_DATA: AiEvalData = {
   ledger: '10:00 - event A',
   lastRun: '2026-08-01T10:00:00Z',
   entityId: 'sensor.oig_testbox01_ai_eval',
+  report: null,
+  generatedAt: null,
 };
 
 describe('oig-ai-eval-tile component', () => {
@@ -247,5 +249,83 @@ describe('oig-ai-eval-tile component', () => {
 
     const unavailable = el.shadowRoot!.querySelector('.ai-eval-unavailable');
     expect(unavailable).toBeTruthy();
+  });
+});
+
+
+const REPORT = {
+  situace: 'Baterie 83 %, zítra FVE 18 kWh a poledne 0,80 Kč.',
+  rizika: [{ kdy: 'dnes 16:00–22:00', co: 'ČHMÚ: silné bouřky', proc: 'drž rezervu nad 50 %' }],
+  doporuceni: [
+    { kdy: 'zítra 11:00–14:00', akce: 'Ohřej bojler ze slunce', duvod: 'FVE 7,5 kWh, nákup 0,80 Kč',
+      prinos_kc: 85, priorita: 'vysoka' },
+    { kdy: 'dnes 21:00', akce: 'Pusť myčku', duvod: 'NT a 9 Kč místo 13 Kč', prinos_kc: null,
+      priorita: 'nizka' },
+  ],
+  anomalie: [],
+};
+
+describe('structured advice', () => {
+  it('extracts a valid report object and the generation time', () => {
+    const data = extractAiEvalData(mkEntity({
+      report: REPORT, status: 'attention', report_generated_at: '2026-11-05T13:00:00+00:00',
+      report_lidsky: 'legacy', last_run: '2026-11-05T14:00:00+00:00',
+    }), BOX);
+    expect(data.report?.situace).toContain('Baterie 83 %');
+    expect(data.report?.doporuceni).toHaveLength(2);
+    expect(data.generatedAt).toBe('2026-11-05T13:00:00+00:00');
+    expect(data.status).toBe('attention');
+  });
+
+  it('marks a calm advice run as advice, not as an alarm', () => {
+    const calm = { ...REPORT, rizika: [], doporuceni: [REPORT.doporuceni[1]] };
+    const data = extractAiEvalData(mkEntity({ report: calm, status: 'advice' }), BOX);
+    expect(data.status).toBe('advice');
+  });
+
+  it('drops a malformed report instead of crashing', () => {
+    const data = extractAiEvalData(mkEntity({
+      report: { rizika: 'nope' }, report_lidsky: 'text',
+    }), BOX);
+    expect(data.report).toBeNull();
+    expect(data.reportLidsky).toBe('text');
+  });
+
+  it('keeps only well-formed list items', () => {
+    const data = extractAiEvalData(mkEntity({
+      report: { ...REPORT, doporuceni: [REPORT.doporuceni[0], 'junk', { akce: 'bez času' }] },
+    }), BOX);
+    expect(data.report?.doporuceni).toHaveLength(1);
+  });
+
+  it('renders situation, risks and timed recommendations', async () => {
+    const data: AiEvalData = { ...POPULATED_DATA, report: REPORT as any, generatedAt: '2026-11-05T13:00:00Z' };
+    const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${data}></oig-ai-eval-tile>`);
+    await flush(el);
+    const root = el.shadowRoot!;
+    expect(root.querySelector('.ai-situation')!.textContent).toContain('Baterie 83 %');
+    const risk = root.querySelector('.ai-risk')!;
+    expect(risk.textContent).toContain('dnes 16:00–22:00');
+    expect(risk.textContent).toContain('ČHMÚ: silné bouřky');
+    const actions = Array.from(root.querySelectorAll('.ai-action'));
+    expect(actions).toHaveLength(2);
+    expect(actions[0].querySelector('.ai-when')!.textContent).toContain('zítra 11:00–14:00');
+    expect(actions[0].textContent).toContain('Ohřej bojler ze slunce');
+    expect(actions[0].textContent).toContain('85 Kč');
+    expect(actions[0].classList.contains('prio-vysoka')).toBe(true);
+    expect(actions[1].textContent).not.toContain('Kč)');
+    // the legacy text sections are not repeated when the structure is present
+    const headings = Array.from(root.querySelectorAll('.ai-eval-section-heading')).map((h) => h.textContent?.trim());
+    expect(headings).not.toContain('Fakta');
+    expect(headings).not.toContain('Lidský');
+    expect(root.querySelector('.ai-eval-ok')).toBeNull();
+  });
+
+  it('shows an explicit line when there is nothing worth doing', async () => {
+    const data: AiEvalData = { ...POPULATED_DATA, status: 'advice',
+      report: { ...REPORT, rizika: [], doporuceni: [] } as any };
+    const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${data}></oig-ai-eval-tile>`);
+    await flush(el);
+    expect(el.shadowRoot!.querySelector('.ai-no-actions')).toBeTruthy();
   });
 });

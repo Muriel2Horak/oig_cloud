@@ -917,7 +917,8 @@
           "ai_api_key": "API key",
           "ai_fallback_provider": "Fallback AI provider",
           "ai_fallback_api_key": "Fallback provider API key",
-          "ai_consent_cross_provider_fallback": "I consent to sending anonymised data to the fallback provider too"
+          "ai_consent_cross_provider_fallback": "I consent to sending anonymised data to the fallback provider too",
+          "ai_extra_entities": "Extra sensors for AI"
         },
         "data_description": {
           "ai_provider": "Optional; no provider is preselected or preferred.",
@@ -926,7 +927,8 @@
           "ai_api_key": "Leave blank to keep a previously stored key.",
           "ai_fallback_provider": "Optional; only used when the primary provider fails.",
           "ai_fallback_api_key": "Required together with the fallback provider; leave blank to store nothing.",
-          "ai_consent_cross_provider_fallback": "Without this consent the fallback provider is never used, even if stored."
+          "ai_consent_cross_provider_fallback": "Without this consent the fallback provider is never used, even if stored.",
+          "ai_extra_entities": "Up to 10 entities (weather, temperatures, big loads) the AI may see. Only name, state and unit are sent."
         }
       },
       "init": {

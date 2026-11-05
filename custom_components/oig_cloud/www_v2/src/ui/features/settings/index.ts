@@ -58,7 +58,7 @@ export interface FieldDef {
   key: string;
   label: string;
   hint?: string;
-  type: 'bool' | 'number' | 'text' | 'select';
+  type: 'bool' | 'number' | 'text' | 'select' | 'entity_list';
   min?: number;
   max?: number;
   step?: number;

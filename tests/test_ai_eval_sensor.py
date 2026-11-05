@@ -138,3 +138,21 @@ async def test_sensor_no_exception_on_empty_store():
     sensor = await _load_sensor({})
     assert sensor.available is False
     assert sensor.native_value is None
+
+
+@pytest.mark.asyncio
+async def test_sensor_exposes_structured_advice_for_the_dashboard():
+    report = {"situace": "Baterie 60 %.", "rizika": [], "anomalie": [],
+              "doporuceni": [{"kdy": "zítra 11:00", "akce": "Ohřej bojler",
+                              "duvod": "FVE", "prinos_kc": 40, "priorita": "vysoka"}]}
+    data = {"report": report, "report_kind": "advice", "status": "attention",
+            "report_generated_at": "2026-11-05T13:00:00+00:00",
+            "last_run": "2026-11-05T14:00:00+00:00", "anomaly_count": 0}
+    sensor = await _load_sensor(data)
+    attrs = sensor.extra_state_attributes
+    assert attrs["report"] == report
+    assert attrs["report_kind"] == "advice"
+    assert attrs["status"] == "attention"
+    assert attrs["report_generated_at"] == "2026-11-05T13:00:00+00:00"
+    # The bulky prompt snapshot must never reach the recorder.
+    assert "snapshot" not in attrs

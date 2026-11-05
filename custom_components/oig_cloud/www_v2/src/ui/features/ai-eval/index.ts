@@ -2,7 +2,7 @@ import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { aiEvalT, resolveAiEvalLang, type AiEvalLang } from '@/i18n/ai-eval';
-import type { AiEvalData } from '@/data/ai-eval-data';
+import type { AiEvalData, AiReport } from '@/data/ai-eval-data';
 import { EMPTY_AI_EVAL } from '@/data/ai-eval-data';
 
 const u = unsafeCSS;
@@ -96,6 +96,67 @@ export class OigAiEvalTile extends LitElement {
       opacity: 0.7;
     }
 
+    .ai-situation {
+      font-size: 14px;
+      line-height: 1.5;
+      color: ${u(CSS_VARS.textPrimary)};
+      margin-bottom: 12px;
+    }
+
+    .ai-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ai-item {
+      border-left: 3px solid ${u(CSS_VARS.divider)};
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(127, 127, 127, 0.06);
+      font-size: 13px;
+      line-height: 1.45;
+      color: ${u(CSS_VARS.textPrimary)};
+    }
+
+    .ai-risk { border-left-color: #e65100; }
+    .ai-action.prio-vysoka { border-left-color: #2e7d32; }
+    .ai-action.prio-stredni { border-left-color: ${u(CSS_VARS.accent)}; }
+    .ai-anomaly { border-left-color: #8e24aa; }
+
+    .ai-when {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-right: 6px;
+      background: rgba(127, 127, 127, 0.15);
+      white-space: nowrap;
+    }
+
+    .ai-what { font-weight: 600; }
+
+    .ai-why {
+      display: block;
+      font-size: 12px;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin-top: 2px;
+    }
+
+    .ai-gain {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2e7d32;
+      margin-left: 4px;
+      white-space: nowrap;
+    }
+
+    .ai-no-actions {
+      font-size: 12px;
+      color: ${u(CSS_VARS.textSecondary)};
+    }
+
     .ai-eval-ledger-toggle {
       display: inline-flex;
       align-items: center;
@@ -146,28 +207,30 @@ export class OigAiEvalTile extends LitElement {
       <div class="ai-eval-header">
         <span class="ai-eval-icon">🤖</span>
         <span class="ai-eval-title">${aiEvalT('ai_eval.title', this.evalLang)}</span>
-        ${d.lastRun ? html`
-          <span class="ai-eval-last-run">${aiEvalT('ai_eval.last_run', this.evalLang)}: ${this.formatTimestamp(d.lastRun)}</span>
+        ${d.generatedAt || d.lastRun ? html`
+          <span class="ai-eval-last-run">${aiEvalT('ai_eval.last_run', this.evalLang)}: ${this.formatTimestamp((d.generatedAt || d.lastRun)!)}</span>
         ` : nothing}
       </div>
 
-      ${d.status === 'ok' ? html`
-        <div class="ai-eval-ok">✓ ${aiEvalT('ai_eval.all_ok', this.evalLang)}</div>
-      ` : nothing}
+      ${d.report ? this.renderReport(d.report) : html`
+        ${d.status === 'ok' ? html`
+          <div class="ai-eval-ok">✓ ${aiEvalT('ai_eval.all_ok', this.evalLang)}</div>
+        ` : nothing}
 
-      ${d.reportFakta ? html`
-        <div class="ai-eval-section">
-          <div class="ai-eval-section-heading">${aiEvalT('ai_eval.fakta_heading', this.evalLang)}</div>
-          <div class="ai-eval-content">${d.reportFakta}</div>
-        </div>
-      ` : nothing}
+        ${d.reportFakta ? html`
+          <div class="ai-eval-section">
+            <div class="ai-eval-section-heading">${aiEvalT('ai_eval.fakta_heading', this.evalLang)}</div>
+            <div class="ai-eval-content">${d.reportFakta}</div>
+          </div>
+        ` : nothing}
 
-      ${d.reportLidsky ? html`
-        <div class="ai-eval-section">
-          <div class="ai-eval-section-heading">${aiEvalT('ai_eval.lidsky_heading', this.evalLang)}</div>
-          <div class="ai-eval-content">${d.reportLidsky}</div>
-        </div>
-      ` : nothing}
+        ${d.reportLidsky ? html`
+          <div class="ai-eval-section">
+            <div class="ai-eval-section-heading">${aiEvalT('ai_eval.lidsky_heading', this.evalLang)}</div>
+            <div class="ai-eval-content">${d.reportLidsky}</div>
+          </div>
+        ` : nothing}
+      `}
 
       ${d.ledger ? html`
         <button class="ai-eval-ledger-toggle" @click=${this.toggleLedger}>
@@ -179,6 +242,60 @@ export class OigAiEvalTile extends LitElement {
         ` : nothing}
       ` : nothing}
     `;
+  }
+
+  private renderReport(r: AiReport) {
+    const lang = this.evalLang;
+    return html`
+      <div class="ai-situation">${r.situace}</div>
+
+      ${r.rizika.length ? html`
+        <div class="ai-eval-section">
+          <div class="ai-eval-section-heading">${aiEvalT('ai_eval.risks_heading', lang)}</div>
+          <div class="ai-list">
+            ${r.rizika.map((x) => html`
+              <div class="ai-item ai-risk">
+                ${x.kdy ? html`<span class="ai-when">${x.kdy}</span>` : nothing}
+                <span class="ai-what">${x.co}</span>
+                ${x.proc ? html`<span class="ai-why">${x.proc}</span>` : nothing}
+              </div>`)}
+          </div>
+        </div>
+      ` : nothing}
+
+      <div class="ai-eval-section">
+        <div class="ai-eval-section-heading">${aiEvalT('ai_eval.actions_heading', lang)}</div>
+        ${r.doporuceni.length ? html`
+          <div class="ai-list">
+            ${r.doporuceni.map((x) => html`
+              <div class="ai-item ai-action prio-${x.priorita}">
+                <span class="ai-when">${x.kdy}</span>
+                <span class="ai-what">${x.akce}</span>
+                ${x.prinos_kc ? html`<span class="ai-gain">(~${this.formatCzk(x.prinos_kc)} Kč)</span>` : nothing}
+                ${x.duvod ? html`<span class="ai-why">${x.duvod}</span>` : nothing}
+              </div>`)}
+          </div>
+        ` : html`<div class="ai-no-actions">${aiEvalT('ai_eval.no_actions', lang)}</div>`}
+      </div>
+
+      ${r.anomalie.length ? html`
+        <div class="ai-eval-section">
+          <div class="ai-eval-section-heading">${aiEvalT('ai_eval.anomalies_heading', lang)}</div>
+          <div class="ai-list">
+            ${r.anomalie.map((x) => html`
+              <div class="ai-item ai-anomaly">
+                ${x.kdy ? html`<span class="ai-when">${x.kdy}</span>` : nothing}
+                <span class="ai-what">${x.co}</span>
+                ${x.vyznam ? html`<span class="ai-why">${x.vyznam}</span>` : nothing}
+              </div>`)}
+          </div>
+        </div>
+      ` : nothing}
+    `;
+  }
+
+  private formatCzk(v: number): string {
+    return Math.round(v).toLocaleString(this.evalLang === 'cs' ? 'cs-CZ' : 'en-US');
   }
 
   private toggleLedger(): void {

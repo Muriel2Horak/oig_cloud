@@ -135,10 +135,10 @@ async def test_flow_produces_store_with_frozen_keys(monkeypatch):
     notify_mod = sys.modules["custom_components.oig_cloud.ai_eval.notify"]
     monkeypatch.setattr(notify_mod, "publish_eval_notification", fake_publish_notification)
 
-    async def fake_fetch_plan_block(hass, box_id):
-        return "PLÁN A CENY:\nDnes: plán 50.00 Kč"
+    async def fake_fetch_precomputed(hass, box_id):
+        return {"timeline": [], "cost_tile": {"today": {"plan_total_cost": 50.0}}}
 
-    monkeypatch.setattr(coordinator, "_fetch_plan_block", fake_fetch_plan_block)
+    monkeypatch.setattr(coordinator, "_fetch_precomputed", fake_fetch_precomputed)
 
     coord = coordinator.AiEvalCoordinator(fake_hass, fake_entry)
     coord._store = fake_store
@@ -205,10 +205,10 @@ async def test_generate_eval_report_none_records_a_failed_attempt(monkeypatch):
     notify_mod = sys.modules["custom_components.oig_cloud.ai_eval.notify"]
     monkeypatch.setattr(notify_mod, "publish_eval_notification", fake_publish_notification)
 
-    async def fake_fetch_plan_block(hass, box_id):
-        return "PLÁN A CENY:\nDnes: plán 50.00 Kč"
+    async def fake_fetch_precomputed(hass, box_id):
+        return {"timeline": [], "cost_tile": {"today": {"plan_total_cost": 50.0}}}
 
-    monkeypatch.setattr(coordinator, "_fetch_plan_block", fake_fetch_plan_block)
+    monkeypatch.setattr(coordinator, "_fetch_precomputed", fake_fetch_precomputed)
 
     coord = coordinator.AiEvalCoordinator(fake_hass, fake_entry)
     coord._store = fake_store
@@ -279,10 +279,10 @@ async def test_notable_anomaly_calls_publish_with_notable_true(monkeypatch):
     notify_mod = sys.modules["custom_components.oig_cloud.ai_eval.notify"]
     monkeypatch.setattr(notify_mod, "publish_eval_notification", fake_publish_notification)
 
-    async def fake_fetch_plan_block(hass, box_id):
-        return "PLÁN A CENY:\nDnes: plán 50.00 Kč"
+    async def fake_fetch_precomputed(hass, box_id):
+        return {"timeline": [], "cost_tile": {"today": {"plan_total_cost": 50.0}}}
 
-    monkeypatch.setattr(coordinator, "_fetch_plan_block", fake_fetch_plan_block)
+    monkeypatch.setattr(coordinator, "_fetch_precomputed", fake_fetch_precomputed)
 
     coord = coordinator.AiEvalCoordinator(fake_hass, fake_entry)
     coord._store = fake_store
@@ -427,3 +427,196 @@ async def test_shutdown_cancels_inflight_hourly_tick(monkeypatch):
     assert cancelled.is_set()
     assert tick_task.done()
     assert coord._tick_tasks == set()
+
+
+# --------------------------------------------------------------------------- advisor
+
+ADVICE_JSON = (
+    '{"situace": "Baterie 60 %, zítra FVE 14 kWh.", "rizika": [], '
+    '"doporuceni": [{"kdy": "zítra 11:00–14:00", "akce": "Ohřej bojler ze slunce", '
+    '"duvod": "FVE 7 kWh, nákup 0,8 Kč", "prinos_kc": 40, "priorita": "vysoka"}], '
+    '"anomalie": []}'
+)
+
+
+def _quiet_states(box_id: str, now: datetime) -> Dict[str, List[FakeState]]:
+    base = now - timedelta(minutes=60)
+    states = {}
+    for key, v in [("actual_aci_wtotal", "500"), ("actual_aco_p", "300"),
+                   ("actual_acinb_wtotal", "200"), ("dc_in_fv_total", "1000"),
+                   ("batt_batt_comp_p", "-400"), ("batt_bat_c", "60"),
+                   ("box_prms_mode", "HOME_III")]:
+        states[f"sensor.oig_{box_id}_{key}"] = [FakeState(v, base),
+                                                FakeState(v, base + timedelta(seconds=40))]
+    return states
+
+
+def _future_timeline(now: datetime) -> List[Dict[str, Any]]:
+    from homeassistant.util import dt as dt_util
+
+    local = dt_util.as_local(now).replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    return [
+        {"time": (local + timedelta(minutes=15 * i)).strftime("%Y-%m-%dT%H:%M:%S"),
+         "mode_name": "HOME I", "spot_price": 9.0, "battery_soc": 9.0,
+         "solar_kwh": 0.1, "load_kwh": 0.2}
+        for i in range(16)
+    ]
+
+
+def _wire(monkeypatch, coordinator, states, timeline, ai_answer, ai_calls, publishes, store):
+    monkeypatch.setattr(coordinator, "Store", lambda hass, version, key: store)
+
+    async def fake_fetch_history(hass, entity_ids, start_time, end_time):
+        return states
+    monkeypatch.setattr(coordinator, "_fetch_history", fake_fetch_history)
+
+    async def fake_fetch_precomputed(hass, box_id):
+        return {"timeline": timeline, "cost_tile": {}}
+    monkeypatch.setattr(coordinator, "_fetch_precomputed", fake_fetch_precomputed)
+
+    async def fake_ai(hass, entry, system_prompt, user_message):
+        ai_calls.append((system_prompt, user_message))
+        return ai_answer
+    monkeypatch.setattr(sys.modules["custom_components.oig_cloud.ai_eval.ai_client"],
+                        "generate_eval_report", fake_ai)
+
+    async def fake_publish(hass, entry, report, notable):
+        publishes.append(report)
+    monkeypatch.setattr(sys.modules["custom_components.oig_cloud.ai_eval.notify"],
+                        "publish_eval_notification", fake_publish)
+
+
+@pytest.mark.asyncio
+async def test_first_quiet_tick_with_a_plan_runs_the_advisor(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator, payload
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    assert len(ai_calls) == 1
+    system_prompt, user_message = ai_calls[0]
+    assert system_prompt == payload.ADVISOR_SYSTEM_PROMPT
+    assert user_message.startswith("SNAPSHOT:")
+    assert "ANOMALIE (právě teď)" not in user_message
+    assert "1234567890" not in user_message
+
+    saved = store.saved
+    assert saved["report"]["doporuceni"][0]["kdy"] == "zítra 11:00–14:00"
+    assert saved["report_kind"] == "advice"
+    assert saved["report_generated_at"] == now.isoformat()
+    assert saved["advice_fingerprint"]
+    assert "Baterie 60 %" in saved["report_lidsky"]
+    assert saved["status"] == "attention"          # high-priority recommendation
+    assert publishes and "Ohřej bojler" in publishes[0]
+
+
+@pytest.mark.asyncio
+async def test_next_quiet_tick_keeps_the_advice_without_calling_ai(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    later = now + timedelta(hours=1)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, later), _future_timeline(later),
+          ADVICE_JSON, ai_calls, publishes, store)
+    await coord._async_run_tick(later)
+
+    assert len(ai_calls) == 1                       # no second call
+    assert store.saved["last_run"] == later.isoformat()
+    assert store.saved["report"]["situace"].startswith("Baterie 60 %")
+    assert store.saved["report_generated_at"] == now.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_advice_survives_a_restart_without_a_new_call(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    first = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    first._store = store
+    await first._async_run_tick(now)
+
+    monkeypatch.setattr(coordinator, "async_track_point_in_time", lambda *_a: lambda: None)
+    monkeypatch.setattr(coordinator, "start_background", lambda hass, coro, name: _drop(coro))
+    second = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    second._store = store
+    await second.async_setup()
+    later = now + timedelta(minutes=20)
+    await second._async_run_tick(later)
+
+    assert len(ai_calls) == 1
+    assert store.saved["report"]["doporuceni"]
+
+
+def _drop(coro):
+    coro.close()
+    fut = asyncio.get_event_loop().create_future()
+    fut.set_result(None)
+    return fut
+
+
+@pytest.mark.asyncio
+async def test_anomaly_tick_sends_detail_and_falls_back_on_plain_text(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _make_states(box_id, now), [],
+          "FAKTA:\n- skok sítě\n\nLIDSKY:\n- pozor", ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    assert "ANOMALIE (právě teď)" in ai_calls[0][1]
+    assert store.saved["report"] is None
+    assert store.saved["report_kind"] == "anomaly"
+    assert "skok sítě" in store.saved["report_fakta"]
+    assert store.saved["status"] == "attention"
+
+
+@pytest.mark.asyncio
+async def test_extra_entities_option_reaches_the_snapshot(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    class _St:
+        def __init__(self, state, attributes):
+            self.state, self.attributes = state, attributes
+
+    class _States:
+        def get(self, entity_id):
+            return {"sensor.venku": _St("7.5", {"friendly_name": "Venku",
+                                                "unit_of_measurement": "°C"})}.get(entity_id)
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    hass = FakeHass()
+    hass.states = _States()
+    entry = FakeConfigEntry(box_id=box_id)
+    entry.options["ai_extra_entities"] = ["sensor.venku"]
+    coord = coordinator.AiEvalCoordinator(hass, entry)
+    coord._store = store
+    await coord._async_run_tick(now)
+
+    assert "Venku=7.5 °C" in ai_calls[0][1]
