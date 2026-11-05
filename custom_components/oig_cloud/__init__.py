@@ -1919,6 +1919,15 @@ async def async_setup_entry(
         # that can be left behind after unique_id/device_id stabilization.
         await _schedule_invalid_device_cleanup(hass, entry)
 
+        # HA 2026.11 Marketplace: a stale psimsa/oig_cloud record taken over
+        # from HACS blocks every update of this integration.
+        try:
+            from .shared.marketplace_release import async_schedule_release
+
+            async_schedule_release(hass)
+        except Exception as err:  # noqa: BLE001 - never break setup over it
+            _LOGGER.debug("Marketplace release not scheduled: %s", err)
+
         await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
         # Přidáme listener pro změny konfigurace - OPRAVEN callback na async funkci

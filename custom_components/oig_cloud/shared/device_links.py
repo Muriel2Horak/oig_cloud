@@ -26,6 +26,22 @@ from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def is_device_info(value: Any) -> bool:
+    """Return whether ``value`` is a device info Home Assistant accepts.
+
+    Up to HA 2026.10 ``DeviceInfo`` was a TypedDict, so a plain ``dict``. HA
+    2026.11 made it a dataclass that keeps dict-style access (``keys``, ``get``,
+    ``[]``) but is no longer a ``dict``; an ``isinstance(..., dict)`` check
+    dropped every sensor built with it.
+    """
+    if isinstance(value, dict):
+        return True
+    return callable(getattr(value, "keys", None)) and callable(
+        getattr(value, "get", None)
+    )
+
+
 # Child devices created by this integration, as identifier suffixes.
 CHILD_DEVICE_SUFFIXES: tuple[str, ...] = ("_analytics", "_boiler", "_shield")
 

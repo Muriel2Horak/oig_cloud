@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 from propcache import cached_property
 
 from ...shared.background import start_background
+from ...shared.device_links import is_device_info
 from ...entities.base_sensor import OigCloudSensor
 from .. import storage as plan_storage_module
 from .. import task_utils as task_utils_module
@@ -180,7 +181,9 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
             auto_switch_startup_delay=AUTO_SWITCH_STARTUP_DELAY,
         )
         raw_device_info = getattr(self, "_device_info", device_info)
-        device_info_payload = raw_device_info if isinstance(raw_device_info, dict) else device_info
+        device_info_payload = (
+            raw_device_info if is_device_info(raw_device_info) else device_info
+        )
         self._attr_device_info = cast(DeviceInfo, device_info_payload)
         self._attr_available = True
 
