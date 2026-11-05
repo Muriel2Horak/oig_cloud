@@ -660,3 +660,25 @@ def test_fingerprint_changes_when_the_owner_picks_other_sensors():
     assert snap.fingerprint(base) != snap.fingerprint(picked)
     warmer = dict(base, senzory=[{"nazev": "Venku", "stav": "9"}])
     assert snap.fingerprint(picked) == snap.fingerprint(warmer)   # values don't count
+
+
+def test_only_one_hourly_timer_is_ever_armed(monkeypatch):
+    """setup schedules a tick and the initial tick reschedules: the first timer
+    must be cancelled, or every hour runs two AI calls at once (seen live:
+    two 15:00 ticks, the provider refused one)."""
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    armed, cancelled = [], []
+
+    def fake_track(hass, action, when):
+        token = len(armed)
+        armed.append(token)
+        return lambda: cancelled.append(token)
+
+    monkeypatch.setattr(coordinator, "async_track_point_in_time", fake_track)
+    monkeypatch.setattr(coordinator, "Store", lambda *_a, **_k: FakeStore())
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry())
+    coord._schedule_next_tick()
+    coord._schedule_next_tick()
+    coord._schedule_next_tick()
+    assert cancelled == [0, 1]

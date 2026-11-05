@@ -406,6 +406,14 @@ class AiEvalCoordinator:
     def _schedule_next_tick(self) -> None:
         if self._shutting_down:
             return
+        if self._unsub_timer is not None:
+            # A pending timer (setup + initial tick both schedule) would fire
+            # a second, concurrent tick every hour.
+            try:
+                self._unsub_timer()
+            except Exception:  # noqa: BLE001 — already fired/removed
+                pass
+            self._unsub_timer = None
         now = dt_util.utcnow()
         next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
         self._unsub_timer = async_track_point_in_time(
