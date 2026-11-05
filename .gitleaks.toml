@@ -22,4 +22,7 @@ regexes = [
   '''fs_secret_\d+''',
   '''sc_secret_\d+''',
   '''gsk_ThisIsARealLooking\w+''',
+  # OIG Proxy box parameter names (table + key, e.g. tbl_invertor_prm1_aac_max_chrg),
+  # public identifiers of box settings, never credentials.
+  '''^tbl_[a-z0-9_]+$''',
 ]
