@@ -21,12 +21,13 @@ záznamy označené jako nainstalované. Marketplace pak odmítne aktualizaci s 
 sdílejí složku `custom_components/oig_cloud`, takže odinstalace by smazala i tuto integraci a mazání
 integrace by smazalo její nastavení.
 
-Stačí jednou zrušit příznak „nainstalováno“ u starého záznamu. V doplňku *Advanced SSH & Web Terminal*
-spusťte:
+Stačí jednou zrušit příznak „nainstalováno“ u starého záznamu. Otevřete *Terminal* doplňku
+*Advanced SSH & Web Terminal* (obsahuje `python3`) a vložte celý blok. Home Assistant se zastaví a za pár minut
+znovu nastartuje. Webový terminál se mezitím odpojí, úprava ale běží na pozadí dál. Po startu by měl příkaz
+`cat /tmp/psimsa.log` vypsat `Uvolněno: psimsa/oig_cloud`.
 
 ```bash
-ha core stop
-python3 - <<'PY'
+cat > /tmp/psimsa.py <<'PY'
 import json, shutil
 path = "/config/.storage/marketplace.repositories"
 shutil.copy(path, path + ".bak")
@@ -39,8 +40,8 @@ for repo in store["data"].values():
 with open(path, "w", encoding="utf-8") as f:
     json.dump(store, f, indent=2, ensure_ascii=False)
 PY
-ha core start
+nohup sh -c 'ha core stop; python3 /tmp/psimsa.py; ha core start' > /tmp/psimsa.log 2>&1 &
 ```
 
-Po startu aktualizujte OIG Cloud v Marketplace jako obvykle. Zálohu původního záznamu najdete v souboru
+Potom aktualizujte OIG Cloud jako obvykle: Nastavení → Aktualizace, nebo Nastavení → Marketplace. Zálohu původního záznamu najdete v souboru
 `marketplace.repositories.bak`. Entitu `update.oig_cloud_cbb_update` starého repozitáře pak můžete smazat.
