@@ -13,10 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every sensor built with it (`has invalid device_info type`), 85 on a typical box, among
   them grid power, battery state and the computed sensors. Both shapes are accepted now.
 
+- **The Marketplace refused every update ("The oig_cloud directory belongs to
+  psimsa/oig_cloud").** HA 2026.11 took over the HACS records, so users who once installed
+  psimsa/oig_cloud have two installed records for the domain oig_cloud. After Home Assistant
+  starts, the integration now releases any other Marketplace record that claims its folder,
+  the way the Marketplace uninstalls one but without touching files, and removes its stray
+  `update.oig_cloud_cbb_update` entity (home-assistant/core#190454).
+
 ### Documentation
-- Release notes explain the Marketplace error "The oig_cloud directory belongs to
-  psimsa/oig_cloud" after the HACS to Marketplace migration, and how to release the old
-  record without uninstalling anything.
+- Release notes explain how users already on HA 2026.11 release the old record once by
+  hand, through File editor or a terminal, without uninstalling anything.
 
 ## [2.4.9] - 2026-11-04
 
