@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Mapping, Sequence
 from urllib.parse import urlsplit
 
@@ -354,6 +355,7 @@ class OpenAiCompatBackend:
         if self._model_cache and self._entry_id and self._provider:
             cached = self._model_cache.get(self._entry_id, self._provider)
             if cached:
+                started = time.monotonic()
                 result, code = await self._try_model_text(
                     cached, system_prompt, user_message,
                 )
@@ -362,8 +364,13 @@ class OpenAiCompatBackend:
                         self._entry_id, self._provider, cached,
                     )
                     return result
+                _LOGGER.warning(
+                    "AI text: provider=%s cached model=%s failed code=%s after %.1fs",
+                    self._provider, cached, code, time.monotonic() - started,
+                )
 
         for model in self._models:
+            started = time.monotonic()
             result, code = await self._try_model_text(
                 model, system_prompt, user_message,
             )
@@ -373,6 +380,11 @@ class OpenAiCompatBackend:
                         self._entry_id, self._provider, model,
                     )
                 return result
+            # Closed code + timing only — never the key, prompt or body.
+            _LOGGER.warning(
+                "AI text: provider=%s model=%s failed code=%s after %.1fs",
+                self._provider, model, code, time.monotonic() - started,
+            )
         return None
 
     async def _try_model_text(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 import voluptuous as vol
@@ -542,3 +543,19 @@ async def test_groq_lookalike_hostname_gets_no_reasoning_effort_for_text():
     await backend.async_generate_text("system", "user")
 
     assert "reasoning_effort" not in session.calls[0][2]["json"]
+
+
+@pytest.mark.asyncio
+async def test_text_path_logs_each_failed_model_with_its_code_and_no_secret(caplog):
+    """Live 2026-11-05: the advisor got None three times with nothing in the
+    log — which model failed, and why, must be visible (never the key)."""
+    session = _Session(_Resp(429, {}))
+    backend = OpenAiCompatBackend(
+        session=session, base_url="https://api.groq.com/openai/v1",
+        api_key="gsk_SecretValue123", models=("m-one", "m-two"), provider="groq")
+    with caplog.at_level(logging.WARNING):
+        assert await backend.async_generate_text("system", "user") is None
+    text = caplog.text
+    assert "m-one" in text and "m-two" in text
+    assert "no_credits" in text or "rate" in text or "429" in text
+    assert "gsk_SecretValue123" not in text

@@ -748,3 +748,22 @@ def test_event_moment_maps_a_clock_label_to_the_last_occurrence():
     assert coordinator._event_moment("23:55", now) == datetime(2026, 11, 4, 23, 55)
     assert coordinator._event_moment("00:05", now) == datetime(2026, 11, 5, 0, 5)
     assert coordinator._event_moment("junk", now) is None
+
+
+@pytest.mark.asyncio
+async def test_each_tick_logs_one_line_with_timings_and_outcome(monkeypatch, caplog):
+    import logging
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          None, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    with caplog.at_level(logging.INFO, logger=coordinator.__name__):
+        await coord._async_run_tick(now)
+    lines = [r.getMessage() for r in caplog.records if "AI eval tick" in r.getMessage()]
+    assert len(lines) == 1
+    assert "history=" in lines[0] and "ai=" in lines[0] and "outcome=ai_unavailable" in lines[0]

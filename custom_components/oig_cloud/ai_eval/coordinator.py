@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
@@ -337,6 +338,10 @@ def _event_moment(label: str, now_local: datetime) -> Optional[datetime]:
     return moment
 
 
+def _fmt_seconds(value: Optional[float]) -> str:
+    return "-" if value is None else f"{value:.1f}s"
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     try:
         parsed = datetime.fromisoformat(str(value))
@@ -480,9 +485,12 @@ class AiEvalCoordinator:
         end_time = now
         start_time = now - timedelta(minutes=HISTORY_MINUTES)
 
+        t_start = time.monotonic()
+        self._timing: Dict[str, Optional[float]] = {"history": None, "ai": None}
         states_by_entity = await _fetch_history(
             self.hass, list(entity_ids_map.values()), start_time, end_time
         )
+        self._timing["history"] = time.monotonic() - t_start
 
         grid: Dict[str, List[Optional[Any]]] = {}
         n = int(HISTORY_MINUTES * 60 / detector.STEP_S)
@@ -569,15 +577,17 @@ class AiEvalCoordinator:
         # VALUE GATE: spend an AI call only on an anomaly or when advice is due.
         # A quiet tick keeps the last report and refreshes the ledger.
         if not notable_events and not advice_due:
-            await self._save(now, ledger_str, 0)
+            await self._save(now, ledger_str, 0, outcome="quiet")
             return
 
         user_message = payload.assemble_advice(snapshot.render_snapshot(snap), anomaly_block)
 
         from .ai_client import generate_eval_report
+        t_ai = time.monotonic()
         answer = await generate_eval_report(
             self.hass, self.config_entry, payload.ADVISOR_SYSTEM_PROMPT, user_message
         )
+        self._timing["ai"] = time.monotonic() - t_ai
         if answer is None:
             # Silent-death guard: keep the previous report, but make the failed
             # attempt visible instead of looking like a quiet hour.
@@ -617,11 +627,18 @@ class AiEvalCoordinator:
             await publish_eval_notification(self.hass, self.config_entry, lidsky, True)
 
     async def _save(
-        self, now: datetime, ledger_str: str, anomaly_count: int, status: Optional[str] = None
+        self, now: datetime, ledger_str: str, anomaly_count: int,
+        status: Optional[str] = None, outcome: Optional[str] = None,
     ) -> None:
         data = dict(self._kept)
         if status is not None:
             data["status"] = status
+        timing = getattr(self, "_timing", None) or {}
+        _LOGGER.info(
+            "AI eval tick: outcome=%s kind=%s anomalies=%d history=%s ai=%s",
+            outcome or data.get("status"), data.get("report_kind"), anomaly_count,
+            _fmt_seconds(timing.get("history")), _fmt_seconds(timing.get("ai")),
+        )
         data.update({
             "ledger": ledger_str,
             "last_run": now.isoformat(),
