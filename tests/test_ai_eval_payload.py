@@ -48,3 +48,7 @@ def test_advisor_prompt_explains_surplus_and_keeps_texts_short():
 
 def test_advisor_prompt_tells_the_model_tagged_charging_is_planned():
     assert "plánované nabíjení" in P.ADVISOR_SYSTEM_PROMPT
+
+
+def test_advisor_prompt_points_flexible_loads_to_the_precomputed_window():
+    assert "PRAČKA, MYČKA, BOJLER" in P.ADVISOR_SYSTEM_PROMPT

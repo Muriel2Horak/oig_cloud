@@ -26,6 +26,8 @@ FILLER = (
     "žádná akce",
 )
 
+_VAGUE_TIME = re.compile(r"celodenn|cel[ýý] den|během dne|kdykoli", re.I)
+
 _PRIORITY = {
     "vysoka": "vysoka", "vysoká": "vysoka", "high": "vysoka",
     "stredni": "stredni", "střední": "stredni", "medium": "stredni",
@@ -94,6 +96,8 @@ def _items(raw: Any, kind: str) -> List[Dict[str, Any]]:
         if not isinstance(entry, Mapping):
             continue
         item: Dict[str, Any] = {f: _text(entry.get(f)) for f in _FIELDS[kind]}
+        if _VAGUE_TIME.search(item.get("kdy", "")):
+            item["kdy"] = ""  # "celý den" is not a time the owner can act on
         if any(not item[f] for f in _REQUIRED[kind]):
             continue
         if _is_filler(*item.values()):

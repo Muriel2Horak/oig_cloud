@@ -97,3 +97,12 @@ def test_long_text_is_cut_on_a_word_boundary_with_an_ellipsis():
     assert len(r["situace"]) <= rep.MAX_TEXT
     assert r["situace"].endswith("…")
     assert not r["situace"].endswith("slov…")
+
+
+def test_vague_whole_day_time_is_dropped():
+    data = dict(GOOD, rizika=[{"kdy": "dnes celodenně", "co": "Náklady nad plánem", "proc": "x"}],
+                doporuceni=[{"kdy": "celý den", "akce": "Šetři", "duvod": "x",
+                             "prinos_kc": 1, "priorita": "nizka"}])
+    r = rep.parse_report(json.dumps(data, ensure_ascii=False))
+    assert r["rizika"][0]["kdy"] == ""        # risk kept, vague time removed
+    assert r["doporuceni"] == []              # an action needs a real time

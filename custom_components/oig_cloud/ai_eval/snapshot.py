@@ -267,6 +267,47 @@ def _windows(hourly: List[Dict[str, Any]], today: date) -> Dict[str, Any]:
     return out
 
 
+FLEX_EXPORT_MIN_KWH = 0.3   # an hour exporting at least this much has real surplus
+
+
+def _flex_windows(hourly: List[Dict[str, Any]], today: date) -> Dict[str, Any]:
+    """Cheapest 3 h for flexible loads (washing machine, dishwasher, boiler).
+
+    In an hour that exports solar surplus, extra consumption only costs the
+    lost sell price; otherwise it costs the buy price. Computed here because
+    the model got this backwards live ("avoid big loads at noon").
+    """
+    out: Dict[str, Any] = {}
+    by_day: Dict[int, List[Tuple[Dict[str, Any], float, bool]]] = {}
+    for row in hourly:
+        surplus = (row.get("export_kwh") or 0.0) >= FLEX_EXPORT_MIN_KWH and row.get("prodej") is not None
+        price = row.get("prodej") if surplus else row.get("nakup")
+        if price is None:
+            continue
+        by_day.setdefault((row["_dt"].date() - today).days, []).append((row, float(price), surplus))
+    for offset, key in ((0, "dnes"), (1, "zitra")):
+        rows = by_day.get(offset, [])
+        best = None
+        for i in range(len(rows) - WINDOW_HOURS + 1):
+            chunk = rows[i:i + WINDOW_HOURS]
+            if chunk[-1][0]["_dt"] - chunk[0][0]["_dt"] != timedelta(hours=WINDOW_HOURS - 1):
+                continue
+            avg = sum(c[1] for c in chunk) / WINDOW_HOURS
+            if best is None or avg < best[0]:
+                best = (avg, chunk)
+        if best is None:
+            continue
+        avg, chunk = best
+        surplus_hours = sum(1 for c in chunk if c[2])
+        out[key] = {
+            "od": chunk[0][0]["_dt"].strftime("%H:%M"),
+            "do": (chunk[-1][0]["_dt"] + timedelta(hours=1)).strftime("%H:%M"),
+            "cena_kc": round(avg, 2),
+            "zdroj": "přebytek FVE" if surplus_hours * 2 >= WINDOW_HOURS else "síť",
+        }
+    return out
+
+
 # --------------------------------------------------------------------------- sources
 
 def _solar(solar: Mapping[str, Any], now: datetime) -> Dict[str, Any]:
@@ -430,6 +471,7 @@ def build_snapshot(inputs: Mapping[str, Any]) -> Dict[str, Any]:
         "soc_min": soc_min,
         "hodiny": hourly,
         "okna": _windows(hourly, today),
+        "okna_flex": _flex_windows(hourly, today),
         "zaporne_ceny": [r["h"] for r in hourly if r["nakup"] is not None and r["nakup"] < 0],
         "fve": _solar(inputs.get("solar") or {}, now),
         "spotreba": {k: v for k, v in {
@@ -500,6 +542,12 @@ def render_snapshot(s: Mapping[str, Any]) -> str:
         lines.append("CENOVÁ OKNA (3 h, průměr nákupní ceny): " + "; ".join(
             f"{k.replace('_', ' ')} {w['od']}–{w['do']} {w['prumer_kc']:g} Kč (FVE {w['fve_kwh']:g} kWh)"
             for k, w in windows.items()))
+    flex = s.get("okna_flex") or {}
+    if flex:
+        lines.append("NEJLEVNĚJŠÍ ČAS PRO PRAČKA, MYČKA, BOJLER (3 h; v hodinách s exportem stojí "
+                     "energie jen výkupní cenu): " + "; ".join(
+                         f"{day} {w['od']}–{w['do']} {w['cena_kc']:g} Kč ({w['zdroj']})"
+                         for day, w in flex.items()))
     if s.get("zaporne_ceny"):
         lines.append("ZÁPORNÉ CENY: " + ", ".join(s["zaporne_ceny"]))
 

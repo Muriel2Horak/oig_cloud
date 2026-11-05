@@ -265,3 +265,30 @@ def test_planned_charging_entries_are_not_counted_as_anomalies():
     ]
     s = snap.build_snapshot(_inputs(anomalies=entries))
     assert s["anomalie"] == [{"druh": "grid_skok", "pocet": 1, "naposledy": "19:10"}]
+
+
+def test_flexible_load_window_prices_exported_surplus_at_the_sell_price():
+    # Live advice told the owner to avoid big loads at noon while solar was
+    # being exported for 4.9 Kč. The cheapest time for a washing machine or
+    # the boiler is computed here: an hour with export costs the sell price.
+    tl = _timeline()
+    for row in tl:
+        if row["time"].startswith("2026-11-06T1") and row["spot_price"] == 0.8:
+            row["spot_price"], row["export_price_czk"] = 9.0, 4.5   # no cheap noon
+        if row["time"].startswith(("2026-11-06T14", "2026-11-06T15", "2026-11-06T16")):
+            row["grid_export"] = 0.5   # surplus leaves at the 4.5 Kč sell price
+    s = snap.build_snapshot(_inputs(timeline=tl))
+    flex = s["okna_flex"]["zitra"]
+    assert flex["od"] == "14:00" and flex["do"] == "17:00"
+    assert flex["zdroj"] == "přebytek FVE"
+    assert flex["cena_kc"] == 4.5          # the sell price, not the 9 Kč buy price
+    text = snap.render_snapshot(s)
+    assert "PRAČKA, MYČKA, BOJLER" in text
+
+
+def test_flexible_window_without_surplus_falls_back_to_buy_price():
+    s = snap.build_snapshot(_inputs())
+    flex = s["okna_flex"]["zitra"]
+    assert flex["od"] == "11:00"
+    assert flex["zdroj"] == "síť"
+    assert flex["cena_kc"] == 0.8
