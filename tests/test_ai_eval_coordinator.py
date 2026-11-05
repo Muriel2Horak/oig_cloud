@@ -620,3 +620,43 @@ async def test_extra_entities_option_reaches_the_snapshot(monkeypatch):
     await coord._async_run_tick(now)
 
     assert "Venku=7.5 °C" in ai_calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_requested_refresh_forces_one_advice_run_and_is_rate_limited(monkeypatch):
+    from custom_components.oig_cloud.ai_eval import coordinator
+
+    box_id = "1234567890"
+    now = datetime(2026, 11, 5, 15, 0, 0, tzinfo=timezone.utc)
+    store, ai_calls, publishes = FakeStore(), [], []
+    _wire(monkeypatch, coordinator, _quiet_states(box_id, now), _future_timeline(now),
+          ADVICE_JSON, ai_calls, publishes, store)
+    coord = coordinator.AiEvalCoordinator(FakeHass(), FakeConfigEntry(box_id=box_id))
+    coord._store = store
+    await coord._async_run_tick(now)          # first advice
+    assert len(ai_calls) == 1
+
+    clock = {"t": now + timedelta(minutes=10)}
+    monkeypatch.setattr(coordinator.dt_util, "utcnow", lambda: clock["t"])
+    started = []
+    monkeypatch.setattr(coordinator, "start_background",
+                        lambda hass, coro, name: started.append(asyncio.ensure_future(coro)) or started[-1])
+
+    assert coord.request_advice() == "started"
+    await started[-1]
+    assert len(ai_calls) == 2                 # forced despite unchanged facts
+    assert coord.request_advice() == "rate_limited"
+    clock["t"] += timedelta(minutes=6)
+    assert coord.request_advice() == "started"
+    await started[-1]
+    assert len(ai_calls) == 3
+
+
+def test_fingerprint_changes_when_the_owner_picks_other_sensors():
+    from custom_components.oig_cloud.ai_eval import snapshot as snap
+
+    base = {"chmu": [], "hodiny": [], "fve": {}, "senzory": []}
+    picked = dict(base, senzory=[{"nazev": "Venku", "stav": "7"}])
+    assert snap.fingerprint(base) != snap.fingerprint(picked)
+    warmer = dict(base, senzory=[{"nazev": "Venku", "stav": "9"}])
+    assert snap.fingerprint(picked) == snap.fingerprint(warmer)   # values don't count

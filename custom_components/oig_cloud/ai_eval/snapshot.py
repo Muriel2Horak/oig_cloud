@@ -514,8 +514,9 @@ def render_snapshot(s: Mapping[str, Any]) -> str:
 def fingerprint(s: Mapping[str, Any]) -> str:
     """Stable digest of the facts that justify a fresh advice run.
 
-    New/cleared ČHMÚ warning, tomorrow's prices appearing, or a big swing in
-    tomorrow's solar forecast. Small price noise must NOT trigger a call.
+    New/cleared ČHMÚ warning, tomorrow's prices appearing, a big swing in
+    tomorrow's solar forecast, or another set of opted-in sensors. Small price
+    noise must NOT trigger a call.
     """
     hourly = s.get("hodiny") or []
     has_tomorrow = any(str(r.get("h", "")).startswith("zítra") for r in hourly)
@@ -524,6 +525,9 @@ def fingerprint(s: Mapping[str, Any]) -> str:
         "chmu": sorted((w.get("udalost"), w.get("od")) for w in s.get("chmu") or []),
         "tomorrow_prices": has_tomorrow,
         "solar_bucket": None if solar_tomorrow is None else int(solar_tomorrow // 4),
+        # A different set of opted-in sensors deserves fresh advice; their
+        # changing values do not.
+        "sensors": sorted(str(x.get("nazev")) for x in s.get("senzory") or []),
     }
     return hashlib.sha1(json.dumps(key, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
 

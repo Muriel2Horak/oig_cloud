@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { haClient } from '@/data/ha-client';
 import { extractAiEvalData, EMPTY_AI_EVAL } from '@/data/ai-eval-data';
 import { aiEvalT, resolveAiEvalLang } from '@/i18n/ai-eval';
 import { fixture } from '@open-wc/testing-helpers';
@@ -327,5 +328,45 @@ describe('structured advice', () => {
     const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${data}></oig-ai-eval-tile>`);
     await flush(el);
     expect(el.shadowRoot!.querySelector('.ai-no-actions')).toBeTruthy();
+  });
+});
+
+
+describe('refresh button', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('posts a refresh for this box and shows progress until a new report lands', async () => {
+    const spy = vi.spyOn(haClient, 'fetchOIGAPITyped').mockResolvedValue({ ok: true, status: 202, data: { ok: true } } as any);
+    const data: AiEvalData = { ...POPULATED_DATA, report: REPORT as any, generatedAt: '2026-11-05T13:00:00Z' };
+    const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${data}></oig-ai-eval-tile>`);
+    await flush(el);
+    const btn = el.shadowRoot!.querySelector('[data-testid="ai-refresh"]') as HTMLButtonElement;
+    btn.click();
+    await flush(el);
+    expect(spy).toHaveBeenCalledWith('/testbox01/ai/eval/refresh', { method: 'POST' });
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain('Počítám');
+
+    el.data = { ...data, generatedAt: '2026-11-05T14:00:00Z' };
+    await flush(el);
+    const after = el.shadowRoot!.querySelector('[data-testid="ai-refresh"]') as HTMLButtonElement;
+    expect(after.disabled).toBe(false);
+    expect(after.textContent).toContain('Obnovit');
+  });
+
+  it('says so when the refresh is rate limited', async () => {
+    vi.spyOn(haClient, 'fetchOIGAPITyped').mockResolvedValue({ ok: false, status: 429, code: 'rate_limited', error: 'x' } as any);
+    const data: AiEvalData = { ...POPULATED_DATA, report: REPORT as any };
+    const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${data}></oig-ai-eval-tile>`);
+    await flush(el);
+    (el.shadowRoot!.querySelector('[data-testid="ai-refresh"]') as HTMLButtonElement).click();
+    await flush(el);
+    expect(el.shadowRoot!.querySelector('[data-testid="ai-refresh-note"]')!.textContent).toContain('5 minut');
+  });
+
+  it('is not offered when the sensor is unavailable', async () => {
+    const el = await fixture<TileEl>(html`<oig-ai-eval-tile .data=${EMPTY_AI_EVAL}></oig-ai-eval-tile>`);
+    await flush(el);
+    expect(el.shadowRoot!.querySelector('[data-testid="ai-refresh"]')).toBeNull();
   });
 });

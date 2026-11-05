@@ -4,6 +4,7 @@ import { CSS_VARS } from '@/ui/theme';
 import { aiEvalT, resolveAiEvalLang, type AiEvalLang } from '@/i18n/ai-eval';
 import type { AiEvalData, AiReport } from '@/data/ai-eval-data';
 import { EMPTY_AI_EVAL } from '@/data/ai-eval-data';
+import { haClient } from '@/data/ha-client';
 
 const u = unsafeCSS;
 
@@ -12,6 +13,10 @@ export class OigAiEvalTile extends LitElement {
   @property({ type: Object }) data: AiEvalData = EMPTY_AI_EVAL;
   @property({ type: Object }) hass: any = null;
   @state() private ledgerOpen = false;
+  @state() private refreshing = false;
+  @state() private refreshNote = '';
+  private refreshBaseline: string | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   private get evalLang(): AiEvalLang {
     return resolveAiEvalLang(this.hass);
@@ -157,6 +162,24 @@ export class OigAiEvalTile extends LitElement {
       color: ${u(CSS_VARS.textSecondary)};
     }
 
+    .ai-refresh {
+      font-size: 11px;
+      border: 1px solid ${u(CSS_VARS.divider)};
+      background: none;
+      color: ${u(CSS_VARS.accent)};
+      border-radius: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+
+    .ai-refresh:disabled { opacity: 0.6; cursor: default; }
+
+    .ai-refresh-note {
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin: -6px 0 10px;
+    }
+
     .ai-eval-ledger-toggle {
       display: inline-flex;
       align-items: center;
@@ -210,7 +233,12 @@ export class OigAiEvalTile extends LitElement {
         ${d.generatedAt || d.lastRun ? html`
           <span class="ai-eval-last-run">${aiEvalT('ai_eval.last_run', this.evalLang)}: ${this.formatTimestamp((d.generatedAt || d.lastRun)!)}</span>
         ` : nothing}
+        <button class="ai-refresh" data-testid="ai-refresh" ?disabled=${this.refreshing}
+          @click=${() => void this.refresh()}>
+          ${this.refreshing ? aiEvalT('ai_eval.refreshing', this.evalLang) : aiEvalT('ai_eval.refresh', this.evalLang)}
+        </button>
       </div>
+      ${this.refreshNote ? html`<div class="ai-refresh-note" data-testid="ai-refresh-note">${this.refreshNote}</div>` : nothing}
 
       ${d.report ? this.renderReport(d.report) : html`
         ${d.status === 'ok' ? html`
@@ -242,6 +270,47 @@ export class OigAiEvalTile extends LitElement {
         ` : nothing}
       ` : nothing}
     `;
+  }
+
+  protected willUpdate(changed: Map<string, unknown>): void {
+    // A new report arrived while a refresh was pending: the run is done.
+    if (changed.has('data') && this.refreshing) {
+      const now = this.data.generatedAt ?? this.data.lastRun;
+      if (now && now !== this.refreshBaseline) this.stopRefreshing('');
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+  }
+
+  private get boxId(): string | null {
+    const m = /^sensor\.oig_(.+)_ai_eval$/.exec(this.data.entityId ?? '');
+    return m ? m[1] : null;
+  }
+
+  private async refresh(): Promise<void> {
+    const box = this.boxId;
+    if (!box || this.refreshing) return;
+    this.refreshing = true;
+    this.refreshNote = '';
+    this.refreshBaseline = this.data.generatedAt ?? this.data.lastRun;
+    const result = await haClient.fetchOIGAPITyped<{ ok: boolean }>(`/${box}/ai/eval/refresh`, { method: 'POST' });
+    if (!result.ok) {
+      const key = result.code === 'rate_limited' ? 'ai_eval.refresh_rate_limited' : 'ai_eval.refresh_failed';
+      this.stopRefreshing(aiEvalT(key, this.evalLang));
+      return;
+    }
+    // The run is in the background; give up waiting after two minutes.
+    this.refreshTimer = setTimeout(() => this.stopRefreshing(aiEvalT('ai_eval.refresh_slow', this.evalLang)), 120_000);
+  }
+
+  private stopRefreshing(note: string): void {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+    this.refreshing = false;
+    this.refreshNote = note;
   }
 
   private renderReport(r: AiReport) {

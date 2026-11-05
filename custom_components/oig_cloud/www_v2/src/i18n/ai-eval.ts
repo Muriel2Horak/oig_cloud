@@ -19,6 +19,11 @@ const STRINGS: Record<AiEvalLang, Record<string, string>> = {
     'ai_eval.actions_heading': 'Co udělat',
     'ai_eval.anomalies_heading': 'Co se stalo',
     'ai_eval.no_actions': 'Teď není co měnit, plán to zvládá sám.',
+    'ai_eval.refresh': 'Obnovit',
+    'ai_eval.refreshing': 'Počítám…',
+    'ai_eval.refresh_rate_limited': 'Obnovit jde jednou za 5 minut.',
+    'ai_eval.refresh_failed': 'Obnovení se nepodařilo spustit.',
+    'ai_eval.refresh_slow': 'AI zatím neodpověděla, výsledek se objeví sám.',
   },
   en: {
     'ai_eval.title': 'AI Evaluation',
@@ -33,6 +38,11 @@ const STRINGS: Record<AiEvalLang, Record<string, string>> = {
     'ai_eval.actions_heading': 'What to do',
     'ai_eval.anomalies_heading': 'What happened',
     'ai_eval.no_actions': 'Nothing to change right now, the plan handles it.',
+    'ai_eval.refresh': 'Refresh',
+    'ai_eval.refreshing': 'Working…',
+    'ai_eval.refresh_rate_limited': 'Refresh is possible once per 5 minutes.',
+    'ai_eval.refresh_failed': 'Could not start the refresh.',
+    'ai_eval.refresh_slow': 'The AI has not answered yet; the result will appear by itself.',
   },
 };
 

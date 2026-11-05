@@ -1984,6 +1984,37 @@ class OIGCloudAiView(HomeAssistantView):
         return web.json_response(await store.async_api_state())
 
 
+class OIGCloudAiEvalRefreshView(OIGCloudAiView):
+    """Admin-only: ask the AI advisor for fresh advice now (runs in background)."""
+
+    url = f"{API_BASE}/{{box_id}}/ai/eval/refresh"
+    name = "api:oig_cloud:ai:eval_refresh"
+    requires_auth = True
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        advisor = (
+            entry_data.get("ai_eval_coordinator") if isinstance(entry_data, Mapping) else None
+        )
+        if advisor is None or not hasattr(advisor, "request_advice"):
+            return web.json_response({"ok": False, "code": "ai_eval_unavailable"}, status=409)
+        outcome = advisor.request_advice()
+        if outcome == "started":
+            return web.json_response({"ok": True}, status=202)
+        if outcome == "rate_limited":
+            return web.json_response({"ok": False, "code": "rate_limited"}, status=429)
+        return web.json_response({"ok": False, "code": "ai_eval_unavailable"}, status=409)
+
+
 class OIGCloudAiValidateConfigView(OIGCloudAiView):
     """Admin-only anonymous configuration validation through the selected AI."""
 
@@ -2874,6 +2905,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudBalancingDecisionsView())
     hass.http.register_view(OIGCloudAiView())
     hass.http.register_view(OIGCloudAiValidateConfigView())
+    hass.http.register_view(OIGCloudAiEvalRefreshView())
     hass.http.register_view(OIGCloudSolarTestView())
     hass.http.register_view(OIGCloudOnboardingView())
 
@@ -2892,6 +2924,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/balancing_decisions/<box_id>\n"
         f"  - {API_BASE}/<box_id>/ai (admin only)\n"
         f"  - {API_BASE}/<box_id>/ai/validate_config (admin only)\n"
+        f"  - {API_BASE}/<box_id>/ai/eval/refresh (admin only)\n"
         f"  - {API_BASE}/<box_id>/solar_test (admin only)\n"
         f"  - {API_BASE}/<box_id>/pricelists (admin only)\n"
         f"  - {API_BASE}/<box_id>/onboarding (admin only)"

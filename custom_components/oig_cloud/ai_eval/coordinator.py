@@ -34,6 +34,8 @@ NOTABLE_EVENT_KINDS = {"grid_skok", "faze_limit", "bypass", "dobijeni_po_minimu"
 # that matter change (snapshot.fingerprint) or it gets older than the cap.
 ADVICE_HOURS = (6, 14, 20)
 ADVICE_MAX_AGE_HOURS = 8
+# A manual refresh from the dashboard may run at most this often.
+REFRESH_MIN_INTERVAL = timedelta(minutes=5)
 EXTRA_ENTITIES_OPTION = "ai_extra_entities"
 
 CANONICAL_KEY_TO_ENTITY_SUFFIX = {
@@ -361,6 +363,8 @@ class AiEvalCoordinator:
         self._initial_task: asyncio.Task[None] | None = None
         self._tick_tasks: set[asyncio.Task[Any]] = set()
         self._shutting_down = False
+        self._force_advice = False
+        self._last_refresh_request: Optional[datetime] = None
 
     async def async_setup(self) -> None:
         stored = await self._store.async_load()
@@ -408,7 +412,27 @@ class AiEvalCoordinator:
             self.hass, self._async_on_tick, next_hour
         )
 
-    async def _async_on_tick(self, now: datetime) -> None:
+    def request_advice(self) -> str:
+        """Owner asked for fresh advice now ("started" | "rate_limited" | "unavailable").
+
+        Runs one tick in the background with advice forced; the hourly timer
+        is left alone. Limited to one request per REFRESH_MIN_INTERVAL so a
+        double click cannot burn provider quota.
+        """
+        if self._shutting_down:
+            return "unavailable"
+        now = dt_util.utcnow()
+        last = self._last_refresh_request
+        if last is not None and now - last < REFRESH_MIN_INTERVAL:
+            return "rate_limited"
+        self._last_refresh_request = now
+        self._force_advice = True
+        start_background(
+            self.hass, self._async_on_tick(now, reschedule=False), "oig_cloud_ai_eval_refresh"
+        )
+        return "started"
+
+    async def _async_on_tick(self, now: datetime, reschedule: bool = True) -> None:
         if self._shutting_down:
             return
         task = asyncio.current_task()
@@ -421,7 +445,8 @@ class AiEvalCoordinator:
         finally:
             if task is not None:
                 self._tick_tasks.discard(task)
-            self._schedule_next_tick()
+            if reschedule:
+                self._schedule_next_tick()
 
     async def _async_run_tick(self, now: datetime) -> None:
         if not self.box_id:
@@ -497,10 +522,11 @@ class AiEvalCoordinator:
             )
 
         last_generated = _parse_iso(self._kept.get("report_generated_at"))
-        advice_due = has_plan and _advice_due(
+        forced, self._force_advice = self._force_advice, False
+        advice_due = has_plan and (forced or _advice_due(
             now_local, dt_util.as_local(last_generated) if last_generated else None,
             self._kept.get("advice_fingerprint"), fp,
-        )
+        ))
 
         # VALUE GATE: spend an AI call only on an anomaly or when advice is due.
         # A quiet tick keeps the last report and refreshes the ledger.

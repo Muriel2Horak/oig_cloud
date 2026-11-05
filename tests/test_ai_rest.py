@@ -622,3 +622,59 @@ async def test_validate_config_logs_start_model_duration_result(
 
 async def _no_key_lookup(self):
     raise AssertionError("ai_task must not read an OpenAI-compatible key")
+
+
+# --- AI advice refresh ---------------------------------------------------------
+
+@pytest.fixture
+def refresh_env(ai_env):
+    ai_env.view = api_module.OIGCloudAiEvalRefreshView()
+    return ai_env
+
+
+class _FakeAdvisor:
+    def __init__(self, answer="started"):
+        self.answer = answer
+        self.calls = 0
+
+    def request_advice(self):
+        self.calls += 1
+        return self.answer
+
+
+@pytest.mark.asyncio
+async def test_refresh_requires_admin_and_hides_missing_boxes(refresh_env, monkeypatch):
+    existing = await refresh_env.view.post(non_admin_req(refresh_env), "box1")
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda _h, _b: None)
+    missing = await refresh_env.view.post(non_admin_req(refresh_env), "guessed")
+    assert existing.status == missing.status == 403
+    assert existing.text == missing.text
+
+
+@pytest.mark.asyncio
+async def test_refresh_starts_the_advisor(refresh_env):
+    advisor = _FakeAdvisor()
+    refresh_env.hass.data[DOMAIN] = {refresh_env.entry.entry_id: {"ai_eval_coordinator": advisor}}
+    resp = await refresh_env.view.post(admin_req(refresh_env), "box1")
+    assert resp.status == 202
+    assert json.loads(resp.text) == {"ok": True}
+    assert advisor.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_rate_limit_and_missing_advisor(refresh_env):
+    refresh_env.hass.data[DOMAIN] = {refresh_env.entry.entry_id: {
+        "ai_eval_coordinator": _FakeAdvisor("rate_limited")}}
+    resp = await refresh_env.view.post(admin_req(refresh_env), "box1")
+    assert resp.status == 429
+    assert json.loads(resp.text) == {"ok": False, "code": "rate_limited"}
+
+    refresh_env.hass.data[DOMAIN] = {refresh_env.entry.entry_id: {}}
+    resp = await refresh_env.view.post(admin_req(refresh_env), "box1")
+    assert resp.status == 409
+    assert json.loads(resp.text) == {"ok": False, "code": "ai_eval_unavailable"}
+
+
+def test_refresh_route_is_in_the_auth_matrix():
+    matrix = open("SCOPE-REVISION.md", encoding="utf-8").read()
+    assert "/api/oig_cloud/{box}/ai/eval/refresh" in matrix
