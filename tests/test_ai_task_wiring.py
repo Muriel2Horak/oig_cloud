@@ -419,11 +419,11 @@ async def test_ai_task_failure_with_consent_and_fallback_backend_delegates(monke
 
 def test_groq_chain_matches_p10_order():
     from custom_components.oig_cloud import ai_task
-    # qwen/qwen3.6-27b is the live Groq id (the old "qwen3-32b" 404s), placed
-    # first with two non-reasoning fallbacks. Verified against Groq 2026-08-01.
-    assert ai_task.MODEL_CHAINS["groq"] == (
-        "qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "groq/compound-mini",
-    )
+    # qwen/qwen3.6-27b answered HTTP 404 model_not_found on the owner's HA on
+    # 2026-11-05 (logged by the text path), so every call burned a failed
+    # attempt before qwen3.8-27b answered. A dead model must not head the chain.
+    assert ai_task.MODEL_CHAINS["groq"] == ("qwen/qwen3.8-27b", "groq/compound-mini")
+    assert "qwen/qwen3.6-27b" not in ai_task.MODEL_CHAINS["groq"]
 
 
 def test_nvidia_chain_head_is_the_flagship_order_from_decisions_p1():

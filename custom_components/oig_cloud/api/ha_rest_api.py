@@ -144,7 +144,7 @@ try:
     from ..ai_task import MODEL_CHAINS
 except ImportError:
     MODEL_CHAINS = {
-        "groq": ("qwen/qwen3.6-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
+        "groq": ("qwen/qwen3.8-27b", "groq/compound-mini"),
         "nvidia": ("z-ai/glm-5.2",),
     }
 

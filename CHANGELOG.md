@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The AI evaluation became a situation-aware advisor.** It used to speak only when the anomaly
+  detector fired, saw two hours of plan, and mostly repeated phase-imbalance advice. It now gets a
+  compact snapshot of the live system: the planner's mode blocks with grid charging, price and the
+  Home 1 extra cost, an hourly table of buy and sell prices, solar, load, export, SoC and VT/NT,
+  precomputed cheapest windows (including the cheapest time for a washing machine, dishwasher or
+  boiler, where exported surplus is priced at the sell price), the solar forecast, the boiler,
+  real ČHMÚ warnings, today's cost and up to 10 Home Assistant sensors the owner picks in the AI
+  settings (only name, state and unit are sent). It answers with a situation, risks and at most
+  three timed actions with the reason and the saving, which the dashboard AI tile renders.
+- Advice runs at 06, 14 and 20 h, when warnings, tomorrow's prices, the solar forecast or the
+  chosen sensors change, on anomalies, and on demand with the tile's "Obnovit" button (at most
+  once per 5 minutes, admin-only `POST /api/oig_cloud/{box}/ai/eval/refresh`).
+- The Groq model chain drops `qwen/qwen3.6-27b`, which now answers 404 `model_not_found`.
+
+### Fixed
+- The AI prompt showed the battery in kWh under a "SoC %" heading.
+- A grid jump inside a planned HOME UPS grid-charging slot is no longer reported as an anomaly.
+- Setup and the first tick both armed the hourly AI timer, so every hour ran two AI calls.
+- A failed AI call is now logged with the model, HTTP status and the provider's error code.
+
 ## [2.4.11] - 2026-11-05
 
 ### Fixed

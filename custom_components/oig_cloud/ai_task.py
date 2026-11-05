@@ -46,7 +46,9 @@ MODEL_CHAINS: dict[str, tuple[str, ...]] = {
     # whole call returned nothing. The gpt-oss models answer 200 with EMPTY
     # content, which is worse than a 404 (a silent non-answer), so they are
     # deliberately not used here.
-    "groq": ("qwen/qwen3.6-27b", "qwen/qwen3.8-27b", "groq/compound-mini"),
+    # 2026-11-05: qwen/qwen3.6-27b now answers 404 model_not_found (seen on
+    # the owner's HA via the text-path log), so it is dropped.
+    "groq": ("qwen/qwen3.8-27b", "groq/compound-mini"),
     "nvidia": (
         # 6 named flagships (DECISIONS P1 order)
         "z-ai/glm-5.2",
