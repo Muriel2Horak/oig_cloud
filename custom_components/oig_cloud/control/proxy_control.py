@@ -37,14 +37,14 @@ ROUTE_CLOUD = "cloud"
 # Set by the shield when it retries a timed-out local write through the cloud.
 FORCE_CLOUD_KEY = "_force_cloud"
 
-KEY_BOX_MODE = "tbl_box_prms_mode"
-KEY_CHARGE_CURRENT = "tbl_invertor_prm1_aac_max_chrg"
-KEY_CHARGE_CURRENT_MAX = "tbl_invertor_prm1_a_max_chrg"
-KEY_TO_GRID = "tbl_invertor_prms_to_grid"
-KEY_EXPORT_LIMIT = "tbl_invertor_prm1_p_max_feed_grid"
-KEY_GRID_PV_ON = "tbl_invertor_prms_grid_pv_on"
-KEY_GRID_PV_OFF = "tbl_invertor_prms_grid_pv_off"
-KEY_BOILER_MANUAL = "tbl_boiler_prms_manual"
+PARAM_BOX_MODE = "tbl_box_prms_mode"
+PARAM_CHARGE_CURRENT = "tbl_invertor_prm1_aac_max_chrg"
+PARAM_CHARGE_CURRENT_MAX = "tbl_invertor_prm1_a_max_chrg"
+PARAM_TO_GRID = "tbl_invertor_prms_to_grid"
+PARAM_EXPORT_LIMIT = "tbl_invertor_prm1_p_max_feed_grid"
+PARAM_GRID_PV_ON = "tbl_invertor_prms_grid_pv_on"
+PARAM_GRID_PV_OFF = "tbl_invertor_prms_grid_pv_off"
+PARAM_BOILER_MANUAL = "tbl_boiler_prms_manual"
 
 PROXY_DOMAINS = ("select", "number", "switch", "sensor", "binary_sensor")
 
@@ -70,12 +70,15 @@ def entry_box_id(entry: ConfigEntry) -> Optional[str]:
     return str(box_id) if box_id else None
 
 
-def local_route_available(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """True when the option is on and the data source currently reads locally."""
-    if not control_enabled(entry):
-        return False
+def data_source_is_local(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """True when the integration currently reads from the proxy."""
     state = get_data_source_state(hass, entry.entry_id)
     return state.effective_mode != DATA_SOURCE_CLOUD_ONLY and bool(state.local_available)
+
+
+def local_route_available(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """True when the option is on and the data source currently reads locally."""
+    return control_enabled(entry) and data_source_is_local(hass, entry)
 
 
 def use_local_route(
@@ -94,13 +97,19 @@ def use_local_route(
     return not (box_id and expected and str(box_id) != expected)
 
 
-def require_local_route(hass: HomeAssistant, entry: ConfigEntry, what: str) -> None:
-    """Raise with a reason when a proxy-only operation cannot run now."""
-    if not control_enabled(entry):
+def require_local_route(
+    hass: HomeAssistant, entry: ConfigEntry, what: str, *, safety_stop: bool = False
+) -> None:
+    """Raise with a reason when a proxy-only operation cannot run now.
+
+    ``safety_stop`` (ending a battery export) is allowed even with the option
+    turned off: an export started earlier must still be switched off.
+    """
+    if not safety_stop and not control_enabled(entry):
         raise ProxyControlError(
             f"{what} jde jen přes OIG Proxy. Zapněte volbu „Řídit přes proxy“."
         )
-    if not local_route_available(hass, entry):
+    if not data_source_is_local(hass, entry):
         raise ProxyControlError(
             f"{what} jde jen přes OIG Proxy a integrace teď čte z cloudu."
         )
@@ -190,7 +199,7 @@ async def async_write(hass: HomeAssistant, box_id: str, key: str, value: Any) ->
 
 def box_mode_is_ups(hass: HomeAssistant, box_id: str) -> bool:
     """True when the box itself reports Home UPS."""
-    return read_proxy_state(hass, box_id, KEY_BOX_MODE) == HOME_UPS_LABEL
+    return read_proxy_state(hass, box_id, PARAM_BOX_MODE) == HOME_UPS_LABEL
 
 
 def _positive_option(entry: ConfigEntry, key: str) -> Optional[float]:
@@ -206,12 +215,12 @@ def charge_current_limit(
 ) -> Optional[float]:
     """Highest allowed charge current: the box's own limit, then the user's cap."""
     candidates: list[float] = []
-    box_limit = read_proxy_number(hass, box_id, KEY_CHARGE_CURRENT_MAX)
+    box_limit = read_proxy_number(hass, box_id, PARAM_CHARGE_CURRENT_MAX)
     if box_limit is None:
-        box_limit = read_proxy_number(hass, box_id, KEY_CHARGE_CURRENT_MAX, control=True)
+        box_limit = read_proxy_number(hass, box_id, PARAM_CHARGE_CURRENT_MAX, control=True)
     if box_limit is not None and box_limit > 0:
         candidates.append(box_limit)
-    entity_id = find_proxy_entity(hass, box_id, KEY_CHARGE_CURRENT, control=True)
+    entity_id = find_proxy_entity(hass, box_id, PARAM_CHARGE_CURRENT, control=True)
     state = hass.states.get(entity_id) if entity_id else None
     entity_max = (getattr(state, "attributes", None) or {}).get("max") if state else None
     try:
