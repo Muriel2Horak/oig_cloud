@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.10] - 2026-11-05
+
+### Fixed
+- **Most sensors were missing on Home Assistant 2026.11.** HA 2026.11 turned `DeviceInfo`
+  from a TypedDict into a dataclass that is no longer a `dict`. Sensor setup rejected
+  every sensor built with it (`has invalid device_info type`), 85 on a typical box, among
+  them grid power, battery state and the computed sensors. Both shapes are accepted now.
+
+### Documentation
+- Release notes explain the Marketplace error "The oig_cloud directory belongs to
+  psimsa/oig_cloud" after the HACS to Marketplace migration, and how to release the old
+  record without uninstalling anything.
+
 ## [2.4.9] - 2026-11-04
 
 ### Fixed
