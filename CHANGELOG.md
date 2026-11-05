@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.11] - 2026-11-05
+
+### Fixed
+- **A hand-released psimsa/oig_cloud record left its update entity behind.** Releasing the old
+  Marketplace record through File editor or a terminal clears `installed`, but the record's
+  `update.oig_cloud_cbb_update` entity stayed as unavailable and, with an area set, kept the
+  "area but no own name" repair. After Home Assistant starts, the integration now removes the
+  update entity and device of any foreign record for its domain that is no longer installed.
+  The psimsa repository id is known, since the Marketplace may not list a released record
+  until its catalog loads.
+
 ## [2.4.10] - 2026-11-05
 
 ### Fixed

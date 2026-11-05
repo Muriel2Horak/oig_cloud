@@ -57,4 +57,4 @@ nohup sh -c 'ha core stop; python3 /tmp/psimsa.py; ha core start' > /tmp/psimsa.
 
 Potom aktualizujte OIG Cloud jako obvykle: Nastavení → Aktualizace, nebo Nastavení → Marketplace. Skript zálohuje
 původní soubor do `marketplace.repositories.bak`. Entitu `update.oig_cloud_cbb_update` starého repozitáře
-smaže verze 2.4.10 sama, s ní zmizí i oprava „má oblast, ale nemá vlastní název“.
+smaže verze 2.4.10 sama jen tehdy, když záznam uvolní sama. Po ručním uvolnění ji smaže verze 2.4.11.
