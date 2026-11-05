@@ -118,7 +118,7 @@ def extract_expected_entities(
 
     def find_entity(suffix: str) -> str | None:
         _LOGGER.info("[FIND ENTITY] Hledám cloud entitu se suffixem: %s", suffix)
-        box_id = _resolve_box_id_for_shield(shield)
+        box_id = _resolve_target_box_id(shield, data, service_name)
         if not box_id:
             _LOGGER.warning(
                 "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
@@ -154,6 +154,48 @@ def extract_expected_entities(
         return _expected_battery_export(shield, data)
 
     return {}
+
+
+def _resolve_target_box_id(
+    shield: Any, data: Dict[str, Any], service_name: str
+) -> Optional[str]:
+    """The box the service call targets, so the shield watches ITS sensor.
+
+    Ported from PR #50: with several boxes the shield used to watch the
+    entry's default box. An explicit digit box_id (config_entry_id + box_id
+    form of today's schema) wins, then device_id, then the old resolver.
+    """
+    explicit = data.get("box_id")
+    if isinstance(explicit, str) and explicit.isdigit():
+        return explicit
+
+    device_id = data.get("device_id")
+    if not device_id:
+        return _resolve_box_id_for_shield(shield)
+
+    entry_id = getattr(shield.entry, "entry_id", None)
+    if not isinstance(entry_id, str) or not entry_id:
+        return _resolve_box_id_for_shield(shield)
+
+    try:
+        from ..services import get_box_id_from_device
+
+        box_id = get_box_id_from_device(shield.hass, device_id, entry_id)
+        if box_id:
+            _LOGGER.debug(
+                "[FIND ENTITY] Resolved target box_id %s from device_id for %s",
+                box_id,
+                service_name,
+            )
+            return box_id
+    except Exception:
+        _LOGGER.debug(
+            "[FIND ENTITY] Failed to resolve target box_id from service data for %s",
+            service_name,
+            exc_info=True,
+        )
+
+    return _resolve_box_id_for_shield(shield)
 
 
 def _proxy_readback(shield: Any, key: str) -> Optional[str]:
