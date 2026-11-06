@@ -639,5 +639,11 @@ _register(
     Field("proxy_export_limit_w", "basic", int, default=0, min=0,
           step=1, scope="basic",
           show_if=("data_source_mode", ("local_only", "hybrid"))),
+    # Charge current written after each switch to Home UPS (also by the planner)
+    # while the proxy controls the box; the planner then assumes this current
+    # times the live battery voltage. 0 = the box's own reset value (50 A).
+    Field("proxy_ups_charge_current_a", "basic", int, default=0, min=0,
+          step=1, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
     Field("enable_dashboard", "basic", bool, default=False, scope="basic"),
 )

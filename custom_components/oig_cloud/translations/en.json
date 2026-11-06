@@ -205,7 +205,8 @@
           "standard_scan_interval": "Basic data (seconds)",
           "control_via_proxy": "Control through OIG Proxy",
           "proxy_max_charge_current_a": "Charge current cap via proxy (A)",
-          "proxy_export_limit_w": "Battery export cap via proxy (W)"
+          "proxy_export_limit_w": "Battery export cap via proxy (W)",
+          "proxy_ups_charge_current_a": "Home UPS charge current via proxy (A)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = always read from cloud; Local only = read mapped local entities (if proxy is stale > this limit, temporarily fall back to cloud until it recovers)",
@@ -218,7 +219,8 @@
           "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)",
           "control_via_proxy": "While the integration reads locally, writes (mode, grid delivery, boiler) go through the OIG Proxy. After falling back to cloud they go through the cloud. Charge current and battery export work only through the proxy.",
           "proxy_max_charge_current_a": "0 = the box limit (A_MAX_CHRG). Otherwise the lower of the two.",
-          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value."
+          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value.",
+          "proxy_ups_charge_current_a": "Written after every switch to Home UPS (also by the planner); the planner then assumes this current times the battery voltage. 0 = the box default (50 A)."
         },
         "description": "{step}\n{progress}\n\nSet how often data should be loaded from OIG Cloud.\n\n💡 **Tip:** Shorter interval = more current data, but higher load on API servers.",
         "title": "⏱️ Data Loading Intervals"
@@ -743,7 +745,8 @@
           "standard_scan_interval": "Basic data (seconds)",
           "control_via_proxy": "Control through OIG Proxy",
           "proxy_max_charge_current_a": "Charge current cap via proxy (A)",
-          "proxy_export_limit_w": "Battery export cap via proxy (W)"
+          "proxy_export_limit_w": "Battery export cap via proxy (W)",
+          "proxy_ups_charge_current_a": "Home UPS charge current via proxy (A)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = always cloud; Local only = mapped local entities (falls back to cloud when proxy is stale/unavailable)",
@@ -756,7 +759,8 @@
           "standard_scan_interval": "How often to load consumption, production, battery status and other basic data (minimum 30 seconds, recommended 30-60 seconds)",
           "control_via_proxy": "While the integration reads locally, writes (mode, grid delivery, boiler) go through the OIG Proxy. After falling back to cloud they go through the cloud. Charge current and battery export work only through the proxy.",
           "proxy_max_charge_current_a": "0 = the box limit (A_MAX_CHRG). Otherwise the lower of the two.",
-          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value."
+          "proxy_export_limit_w": "0 = the box's current export limit. Battery export never exceeds this value.",
+          "proxy_ups_charge_current_a": "Written after every switch to Home UPS (also by the planner); the planner then assumes this current times the battery voltage. 0 = the box default (50 A)."
         },
         "description": "{step}\n{progress}\n\nSet how often data should be loaded from OIG Cloud.\n\n💡 **Tip:** Shorter interval = more current data, but higher load on API servers.",
         "title": "⏱️ Data Loading Intervals"

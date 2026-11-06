@@ -1360,6 +1360,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 "control_via_proxy",
                 "proxy_max_charge_current_a",
                 "proxy_export_limit_w",
+                "proxy_ups_charge_current_a",
             )
         }
         values["data_source_mode"] = self._sanitize_data_source_mode(
@@ -1386,6 +1387,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             ("local_event_debounce_ms", "interval_too_short", "interval_too_long"),
             ("proxy_max_charge_current_a", "interval_too_short", "interval_too_long"),
             ("proxy_export_limit_w", "interval_too_short", "interval_too_long"),
+            ("proxy_ups_charge_current_a", "interval_too_short", "interval_too_long"),
         )
         for key, too_low, too_high in checks:
             field = basic[key]
@@ -1500,6 +1502,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     default=defaults.get(
                         "proxy_export_limit_w",
                         basic["proxy_export_limit_w"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "proxy_ups_charge_current_a",
+                    default=defaults.get(
+                        "proxy_ups_charge_current_a",
+                        basic["proxy_ups_charge_current_a"].default,
                     ),
                 ): int,
                 vol.Optional("go_back", default=False): bool,

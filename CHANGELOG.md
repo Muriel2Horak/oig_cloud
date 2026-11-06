@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `set_box_mode` accepts `charge_current` (A): the shield sets Home UPS, waits for the box to
   confirm it, then writes the charge current (entering Home UPS resets it to 50 A). Capped by the
   box's own limit and an optional user cap.
+- New option "Nabíjecí proud v Home UPS přes proxy" (`proxy_ups_charge_current_a`, default 0 = off).
+  While the proxy controls the box, every switch to Home UPS, the planner's included, gets this
+  charge current as a separate shield step after the box confirmed the mode. The planner then
+  assumes this current times the live battery voltage as its grid charging power instead of
+  `charge_rate_kw`.
 - New services `battery_export` and `stop_battery_export` sell battery energy to the grid with a
   power limit. An export always ends: at its end time, at an HA restart (retried until the box
   reports it stopped) or when SoC reaches the minimum; the previous export limit is restored.

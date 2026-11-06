@@ -205,7 +205,8 @@
           "standard_scan_interval": "Základní data (sekund)",
           "control_via_proxy": "Řídit přes OIG Proxy",
           "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
-          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)",
+          "proxy_ups_charge_current_a": "Nabíjecí proud v Home UPS přes proxy (A)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = všechny senzory čtou z cloudu; Local only = čtení z lokálních entit (při výpadku proxy > limit minut se dočasně vrátí na cloud)",
@@ -218,7 +219,8 @@
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
           "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
           "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
-          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu.",
+          "proxy_ups_charge_current_a": "Po každém přepnutí do Home UPS (i plánovačem) se nastaví tento proud a plánovač počítá s výkonem proud × napětí baterie. 0 = výchozí proud boxu (50 A)."
         },
         "description": "{step}\n{progress}\n\nNastavte, jak často se mají načítat data z OIG Cloud.\n\n💡 **Tip:** Kratší interval = aktuálnější data, ale vyšší zátěž na API servery.",
         "title": "⏱️ Intervaly načítání dat"
@@ -621,7 +623,8 @@
           "standard_scan_interval": "Základní data (sekund)",
           "control_via_proxy": "Řídit přes OIG Proxy",
           "proxy_max_charge_current_a": "Strop nabíjecího proudu přes proxy (A)",
-          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)"
+          "proxy_export_limit_w": "Strop prodeje do sítě přes proxy (W)",
+          "proxy_ups_charge_current_a": "Nabíjecí proud v Home UPS přes proxy (A)"
         },
         "data_description": {
           "data_source_mode": "Cloud only = vše z cloudu; Local only = lokální mapping (při výpadku/zastarání proxy automaticky fallback na cloud)",
@@ -634,7 +637,8 @@
           "standard_scan_interval": "Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)",
           "control_via_proxy": "Když integrace čte data lokálně, zápisy (režim, přetoky, bojler) jdou přes OIG Proxy. Při přechodu na cloud jdou přes cloud. Nabíjecí proud a prodej z baterie jdou jen přes proxy.",
           "proxy_max_charge_current_a": "0 = limit boxu (A_MAX_CHRG). Jinak nižší z obou hodnot.",
-          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu."
+          "proxy_export_limit_w": "0 = současný limit přetoků na boxu. Prodej z baterie nikdy nepřekročí tuto hodnotu.",
+          "proxy_ups_charge_current_a": "Po každém přepnutí do Home UPS (i plánovačem) se nastaví tento proud a plánovač počítá s výkonem proud × napětí baterie. 0 = výchozí proud boxu (50 A)."
         },
         "description": "{step}\n{progress}\n\nNastavte, jak často se mají načítat data z OIG Cloud.\n\n💡 **Tip:** Kratší interval = aktuálnější data, ale vyšší zátěž na API servery.",
         "title": "⏱️ Intervaly načítání dat"

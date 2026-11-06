@@ -450,3 +450,25 @@ async def test_new_export_is_refused_while_a_stop_is_in_progress(hass, freezer):
         await rig.advance(READBACK_DELAY_S + 1)
     assert not manager.active
     manager.unload()
+
+
+MODE_CFG = "select.oig_local_2206237016_tbl_box_prms_mode_cfg"
+CHARGE_CFG = "number.2206237016_tbl_invertor_prm1_aac_max_chrg_cfg"
+
+
+@pytest.mark.asyncio
+async def test_planner_home_ups_writes_the_configured_current_after_the_mode(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.hass.config_entries.async_update_entry(
+        rig.entry, options={**rig.entry.options, "proxy_ups_charge_current_a": 100}
+    )
+    # Same call as the planner's auto switch: mode only.
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_ups", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    await rig.advance(READBACK_DELAY_S + 1)
+    assert rig.proxy.writes[-1] == (CHARGE_CFG, "100.0")
+    await rig.advance(READBACK_DELAY_S + 1)
+    assert _idle(rig.shield)

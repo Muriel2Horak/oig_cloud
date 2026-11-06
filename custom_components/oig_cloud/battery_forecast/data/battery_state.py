@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ...control.proxy_control import effective_charge_rate_kw
 from ..types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
@@ -233,7 +234,11 @@ def get_battery_efficiency(sensor: Any) -> float:
 def get_ac_charging_limit_kwh_15min(sensor: Any) -> float:
     """Return AC charging limit per 15 min interval in kWh."""
     config = sensor._config_entry.options if sensor._config_entry else {}
-    charging_power_kw = config.get("home_charge_rate", 2.8)
+    charging_power_kw = effective_charge_rate_kw(
+        getattr(sensor, "_hass", None),
+        sensor._config_entry,
+        float(config.get("home_charge_rate", 2.8)),
+    )
     return charging_power_kw / 4.0
 
 

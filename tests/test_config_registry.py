@@ -235,6 +235,7 @@ def test_basic_section_fields():
         "control_via_proxy",
         "proxy_max_charge_current_a",
         "proxy_export_limit_w",
+        "proxy_ups_charge_current_a",
         "enable_dashboard",
     }
 

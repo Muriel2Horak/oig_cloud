@@ -963,11 +963,31 @@ def _local_datetime(value: Any) -> Any:
     return dt_util.as_utc(value)
 
 
+def _add_configured_ups_charge_current(
+    hass: HomeAssistant, entry: ConfigEntry, data: Dict[str, Any]
+) -> None:
+    """Home UPS without an explicit current: add the configured one (also for the planner).
+
+    The shield then writes it as a separate step after the box confirmed Home UPS.
+    When it cannot be used (cloud route, unknown limit) the mode still switches.
+    """
+    if BASE_HOME_MODE_VALUES.get(data.get("mode") or "") != "3":
+        return
+    if not pc.control_enabled(entry):
+        return
+    box_id = _resolve_box_id_from_service(hass, entry, data, "set_box_mode")
+    amps = pc.ups_charge_current(hass, entry, box_id)
+    if amps:
+        _LOGGER.info("Home UPS with the configured charge current %s A", amps)
+        data["charge_current"] = amps
+
+
 async def _precheck_set_box_mode(
     hass: HomeAssistant, entry: ConfigEntry, data: Dict[str, Any]
 ) -> None:
     await asyncio.sleep(0)
     if data.get("charge_current") is None:
+        _add_configured_ups_charge_current(hass, entry, data)
         return
     box_id = _resolve_box_id_from_service(hass, entry, data, "set_box_mode")
     if not box_id:

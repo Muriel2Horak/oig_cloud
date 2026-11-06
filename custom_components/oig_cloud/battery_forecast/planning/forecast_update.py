@@ -16,6 +16,7 @@ from ...const import (
     DEFAULT_BOILER_BATTERY_CYCLE_COST,
     DOMAIN,
 )
+from ...control.proxy_control import effective_charge_rate_kw
 from ...core.data_source import (
     DATA_SOURCE_CLOUD_ONLY,
     DEFAULT_PROXY_STALE_MINUTES,
@@ -1220,7 +1221,13 @@ def _run_planner(
         directional_efficiency = _round_trip_to_directional(
             DEFAULT_ROUND_TRIP_EFFICIENCY
         )
-        home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
+        # Grid charging power: the configured Home UPS charge current when the
+        # proxy controls the box, else the configured rate (box default 50 A).
+        home_charge_rate_kw = effective_charge_rate_kw(
+            getattr(sensor, "_hass", None),
+            sensor._config_entry,
+            float(opts.get("home_charge_rate", 2.8)),
+        )
         # Sensor-first: the box's own bat_min trigger (%) is the true hardware
         # floor. Converted to kWh and validated for plausibility; falls back
         # to the configured fallback fraction (20% by default) when the sensor

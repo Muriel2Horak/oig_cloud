@@ -29,6 +29,9 @@ _LOGGER = logging.getLogger(__name__)
 CONF_CONTROL_VIA_PROXY = "control_via_proxy"
 CONF_PROXY_MAX_CHARGE_CURRENT_A = "proxy_max_charge_current_a"
 CONF_PROXY_EXPORT_LIMIT_W = "proxy_export_limit_w"
+# Charge current written after every switch to Home UPS (also by the planner)
+# while the proxy controls the box. 0 = keep the box's own reset value (50 A).
+CONF_PROXY_UPS_CHARGE_CURRENT_A = "proxy_ups_charge_current_a"
 
 # Set by the service action on the shield params: which route carried the write.
 ROUTE_KEY = "_route"
@@ -45,6 +48,7 @@ PARAM_EXPORT_LIMIT = "tbl_invertor_prm1_p_max_feed_grid"
 PARAM_GRID_PV_ON = "tbl_invertor_prms_grid_pv_on"
 PARAM_GRID_PV_OFF = "tbl_invertor_prms_grid_pv_off"
 PARAM_BOILER_MANUAL = "tbl_boiler_prms_manual"
+PARAM_BAT_VOLTAGE = "tbl_batt_bat_v"
 
 PROXY_DOMAINS = ("select", "number", "switch", "sensor", "binary_sensor")
 
@@ -258,3 +262,43 @@ def export_limit_cap(entry: ConfigEntry, base_limit: Optional[float]) -> Optiona
     if user_cap is not None:
         return user_cap
     return base_limit
+
+
+def ups_charge_current(
+    hass: HomeAssistant, entry: ConfigEntry, box_id: Optional[str]
+) -> Optional[int]:
+    """Configured Home UPS charge current, capped by the limits, when the proxy controls the box.
+
+    None when the option is 0, the integration reads from cloud, or the box
+    limit is unknown: then the box keeps its own reset value (50 A).
+    """
+    amps = _positive_option(entry, CONF_PROXY_UPS_CHARGE_CURRENT_A)
+    if amps is None or not box_id or not local_route_available(hass, entry):
+        return None
+    limit = charge_current_limit(hass, entry, box_id)
+    if limit is None:
+        return None
+    return int(min(amps, limit))
+
+
+def effective_charge_rate_kw(
+    hass: Any, entry: Any, configured_kw: float
+) -> float:
+    """Grid charging power the planner should assume.
+
+    With a configured Home UPS charge current and local control available it is
+    that current times the live battery voltage (measured 2026-11-06: 121 A at
+    ~52.5 V gave 6.4-6.6 kW). Otherwise the configured ``charge_rate_kw``, which
+    matches the box's own 50 A.
+    """
+    try:
+        box_id = entry_box_id(entry)
+        if hass is None or not box_id:
+            return configured_kw
+        amps = ups_charge_current(hass, entry, box_id)
+        voltage = read_proxy_number(hass, box_id, PARAM_BAT_VOLTAGE) if amps else None
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return configured_kw
+    if not amps or voltage is None or voltage <= 0:
+        return configured_kw
+    return amps * voltage / 1000.0

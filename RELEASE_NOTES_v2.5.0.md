@@ -50,6 +50,9 @@ Přes proxy jdou i dvě věci, které cloud neumí:
   Shield nejdřív přepne do Home UPS, počká na potvrzení boxu a teprve potom zapíše proud, protože
   přepnutí do Home UPS vrací proud na 50 A. Strop je limit boxu, případně nižší strop z nastavení.
   Na boxu autora tak šlo nabíjet ze sítě až 6,4 kW místo 2,6 kW přes cloud.
+  Volba **Nabíjecí proud v Home UPS přes proxy** (ve výchozím stavu 0, tedy vypnuto) nastaví
+  tento proud po každém přepnutí do Home UPS, i když přepíná plánovač. Plánovač pak počítá
+  s nabíjecím výkonem proud × aktuální napětí baterie místo pevně nastavených kW.
 - **Prodej z baterie do sítě.** Nové služby `battery_export` a `stop_battery_export` vybíjí baterii
   do sítě s nastaveným limitem výkonu. Prodej vždy skončí: v zadaný čas, při restartu Home Assistanta
   nebo když SoC klesne na minimum. Potom se vrátí původní limit přetoků.

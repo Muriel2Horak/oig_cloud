@@ -556,3 +556,63 @@ async def test_timed_out_local_write_is_requeued_through_cloud():
         ("oig_cloud", "set_box_mode", {"params": {"mode": "home_1", pc.FORCE_CLOUD_KEY: True}})
     ]
     assert shield.cloud_retries == []
+
+
+# --- configured Home UPS charge current ----------------------------------------
+
+
+def test_ups_charge_current_follows_option_route_and_limit(hass, monkeypatch):
+    assert pc.ups_charge_current(hass, _entry(), BOX) is None  # option 0
+    assert pc.ups_charge_current(hass, _entry(proxy_ups_charge_current_a=121), BOX) == 121
+    capped = _entry(proxy_ups_charge_current_a=121, proxy_max_charge_current_a=90)
+    assert pc.ups_charge_current(hass, capped, BOX) == 90
+    hass.states.set("sensor.oig_local_2206237016_tbl_invertor_prm1_a_max_chrg", "6")
+    assert pc.ups_charge_current(hass, _entry(proxy_ups_charge_current_a=121), BOX) == 6
+    set_source(monkeypatch, local=False)
+    assert pc.ups_charge_current(hass, _entry(proxy_ups_charge_current_a=121), BOX) is None
+
+
+def test_planner_charge_rate_is_current_times_battery_voltage(hass, monkeypatch):
+    entry = _entry(proxy_ups_charge_current_a=121)
+    assert pc.effective_charge_rate_kw(hass, entry, 2.6) == 2.6  # no voltage yet
+    hass.states.set("sensor.oig_local_2206237016_tbl_batt_bat_v", "52.5")
+    assert pc.effective_charge_rate_kw(hass, entry, 2.6) == pytest.approx(6.3525)
+    assert pc.effective_charge_rate_kw(hass, _entry(), 2.6) == 2.6
+    assert pc.effective_charge_rate_kw(None, entry, 2.6) == 2.6
+    set_source(monkeypatch, local=False)
+    assert pc.effective_charge_rate_kw(hass, entry, 2.6) == 2.6
+
+
+def test_planner_interval_limit_uses_the_effective_rate(hass):
+    from custom_components.oig_cloud.battery_forecast.data import battery_state
+
+    hass.states.set("sensor.oig_local_2206237016_tbl_batt_bat_v", "52.0")
+    sensor = SimpleNamespace(_hass=hass, _config_entry=_entry(proxy_ups_charge_current_a=100, home_charge_rate=2.6))
+    assert battery_state.get_ac_charging_limit_kwh_15min(sensor) == pytest.approx(5.2 / 4)
+    sensor_cloud = SimpleNamespace(_hass=hass, _config_entry=_entry(home_charge_rate=2.6))
+    assert battery_state.get_ac_charging_limit_kwh_15min(sensor_cloud) == pytest.approx(0.65)
+
+
+@pytest.mark.asyncio
+async def test_home_ups_gets_the_configured_current_but_other_modes_do_not(hass, actions):
+    entry = _entry(proxy_ups_charge_current_a=110)
+    ups = {"mode": "home_ups"}
+    await svc._precheck_set_box_mode(hass, entry, ups)
+    assert ups["charge_current"] == 110
+    home1 = {"mode": "home_1"}
+    await svc._precheck_set_box_mode(hass, entry, home1)
+    assert "charge_current" not in home1
+    explicit = {"mode": "home_ups", "charge_current": 80}
+    await svc._precheck_set_box_mode(hass, entry, explicit)
+    assert explicit["charge_current"] == 80
+    off = {"mode": "home_ups"}
+    await svc._precheck_set_box_mode(hass, _entry(control_via_proxy=False, proxy_ups_charge_current_a=110), off)
+    assert "charge_current" not in off
+
+
+@pytest.mark.asyncio
+async def test_home_ups_still_switches_when_the_current_cannot_be_used(hass, actions, monkeypatch):
+    set_source(monkeypatch, local=False)
+    data = {"mode": "home_ups"}
+    await svc._precheck_set_box_mode(hass, _entry(proxy_ups_charge_current_a=110), data)
+    assert "charge_current" not in data

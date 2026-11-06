@@ -1630,6 +1630,7 @@ EMPTY_BASE_EXPECTED = {
     "control_via_proxy": False,
     "proxy_max_charge_current_a": 0,
     "proxy_export_limit_w": 0,
+    "proxy_ups_charge_current_a": 0,
     "enable_statistics": True,
     "enable_solar_forecast": False,
     "enable_battery_prediction": False,
