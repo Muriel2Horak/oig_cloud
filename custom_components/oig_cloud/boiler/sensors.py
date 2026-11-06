@@ -14,7 +14,9 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfTemperature,
 )
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -22,6 +24,8 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_HEATER_SWITCH_ENTITY,
+    CONF_BOILER_TEMP_SENSOR_BOTTOM,
+    CONF_BOILER_TEMP_SENSOR_TOP,
     DOMAIN,
 )
 from .coordinator import BoilerCoordinator
@@ -59,11 +63,33 @@ class _SensorReadAdapter:
         """Explicit compatibility fallback to coordinator private data."""
         return _coordinator_data(self._coordinator)
 
+    def _config(self) -> dict[str, Any]:
+        return getattr(self._coordinator, "config", {}) or {}
+
+    def _live_temperatures(self) -> dict[str, Any]:
+        """Temperatures straight from the configured sensors, as the boiler API reads them."""
+        hass = getattr(self._coordinator, "hass", None)
+        if hass is None:
+            return {}
+        from .api_views import _read_temperatures_from_hass
+
+        return _read_temperatures_from_hass(hass, self._config())
+
     def get_temperatures(self) -> dict[str, Any]:
-        return self._fallback_data().get("temperatures", {})
+        # The coordinator data arrives only after the first refresh, which builds
+        # the profile and the plan and can take minutes after a start or reload.
+        return self._fallback_data().get("temperatures") or self._live_temperatures()
 
     def get_energy_state(self) -> dict[str, Any]:
-        return self._fallback_data().get("energy_state", {})
+        energy_state = self._fallback_data().get("energy_state")
+        if energy_state:
+            return energy_state
+        temperatures = self._live_temperatures()
+        if not temperatures:
+            return {}
+        from .api_views import _compute_energy_state
+
+        return _compute_energy_state(temperatures, self._config())
 
     def get_energy_tracking(self) -> dict[str, Any]:
         coordinator = self._coordinator
@@ -140,11 +166,73 @@ class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):  # t
         )
 
 
+class _LiveSourceMixin:
+    """Rewrite the state when a configured source entity changes.
+
+    The boiler coordinator refreshes every 5 minutes and its first refresh can
+    take minutes after a start or reload; the source entities (temperature
+    sensors, heater switches) change on their own schedule.
+    """
+
+    _live_source_keys: tuple[str, ...] = ()
+    _live_source_unsub: Any = None
+
+    def _live_source_entity_ids(self) -> list[str]:
+        config = getattr(getattr(self, "coordinator", None), "config", {}) or {}
+        return [
+            config[key]
+            for key in self._live_source_keys
+            if isinstance(config.get(key), str) and config.get(key)
+        ]
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()  # type: ignore[misc]
+        entity_ids = self._live_source_entity_ids()
+        hass = getattr(self, "hass", None)
+        if entity_ids and hass is not None:
+            self._live_source_unsub = async_track_state_change_event(
+                hass, entity_ids, self._on_live_source_change
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._live_source_unsub is not None:
+            self._live_source_unsub()
+            self._live_source_unsub = None
+        await super().async_will_remove_from_hass()  # type: ignore[misc]
+
+    @callback
+    def _on_live_source_change(self, _event: Any) -> None:
+        self.async_write_ha_state()  # type: ignore[attr-defined]
+
+
+def _heater_state(sensor: Any, config_key: str) -> str:
+    """Heater switch state: the runtime activity first, else the switch itself."""
+    config = getattr(sensor.coordinator, "config", {}) or {}
+    entity_id = config.get(config_key)
+    if not entity_id:
+        return "unavailable"
+    activity = getattr(sensor._runtime, "current_activity", None)
+    if activity is not None:
+        state = (getattr(activity, "heater_states", {}) or {}).get(entity_id)
+        if state in ("on", "off"):
+            return state
+    hass = getattr(sensor.coordinator, "hass", None)
+    live = hass.states.get(entity_id) if hass is not None else None
+    if live is not None and live.state in ("on", "off"):
+        return live.state
+    return "unavailable"
+
+
+_TEMPERATURE_SOURCES = (CONF_BOILER_TEMP_SENSOR_TOP, CONF_BOILER_TEMP_SENSOR_BOTTOM)
+
+
 # ========== TEPLOTNÍ SENZORY ==========
 
 
-class BoilerUpperZoneTempSensor(BoilerSensorBase):
+class BoilerUpperZoneTempSensor(_LiveSourceMixin, BoilerSensorBase):
     """Teplota horní zóny."""
+
+    _live_source_keys = _TEMPERATURE_SOURCES
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -162,8 +250,10 @@ class BoilerUpperZoneTempSensor(BoilerSensorBase):
         return temps.get("upper_zone")
 
 
-class BoilerLowerZoneTempSensor(BoilerSensorBase):
+class BoilerLowerZoneTempSensor(_LiveSourceMixin, BoilerSensorBase):
     """Teplota dolní zóny."""
+
+    _live_source_keys = _TEMPERATURE_SOURCES
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -181,8 +271,10 @@ class BoilerLowerZoneTempSensor(BoilerSensorBase):
         return temps.get("lower_zone")
 
 
-class BoilerAvgTempSensor(BoilerSensorBase):
+class BoilerAvgTempSensor(_LiveSourceMixin, BoilerSensorBase):
     """Průměrná teplota bojleru."""
+
+    _live_source_keys = _TEMPERATURE_SOURCES
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -203,8 +295,10 @@ class BoilerAvgTempSensor(BoilerSensorBase):
 # ========== ENERGETICKÉ SENZORY ==========
 
 
-class BoilerEnergyNeededSensor(BoilerSensorBase):
+class BoilerEnergyNeededSensor(_LiveSourceMixin, BoilerSensorBase):
     """Energie potřebná k cílové teplotě."""
+
+    _live_source_keys = _TEMPERATURE_SOURCES
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -397,10 +491,11 @@ class BoilerTemperatureTrendSensor(BoilerSensorBase):
         return None
 
 
-class BoilerHeaterMainStateSensor(BoilerSensorBase):
+class BoilerHeaterMainStateSensor(_LiveSourceMixin, BoilerSensorBase):
     """Stav hlavního topného tělesa."""
 
     _attr_icon = "mdi:radiator"
+    _live_source_keys = (CONF_BOILER_HEATER_SWITCH_ENTITY,)
 
     def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
         """Inicializace."""
@@ -409,26 +504,14 @@ class BoilerHeaterMainStateSensor(BoilerSensorBase):
     @property
     def native_value(self) -> str:  # type: ignore[override]
         """Vrátí on/off/unavailable."""
-        config = getattr(self.coordinator, "config", {}) or {}
-        entity_id = config.get(CONF_BOILER_HEATER_SWITCH_ENTITY)
-        if not entity_id:
-            return "unavailable"
-        runtime = self._runtime
-        if runtime is not None:
-            activity = getattr(runtime, "current_activity", None)
-            if activity is not None:
-                heater_states = getattr(activity, "heater_states", {})
-                state = heater_states.get(entity_id)
-                if state in ("on", "off"):
-                    return state
-                return "unavailable"
-        return "unavailable"
+        return _heater_state(self, CONF_BOILER_HEATER_SWITCH_ENTITY)
 
 
-class BoilerHeaterAltStateSensor(BoilerSensorBase):
+class BoilerHeaterAltStateSensor(_LiveSourceMixin, BoilerSensorBase):
     """Stav alternativního topného tělesa."""
 
     _attr_icon = "mdi:radiator-disabled"
+    _live_source_keys = (CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,)
 
     def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
         """Inicializace."""
@@ -437,20 +520,7 @@ class BoilerHeaterAltStateSensor(BoilerSensorBase):
     @property
     def native_value(self) -> str:  # type: ignore[override]
         """Vrátí on/off/unavailable."""
-        config = getattr(self.coordinator, "config", {}) or {}
-        entity_id = config.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY)
-        if not entity_id:
-            return "unavailable"
-        runtime = self._runtime
-        if runtime is not None:
-            activity = getattr(runtime, "current_activity", None)
-            if activity is not None:
-                heater_states = getattr(activity, "heater_states", {})
-                state = heater_states.get(entity_id)
-                if state in ("on", "off"):
-                    return state
-                return "unavailable"
-        return "unavailable"
+        return _heater_state(self, CONF_BOILER_ALT_HEATER_SWITCH_ENTITY)
 
 
 class BoilerPlanComfortSatisfiedSensor(BoilerSensorBase):
