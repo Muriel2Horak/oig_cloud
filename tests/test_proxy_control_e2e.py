@@ -26,6 +26,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.oig_cloud import _setup_battery_export
 from custom_components.oig_cloud.const import DOMAIN
+from custom_components.oig_cloud.control import proxy_control as pc
 from custom_components.oig_cloud.core.data_source import (
     DATA_SOURCE_CLOUD_ONLY,
     DATA_SOURCE_LOCAL_ONLY,
@@ -83,6 +84,17 @@ class ProxySim:
         self.writes: list[tuple[str, Any]] = []
         self.ignore: set[str] = set()
         self.fail: set[str] = set()
+        # Realistic behaviour (2026-11-06): the proxy reports the result of
+        # every setting (ack, or timeout when the box does not take it), it
+        # can also lose a write without a result, and the parameter table (the
+        # readback) may not come at all.
+        self.drop_next: dict[str, int] = {}  # proxy reports timeout
+        self.lose_next: dict[str, int] = {}  # no result at all
+        self.dropped: list[tuple[str, Any]] = []
+        self.emit_results = False
+        self.result_delay = 25
+        self.no_readback: set[str] = set()
+        self._result_seq = 0
         by_cfg = {cfg: (key, ro) for key, (cfg, ro, _v) in PROXY.items()}
         self._by_cfg = by_cfg
 
@@ -109,14 +121,53 @@ class ProxySim:
         hass.services.async_register("switch", "turn_on", self._on_switch_on)
         hass.services.async_register("switch", "turn_off", self._on_switch_off)
 
+    def publish_result(self, key: str, value: str, result: str, *, at: Any = None,
+                       reason: str = "") -> None:
+        """Set the proxy's result entity like OIG Proxy 2.1.2 does."""
+        table, item = pc.split_param(key)
+        code = pc.box_value_code(key, value)
+        number = float(code) if "." in code else int(code)
+        self._result_seq += 1
+        stamp = (at or dt_util.utcnow()).isoformat()
+        self.hass.states.async_set(
+            pc.PROXY_RESULT_ENTITY_ID,
+            f"{result} {table}:{item}={number}",
+            {"result": result, "table": table, "key": item, "value": number,
+             "source": "local", "audit_id": f"aud_{self._result_seq}", "at": stamp,
+             "event_id": f"ev{self._result_seq}", "evidence": "protocol_ack",
+             "reason": reason},
+            force_update=True,
+        )
+
+    def _later(self, delay: float, action: Any) -> None:
+        @callback
+        def _run(_now: Any) -> None:
+            action()
+
+        async_call_later(self.hass, delay, _run)
+
     def _apply(self, cfg_entity: str, value: str) -> None:
         if cfg_entity in self.fail:
             raise HomeAssistantError(f"{cfg_entity} unavailable")
+        key, ro = self._by_cfg[cfg_entity]
+        if self.lose_next.get(cfg_entity, 0) > 0:
+            self.lose_next[cfg_entity] -= 1
+            self.dropped.append((cfg_entity, value))
+            return
+        if self.drop_next.get(cfg_entity, 0) > 0:
+            self.drop_next[cfg_entity] -= 1
+            self.dropped.append((cfg_entity, value))
+            if self.emit_results:
+                self._later(self.result_delay,
+                            lambda: self.publish_result(key, value, "timeout",
+                                                        reason="inflight_timeout"))
+            return
         self.writes.append((cfg_entity, value))
         attrs = dict(self.hass.states.get(cfg_entity).attributes)
         self.hass.states.async_set(cfg_entity, value, attrs)
-        key, ro = self._by_cfg[cfg_entity]
-        if cfg_entity in self.ignore:
+        if self.emit_results:
+            self._later(self.result_delay, lambda: self.publish_result(key, value, "ack"))
+        if cfg_entity in self.ignore or cfg_entity in self.no_readback:
             return
 
         @callback
@@ -452,6 +503,8 @@ async def test_new_export_is_refused_while_a_stop_is_in_progress(hass, freezer):
     manager.unload()
 
 
+# --- proxy setting results (2026-11-06 pilot findings) ------------------------
+
 MODE_CFG = "select.oig_local_2206237016_tbl_box_prms_mode_cfg"
 CHARGE_CFG = "number.2206237016_tbl_invertor_prm1_aac_max_chrg_cfg"
 
@@ -472,3 +525,132 @@ async def test_planner_home_ups_writes_the_configured_current_after_the_mode(has
     assert rig.proxy.writes[-1] == (CHARGE_CFG, "100.0")
     await rig.advance(READBACK_DELAY_S + 1)
     assert _idle(rig.shield)
+
+
+@pytest.mark.asyncio
+async def test_proxy_ack_confirms_when_the_table_never_comes(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_2", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    assert not _idle(rig.shield)
+    await rig.advance(rig.proxy.result_delay + 1)
+    assert _idle(rig.shield), "the proxy ack must release the step without the table"
+    assert rig.cloud.calls == []
+
+
+@pytest.mark.asyncio
+async def test_timeout_result_is_resent_at_once_and_then_confirmed(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)
+    rig.proxy.drop_next[MODE_CFG] = 1  # the box does not take the first one
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_2", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    assert rig.proxy.dropped == [(MODE_CFG, "Home 2")]
+    assert rig.proxy.writes == []
+    await rig.advance(rig.proxy.result_delay + 1)
+    assert rig.proxy.writes == [(MODE_CFG, "Home 2")], "resent right after the timeout result"
+    await rig.advance(rig.proxy.result_delay + 1)
+    assert _idle(rig.shield)
+    assert rig.cloud.calls == []
+
+
+@pytest.mark.asyncio
+async def test_write_lost_without_any_result_is_resent_after_the_window(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)
+    rig.proxy.lose_next[MODE_CFG] = 1
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_2", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(200)
+    assert rig.proxy.writes == []  # still inside the result window
+    await rig.advance(50)  # past 240 s: resent
+    assert rig.proxy.writes == [(MODE_CFG, "Home 2")]
+    await rig.advance(rig.proxy.result_delay + 1)
+    assert _idle(rig.shield)
+    assert rig.cloud.calls == []
+
+
+@pytest.mark.asyncio
+async def test_old_result_repeated_by_the_proxy_status_does_not_confirm(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)
+    rig.proxy.lose_next[MODE_CFG] = 1
+    earlier = dt_util.utcnow() - timedelta(minutes=5)
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_2", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    # Periodic status: the last result, an ack for Home 2 from 5 minutes ago.
+    rig.proxy.publish_result(pc.PARAM_BOX_MODE, "Home 2", "ack", at=earlier)
+    await rig.advance(60)
+    assert not _idle(rig.shield)
+
+
+@pytest.mark.asyncio
+async def test_twice_failed_write_goes_to_cloud_within_a_minute(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.drop_next[MODE_CFG] = 2
+    rig.hass.states.async_set(CLOUD_MODE_SENSOR, "Home UPS")  # box is in UPS
+    rig.hass.states.async_set("sensor.oig_local_2206237016_tbl_box_prms_mode", "Home UPS")
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"mode": "home_1", "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(rig.proxy.result_delay + 1)
+    await rig.advance(rig.proxy.result_delay + 1)
+    await rig.advance(1)
+    assert len(rig.proxy.dropped) == 2
+    assert rig.cloud.calls == [("set_box_mode", "0")], "cloud must take over in ~1 min, not 15"
+
+
+@pytest.mark.asyncio
+async def test_failed_charge_current_fails_without_cloud_and_frees_the_queue(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.hass.states.async_set("sensor.oig_local_2206237016_tbl_box_prms_mode", "Home UPS")
+    rig.proxy.drop_next[CHARGE_CFG] = 2
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"charge_current": 100, "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(rig.proxy.result_delay + 1)
+    await rig.advance(rig.proxy.result_delay + 1)
+    await rig.advance(1)
+    assert len(rig.proxy.dropped) == 2
+    assert rig.cloud.calls == []
+    assert _idle(rig.shield)
+
+
+@pytest.mark.asyncio
+async def test_mode_before_charge_waits_for_readback_even_after_the_ack(hass, freezer):
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)
+    await rig.hass.services.async_call(
+        DOMAIN,
+        "set_box_mode",
+        {"mode": "home_ups", "charge_current": 121, "acknowledgement": True},
+        blocking=True,
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(rig.proxy.result_delay + 1)
+    await rig.advance(60)
+    # Acknowledged, but the box has not reported Home UPS yet: no charge write.
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    rig.hass.states.async_set("sensor.oig_local_2206237016_tbl_box_prms_mode", "Home UPS")
+    rig.hass.states.async_set(CLOUD_MODE_SENSOR, "Home UPS")
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(1)
+    assert rig.proxy.writes[-1] == (CHARGE_CFG, "121.0")

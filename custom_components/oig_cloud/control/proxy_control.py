@@ -15,10 +15,12 @@ battery export) fail with a reason in cloud mode.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+import time
+from datetime import datetime
+from typing import Any, Iterable, Optional
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
@@ -51,6 +53,24 @@ PARAM_BOILER_MANUAL = "tbl_boiler_prms_manual"
 PARAM_BAT_VOLTAGE = "tbl_batt_bat_v"
 
 PROXY_DOMAINS = ("select", "number", "switch", "sensor", "binary_sensor")
+
+# The proxy's result of every setting it delivers to the box (OIG Proxy 2.1.2+,
+# 2026-11-06). State "<result> <table>:<KEY>=<value>", attributes result, table,
+# key, value, source, audit_id, at (ISO), event_id, evidence, reason. Every
+# result is published at once with force_update; the periodic status repeats
+# the last one with the same event_id.
+PROXY_RESULT_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_control_last_result"
+RESULT_ACK = "ack"
+RESULT_FAILED = "failed"
+_FAILED_RESULTS = ("timeout", "dropped", "nack")
+# A queued setting replaced by a newer one for the same item; the newer one
+# gets its own result, so this one says nothing about the write.
+_IGNORED_REASONS = ("replaced",)
+# Proxy and HA run on the same host; this only absorbs rounding of the times.
+_RESULT_CLOCK_SLACK_S = 2.0
+# Set by async_write on the shield params: the proxy writes this step made.
+WRITES_KEY = "_proxy_writes"
+RESENT_KEY = "_proxy_resent"
 
 # Cloud numeric box mode -> option label of the proxy's box mode select.
 BOX_MODE_OPTIONS = {"0": "Home 1", "1": "Home 2", "2": "Home 3", "3": "Home UPS"}
@@ -174,8 +194,116 @@ def read_proxy_number(
         return None
 
 
-async def async_write(hass: HomeAssistant, box_id: str, key: str, value: Any) -> str:
-    """Change a proxy ``_cfg`` entity; the proxy sends the setting to the box."""
+def split_param(key: str) -> tuple[str, str]:
+    """``tbl_box_prms_mode`` -> (``tbl_box_prms``, ``MODE``), as the box names them."""
+    parts = key.split("_")
+    return "_".join(parts[:3]), "_".join(parts[3:]).upper()
+
+
+def box_value_code(key: str, value: Any) -> str:
+    """The value as the box and the proxy name it (mode code, 0/1, number)."""
+    if key == PARAM_BOX_MODE:
+        for code, label in BOX_MODE_OPTIONS.items():
+            if label == value:
+                return code
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    text = str(value).strip()
+    return {"on": "1", "off": "0", "true": "1", "false": "0"}.get(text.lower(), text)
+
+
+def _same_value(reported: Any, expected: str) -> bool:
+    reported_code = box_value_code("", reported)
+    try:
+        return float(reported_code) == float(expected)
+    except (TypeError, ValueError):
+        return reported_code == expected.strip()
+
+
+def record_write(
+    service_data: dict[str, Any],
+    box_id: str,
+    key: str,
+    value: Any,
+    written_at: Optional[float] = None,
+) -> None:
+    """Remember a proxy write on the shield params, replacing an earlier one for the key."""
+    table, item = split_param(key)
+    at = time.time() if written_at is None else written_at
+    entry = (box_id, key, value, table, item, box_value_code(key, value), at)
+    writes = tuple(w for w in service_data.get(WRITES_KEY) or () if w[1] != key)
+    service_data[WRITES_KEY] = writes + (entry,)
+
+
+def _result_time(value: Any) -> Optional[float]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def proxy_result(state: Optional[State]) -> Optional[dict[str, Any]]:
+    """One setting result from the proxy's result entity, or None."""
+    if state is None or state.state in _INVALID_STATES:
+        return None
+    attrs = state.attributes
+    result = attrs.get("result")
+    table = attrs.get("table")
+    item = attrs.get("key")
+    at = _result_time(attrs.get("at"))
+    if not result or not table or not item or at is None:
+        return None
+    return {
+        "event_id": str(attrs.get("event_id") or attrs.get("audit_id") or f"{state.state}@{at}"),
+        "result": str(result).lower(),
+        "table": str(table),
+        "key": str(item).upper(),
+        "value": attrs.get("value"),
+        "source": attrs.get("source"),
+        "reason": str(attrs.get("reason") or ""),
+        "at": at,
+    }
+
+
+def write_outcome(write: tuple, results: Iterable[dict[str, Any]]) -> Optional[str]:
+    """``ack``, ``failed`` or None (no result yet) for one write, from proxy results.
+
+    Only results the proxy produced after the write count, so the last result
+    of an earlier setting, repeated by the periodic status, is never taken for
+    this one. An ack wins over a failure: a resend may follow a timeout.
+    """
+    table, item, code, written_at = write[3:7]
+    outcome: Optional[str] = None
+    for result in results:
+        if result["at"] < written_at - _RESULT_CLOCK_SLACK_S:
+            continue
+        if result["table"] != table or result["key"] != item:
+            continue
+        if result.get("source") not in (None, "local"):
+            continue
+        if not _same_value(result.get("value"), code):
+            continue
+        if result["result"] == RESULT_ACK:
+            return RESULT_ACK
+        if result["result"] in _FAILED_RESULTS and result["reason"] not in _IGNORED_REASONS:
+            outcome = RESULT_FAILED
+    return outcome
+
+
+async def async_write(
+    hass: HomeAssistant,
+    box_id: str,
+    key: str,
+    value: Any,
+    service_data: Optional[dict[str, Any]] = None,
+) -> str:
+    """Change a proxy ``_cfg`` entity; the proxy sends the setting to the box.
+
+    With ``service_data`` (the shield params) the write is recorded, so the
+    shield can wait for the proxy's result for it.
+    """
     entity_id = find_proxy_entity(hass, box_id, key, control=True)
     if not entity_id:
         raise ProxyControlError(f"OIG Proxy nemá entitu {key}_cfg pro box {box_id}.")
@@ -197,7 +325,10 @@ async def async_write(hass: HomeAssistant, box_id: str, key: str, value: Any) ->
         raise ProxyControlError(f"Entitu {entity_id} nelze zapisovat.")
 
     _LOGGER.info("[OIG Proxy] %s.%s %s", domain, service, data)
+    written_at = time.time()
     await hass.services.async_call(domain, service, data, blocking=True)
+    if service_data is not None:
+        record_write(service_data, box_id, key, value, written_at)
     return entity_id
 
 

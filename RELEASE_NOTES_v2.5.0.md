@@ -41,8 +41,11 @@ Funguje s poskytovatelem Groq, NVIDIA nebo AI Task z Home Assistanta, který má
 V nastavení integrace přibyla volba **Řídit přes OIG Proxy**, ve výchozím stavu vypnutá. Nabízí se
 jen tomu, kdo čte data lokálně nebo v hybridním režimu. Po zapnutí jdou změny režimu, přetoků
 a bojleru přes proxy přímo do boxu místo přes cloudový portál. Když integrace přejde na cloud
-(proxy nedodává data), jdou zápisy přes cloud jako dřív. Vše dál hlídá shield, a pokud box lokální
-zápis nepotvrdí, zkusí se jednou přes cloud.
+(proxy nedodává data), jdou zápisy přes cloud jako dřív. Vše dál hlídá shield. Lokální krok
+dokončí, jakmile OIG Proxy (verze 2.1.2 a novější) nahlásí, že box nastavení potvrdil, takže nečeká
+na tabulku parametrů, kterou box posílá jen občas. Když proxy nahlásí, že box nastavení nepřevzal,
+nebo do 4 minut nepřijde žádný výsledek, pošle shield nastavení ještě jednou. Když neprojde ani
+podruhé, zkusí to přes cloud, a kde to nejde, krok selže a fronta se uvolní.
 
 Přes proxy jdou i dvě věci, které cloud neumí:
 

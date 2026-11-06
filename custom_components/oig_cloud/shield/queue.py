@@ -9,8 +9,17 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.dt import now as dt_now
 
+from ..control.proxy_control import (
+    PROXY_RESULT_ENTITY_ID,
+    RESENT_KEY,
+    RESULT_FAILED,
+    WRITES_KEY,
+    async_write,
+    write_outcome,
+)
 from .telemetry import emit_shield_decision_event, render_shield_log_marker
 
 TIMEOUT_MINUTES = 15
@@ -219,7 +228,11 @@ async def _dispatch_cloud_retries(shield: Any) -> None:
     shield.cloud_retries = []
     for service_name, info in retries:
         original_call, domain, service, blocking, context = info["call"]
-        params = {k: v for k, v in info["params"].items() if k != ROUTE_KEY}
+        params = {
+            k: v
+            for k, v in info["params"].items()
+            if k not in (ROUTE_KEY, WRITES_KEY, RESENT_KEY)
+        }
         params[FORCE_CLOUD_KEY] = True
         _LOGGER.warning(
             "[OIG Shield] Local write of %s not confirmed, retrying through the cloud",
@@ -419,7 +432,132 @@ async def _process_pending_service(
         await _handle_entity_completion(shield, service_name, info)
         return True
 
+    if (info.get("params") or {}).get(WRITES_KEY):
+        return await _check_proxy_acceptance(shield, service_name, info)
+
     return False
+
+
+# How long a proxy write may wait for the proxy's result before it counts as
+# lost. The proxy hands a queued setting to the box at its next IsNewSet poll
+# (every ~40-90 s, measured 2026-11-05/06 on box 2206237016) and reports ack, or
+# timeout after its 60 s inflight limit. Four minutes covers two polls plus that
+# limit; the shield's own 15-minute timeout stays the outer bound.
+PROXY_ACCEPT_WINDOW_S = 240
+
+
+def schedule_acceptance_check(shield: Any, delay: float = PROXY_ACCEPT_WINDOW_S) -> None:
+    """Run the check loop right when a proxy write's result window ends.
+
+    Without it the next check could wait for the shield's 2-minute backup loop.
+    """
+    try:
+        from homeassistant.helpers.event import async_call_later
+
+        from ..shared.background import start_background
+    except ImportError:  # pragma: no cover
+        return
+
+    @callback
+    def _run(_now: Any) -> None:
+        start_background(shield.hass, shield._check_loop(datetime.now()), "oig_cloud_shield_accept")
+
+    async_call_later(shield.hass, delay + 1, _run)
+
+
+def _describe(writes: Any) -> str:
+    return ", ".join(f"{w[3]}/{w[4]}={w[5]}" for w in writes)
+
+
+async def _check_proxy_acceptance(
+    shield: Any, service_name: str, info: Dict[str, Any]
+) -> bool:
+    """Finish a step by the proxy's result for its writes, or notice it failed.
+
+    The parameter table that the readback depends on arrives only now and then,
+    so it cannot tell "not yet" from "lost". The proxy reports each setting it
+    delivers: ack (the box took it), timeout or dropped. A failed or missing
+    result sends the write once more, then the step goes to the cloud (where it
+    can) or fails, instead of holding the queue until the 15-minute timeout.
+    """
+    params = info["params"]
+    writes = params[WRITES_KEY]
+    record = getattr(shield, "record_proxy_result", None)
+    if callable(record):  # also covers a result that came before the listener
+        record(shield.hass.states.get(PROXY_RESULT_ENTITY_ID))
+    results = list(getattr(shield, "proxy_results", ()))
+    outcomes = [(w, write_outcome(w, results)) for w in writes]
+    failed = [w for w, outcome in outcomes if outcome == RESULT_FAILED]
+    waiting = [w for w, outcome in outcomes if outcome is None]
+
+    if not failed and not waiting:
+        if params.get("_await_readback"):
+            # Home UPS before a charge current: the box resets the current at the
+            # end of applying the mode (inverter command MUCHGC0500), after it
+            # acknowledges the mode. Only the mode readback may release the
+            # charge step.
+            return False
+        _LOGGER.info("[SHIELD CHECK] ✅ %s: box acknowledged %s", service_name, _describe(writes))
+        await shield._log_event(
+            "completed",
+            service_name,
+            {"params": params, "entities": info["entities"],
+             "original_states": info.get("original_states", {})},
+            reason="Box potvrdil přijetí nastavení",
+        )
+        await shield._log_event(
+            "released",
+            service_name,
+            {"params": params, "entities": info["entities"]},
+            reason="Semafor uvolněn – box nastavení přijal",
+        )
+        return True
+
+    if not failed:
+        if time.time() - max(w[6] for w in waiting) < PROXY_ACCEPT_WINDOW_S:
+            return False
+        failed = waiting  # no result at all: the proxy lost the write
+
+    if not params.get(RESENT_KEY):
+        params[RESENT_KEY] = True
+        _LOGGER.warning(
+            "[OIG Shield] Box did not take %s, sending it again through the proxy",
+            _describe(failed),
+        )
+        await shield._log_event(
+            "change_requested",
+            service_name,
+            {"params": params, "entities": info["entities"]},
+            reason="Box nastavení nepřijal – posílám znovu přes proxy",
+        )
+        for box_id, key, value, *_rest in failed:
+            try:
+                await async_write(shield.hass, box_id, key, value, params)
+            except HomeAssistantError as err:  # judged by its result like any write
+                _LOGGER.warning("[OIG Shield] Proxy resend failed: %s", err)
+        schedule_acceptance_check(shield)
+        return False
+
+    _LOGGER.warning(
+        "[OIG Shield] Box did not take %s after a resend (%s)", service_name, _describe(failed)
+    )
+    if _cloud_retry_allowed(service_name, info):
+        retries = getattr(shield, "cloud_retries", None)
+        if retries is None:
+            retries = []
+            shield.cloud_retries = retries
+        retries.append((service_name, info))
+        reason = "Box nastavení přes proxy nepřijal – zkusím cloud"
+    else:
+        reason = "Box nastavení nepřijal (jde jen přes proxy)"
+    await shield._log_event(
+        "timeout",
+        service_name,
+        {"params": params, "entities": info["entities"],
+         "original_states": info.get("original_states", {})},
+        reason=reason,
+    )
+    return True
 
 
 def _check_power_monitor(shield: Any, info: Dict[str, Any]) -> bool:

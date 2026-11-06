@@ -616,3 +616,124 @@ async def test_home_ups_still_switches_when_the_current_cannot_be_used(hass, act
     data = {"mode": "home_ups"}
     await svc._precheck_set_box_mode(hass, _entry(proxy_ups_charge_current_a=110), data)
     assert "charge_current" not in data
+
+# --- proxy setting results ------------------------------------------------------
+
+
+def test_param_names_and_value_codes_match_the_proxy():
+    assert pc.split_param(pc.PARAM_BOX_MODE) == ("tbl_box_prms", "MODE")
+    assert pc.split_param(pc.PARAM_CHARGE_CURRENT) == ("tbl_invertor_prm1", "AAC_MAX_CHRG")
+    assert pc.split_param(pc.PARAM_GRID_PV_ON) == ("tbl_invertor_prms", "GRID_PV_ON")
+    assert pc.box_value_code(pc.PARAM_BOX_MODE, "Home 1") == "0"
+    assert pc.box_value_code(pc.PARAM_BOX_MODE, "Home UPS") == "3"
+    assert pc.box_value_code(pc.PARAM_GRID_PV_ON, True) == "1"
+    assert pc.box_value_code(pc.PARAM_TO_GRID, "off") == "0"
+    assert pc.box_value_code(pc.PARAM_CHARGE_CURRENT, 121) == "121"
+
+
+def _result_state(result="ack", table="tbl_invertor_prm1", key="AAC_MAX_CHRG", value=121,
+                  at=None, event_id="e1", source="local", reason=""):
+    from datetime import datetime, timezone
+
+    from homeassistant.core import State
+
+    stamp = datetime.fromtimestamp(at, tz=timezone.utc).isoformat()
+    # Attributes as OIG Proxy 2.1.2 publishes them (mqtt/status.py, 2026-11-06).
+    return State(pc.PROXY_RESULT_ENTITY_ID, f"{result} {table}:{key}={value}", {
+        "result": result, "table": table, "key": key, "value": value, "source": source,
+        "audit_id": "aud_1", "at": stamp, "event_id": event_id, "evidence": "protocol_ack",
+        "reason": reason, "friendly_name": "Control - poslední výsledek",
+    })
+
+
+def _write(key=pc.PARAM_CHARGE_CURRENT, value=121, at=1_000_000.0):
+    data: dict[str, Any] = {}
+    pc.record_write(data, BOX, key, value, at)
+    return data[pc.WRITES_KEY][0]
+
+
+def test_proxy_result_is_parsed_from_the_real_attributes():
+    result = pc.proxy_result(_result_state(at=1_000_030.0))
+    assert result == {"event_id": "e1", "result": "ack", "table": "tbl_invertor_prm1",
+                      "key": "AAC_MAX_CHRG", "value": 121, "source": "local",
+                      "reason": "", "at": 1_000_030.0}
+    from homeassistant.core import State
+
+    assert pc.proxy_result(State(pc.PROXY_RESULT_ENTITY_ID, "unknown", {})) is None
+    assert pc.proxy_result(State(pc.PROXY_RESULT_ENTITY_ID, "ack x", {"result": "ack"})) is None
+    assert pc.proxy_result(None) is None
+
+
+def test_ack_after_the_write_confirms_it():
+    write = _write()
+    ack = pc.proxy_result(_result_state(at=1_000_030.0))
+    assert pc.write_outcome(write, [ack]) == pc.RESULT_ACK
+
+
+def test_result_from_before_the_write_does_not_count():
+    # The periodic status repeats the last result; an old ack must not confirm.
+    write = _write()
+    old = pc.proxy_result(_result_state(at=1_000_000.0 - 60))
+    assert pc.write_outcome(write, [old]) is None
+
+
+def test_result_for_another_value_or_item_does_not_count():
+    write = _write()
+    other_value = pc.proxy_result(_result_state(value=80, at=1_000_030.0))
+    other_item = pc.proxy_result(_result_state(key="A_MAX_CHRG", at=1_000_030.0))
+    assert pc.write_outcome(write, [other_value, other_item]) is None
+
+
+def test_timeout_and_dropped_fail_but_a_later_ack_wins():
+    write = _write()
+    timeout = pc.proxy_result(_result_state(result="timeout", at=1_000_030.0, event_id="t"))
+    dropped = pc.proxy_result(_result_state(result="dropped", at=1_000_031.0, event_id="d",
+                                            reason="unsent_timeout"))
+    ack = pc.proxy_result(_result_state(at=1_000_090.0, event_id="a"))
+    assert pc.write_outcome(write, [timeout]) == pc.RESULT_FAILED
+    assert pc.write_outcome(write, [dropped]) == pc.RESULT_FAILED
+    assert pc.write_outcome(write, [timeout, ack]) == pc.RESULT_ACK
+
+
+def test_replaced_and_cloud_results_are_ignored():
+    write = _write()
+    replaced = pc.proxy_result(_result_state(result="dropped", reason="replaced", at=1_000_010.0))
+    cloud = pc.proxy_result(_result_state(source="cloud", at=1_000_010.0, event_id="c"))
+    assert pc.write_outcome(write, [replaced, cloud]) is None
+
+
+def test_mode_and_switch_values_match_the_proxy_codes():
+    mode = _write(pc.PARAM_BOX_MODE, "Home 1")
+    ack_mode = pc.proxy_result(_result_state(table="tbl_box_prms", key="MODE", value=0,
+                                             at=1_000_030.0))
+    assert pc.write_outcome(mode, [ack_mode]) == pc.RESULT_ACK
+    to_grid = _write(pc.PARAM_TO_GRID, True)
+    ack_grid = pc.proxy_result(_result_state(table="tbl_invertor_prms", key="TO_GRID", value=1,
+                                             at=1_000_030.0))
+    assert pc.write_outcome(to_grid, [ack_grid]) == pc.RESULT_ACK
+    current = _write(pc.PARAM_CHARGE_CURRENT, 121)
+    ack_float = pc.proxy_result(_result_state(value=121.0, at=1_000_030.0))
+    assert pc.write_outcome(current, [ack_float]) == pc.RESULT_ACK
+
+
+def test_shield_keeps_each_result_once():
+    from collections import deque
+
+    from custom_components.oig_cloud.shield.core import ServiceShield
+
+    holder = SimpleNamespace(proxy_results=deque(maxlen=50))
+    state = _result_state(at=1_000_030.0)
+    ServiceShield.record_proxy_result(holder, state)
+    ServiceShield.record_proxy_result(holder, state)  # periodic repeat
+    from homeassistant.core import State
+
+    ServiceShield.record_proxy_result(holder, State(pc.PROXY_RESULT_ENTITY_ID, "unknown", {}))
+    assert len(holder.proxy_results) == 1
+
+
+def test_recording_the_same_parameter_again_replaces_it():
+    data: dict[str, Any] = {}
+    pc.record_write(data, BOX, pc.PARAM_GRID_PV_ON, True)
+    pc.record_write(data, BOX, pc.PARAM_GRID_PV_OFF, True)
+    pc.record_write(data, BOX, pc.PARAM_GRID_PV_ON, True)
+    assert [w[1] for w in data[pc.WRITES_KEY]] == [pc.PARAM_GRID_PV_OFF, pc.PARAM_GRID_PV_ON]

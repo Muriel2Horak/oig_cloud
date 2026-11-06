@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -12,6 +13,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
+from ..control.proxy_control import PROXY_RESULT_ENTITY_ID, WRITES_KEY, proxy_result
 from ..shared.background import start_background
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
@@ -110,6 +112,21 @@ class ServiceShield:
 
         # Mode Transition Tracker (bude inicializován později s box_id)
         self.mode_tracker: Optional[Any] = None
+
+        # Setting results from the OIG Proxy (ack/timeout/dropped) seen while a
+        # proxy write waits for one; see control/proxy_control.write_outcome.
+        self.proxy_results: deque = deque(maxlen=50)
+        # Timed-out local writes to re-queue through the cloud (shield/queue.py).
+        self.cloud_retries: list = []
+
+    def record_proxy_result(self, state: Any) -> None:
+        """Keep one OIG Proxy setting result, once per event_id."""
+        result = proxy_result(state)
+        if result is None:
+            return
+        if any(r["event_id"] == result["event_id"] for r in self.proxy_results):
+            return
+        self.proxy_results.append(result)
 
     def bind_telemetry_emitter(self, emitter: Optional[Any]) -> None:
         """Attach the shared telemetry emitter after entry telemetry init."""
@@ -248,6 +265,10 @@ class ServiceShield:
                 power_entity = power_monitor.get("entity_id")
                 if power_entity and power_entity not in entity_ids:
                     entity_ids.append(power_entity)
+
+            params = service_info.get("params") or {}
+            if params.get(WRITES_KEY) and PROXY_RESULT_ENTITY_ID not in entity_ids:
+                entity_ids.append(PROXY_RESULT_ENTITY_ID)
         return entity_ids
 
     @callback
@@ -258,6 +279,9 @@ class ServiceShield:
 
         if not new_state:
             return
+
+        if entity_id == PROXY_RESULT_ENTITY_ID:
+            self.record_proxy_result(new_state)
 
         _LOGGER.debug(
             "[OIG Shield] Detekována změna entity %s na '%s' - spouštím kontrolu",

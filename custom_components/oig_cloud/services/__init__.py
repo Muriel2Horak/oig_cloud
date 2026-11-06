@@ -772,7 +772,7 @@ async def _write_box_mode(
     service_data: Dict[str, Any],
 ) -> None:
     if pc.use_local_route(hass, entry, box_id, service_data):
-        await pc.async_write(hass, box_id, pc.PARAM_BOX_MODE, pc.BOX_MODE_OPTIONS[mode_value])
+        await pc.async_write(hass, box_id, pc.PARAM_BOX_MODE, pc.BOX_MODE_OPTIONS[mode_value], service_data)
         service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
         return
     await _get_entry_client(hass, entry).set_box_mode(mode_value)
@@ -790,7 +790,7 @@ async def _write_charge_current(
     if not pc.box_mode_is_ups(hass, box_id):
         raise pc.ProxyControlError("Nabíjecí proud jde nastavit jen v režimu Home UPS.")
     amps = pc.validate_charge_current(hass, entry, box_id, charge_current)
-    await pc.async_write(hass, box_id, pc.PARAM_CHARGE_CURRENT, amps)
+    await pc.async_write(hass, box_id, pc.PARAM_CHARGE_CURRENT, amps, service_data)
     service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
 
 
@@ -868,7 +868,7 @@ async def _action_set_boiler_mode(
     if mode_value is None:
         raise vol.Invalid("Neplatný režim bojleru.")
     if pc.use_local_route(hass, entry, box_id, service_data):
-        await pc.async_write(hass, box_id, pc.PARAM_BOILER_MANUAL, bool(mode_value))
+        await pc.async_write(hass, box_id, pc.PARAM_BOILER_MANUAL, bool(mode_value), service_data)
         service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
         return
     await client.set_boiler_mode(str(mode_value))
@@ -906,12 +906,12 @@ async def _action_set_grid_delivery(
         if mode_value is None:
             raise vol.Invalid("Neplatný režim přetoků.")
         if local:
-            await pc.async_write(hass, box_id, pc.PARAM_TO_GRID, bool(mode_value))
+            await pc.async_write(hass, box_id, pc.PARAM_TO_GRID, bool(mode_value), service_data)
         else:
             await client.set_grid_delivery(mode_value)
     if limit is not None:
         if local:
-            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(limit))
+            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(limit), service_data)
             return
         success = await client.set_grid_delivery_limit(int(limit))
         if enforce_limit_success and not success:
@@ -1070,11 +1070,11 @@ async def _action_battery_export(
     for current in [step] if step else EXPORT_START_STEPS:
         _LOGGER.info("%sBattery export step %s for %s", log_prefix, current, box_id)
         if current == "limit":
-            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(service_data["limit"]))
+            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(service_data["limit"]), service_data)
         elif current == "pv_off_on":
-            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_OFF, True)
+            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_OFF, True, service_data)
         elif current == "pv_on_on":
-            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_ON, True)
+            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_ON, True, service_data)
     service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
 
 
@@ -1088,9 +1088,9 @@ async def _action_stop_battery_export(
     for current in [step] if step else EXPORT_STOP_STEPS:
         _LOGGER.info("%sBattery export stop step %s for %s", log_prefix, current, box_id)
         if current == "pv_on_off":
-            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_ON, False)
+            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_ON, False, service_data)
         elif current == "pv_off_off":
-            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_OFF, False)
+            await pc.async_write(hass, box_id, pc.PARAM_GRID_PV_OFF, False, service_data)
         elif current == "finish":
             await _finish_battery_export(hass, entry, box_id, service_data)
     service_data[pc.ROUTE_KEY] = pc.ROUTE_LOCAL
@@ -1114,7 +1114,7 @@ async def _finish_battery_export(
     restore = service_data.get("_restore_limit")
     if restore is not None:
         try:
-            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(float(restore)))
+            await pc.async_write(hass, box_id, pc.PARAM_EXPORT_LIMIT, int(float(restore)), service_data)
         except Exception:
             manager.stop_failed()
             raise

@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Box control through the OIG Proxy.** With the new option "Řídit přes OIG Proxy" on and the data
   source local, `set_box_mode`, `set_grid_delivery` and `set_boiler_mode` write the proxy's
   settings entities instead of the cloud portal; when the integration falls back to cloud, writes
-  go to the cloud as before. Everything still runs through the service shield queue, and a local
-  write the shield does not confirm in time is retried once through the cloud where possible.
+  go to the cloud as before. Everything still runs through the service shield queue. The shield
+  finishes a local step when the OIG Proxy reports the box's ack for its setting (entity
+  `control_last_result`, OIG Proxy 2.1.2+), so it does not wait for the box's rare parameter
+  table. On a timeout or dropped result, or none within 4 minutes, it sends the setting once more;
+  if that fails too, the step goes through the cloud where possible, otherwise it fails and frees
+  the queue.
 - `set_box_mode` accepts `charge_current` (A): the shield sets Home UPS, waits for the box to
   confirm it, then writes the charge current (entering Home UPS resets it to 50 A). Capped by the
   box's own limit and an optional user cap.

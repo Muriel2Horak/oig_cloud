@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from homeassistant.core import Context
 from homeassistant.util.dt import now as dt_now
 
+from ..control.proxy_control import WRITES_KEY
 from .telemetry import emit_shield_decision_event
 
 _LOGGER = logging.getLogger(__name__)
@@ -634,6 +635,12 @@ async def start_call(
     await _refresh_coordinator_after_call(shield, service_name)
 
     shield._setup_state_listener()
+
+    if actual_params.get(WRITES_KEY):
+        # Proxy write: check the box's acceptance as soon as its window ends.
+        from .queue import schedule_acceptance_check
+
+        schedule_acceptance_check(shield)
 
 
 async def safe_call_service(
