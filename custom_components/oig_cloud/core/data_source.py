@@ -21,6 +21,7 @@ from ..shared.cloud_contract import (
     resolve_telemetry_device_id,
 )
 from .local_mapper import (
+    PROXY_EVENTS_ENTITY_ID,
     iter_local_entities,
     normalize_proxy_entity_id,
 )
@@ -570,6 +571,10 @@ class DataSourceController:
         if not isinstance(entity_id, str):
             return
 
+        if entity_id == PROXY_EVENTS_ENTITY_ID:
+            self._on_box_event(event)
+            return
+
         expected_box_id = _get_expected_box_id(self.entry)
 
         # Use normalize_proxy_entity_id as the sole gate — it handles both the
@@ -594,6 +599,24 @@ class DataSourceController:
         # Track changed entities and apply mapping to coordinator payload (debounced).
         self._pending_local_entities.add(entity_id)
         self._schedule_debounced_poke()
+
+    @callback
+    def _on_box_event(self, event: Any) -> None:
+        """Take the box mode from its mode event at once.
+
+        Handled here, not in the debounced batch, because the batch reads the
+        entity's current state and the next event can replace it within the
+        debounce window.
+        """
+        if not self.telemetry_store:
+            return
+        new_state = event.data.get("new_state")
+        text = getattr(new_state, "state", None)
+        mode = self.telemetry_store.apply_box_mode_event(text)
+        if mode is None:
+            return
+        _LOGGER.info("Box mode %s from box event %r", mode, text)
+        self._schedule_snapshot_publish()
 
     @callback
     def _schedule_debounced_poke(self) -> None:

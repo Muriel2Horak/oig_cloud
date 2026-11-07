@@ -695,6 +695,17 @@ def test_timeout_and_dropped_fail_but_a_later_ack_wins():
     assert pc.write_outcome(write, [timeout, ack]) == pc.RESULT_ACK
 
 
+def test_the_timeout_that_caused_a_resend_does_not_count_against_it():
+    # 2026-11-07: timeout at 15:53:33.408, resend written at 15:53:33.449.
+    first = _write(at=1_000_000.0)
+    timeout = pc.proxy_result(_result_state(result="timeout", at=1_000_060.408, event_id="t"))
+    assert pc.write_outcome(first, [timeout]) == pc.RESULT_FAILED
+    resend = _write(at=1_000_060.449)
+    assert pc.write_outcome(resend, [timeout]) is None
+    ack = pc.proxy_result(_result_state(at=1_000_073.5, event_id="a"))
+    assert pc.write_outcome(resend, [timeout, ack]) == pc.RESULT_ACK
+
+
 def test_replaced_and_cloud_results_are_ignored():
     write = _write()
     replaced = pc.proxy_result(_result_state(result="dropped", reason="replaced", at=1_000_010.0))

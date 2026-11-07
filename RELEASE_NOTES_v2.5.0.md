@@ -45,7 +45,9 @@ a bojleru přes proxy přímo do boxu místo přes cloudový portál. Když inte
 dokončí, jakmile OIG Proxy (verze 2.1.2 a novější) nahlásí, že box nastavení potvrdil, takže nečeká
 na tabulku parametrů, kterou box posílá jen občas. Když proxy nahlásí, že box nastavení nepřevzal,
 nebo do 4 minut nepřijde žádný výsledek, pošle shield nastavení ještě jednou. Když neprojde ani
-podruhé, zkusí to přes cloud, a kde to nejde, krok selže a fronta se uvolní.
+podruhé, zkusí to přes cloud, a kde to nejde, krok selže a fronta se uvolní. Režim boxu se navíc
+bere z události, kterou box zapíše při přepnutí („HG I Start“, „HG IV-UPS Start“). HA, shield
+i plánovač tak změnu vidí hned, ne až když box pošle tabulku parametrů (jednou to bylo za 15 minut).
 
 Přes proxy jdou i dvě věci, které cloud neumí:
 

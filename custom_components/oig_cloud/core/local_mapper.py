@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,6 +14,25 @@ from ..sensor_types import SENSOR_TYPES
 _LOGGER = logging.getLogger(__name__)
 
 SUPPORTED_DOMAINS: Tuple[str, ...] = ("sensor", "binary_sensor", "switch", "number", "select")
+
+# Box event text published by the OIG Proxy. The box logs every mode it applies
+# as "HG I Start", "HG IV-UPS  Start", "HG I" (re-applied) etc.; this is the
+# moment the box runs in that mode. Its parameter table (tbl_box_prms), which
+# the mode sensor otherwise follows, may come many minutes later (2026-11-07:
+# Home UPS applied at 15:36:16, table only at 15:51:37).
+PROXY_EVENTS_ENTITY_ID = "sensor.oig_local_oig_proxy_tbl_events_content"
+_MODE_EVENT_RE = re.compile(r"^\s*HG\s+(VI|V|IV|III|II|I)(?:-UPS)?(?![A-Za-z])")
+_MODE_EVENT_IDS = {"I": 0, "II": 1, "III": 2, "IV": 3, "V": 4, "VI": 5}
+
+
+def box_mode_from_event(text: Any) -> Optional[int]:
+    """Cloud numeric box mode from a box mode event ("HG IV-UPS Start" -> 3)."""
+    if not isinstance(text, str):
+        return None
+    match = _MODE_EVENT_RE.match(text)
+    if not match:
+        return None
+    return _MODE_EVENT_IDS[match.group(1)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,6 +428,18 @@ class LocalUpdateApplier:
                     changed = True
 
         return changed
+
+    def apply_box_mode(self, payload: Dict[str, Any], mode: int) -> bool:
+        """Set the box mode from a box mode event; True if it changed."""
+        box = _ensure_box_payload(payload, self.box_id)
+        node = box.setdefault("box_prms", {})
+        if not isinstance(node, dict):
+            box["box_prms"] = {}
+            node = box["box_prms"]
+        if node.get("mode") == mode:
+            return False
+        node["mode"] = mode
+        return True
 
 
 def _ensure_box_payload(payload: Dict[str, Any], box_id: str) -> Dict[str, Any]:

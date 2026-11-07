@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `control_last_result`, OIG Proxy 2.1.2+), so it does not wait for the box's rare parameter
   table. On a timeout or dropped result, or none within 4 minutes, it sends the setting once more;
   if that fails too, the step goes through the cloud where possible, otherwise it fails and frees
-  the queue.
+  the queue. The box mode also follows the box's own mode event ("HG I Start", "HG IV-UPS Start")
+  published by the proxy, so HA, the shield and the planner see a mode change at once instead of
+  when the box next sends its parameter table (once 15 minutes later).
 - `set_box_mode` accepts `charge_current` (A): the shield sets Home UPS, waits for the box to
   confirm it, then writes the charge current (entering Home UPS resets it to 50 A). Capped by the
   box's own limit and an optional user cap.

@@ -654,3 +654,28 @@ async def test_mode_before_charge_waits_for_readback_even_after_the_ack(hass, fr
     await rig.hass.async_block_till_done(wait_background_tasks=True)
     await rig.advance(1)
     assert rig.proxy.writes[-1] == (CHARGE_CFG, "121.0")
+
+
+@pytest.mark.asyncio
+async def test_resend_is_not_failed_by_the_timeout_that_caused_it(hass, freezer):
+    # 2026-11-07: the shield resent the charge current 40 ms after the timeout,
+    # then counted that same timeout against the resend and gave up after 10 s;
+    # the proxy acknowledged the resend 3 s later.
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.hass.states.async_set("sensor.oig_local_2206237016_tbl_box_prms_mode", "Home UPS")
+    rig.proxy.ignore.add(CHARGE_CFG)  # the box table does not come
+    rig.proxy.drop_next[CHARGE_CFG] = 1
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode", {"charge_current": 125, "acknowledgement": True}, blocking=True
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(rig.proxy.result_delay + 0.05)  # timeout result -> resend
+    assert rig.proxy.writes == [(CHARGE_CFG, "125.0")]
+    await rig.advance(10)
+    await rig.shield._check_loop(dt_util.now())  # the shield checks again before the ack
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    assert not _idle(rig.shield), "must still wait for the resend's result"
+    await rig.advance(rig.proxy.result_delay)
+    assert _idle(rig.shield)
+    assert rig.cloud.calls == []

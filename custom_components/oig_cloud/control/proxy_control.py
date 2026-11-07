@@ -66,11 +66,12 @@ _FAILED_RESULTS = ("timeout", "dropped", "nack")
 # A queued setting replaced by a newer one for the same item; the newer one
 # gets its own result, so this one says nothing about the write.
 _IGNORED_REASONS = ("replaced",)
-# Proxy and HA run on the same host; this only absorbs rounding of the times.
-_RESULT_CLOCK_SLACK_S = 2.0
 # Set by async_write on the shield params: the proxy writes this step made.
 WRITES_KEY = "_proxy_writes"
 RESENT_KEY = "_proxy_resent"
+# Event ids of proxy results the shield already acted on (resent because of
+# them); they never count again for the same step.
+USED_RESULTS_KEY = "_proxy_used_results"
 
 # Cloud numeric box mode -> option label of the proxy's box mode select.
 BOX_MODE_OPTIONS = {"0": "Home 1", "1": "Home 2", "2": "Home 3", "3": "Home UPS"}
@@ -267,29 +268,53 @@ def proxy_result(state: Optional[State]) -> Optional[dict[str, Any]]:
     }
 
 
-def write_outcome(write: tuple, results: Iterable[dict[str, Any]]) -> Optional[str]:
+def _matching_results(
+    write: tuple, results: Iterable[dict[str, Any]], ignore: Iterable[str] = ()
+) -> list[dict[str, Any]]:
+    table, item, code, written_at = write[3:7]
+    skip = set(ignore)
+    return [
+        result
+        for result in results
+        if result["event_id"] not in skip
+        and result["at"] >= written_at
+        and result["table"] == table
+        and result["key"] == item
+        and result.get("source") in (None, "local")
+        and _same_value(result.get("value"), code)
+    ]
+
+
+def failed_result_ids(
+    write: tuple, results: Iterable[dict[str, Any]], ignore: Iterable[str] = ()
+) -> list[str]:
+    """Event ids of the failure results that count for this write."""
+    return [
+        result["event_id"]
+        for result in _matching_results(write, results, ignore)
+        if result["result"] in _FAILED_RESULTS and result["reason"] not in _IGNORED_REASONS
+    ]
+
+
+def write_outcome(
+    write: tuple, results: Iterable[dict[str, Any]], ignore: Iterable[str] = ()
+) -> Optional[str]:
     """``ack``, ``failed`` or None (no result yet) for one write, from proxy results.
 
     Only results the proxy produced after the write count, so the last result
     of an earlier setting, repeated by the periodic status, is never taken for
-    this one. An ack wins over a failure: a resend may follow a timeout.
+    this one. Results in ``ignore`` (the ones that made the shield resend it)
+    never count: on 2026-11-07 the timeout at 15:53:33.408 counted against the
+    resend at 15:53:33.449 and the shield gave up 3 s before the resend's ack.
+    Proxy and HA share the host clock, so times are compared without tolerance.
+    An ack wins over a failure: a resend may follow a timeout.
     """
-    table, item, code, written_at = write[3:7]
-    outcome: Optional[str] = None
-    for result in results:
-        if result["at"] < written_at - _RESULT_CLOCK_SLACK_S:
-            continue
-        if result["table"] != table or result["key"] != item:
-            continue
-        if result.get("source") not in (None, "local"):
-            continue
-        if not _same_value(result.get("value"), code):
-            continue
-        if result["result"] == RESULT_ACK:
-            return RESULT_ACK
-        if result["result"] in _FAILED_RESULTS and result["reason"] not in _IGNORED_REASONS:
-            outcome = RESULT_FAILED
-    return outcome
+    matching = _matching_results(write, results, ignore)
+    if any(result["result"] == RESULT_ACK for result in matching):
+        return RESULT_ACK
+    if failed_result_ids(write, matching):
+        return RESULT_FAILED
+    return None
 
 
 async def async_write(

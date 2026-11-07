@@ -10,6 +10,7 @@ from homeassistant.util import dt as dt_util
 
 from .local_mapper import (
     LocalUpdateApplier,
+    box_mode_from_event,
     iter_local_entities,
 )
 
@@ -77,6 +78,16 @@ class TelemetryStore:
         if changed:
             self._updated_at = _utcnow()
         return changed
+
+    def apply_box_mode_event(self, text: Any) -> Optional[int]:
+        """Apply a box mode event ("HG I Start"); returns the mode if it changed."""
+        mode = box_mode_from_event(text)
+        if mode is None:
+            return None
+        if not self._applier.apply_box_mode(self._payload, mode):
+            return None
+        self._updated_at = _utcnow()
+        return mode
 
     def seed_from_existing_local_states(self) -> bool:
         """Seed payload from all currently-known local entity states for this box."""

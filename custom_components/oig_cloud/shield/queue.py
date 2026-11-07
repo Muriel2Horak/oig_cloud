@@ -16,8 +16,10 @@ from ..control.proxy_control import (
     PROXY_RESULT_ENTITY_ID,
     RESENT_KEY,
     RESULT_FAILED,
+    USED_RESULTS_KEY,
     WRITES_KEY,
     async_write,
+    failed_result_ids,
     write_outcome,
 )
 from .telemetry import emit_shield_decision_event, render_shield_log_marker
@@ -231,7 +233,7 @@ async def _dispatch_cloud_retries(shield: Any) -> None:
         params = {
             k: v
             for k, v in info["params"].items()
-            if k not in (ROUTE_KEY, WRITES_KEY, RESENT_KEY)
+            if k not in (ROUTE_KEY, WRITES_KEY, RESENT_KEY, USED_RESULTS_KEY)
         }
         params[FORCE_CLOUD_KEY] = True
         _LOGGER.warning(
@@ -486,7 +488,8 @@ async def _check_proxy_acceptance(
     if callable(record):  # also covers a result that came before the listener
         record(shield.hass.states.get(PROXY_RESULT_ENTITY_ID))
     results = list(getattr(shield, "proxy_results", ()))
-    outcomes = [(w, write_outcome(w, results)) for w in writes]
+    used = tuple(params.get(USED_RESULTS_KEY) or ())
+    outcomes = [(w, write_outcome(w, results, used)) for w in writes]
     failed = [w for w, outcome in outcomes if outcome == RESULT_FAILED]
     waiting = [w for w, outcome in outcomes if outcome is None]
 
@@ -520,6 +523,9 @@ async def _check_proxy_acceptance(
 
     if not params.get(RESENT_KEY):
         params[RESENT_KEY] = True
+        params[USED_RESULTS_KEY] = used + tuple(
+            event_id for w in failed for event_id in failed_result_ids(w, results, used)
+        )
         _LOGGER.warning(
             "[OIG Shield] Box did not take %s, sending it again through the proxy",
             _describe(failed),
@@ -530,9 +536,9 @@ async def _check_proxy_acceptance(
             {"params": params, "entities": info["entities"]},
             reason="Box nastavení nepřijal – posílám znovu přes proxy",
         )
-        for box_id, key, value, *_rest in failed:
+        for write in failed:
             try:
-                await async_write(shield.hass, box_id, key, value, params)
+                await async_write(shield.hass, write[0], write[1], write[2], params)
             except HomeAssistantError as err:  # judged by its result like any write
                 _LOGGER.warning("[OIG Shield] Proxy resend failed: %s", err)
         schedule_acceptance_check(shield)
