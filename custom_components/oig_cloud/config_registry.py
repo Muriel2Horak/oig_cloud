@@ -333,7 +333,7 @@ _register(
     # Part 2.2). The mode guard now defaults to the operator-selected five-minute
     # window; other promoted defaults retain their prior values.
     Field("mode_guard_minutes", "battery", int, default=5, min=5, max=120),
-    Field("box_floor_safety_margin_pct", "battery", float, default=2.0, min=0.0,
+    Field("box_floor_safety_margin_pct", "battery", float, default=4.0, min=0.0,
           max=10.0, step=0.5),
     Field("holding_soc_threshold_percent", "battery", float, default=97.0, min=90.0,
           max=100.0, step=0.5),

@@ -132,6 +132,12 @@ def test_hard_minimum_stays_the_box_trigger_plus_its_margin(monkeypatch) -> None
     assert inputs.planning_min_percent == 22.0
 
 
+def test_hard_minimum_defaults_two_points_above_the_box_takeover(monkeypatch) -> None:
+    inputs = _planned_inputs(monkeypatch)
+
+    assert inputs.planning_min_percent == 24.0
+
+
 def test_trace_names_the_clock_time_of_each_ups_run() -> None:
     trace = [
         {"reason": "A", "charge_intervals": [1, 2]},

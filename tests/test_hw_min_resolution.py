@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from custom_components.oig_cloud.battery_forecast.planning import (
     forecast_update as forecast_update_module,
 )
@@ -121,4 +123,4 @@ def test_run_planner_uses_configured_hw_min_fraction():
 
     _, mode_result, _ = _run(sensor)
 
-    assert mode_result["planning_min_kwh"] == 3.7
+    assert mode_result["planning_min_kwh"] == pytest.approx(3.9)

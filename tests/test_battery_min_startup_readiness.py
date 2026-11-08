@@ -41,9 +41,9 @@ BAT_MIN_ENTITY_ID = f"sensor.oig_local_{BOX_ID}_tbl_batt_prms_bat_min"
 PLANNER_LOGGER = "custom_components.oig_cloud.battery_forecast.planning.forecast_update"
 
 # max_capacity is 10 kWh below, so a floor percentage maps to target_kwh as
-# (percent + 2 % box safety margin) / 100 * 10.
-TARGET_KWH_FOR_15_PCT = 1.7
-TARGET_KWH_FOR_20_PCT_FALLBACK = 2.2
+# (percent + 4 % box safety margin) / 100 * 10.
+TARGET_KWH_FOR_15_PCT = 1.9
+TARGET_KWH_FOR_20_PCT_FALLBACK = 2.4
 
 
 class _PlannerSensor:

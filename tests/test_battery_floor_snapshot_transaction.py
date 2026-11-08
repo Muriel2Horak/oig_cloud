@@ -423,7 +423,7 @@ async def test_stable_floor_snapshot_commits_once(hass, planner_env):
     assert sensor.daily_plan_calls == 1
     assert planner_env.spies["_apply_planner_results"].calls == 1
     assert planner_env.spies["_dispatch_forecast_updated"].calls == 1
-    assert sensor._mode_optimization_result["target_kwh"] == pytest.approx(1.7)
+    assert sensor._mode_optimization_result["target_kwh"] == pytest.approx(1.9)
     assert sensor._last_forecast_bucket is not None, "a stable plan commits the bucket"
 
 
@@ -568,7 +568,7 @@ async def test_stable_cloud_only_snapshot_commits_once(hass, planner_env):
     assert sensor.daily_plan_calls == 1
     assert planner_env.spies["_apply_planner_results"].calls == 1
     assert planner_env.spies["_dispatch_forecast_updated"].calls == 1
-    assert sensor._mode_optimization_result["target_kwh"] == pytest.approx(2.2)
+    assert sensor._mode_optimization_result["target_kwh"] == pytest.approx(2.4)
     assert sensor._last_forecast_bucket is not None, "a stable cloud plan commits the bucket"
 
 

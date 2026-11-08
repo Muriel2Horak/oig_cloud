@@ -16,8 +16,21 @@ from custom_components.oig_cloud.battery_forecast.planning.forecast_update impor
 
 
 def test_margin_above_proxy_trigger():
-    # user's install: proxy bat_min 20 % → plan floor 22 %
-    assert _derive_planning_min_percent(20.0, 20.0) == 22.0
+    # user's install: proxy bat_min 20 % → plan floor 24 %. At 22 % the box took
+    # over and grid-charged to 89 % (2026-09-07 and 2026-11-06); at 23 % it did not.
+    assert _derive_planning_min_percent(20.0, 20.0) == 24.0
+
+
+def test_default_margin_clears_the_observed_takeover():
+    # The box takes over at bat_min + 2 points. The plan may reach its floor at a
+    # slot's end and runs about a point lower than its forecast within the hour.
+    assert BOX_FLOOR_SAFETY_MARGIN_PCT >= 4.0
+
+
+def test_registry_default_matches_the_planner_default():
+    from custom_components.oig_cloud.config_registry import FIELD_REGISTRY
+
+    assert FIELD_REGISTRY["box_floor_safety_margin_pct"].default == BOX_FLOOR_SAFETY_MARGIN_PCT
 
 
 def test_margin_above_hw_floor_when_proxy_absent():
@@ -32,7 +45,7 @@ def test_low_proxy_trigger_never_lowers_hw_floor():
 
 
 def test_high_proxy_trigger_raises_floor():
-    assert _derive_planning_min_percent(20.0, 25.0) == 27.0
+    assert _derive_planning_min_percent(20.0, 25.0) == 29.0
 
 
 class _State:

@@ -501,19 +501,19 @@ async def test_async_update_happy_path(monkeypatch):
     mode_optimization_result = sensor._mode_optimization_result
     assert mode_optimization_result is not None
     # Floor defense targets the hw minimum + BOX bat_min safety margin
-    # (20% + 2% of max_capacity 10 -> 2.2): dwelling at the box trigger would
+    # (20% + 4% of max_capacity 10 -> 2.4): dwelling at the box trigger would
     # fire its uncontrolled forced balancing, so the plan never aims at it.
-    assert mode_optimization_result["target_kwh"] == pytest.approx(2.2)
+    assert mode_optimization_result["target_kwh"] == pytest.approx(2.4)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "disable_guard,expected_min_percent",
     [
-        # Floor defense protects hw minimum + box bat_min margin (20% + 2%);
+        # Floor defense protects hw minimum + box bat_min margin (20% + 4%);
         # min_capacity_percent no longer raises planning_min_percent.
-        (False, 22.0),
-        (True, 22.0),
+        (False, 24.0),
+        (True, 24.0),
     ],
 )
 async def test_async_update_planner_options(monkeypatch, disable_guard, expected_min_percent):

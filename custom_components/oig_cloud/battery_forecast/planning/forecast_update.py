@@ -559,12 +559,15 @@ def _should_defer_for_box_floor(
     return False
 
 
-# The BOX itself force-balances (uncontrolled grid charge to ~full) whenever
-# the battery DWELLS at its bat_min trigger for ~1 h (user-observed). The plan
-# must therefore never AIM at the trigger: the defended planning floor sits a
-# safety margin above it, so the box logic simply never fires. The margin also
-# absorbs the measured ~1 h sim-vs-reality drift toward the floor.
-BOX_FLOOR_SAFETY_MARGIN_PCT = 2.0
+# The BOX takes over and grid-charges on its own, uncontrolled, when the battery
+# gets near its bat_min trigger. The plan must therefore never AIM at the
+# trigger: the defended planning floor sits a safety margin above it, so the box
+# logic simply never fires. With bat_min 20 % the box took over at 22 % in Home 1
+# (2026-09-07; 2026-11-06 23:15, charging to 89 %) and left the battery alone at
+# 23 %. The optimizer may end a slot exactly on the floor, and the real SoC runs
+# about a point below the plan within the hour, so the margin is the observed
+# 2 points plus that drift plus one point of the box's whole-percent reading.
+BOX_FLOOR_SAFETY_MARGIN_PCT = 4.0
 
 
 def _derive_planning_min_percent(
