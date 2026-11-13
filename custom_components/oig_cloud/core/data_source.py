@@ -22,6 +22,9 @@ from ..shared.cloud_contract import (
 )
 from .local_mapper import (
     PROXY_EVENTS_ENTITY_ID,
+    PROXY_RESULT_ENTITY_ID,
+    SETTINGS_APPLIED_EVENT,
+    box_mode_from_event,
     iter_local_entities,
     normalize_proxy_entity_id,
 )
@@ -42,6 +45,10 @@ DEFAULT_LOCAL_PAYLOAD_PUBLISH_INTERVAL_S = 5.0
 EVENT_DATA_SOURCE_CHANGED = "oig_cloud_data_source_changed"
 
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
+# How long after the box acknowledged a mode its "SetAsReq End" may follow.
+# Measured 2026-11-13: ack 13:30:11, SetAsReq End 13:30:55 (logged), received
+# by HA at 13:31:59 because the box flushes its events in a backlog.
+_MODE_APPLY_WINDOW_S = 300
 PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
 
 _async_track_state_change_event: Optional[Callable[..., Any]] = None
@@ -434,6 +441,9 @@ class DataSourceController:
         self._unsubs: list[Callable[[], None]] = []
         self._last_local_entity_update: Optional[datetime] = None
         self._pending_local_entities: set[str] = set()
+        # The box's last acknowledged mode setting and when (monotonic).
+        self._mode_ack: Optional[int] = None
+        self._mode_ack_at = 0.0
         self._pending_snapshot_publish = False
         self._snapshot_publish_handle: Optional[Any] = None
         self._last_snapshot_publish_monotonic: Optional[float] = None
@@ -574,6 +584,9 @@ class DataSourceController:
         if entity_id == PROXY_EVENTS_ENTITY_ID:
             self._on_box_event(event)
             return
+        if entity_id == PROXY_RESULT_ENTITY_ID:
+            self._on_proxy_result(event)
+            return
 
         expected_box_id = _get_expected_box_id(self.entry)
 
@@ -612,11 +625,51 @@ class DataSourceController:
             return
         new_state = event.data.get("new_state")
         text = getattr(new_state, "state", None)
-        mode = self.telemetry_store.apply_box_mode_event(text)
-        if mode is None:
+        mode = box_mode_from_event(text)
+        if mode is not None:
+            self._mode_ack = None  # the box named its mode itself
+            if self.telemetry_store.apply_box_mode(mode):
+                _LOGGER.info("Box mode %s from box event %r", mode, text)
+                self._schedule_snapshot_publish()
             return
-        _LOGGER.info("Box mode %s from box event %r", mode, text)
-        self._schedule_snapshot_publish()
+        if isinstance(text, str) and text.strip().startswith(SETTINGS_APPLIED_EVENT):
+            self._apply_acknowledged_mode()
+
+    @callback
+    def _on_proxy_result(self, event: Any) -> None:
+        """Remember the box's last acknowledged mode setting (local or cloud)."""
+        new_state = event.data.get("new_state")
+        attrs = getattr(new_state, "attributes", None) or {}
+        if (
+            attrs.get("result") != "ack"
+            or attrs.get("table") != "tbl_box_prms"
+            or str(attrs.get("key", "")).upper() != "MODE"
+        ):
+            return
+        try:
+            mode = int(float(str(attrs.get("value"))))
+        except (TypeError, ValueError):
+            return
+        if 0 <= mode <= 5:
+            self._mode_ack = mode
+            self._mode_ack_at = time.monotonic()
+
+    @callback
+    def _apply_acknowledged_mode(self) -> None:
+        """The box finished applying settings after acknowledging a mode: it runs it.
+
+        Only the first "SetAsReq End" after the acknowledgement counts, and only
+        within a few minutes of it.
+        """
+        mode: Optional[int] = getattr(self, "_mode_ack", None)
+        self._mode_ack = None
+        if mode is None or not self.telemetry_store:
+            return
+        if time.monotonic() - getattr(self, "_mode_ack_at", 0.0) > _MODE_APPLY_WINDOW_S:
+            return
+        if self.telemetry_store.apply_box_mode(mode):
+            _LOGGER.info("Box mode %s: acknowledged and applied (SetAsReq End)", mode)
+            self._schedule_snapshot_publish()
 
     @callback
     def _schedule_debounced_poke(self) -> None:

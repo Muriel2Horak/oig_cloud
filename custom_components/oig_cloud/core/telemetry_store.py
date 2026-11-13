@@ -89,6 +89,13 @@ class TelemetryStore:
         self._updated_at = _utcnow()
         return mode
 
+    def apply_box_mode(self, mode: int) -> bool:
+        """Set the box mode the box confirmed it applied; True if it changed."""
+        if not self._applier.apply_box_mode(self._payload, mode):
+            return False
+        self._updated_at = _utcnow()
+        return True
+
     def seed_from_existing_local_states(self) -> bool:
         """Seed payload from all currently-known local entity states for this box."""
         entity_ids = [

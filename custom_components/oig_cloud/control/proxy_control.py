@@ -358,8 +358,17 @@ async def async_write(
 
 
 def box_mode_is_ups(hass: HomeAssistant, box_id: str) -> bool:
-    """True when the box itself reports Home UPS."""
-    return read_proxy_state(hass, box_id, PARAM_BOX_MODE) == HOME_UPS_LABEL
+    """True when the box reports Home UPS, through the proxy or the integration.
+
+    The integration's mode sensor also follows the box's own events and the
+    acknowledged mode setting, so it knows about Home UPS long before the
+    proxy's entity, which waits for the box's parameter table (2026-11-13:
+    16 minutes; the charge current step was refused meanwhile).
+    """
+    if read_proxy_state(hass, box_id, PARAM_BOX_MODE) == HOME_UPS_LABEL:
+        return True
+    state = hass.states.get(f"sensor.oig_{box_id}_box_prms_mode")
+    return state is not None and state.state == HOME_UPS_LABEL
 
 
 def _positive_option(entry: ConfigEntry, key: str) -> Optional[float]:

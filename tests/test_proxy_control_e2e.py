@@ -679,3 +679,26 @@ async def test_resend_is_not_failed_by_the_timeout_that_caused_it(hass, freezer)
     await rig.advance(rig.proxy.result_delay)
     assert _idle(rig.shield)
     assert rig.cloud.calls == []
+
+
+@pytest.mark.asyncio
+async def test_charge_current_follows_when_only_the_integration_knows_home_ups(hass, freezer):
+    # 2026-11-13: after Home UPS the charge step was refused ("jen v režimu
+    # Home UPS") because the proxy's mode entity still said Home 1.
+    rig = await _make_rig(hass, freezer)
+    rig.proxy.emit_results = True
+    rig.proxy.no_readback.add(MODE_CFG)  # the proxy entity keeps "Home 1"
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode",
+        {"mode": "home_ups", "charge_current": 125, "acknowledgement": True},
+        blocking=True,
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(rig.proxy.result_delay + 1)
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    # The integration learns Home UPS from the box (event / ack + SetAsReq End).
+    rig.hass.states.async_set(CLOUD_MODE_SENSOR, "Home UPS")
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(1)
+    assert rig.hass.states.get("sensor.oig_local_2206237016_tbl_box_prms_mode").state == "Home 1"
+    assert rig.proxy.writes[-1] == (CHARGE_CFG, "125.0")

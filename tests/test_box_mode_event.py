@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.oig_cloud.core import data_source as module
 from custom_components.oig_cloud.core.local_mapper import (
     PROXY_EVENTS_ENTITY_ID,
+    PROXY_RESULT_ENTITY_ID,
     box_mode_from_event,
 )
 from custom_components.oig_cloud.core.telemetry_store import TelemetryStore
@@ -83,6 +84,7 @@ def _controller(effective_mode):
     controller.entry = entry
     controller.telemetry_store = store
     controller._pending_local_entities = set()
+    controller._mode_ack = None
     published: list[bool] = []
     controller._schedule_snapshot_publish = lambda: published.append(True)
     controller._schedule_debounced_poke = lambda: None
@@ -116,3 +118,72 @@ def test_box_events_are_ignored_in_cloud_fallback():
     controller._on_any_state_change(_event(next(iter(REAL)), now))
     assert store.get_snapshot().payload["2206237016"]["box_prms"]["mode"] == 0
     assert published == []
+
+
+# --- acknowledged mode + "SetAsReq End" (2026-11-13) --------------------------
+# The box went to Home UPS at 13:30:07 but logged no "HG IV-UPS" event, only:
+#   FMT on [3-No Limit] Start ... SetAsReq Start ... MUCHGC0500 ... SetAsReq End
+
+
+def _result(result="ack", value=3, key="MODE", table="tbl_box_prms", now=None):
+    attrs = {"result": result, "table": table, "key": key, "value": value,
+             "source": "local", "at": "2026-11-13T12:30:11+00:00"}
+    return SimpleNamespace(
+        data={"entity_id": PROXY_RESULT_ENTITY_ID,
+              "new_state": SimpleNamespace(state=f"{result} {table}:{key}={value}", attributes=attrs)},
+        time_fired=now,
+    )
+
+
+def _mode(store):
+    return store.get_snapshot().payload["2206237016"]["box_prms"]["mode"]
+
+
+def test_acknowledged_mode_is_taken_when_the_box_finishes_applying(monkeypatch):
+    controller, store, published, now = _controller(module.DATA_SOURCE_LOCAL_ONLY)
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    controller._on_any_state_change(_result(now=now))
+    clock[0] += 50
+    controller._on_any_state_change(_event("FMT on [3-No Limit] Start (Load:698W, LoadNB:146W)", now))
+    controller._on_any_state_change(_event("Invertor ACK : ^S011MUCHGC0500", now))
+    assert _mode(store) == 0, "not before the box finished"
+    clock[0] += 60
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    assert _mode(store) == 3
+    assert published == [True]
+
+
+def test_only_the_first_settings_end_after_the_ack_counts(monkeypatch):
+    controller, store, published, now = _controller(module.DATA_SOURCE_LOCAL_ONLY)
+    monkeypatch.setattr(module.time, "monotonic", lambda: 1000.0)
+    controller._on_any_state_change(_result(now=now))
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    store._payload["2206237016"]["box_prms"]["mode"] = 0  # the box changed again later
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    assert _mode(store) == 0
+
+
+def test_old_ack_failed_result_or_other_setting_changes_nothing(monkeypatch):
+    controller, store, published, now = _controller(module.DATA_SOURCE_LOCAL_ONLY)
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    controller._on_any_state_change(_result(now=now))
+    clock[0] += module._MODE_APPLY_WINDOW_S + 1
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    assert _mode(store) == 0, "too long after the ack"
+    controller._on_any_state_change(_result(result="timeout", now=now))
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    controller._on_any_state_change(_result(key="AAC_MAX_CHRG", table="tbl_invertor_prm1", value=125, now=now))
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    assert _mode(store) == 0
+    assert published == []
+
+
+def test_mode_event_wins_over_a_pending_ack(monkeypatch):
+    controller, store, published, now = _controller(module.DATA_SOURCE_LOCAL_ONLY)
+    monkeypatch.setattr(module.time, "monotonic", lambda: 1000.0)
+    controller._on_any_state_change(_result(value=3, now=now))
+    controller._on_any_state_change(_event("HG I Start (Load:586W)", now))
+    controller._on_any_state_change(_event("SetAsReq End", now))
+    assert _mode(store) == 0

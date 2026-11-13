@@ -742,6 +742,19 @@ def test_shield_keeps_each_result_once():
     assert len(holder.proxy_results) == 1
 
 
+def test_ups_check_also_trusts_the_integration_mode(hass):
+    proxy_mode = "sensor.oig_local_2206237016_tbl_box_prms_mode"
+    hass.states.set(proxy_mode, "Home 1")
+    hass.states.set("sensor.oig_2206237016_box_prms_mode", "Home 1")
+    assert not pc.box_mode_is_ups(hass, BOX)
+    # 2026-11-13: the integration knew Home UPS 16 minutes before the proxy entity.
+    hass.states.set("sensor.oig_2206237016_box_prms_mode", "Home UPS")
+    assert pc.box_mode_is_ups(hass, BOX)
+    hass.states.set("sensor.oig_2206237016_box_prms_mode", "Home 1")
+    hass.states.set(proxy_mode, "Home UPS")
+    assert pc.box_mode_is_ups(hass, BOX)
+
+
 def test_recording_the_same_parameter_again_replaces_it():
     data: dict[str, Any] = {}
     pc.record_write(data, BOX, pc.PARAM_GRID_PV_ON, True)

@@ -23,6 +23,14 @@ SUPPORTED_DOMAINS: Tuple[str, ...] = ("sensor", "binary_sensor", "switch", "numb
 PROXY_EVENTS_ENTITY_ID = "sensor.oig_local_oig_proxy_tbl_events_content"
 _MODE_EVENT_RE = re.compile(r"^\s*HG\s+(VI|V|IV|III|II|I)(?:-UPS)?(?![A-Za-z])")
 _MODE_EVENT_IDS = {"I": 0, "II": 1, "III": 2, "IV": 3, "V": 4, "VI": 5}
+# The box logs this when it has finished applying settings: the mode, its own
+# reset of the AC charge current to 50 A (MUCHGC0500) and the inverter flags.
+# The mode event above is not always among them: on 2026-11-13 the box went
+# to Home UPS at 13:30:07 and logged only "FMT on [3-No Limit] Start" and the
+# SetAsReq sequence.
+SETTINGS_APPLIED_EVENT = "SetAsReq End"
+# The OIG Proxy's result of the last setting it delivered (ack/timeout/dropped).
+PROXY_RESULT_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_control_last_result"
 
 
 def box_mode_from_event(text: Any) -> Optional[int]:

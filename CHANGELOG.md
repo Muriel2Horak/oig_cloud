@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if that fails too, the step goes through the cloud where possible, otherwise it fails and frees
   the queue. The box mode also follows the box's own mode event ("HG I Start", "HG IV-UPS Start")
   published by the proxy, so HA, the shield and the planner see a mode change at once instead of
-  when the box next sends its parameter table (once 15 minutes later).
+  when the box next sends its parameter table (once 15 minutes later). When the box applies a mode
+  without logging that event, the mode it acknowledged counts once it reports "SetAsReq End"
+  (settings applied). The Home UPS charge current step accepts the integration's mode as well as
+  the proxy's, so it is no longer refused while the proxy's entity still shows the old mode.
 - `set_box_mode` accepts `charge_current` (A): the shield sets Home UPS, waits for the box to
   confirm it, then writes the charge current (entering Home UPS resets it to 50 A). Capped by the
   box's own limit and an optional user cap.

@@ -48,6 +48,9 @@ nebo do 4 minut nepřijde žádný výsledek, pošle shield nastavení ještě j
 podruhé, zkusí to přes cloud, a kde to nejde, krok selže a fronta se uvolní. Režim boxu se navíc
 bere z události, kterou box zapíše při přepnutí („HG I Start“, „HG IV-UPS Start“). HA, shield
 i plánovač tak změnu vidí hned, ne až když box pošle tabulku parametrů (jednou to bylo za 15 minut).
+Když box tuto událost nezapíše, platí režim, který potvrdil, jakmile box ohlásí dokončení nastavení
+(„SetAsReq End“). Nabíjecí proud v Home UPS se pak nastaví, i když entita proxy ještě ukazuje
+předchozí režim.
 
 Přes proxy jdou i dvě věci, které cloud neumí:
 
