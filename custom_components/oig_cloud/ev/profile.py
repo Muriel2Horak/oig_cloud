@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 # A drop smaller than this is the car re-reporting its SoC, not a drive: the
@@ -104,9 +104,9 @@ def build_ev_profile(
     """Per-weekday need and departure from hourly SoC rows."""
     charging = charging_hours or set()
     ordered = sorted(rows, key=lambda row: row.start)
-    use: Dict[object, float] = {}
-    first_drive: Dict[object, int] = {}
-    row_count: Dict[object, int] = {}
+    use: Dict[date, float] = {}
+    first_drive: Dict[date, int] = {}
+    row_count: Dict[date, int] = {}
 
     previous: Optional[HourlySoc] = None
     for row in ordered:
@@ -129,7 +129,7 @@ def build_ev_profile(
     for day, used in use.items():
         if row_count.get(day, 0) < MIN_ROWS_PER_DAY:
             continue
-        weekday = day.weekday()  # type: ignore[attr-defined]
+        weekday = day.weekday()
         per_weekday_use[weekday].append(used)
         if day in first_drive:
             per_weekday_departures[weekday].append(first_drive[day])

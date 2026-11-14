@@ -104,15 +104,16 @@ def charge_kw_from_statistics(
 
 async def async_fetch_hourly_statistics(
     hass: Any, statistic_ids: set[str], start: datetime, end: datetime
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> Mapping[str, List[Any]]:
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import statistics_during_period
 
-    return await get_instance(hass).async_add_executor_job(
-        lambda: statistics_during_period(
+    def _read() -> Mapping[str, List[Any]]:
+        return statistics_during_period(
             hass, start, end, statistic_ids, "hour", None, {"min", "max", "mean"}
         )
-    )
+
+    return await get_instance(hass).async_add_executor_job(_read)
 
 
 class EvRuntime:
