@@ -49,8 +49,13 @@ def build_planner_timeline(
     efficiency: float,
     home_charge_rate_kw: float,
     log_rate_limited: Optional[Any] = None,
+    solar_reduction_kwh: Optional[List[float]] = None,
 ) -> List[Dict[str, Any]]:
-    """Build timeline in legacy format from planner modes."""
+    """Build timeline in legacy format from planner modes.
+
+    ``solar_reduction_kwh`` is PV the car and the boiler take before the
+    battery (planning.flex_loads); the timeline shows the battery without it.
+    """
     timeline: List[Dict[str, Any]] = []
     soc = current_capacity
     charge_rate_kwh_15min = home_charge_rate_kw / 4.0
@@ -76,6 +81,8 @@ def build_planner_timeline(
             )
         except Exception:
             solar_kwh = 0.0
+        if solar_reduction_kwh and i < len(solar_reduction_kwh):
+            solar_kwh = max(0.0, solar_kwh - float(solar_reduction_kwh[i] or 0.0))
 
         load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 

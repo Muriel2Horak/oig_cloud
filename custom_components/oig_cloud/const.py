@@ -137,6 +137,46 @@ DEFAULT_BOILER_MAX_TEMP_C = 65.0
 CONF_BOILER_ALT_POWER_KW = "boiler_alt_power_kw"  # alt thermal power into tank (lead-time)
 DEFAULT_BOILER_ALT_POWER_KW = 0.0  # 0 = unknown → alt not actively pre-scheduled
 
+# Boiler wired to the box's backup output (the battery can feed it). The
+# reference install has it on the non-backup circuit (the heating estimator
+# reads its power from acinb), so by default its heat is a grid-side load.
+CONF_BOILER_ON_BACKUP_CIRCUIT = "boiler_on_backup_circuit"
+DEFAULT_BOILER_ON_BACKUP_CIRCUIT = False
+
+# Electric car (ev/): charging planned like the home battery's UPS slots.
+CONF_ENABLE_EV = "enable_ev"
+CONF_EV_SOC_ENTITY = "ev_soc_entity"
+CONF_EV_PLUGGED_ENTITY = "ev_plugged_entity"  # optional; unset = always plugged
+CONF_EV_CHARGE_LIMIT_ENTITY = "ev_charge_limit_entity"  # optional number/sensor (%)
+CONF_EV_CHARGE_LIMIT_PCT = "ev_charge_limit_pct"
+DEFAULT_EV_CHARGE_LIMIT_PCT = 100.0
+CONF_EV_CHARGER_POWER_ENTITY = "ev_charger_power_entity"  # optional (kW or W)
+CONF_EV_CAPACITY_KWH = "ev_capacity_kwh"  # charger kWh per 100 %; 0 = learn
+DEFAULT_EV_CAPACITY_KWH = 0.0
+CONF_EV_MAX_POWER_KW = "ev_max_power_kw"
+DEFAULT_EV_MAX_POWER_KW = 11.0  # three-phase 16 A wallbox
+CONF_EV_MIN_POWER_KW = "ev_min_power_kw"
+DEFAULT_EV_MIN_POWER_KW = 4.14  # IEC 61851 minimum 6 A x 3 phases x 230 V
+CONF_EV_PHASES = "ev_phases"
+DEFAULT_EV_PHASES = 3
+KEY_EV_RUNTIME = "ev_runtime"
+SIGNAL_EV_PLAN_UPDATED = "oig_cloud_ev_plan_updated_{entry_id}"
+
+# Main breaker shared by the car, the boiler and the battery's grid charging.
+CONF_GRID_BREAKER_A = "grid_breaker_a"
+DEFAULT_GRID_BREAKER_A = 25.0  # the most common Czech main breaker (3 x 25 A)
+CONF_GRID_RESERVE_A = "grid_reserve_a"
+DEFAULT_GRID_RESERVE_A = 2.0  # 15-min averages hide short peaks of the house
+CONF_GRID_PHASES = "grid_phases"
+DEFAULT_GRID_PHASES = 3
+# Who gets the breaker first (planning.flex_loads); comma-separated.
+CONF_FLEX_PRIORITY = "flex_priority"
+DEFAULT_FLEX_PRIORITY = "ev,boiler,battery"
+# PV surplus goes to the battery before the non-backup circuit, as the box
+# does in Home 1/2/UPS. Off = the priority above also orders the surplus.
+CONF_FLEX_PV_BATTERY_FIRST = "flex_pv_battery_first"
+DEFAULT_FLEX_PV_BATTERY_FIRST = True
+
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"
 STORAGE_KEY_BOILER_SCHEDULE = "boiler_schedule"

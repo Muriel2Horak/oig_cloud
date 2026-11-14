@@ -46,9 +46,11 @@ from ..timeline.planner import (
     attach_planner_reasons,
     build_planner_timeline,
 )
-from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION
+from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION, CBBMode
 from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
+from .flex_glue import battery_outranks_car, boiler_on_backup, coordinate_flex_loads
+from .flex_loads import FlexPlan
 
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
@@ -804,7 +806,9 @@ async def _maybe_apply_consumption_boost(
         adaptive_helper.apply_consumption_boost_to_forecast(load_forecast, recent_ratio)
 
 
-def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
+def _read_boiler_grid_load_overlay(
+    sensor: Any, include_grid: bool = True
+) -> dict[datetime, float]:
     """Return {slot_start: boiler_load_kwh} from the boiler runtime's last plan.
 
     Reads boiler runtime via hass.data boundary (same pattern as F1 battery→boiler
@@ -826,6 +830,10 @@ def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
     total draw by up to one boiler heating cycle worth of kWh in steady-state,
     causing modest over-charging (self-limiting at battery max capacity).
     Accepted trade-off per R6 design.
+
+    ``include_grid=False`` is for a boiler on the non-backup circuit: the
+    battery never feeds it, so only the Home 5 battery heat is a battery load;
+    its grid heat goes to the breaker (planning.flex_loads) instead.
     """
     try:
         hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
@@ -853,7 +861,7 @@ def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
                 continue
             for slot in getattr(plan_result, "slots", []):
                 # Include grid_kwh + battery_kwh; exclude pv_kwh.
-                grid_kwh = getattr(slot, "grid_kwh", 0.0)
+                grid_kwh = getattr(slot, "grid_kwh", 0.0) if include_grid else 0.0
                 battery_kwh = getattr(slot, "battery_kwh", 0.0)
                 load_kwh = (grid_kwh or 0.0) + (battery_kwh or 0.0)
                 if load_kwh <= 0.0:
@@ -877,6 +885,7 @@ def _apply_boiler_grid_load_overlay(
     sensor: Any,
     spot_prices: list[dict[str, Any]],
     load_forecast: list[float],
+    include_grid: bool = True,
 ) -> None:
     """Add boiler planned grid-heating kWh into the load forecast in place.
 
@@ -884,7 +893,7 @@ def _apply_boiler_grid_load_overlay(
     both sides to tz-aware local datetimes.  Unmatched slots are silently
     ignored (they may be outside the planning horizon).
     """
-    overlay = _read_boiler_grid_load_overlay(sensor)
+    overlay = _read_boiler_grid_load_overlay(sensor, include_grid=include_grid)
     if not overlay:
         return
 
@@ -1192,6 +1201,47 @@ def _with_slot_times(
     return trace
 
 
+def _flex_planner_inputs(
+    flex_plan: Optional[FlexPlan], solar_kwh_list: list[float], n: int
+) -> tuple[list[float], Optional[list[bool]]]:
+    """Solar and UPS permissions the battery plan gets after the car and boiler."""
+    if flex_plan is None:
+        return list(solar_kwh_list), None
+    solar = list(solar_kwh_list)
+    for i, adjusted in enumerate(flex_plan.solar_for_battery[: len(solar)]):
+        solar[i] = min(solar[i], max(0.0, float(adjusted)))
+    allowed = [
+        bool(flex_plan.ups_allowed[i]) if i < len(flex_plan.ups_allowed) else True
+        for i in range(n)
+    ]
+    return solar, (None if all(allowed) else allowed)
+
+
+def _keep_ups_blocks(
+    guarded: list[int], planned: list[int], ups_allowed: Optional[list[bool]]
+) -> list[int]:
+    """The mode guard may not put UPS back where the breaker is the car's.
+
+    Only where the optimizer itself chose Home 1: a UPS it kept there is the
+    hard minimum's.
+    """
+    if not ups_allowed:
+        return guarded
+    home_ups = CBBMode.HOME_UPS.value
+    home_1 = CBBMode.HOME_I.value
+    result = list(guarded)
+    for i, mode in enumerate(result):
+        if (
+            i < len(ups_allowed)
+            and not ups_allowed[i]
+            and mode == home_ups
+            and i < len(planned)
+            and planned[i] == home_1
+        ):
+            result[i] = home_1
+    return result
+
+
 def _run_planner(
     sensor: Any,
     spot_prices: list[dict[str, Any]],
@@ -1204,6 +1254,7 @@ def _run_planner(
     *,
     run_id: str | None = None,
     correlation_id: str | None = None,
+    flex_plan: Optional[FlexPlan] = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
     try:
         max_intervals = 36 * 4
@@ -1212,6 +1263,11 @@ def _run_planner(
             export_prices = export_prices[:max_intervals]
             load_forecast = load_forecast[:max_intervals]
             solar_kwh_list = solar_kwh_list[:max_intervals]
+        # The car and the boiler ranked above the battery: the battery plan
+        # gets only the PV they leave, and no UPS where the breaker is theirs.
+        planner_solar, ups_allowed = _flex_planner_inputs(
+            flex_plan, solar_kwh_list, len(spot_prices)
+        )
 
         opts = getattr(sensor._config_entry, "options", None) or {}
         # NOTE: the `battery_efficiency` sensor measures DC/coulombic efficiency
@@ -1287,11 +1343,12 @@ def _run_planner(
             charge_rate_kw=home_charge_rate_kw,
             intervals=[{"index": i} for i in range(len(spot_prices))],
             prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
-            solar_forecast=list(solar_kwh_list),
+            solar_forecast=list(planner_solar),
             load_forecast=list(load_forecast),
             export_prices=export_price_list,
             current_mode=get_current_mode() if callable(get_current_mode) else None,
             battery_wear_czk_per_kwh=_battery_wear_czk_per_kwh(opts),
+            ups_allowed=ups_allowed,
         )
 
         result = plan_battery_schedule(planner_inputs)
@@ -1317,7 +1374,7 @@ def _run_planner(
             mode_guard_module.apply_mode_guard(
                 modes=result.modes,
                 spot_prices=spot_prices,
-                solar_kwh_list=solar_kwh_list,
+                solar_kwh_list=planner_solar,
                 load_forecast=load_forecast,
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
@@ -1337,6 +1394,7 @@ def _run_planner(
             min_mode_duration=MIN_MODE_DURATION,
             logger=_LOGGER,
         )
+        guarded_modes = _keep_ups_blocks(guarded_modes, result.modes, ups_allowed)
         timeline = build_planner_timeline(
             modes=guarded_modes,
             spot_prices=spot_prices,
@@ -1349,6 +1407,10 @@ def _run_planner(
             efficiency=directional_efficiency,
             home_charge_rate_kw=home_charge_rate_kw,
             log_rate_limited=sensor._log_rate_limited,
+            solar_reduction_kwh=[
+                max(0.0, float(raw) - float(adjusted))
+                for raw, adjusted in zip(solar_kwh_list, planner_solar)
+            ],
         )
         attach_planner_reasons(timeline, result.decisions)
         attach_home1_extra_costs(timeline, getattr(result, "home1_extra_costs", []))
@@ -1869,7 +1931,9 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
     # Overflow-sourced heating is excluded: it consumes PV surplus, not grid
     # load, and the battery sim already models export; adding it would double-
     # count and artificially inflate the charging target.
-    _apply_boiler_grid_load_overlay(sensor, spot_prices, load_forecast)
+    _apply_boiler_grid_load_overlay(
+        sensor, spot_prices, load_forecast, include_grid=boiler_on_backup(sensor)
+    )
 
     return (
         current_capacity,
@@ -1882,6 +1946,29 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         adaptive_helper,
         load_forecast,
     )
+
+
+def _flex_charge_rate_kw(sensor: Any) -> float:
+    opts = getattr(sensor._config_entry, "options", None) or {}
+    return effective_charge_rate_kw(
+        getattr(sensor, "_hass", None),
+        sensor._config_entry,
+        float(opts.get("home_charge_rate", 2.8)),
+    )
+
+
+def _safe_flex(sensor: Any, **kwargs: Any) -> Optional[FlexPlan]:
+    """The car and boiler never stop the battery plan: on error, plan without them."""
+    try:
+        return coordinate_flex_loads(sensor, **kwargs)
+    except Exception as err:
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Flexible-load coordination failed, planning without it: %s",
+            err,
+            exc_info=True,
+        )
+        return None
 
 
 async def async_update(sensor: Any) -> None:  # noqa: C901
@@ -1961,6 +2048,20 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         pre_run_plan_lock_until = sensor._plan_lock_until
         pre_run_plan_lock_modes = sensor._plan_lock_modes
         pre_run_charging_metrics = getattr(sensor, "_charging_metrics", {})
+        flex_kwargs = dict(
+            spot_prices=spot_prices,
+            export_prices=export_prices,
+            solar_kwh=solar_kwh_list,
+            load_kwh=load_forecast,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            charge_rate_kw=_flex_charge_rate_kw(sensor),
+        )
+        car_first = not battery_outranks_car(
+            dict(getattr(sensor._config_entry, "options", None) or {})
+        )
+        flex_plan = _safe_flex(sensor, **flex_kwargs) if car_first else None
         timeline, mode_result, recommendations = _run_planner(
             sensor,
             spot_prices,
@@ -1972,7 +2073,16 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             box_floor,
             run_id=planner_run_id,
             correlation_id=planner_run_id,
+            flex_plan=flex_plan,
         )
+        if not car_first:
+            _safe_flex(
+                sensor,
+                **flex_kwargs,
+                battery_ups_kwh=[
+                    float(point.get("grid_charge_kwh", 0.0) or 0.0) for point in timeline
+                ],
+            )
 
         # Fail-closed commit gate: re-read identity only, immediately before
         # the first result side effect. A box-floor change since capture means
