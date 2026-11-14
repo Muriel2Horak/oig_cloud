@@ -39,7 +39,7 @@ Stav k 14. 11. 2026, větev `claude/ev-boiler-planning` (vychází z `release/v2
 
 ## Rozhodnutí pro Martina (výchozí hodnota v závorce)
 
-1. **Priorita přetoků.** Box sám dává přetok nejdřív do baterie a teprve zbytek do nezálohovaného okruhu (auto, bojler). Pořadí auto, bojler, baterie, export tedy plán počítá, ale box ho sám neudělá, dokud mu plán nesníží nabíjení baterie. To je až další krok. (Pořadí podle zadání, nastavitelné.)
+1. **Priorita přetoků.** *Martin 14. 11.: podle boxu (nejdřív baterie). Výchozí `flex_pv_battery_first` zůstává zapnuté.* Box sám dává přetok nejdřív do baterie a teprve zbytek do nezálohovaného okruhu (auto, bojler). Pořadí auto, bojler, baterie, export tedy plán počítá, ale box ho sám neudělá, dokud mu plán nesníží nabíjení baterie. To je až další krok. (Pořadí podle zadání, nastavitelné.)
 2. **Jistič** 3 × 25 A a rezerva 2 A na fázi na špičky, které 15min průměr nevidí. (3 × 25 A, 2 A)
 3. **Kolik nabít.** p80 denní spotřeby pokryje zhruba 4 dny z 5. Zbytek dojede benzín. Druhá možnost je nabíjet vždy do limitu. (p80)
 4. **Řízení.** Integrace auto zatím nespíná. Dává plán a `binary_sensor` „nabíjet teď“, wallbox přepíná Martinova automatizace. (jen plán)
