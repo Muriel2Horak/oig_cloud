@@ -44,3 +44,41 @@ Stav k 14. 11. 2026, větev `claude/ev-boiler-planning` (vychází z `release/v2
 3. **Kolik nabít.** p80 denní spotřeby pokryje zhruba 4 dny z 5. Zbytek dojede benzín. Druhá možnost je nabíjet vždy do limitu. (p80)
 4. **Řízení.** Integrace auto zatím nespíná. Dává plán a `binary_sensor` „nabíjet teď“, wallbox přepíná Martinova automatizace. (jen plán)
 5. **Bojler na nezálohovaném okruhu.** Baterie ho nekryje, ohřev ze sítě se proto už nemá přičítat k zátěži baterie, ale k odběru ze sítě (jistič). Tím se změní plán baterie v létě, kdy bojler topí elektřinou. (opravit)
+
+## Co je hotové (větev `claude/ev-boiler-planning`)
+
+| Část | Soubor |
+|---|---|
+| Plánovač posuvné zátěže (nejlevnější sloty před termínem, levné přetoky navíc) | `shared/flex_scheduler.py` |
+| Profil auta ze statistik SoC, odhad kapacity z wallboxu | `ev/profile.py` |
+| Plán nabíjení auta | `ev/planner.py` |
+| Runtime auta (entity, profil na pozadí jednou denně) a senzor plánu | `ev/runtime.py`, `ev/sensors.py` |
+| Predikce ohřevu bojleru (plán, jinak termostat s odběrem a ztrátami) | `boiler/heating_forecast.py`, `boiler/heating_forecast_live.py` |
+| Koordinace jističe a přetoků | `battery_forecast/planning/flex_loads.py`, `flex_glue.py` |
+| Zákaz Home UPS ve slotech, kde by baterie přetížila jistič | `economic_planner.py` (`ups_allowed`), `forecast_update.py` |
+
+Ověřeno na datech z HA ze 14. 11. 19:15: profil čekal odjezd v neděli v 10:00 s potřebou 25 % (6,4 kWh). Plán nabíjel v nedělních slotech 03:45 a 05:45–06:15 za 4,68–4,8 Kč/kWh, celkem 30 Kč. Nabíjení baterie jistič unesl, žádný slot UPS se nezakázal.
+
+## Jak to zapnout
+
+V dashboardu v Nastavení → Moduly zapnout „Elektroauto“. V kartě „Baterie a plánovač“ pak vyplnit:
+- senzor nabití: `sensor.skoda_kodiaq_stav_baterie_v`;
+- připojení: `binary_sensor.skoda_kodiaq_nabijecka_pripojena`;
+- limit: `number.skoda_kodiaq_limit_nabijeni`;
+- výkon nabíječky: `sensor.wallbox_garaz_nabijeci_vykon`, z něj se dopočítá kapacita (vyšlo 25,4 kWh);
+- jistič: 25 A.
+
+Senzor `sensor.oig_2206237016_ev_charging_plan` má stav `charge`, když se má nabíjet hned. Jinak ukazuje stav plánu. Na stav `charge` může automatizace zapnout `switch.skoda_kodiaq_nabijeni` nebo wallbox.
+
+## Co se změní po nasazení i bez zapnutí auta
+
+- Přibude jedna entita `sensor.oig_2206237016_boiler_heating_forecast`, celkem tedy 166 místo 165. Po zapnutí auta přibude ještě `sensor.oig_2206237016_ev_charging_plan`.
+- Ohřev bojleru ze sítě se už nepřičítá k zátěži baterie, protože bojler je na nezálohovaném okruhu. Ohřev z baterie (Home 5) zůstává. Vrátit se to dá volbou „Bojler na zálohovaném výstupu“.
+- Když předpověď ohřevu bojleru s jističem a domem nenechá místo pro nabíjení baterie, plánovač v tom slotu Home UPS nedá. V zimě, kdy bojler topí plynem, se tím nic nemění.
+
+## Co zbývá
+
+- Box sám nedá přetok autu dřív než baterii. Pořadí „auto před baterií“ na přetocích bude potřebovat řízení nabíjení baterie z FVE přes proxy.
+- Integrace auto nespíná sama, spínání zatím obstará automatizace podle senzoru.
+- Vlastní předpověď teploty v plánovači bojleru (`_predict_slots`) pořád nepočítá s odběrem a ztrátami. Predikce ohřevu je zatím samostatná, plánovač bojleru ji nepoužívá.
+- Pokles nabíjecího výkonu auta nad 90 % plán nepočítá. Posledních pár procent proto může trvat déle.
