@@ -754,6 +754,41 @@ class BoilerProfileConfidenceSensor(BoilerSensorBase):
         }
 
 
+# ========== HEATING FORECAST ==========
+
+
+class BoilerHeatingForecastSensor(BoilerSensorBase):
+    """How much heat the boiler takes over the planning horizon, any source.
+
+    The battery forecast cycle builds the forecast (heating_forecast_live) and
+    keeps it on the runtime; this sensor shows it. The state is all heat; the
+    attributes split off the electric part and list the heating slots.
+    """
+
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_icon = "mdi:water-boiler-auto"
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        super().__init__(coordinator, "heating_forecast", "Předpověď ohřevu", runtime=runtime)
+
+    def _forecast(self) -> Any:
+        return getattr(self._runtime, "heating_forecast", None)
+
+    @property
+    def native_value(self) -> Optional[float]:  # type: ignore[override]
+        forecast = self._forecast()
+        if forecast is None:
+            return None
+        return round(float(forecast.total_heat_kwh), 2)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:  # type: ignore[override]
+        forecast = self._forecast()
+        if forecast is None:
+            return {}
+        return forecast.as_dict()
+
+
 # ========== REGISTRACE SENZORŮ ==========
 
 
@@ -784,4 +819,6 @@ def get_boiler_sensors(coordinator: BoilerCoordinator, runtime: Any | None = Non
         BoilerPlanEstimatedCostSensor(coordinator, runtime=runtime),
         # Diagnostika
         BoilerProfileConfidenceSensor(coordinator, runtime=runtime),
+        # Předpověď ohřevu (jakýkoli zdroj) pro plánovač
+        BoilerHeatingForecastSensor(coordinator, runtime=runtime),
     ]

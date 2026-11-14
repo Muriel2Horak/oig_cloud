@@ -10,7 +10,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .shared.background import start_background
-from .const import DOMAIN
+from .const import CONF_ENABLE_EV, DOMAIN
 from .entities.ai_eval_sensor import OigCloudAiEvalSensor
 from .entities.ai_status_sensor import OigCloudAiStatusSensor
 from .entities.base_sensor import resolve_box_id
@@ -168,6 +168,14 @@ async def _cleanup_renamed_sensors(
 
         if _is_boiler_entity(entity_id, sensor_type):
             if sensor_type in SENSOR_TYPES or boiler_enabled:
+                continue
+            removed += _remove_entity_entry(entity_reg, entity_entry, sensor_type)
+            continue
+
+        if sensor_type.startswith("ev_"):
+            # The car's sensors (ev/sensors.py) live outside SENSOR_TYPES and
+            # follow the enable_ev flag, like the boiler module's.
+            if (getattr(entry, "options", None) or {}).get(CONF_ENABLE_EV, False):
                 continue
             removed += _remove_entity_entry(entity_reg, entity_entry, sensor_type)
             continue
@@ -1519,6 +1527,25 @@ def _create_grid_cost_sensors(
     return sensors
 
 
+def _create_ev_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]:
+    """The car's charging plan sensor, when the car is enabled and set up."""
+    if not entry.options.get(CONF_ENABLE_EV, False):
+        return []
+    try:
+        from .ev.runtime import get_ev_runtime
+        from .ev.sensors import EvChargingPlanSensor
+
+        runtime = get_ev_runtime(hass, entry.entry_id)
+        box_id = entry.options.get("box_id")
+        if runtime is None or not (isinstance(box_id, str) and box_id.isdigit()):
+            _LOGGER.warning("EV runtime or box id missing - skipping the car sensor")
+            return []
+        return [EvChargingPlanSensor(runtime, box_id=box_id)]
+    except Exception as err:
+        _LOGGER.error("Error initializing the car sensor: %s", err, exc_info=True)
+        return []
+
+
 def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]:
     boiler_enabled = entry.options.get("enable_boiler", False)
     _LOGGER.info("Boiler module enabled: %s", boiler_enabled)
@@ -1815,6 +1842,15 @@ async def async_setup_entry(  # noqa: C901
     # Třída: BoilerSensor* (13 senzorů)
     # ================================================================
     deferred_factories.append(lambda: _create_boiler_sensors(hass, entry))
+
+    # ================================================================
+    # SECTION 12: CAR CHARGING PLAN (kategorie: "ev")
+    # ================================================================
+    # Plán nabíjení auta - volitelné (enable_ev flag)
+    # Device: OIG Elektroauto (samostatné zařízení)
+    # Třída: EvChargingPlanSensor
+    # ================================================================
+    deferred_factories.append(lambda: _create_ev_sensors(hass, entry))
 
     # ================================================================
     # PERFORMANCE FIX: Register all sensors at once instead of 17 separate calls

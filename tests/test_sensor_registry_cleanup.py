@@ -144,3 +144,21 @@ async def test_cleanup_keeps_data_source_sensor(monkeypatch):
 
     assert removed == 0
     assert "sensor.oig_123_data_source" not in registry.removed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ev_enabled, removed_count", [(True, 0), (False, 1)])
+async def test_cleanup_keeps_the_car_plan_only_while_the_car_is_enabled(
+    monkeypatch, ev_enabled, removed_count
+):
+    entry = SimpleNamespace(entry_id="entry", options={"enable_ev": ev_enabled})
+    registry = DummyEntityRegistry()
+    entries = [SimpleNamespace(entity_id="sensor.oig_123_ev_charging_plan")]
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_entries_for_config_entry",
+        lambda _reg, _entry_id: entries,
+    )
+
+    removed = await sensor_module._cleanup_renamed_sensors(registry, entry, set())
+
+    assert removed == removed_count

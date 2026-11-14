@@ -312,6 +312,8 @@ _register(
     # A capability of the box, not of the boiler: it decides whether the control
     # panel offers the Home 5 and Home 6 toggles.
     Field("box_has_home56", "modules", bool, default=False, reload_on_change=True),
+    # The car's runtime is built at setup from these options (ev/runtime.py).
+    Field("enable_ev", "modules", bool, default=False, reload_on_change=True),
 )
 
 # --- section: battery -------------------------------------------------------
@@ -380,7 +382,41 @@ _register(
           show_if_all=(("solar_forecast_provider", ("forecast_solar",)),)),
 )
 
+# --- section: battery — car and main breaker (planning.flex_loads) ---------
+_EV_ON = ("enable_ev", (True,))
+_register(
+    Field("ev_soc_entity", "battery", str, default="", entity_domain="sensor",
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_plugged_entity", "battery", str, default="", entity_domain="binary_sensor",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charge_limit_entity", "battery", str, default="", entity_domain="number",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charge_limit_pct", "battery", float, default=100.0, min=10.0, max=100.0,
+          step=1.0, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charger_power_entity", "battery", str, default="", entity_domain="sensor",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_capacity_kwh", "battery", float, default=0.0, min=0.0, max=200.0, step=0.1,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_max_power_kw", "battery", float, default=11.0, min=1.0, max=22.0, step=0.1,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_min_power_kw", "battery", float, default=4.14, min=1.0, max=11.0, step=0.01,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_phases", "battery", int, default=3, min=1, max=3, show_if=_EV_ON,
+          reload_on_change=True),
+    Field("grid_breaker_a", "battery", float, default=25.0, min=0.0, max=100.0, step=1.0),
+    Field("grid_reserve_a", "battery", float, default=2.0, min=0.0, max=10.0, step=0.5),
+    Field("grid_phases", "battery", int, default=3, min=1, max=3),
+    Field("flex_priority", "battery", str, default="ev,boiler,battery",
+          enum=("ev,boiler,battery", "ev,battery,boiler", "boiler,ev,battery", "boiler,battery,ev", "battery,ev,boiler", "battery,boiler,ev")),
+    Field("flex_pv_battery_first", "battery", bool, default=True),
+)
+
 # --- section: boiler --------------------------------------------------------
+# The boiler's circuit decides whether its heat is a battery load or a
+# grid-side load (planning.flex_glue); read every planner cycle, no reload.
+_register(
+    Field("boiler_on_backup_circuit", "boiler", bool, default=False),
+)
 # TRANSCRIBED 1:1 from _MODULE_CONFIG_FIELDS["boiler"]; reload_on_change=True on every field.
 _register(
     Field("boiler_volume_l", "boiler", float, default=None, min=30.0, max=1000.0,

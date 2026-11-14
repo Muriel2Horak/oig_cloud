@@ -120,7 +120,7 @@ def test_profile_confidence_sensor():
 
 def test_get_boiler_sensors():
     sensors = module.get_boiler_sensors(DummyCoordinator({}))
-    assert len(sensors) == 19
+    assert len(sensors) == 20
 
 
 def test_boiler_sensor_unknown_box_id_no_entity_id():

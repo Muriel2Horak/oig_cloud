@@ -167,9 +167,43 @@ const CS_LABELS: Record<string, string> = {
   'simulator.box.top_temp_c.label': 'Teplota nahoře',
   'simulator.box.bottom_temp_c.label': 'Teplota dole',
   'simulator.box.cold_inlet_c.label': 'Studená voda na vstupu',
+
+  // --- car and main breaker (planner) ---
+  'field.enable_ev.label': 'Elektroauto',
+  'field.ev_soc_entity.label': 'Nabití baterie auta (senzor %)',
+  'field.ev_plugged_entity.label': 'Auto připojeno (senzor)',
+  'field.ev_charge_limit_entity.label': 'Limit nabíjení auta (entita %)',
+  'field.ev_charge_limit_pct.label': 'Limit nabíjení auta (%)',
+  'field.ev_charger_power_entity.label': 'Výkon nabíječky (senzor)',
+  'field.ev_capacity_kwh.label': 'Energie auta na 100 % (kWh)',
+  'field.ev_max_power_kw.label': 'Nabíjecí výkon auta (kW)',
+  'field.ev_min_power_kw.label': 'Nejnižší výkon nabíječky (kW)',
+  'field.ev_phases.label': 'Fáze nabíječky',
+  'field.grid_breaker_a.label': 'Hlavní jistič (A na fázi)',
+  'field.grid_reserve_a.label': 'Rezerva jističe (A)',
+  'field.grid_phases.label': 'Fáze přípojky',
+  'field.flex_priority.label': 'Priorita na jističi',
+  'field.flex_pv_battery_first.label': 'Přetoky nejdřív do baterie',
+  'field.boiler_on_backup_circuit.label': 'Bojler na zálohovaném výstupu',
 };
 
 const CS_HINTS: Record<string, string> = {
+  // --- car and main breaker hints ---
+  'field.enable_ev.hint': 'Plán nabíjení auta podle cen, přetoků a předpovědi jízd',
+  'field.ev_soc_entity.hint': 'Senzor nabití baterie auta v %; z jeho historie se učí, kdy auto odjíždí a kolik spotřebuje',
+  'field.ev_plugged_entity.hint': 'Nevyplněno = auto se bere jako připojené',
+  'field.ev_charge_limit_entity.hint': 'Entita s limitem nabíjení auta; jinak platí limit níže',
+  'field.ev_charge_limit_pct.hint': 'Nad tuto hodnotu plán auto nenabíjí',
+  'field.ev_charger_power_entity.hint': 'Výkon wallboxu; z něj se dopočítá kapacita a pozná nabíjení',
+  'field.ev_capacity_kwh.hint': 'Kolik kWh z nabíječky dá 100 % baterie auta; 0 = dopočítat z historie',
+  'field.ev_max_power_kw.hint': 'Nejvyšší výkon, kterým auto nabíjí (3 × 16 A = 11 kW)',
+  'field.ev_min_power_kw.hint': 'Pod tímto výkonem nabíječka neběží (6 A na fázi)',
+  'field.grid_breaker_a.hint': 'Jistič přípojky; plán ho nepřetíží autem, bojlerem ani nabíjením baterie. 0 = bez limitu',
+  'field.grid_reserve_a.hint': 'Rezerva na špičky domu, které 15min průměr nevidí',
+  'field.flex_priority.hint': 'Kdo dostane jistič první, když se všichni nevejdou',
+  'field.flex_pv_battery_first.hint': 'Tak to dělá box: přetok jde do baterie dřív než do auta a bojleru. Vypnout až při řízení nabíjení baterie z FVE',
+  'field.boiler_on_backup_circuit.hint': 'Zapnout, jen když bojler napájí záložní výstup boxu (baterie ho pak kryje)',
+
   // --- module settings hints ---
   'field.enable_battery_prediction.hint': 'Ekonomické plánování nabíjení, timeline, úspory',
   'field.enable_solar_forecast.hint': 'Předpověď výroby FVE (forecast.solar / Solcast)',
