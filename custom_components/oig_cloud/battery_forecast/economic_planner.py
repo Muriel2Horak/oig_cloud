@@ -305,6 +305,10 @@ def _slot_cost(
     )
 
 
+def _ups_allowed(inputs: PlannerInputs, i: int) -> bool:
+    return inputs.ups_allowed is None or bool(inputs.ups_allowed[i])
+
+
 def _soc_grid(inputs: PlannerInputs, floor_kwh: float) -> np.ndarray:
     """SoC levels the backward pass evaluates; the hard minimum is one of them."""
     span = inputs.max_capacity_kwh - inputs.hw_min_kwh
@@ -351,6 +355,9 @@ def _cost_to_go(
         via_ups = _slot_cost(
             grid, new_soc, grid_import, grid_export, price, export_price, wear
         ) + np.interp(new_soc, grid, after_ups)
+        if not _ups_allowed(inputs, i):
+            # Blocked for the breaker, except where Home 1 is illegal anyway.
+            via_ups = np.where(np.isinf(via_home), via_ups, np.inf)
 
         to_go[i] = (
             np.minimum(via_home, via_ups + switch_cost(_HOME_1, _HOME_UPS, price)),
@@ -428,6 +435,8 @@ def _optimize_modes(
             None if via_home is None else via_home + switch_cost(previous, _HOME_1, price)
         )
         ups_total = via_ups + switch_cost(previous, _HOME_UPS, price)
+        if home_total is not None and not _ups_allowed(inputs, i):
+            ups_total = float("inf")
 
         if home_total is not None and ups_total >= home_total - _COST_TIE_EPS_CZK:
             mode = _HOME_1
