@@ -44,6 +44,14 @@ except Exception:  # pragma: no cover
 _LOGGER = logging.getLogger(__name__)
 # Operator-selected anti-flapping policy for all automatic/manual mode changes.
 MIN_AUTO_SWITCH_INTERVAL_MINUTES = 5
+# A mode the user set by hand stays at least this long, then to the next slot
+# boundary: long enough for the next planner run to start from it, short
+# enough that a forgotten manual mode does not outlive the plan.
+MANUAL_HOLD_MINUTES = 15
+# The box applies a requested mode within about a minute (mode_reaction_time
+# is ~52 s on the reference box); a change later than this after our request
+# was not ours.
+OWN_REQUEST_TOLERANCE = timedelta(minutes=5)
 WATCHDOG_WARNING_COOLDOWN_SECONDS = 300.0
 
 
@@ -510,6 +518,38 @@ async def execute_mode_change(
         return context
 
 
+def manual_hold_until(sensor: Any) -> Optional[datetime]:
+    """End of the hold on a mode the user set by hand, or None when it was ours.
+
+    A change counts as manual when the integration had asked for something
+    else: its last request was another mode, or that mode long before the box
+    reported the change. Without any request since start the origin is
+    unknown (our own switch before a restart looks the same), so nothing is
+    held and the 5-minute anti-flapping interval alone applies.
+    """
+    last_changed = _get_last_mode_change_time(sensor)
+    request = getattr(sensor, "_last_auto_switch_request", None)
+    if last_changed is None or not request:
+        return None
+    current_mode = get_current_box_mode(sensor)
+    requested_mode, requested_at = request
+    if (
+        requested_mode == current_mode
+        and abs((last_changed - requested_at).total_seconds())
+        <= OWN_REQUEST_TOLERANCE.total_seconds()
+    ):
+        return None
+    earliest = last_changed + timedelta(minutes=MANUAL_HOLD_MINUTES)
+    boundary = earliest.replace(
+        minute=(earliest.minute // INTERVAL_MINUTES) * INTERVAL_MINUTES,
+        second=0,
+        microsecond=0,
+    )
+    if boundary < earliest:
+        boundary += timedelta(minutes=INTERVAL_MINUTES)
+    return boundary
+
+
 async def ensure_current_mode(
     sensor: Any,
     desired_mode: str,
@@ -522,6 +562,25 @@ async def ensure_current_mode(
             "[AutoModeSwitch] Mode already %s (%s), no action", desired_mode, reason
         )
         return context
+    # Re-asserting the same plan (watchdog, refresh of the current block) waits
+    # out a manual change; a new plan decision at a slot boundary does not.
+    if context is not None and context.reason_code in (
+        REASON_WATCHDOG_ENFORCEMENT,
+        REASON_CURRENT_BLOCK,
+    ):
+        hold_until = manual_hold_until(sensor)
+        now = dt_util.now()
+        if hold_until is not None and now < hold_until:
+            _LOGGER.info(
+                "[AutoModeSwitch] Holding manual mode %s until %s (%s wanted %s)",
+                current_mode,
+                hold_until.isoformat(),
+                reason,
+                desired_mode,
+            )
+            # Rebuild from the plan valid then, as the min-interval path does.
+            schedule_auto_switch_retry(sensor, (hold_until - now).total_seconds())
+            return context
     last_changed = _get_last_mode_change_time(sensor)
     if last_changed:
         now = dt_util.now()
