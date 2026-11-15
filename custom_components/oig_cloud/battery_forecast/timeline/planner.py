@@ -124,6 +124,9 @@ def build_planner_timeline(
                 "grid_charge_kwh": round(max(0.0, res.grid_charge_kwh), 6),
             }
         )
+        if spot_prices[i].get("estimated"):
+            # Forecast price, not published by OTE (data/price_forecast.py).
+            timeline[-1]["estimated"] = True
 
     return timeline
 

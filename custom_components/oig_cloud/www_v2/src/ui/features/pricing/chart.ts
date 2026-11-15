@@ -43,6 +43,7 @@ import {
   pricingModeIconPlugin,
   applyModeIconPadding,
 } from './mode-icon-plugin';
+import { estimatedSegment } from './estimated';
 
 const u = unsafeCSS;
 
@@ -86,6 +87,7 @@ function buildSpotPriceDataset(data: PricingData): ChartDataset<'line'> {
     tension: 0.4,
     type: 'line',
     yAxisID: 'y-price',
+    segment: estimatedSegment(data.timeline, [6, 4]),
     pointRadius: spotPriceData.map(() => 0),
     pointHoverRadius: 7,
     pointBackgroundColor: spotPriceData.map(() => '#42a5f5'),
@@ -111,6 +113,7 @@ function buildExportPriceDataset(data: PricingData): ChartDataset<'line'> {
     pointHoverRadius: 5,
     order: 1,
     borderDash: [5, 5],
+    segment: estimatedSegment(data.timeline, [2, 6]),
   } as any;
 }
 

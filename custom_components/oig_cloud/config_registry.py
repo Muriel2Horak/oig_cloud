@@ -415,6 +415,12 @@ _register(
     # Consent to anonymous 15-minute energy slots (shared/energy_telemetry.py);
     # the job starts at setup, so a change reloads the entry.
     Field("share_energy_data", "battery", bool, default=False, reload_on_change=True),
+    # Spot price forecast beyond OTE's published prices (data/price_forecast.py),
+    # read every planner cycle: no reload needed.
+    Field("price_forecast_entity", "battery", str, default="", entity_domain="sensor",
+          optional=True),
+    Field("price_forecast_mode", "battery", str, default="shadow",
+          enum=("off", "shadow", "on")),
 )
 
 # --- section: boiler --------------------------------------------------------

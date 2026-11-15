@@ -50,6 +50,7 @@ from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION, CBBMode
 from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
 from .live_load import blend_live_load, live_load_enabled
+from .price_forecast_glue import async_apply_price_forecast
 from .flex_glue import battery_outranks_car, boiler_on_backup, coordinate_flex_loads
 from .flex_loads import FlexPlan
 
@@ -1233,6 +1234,13 @@ def _with_slot_times(
     return trace
 
 
+def _planner_max_intervals(spot_prices: list[dict[str, Any]]) -> int:
+    """36 hours of slots; 48 when forecast prices extend the timeline."""
+    if any(point.get("estimated") for point in spot_prices):
+        return 48 * 4
+    return 36 * 4
+
+
 def _flex_planner_inputs(
     flex_plan: Optional[FlexPlan], solar_kwh_list: list[float], n: int
 ) -> tuple[list[float], Optional[list[bool]]]:
@@ -1289,7 +1297,7 @@ def _run_planner(
     flex_plan: Optional[FlexPlan] = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
     try:
-        max_intervals = 36 * 4
+        max_intervals = _planner_max_intervals(spot_prices)
         if len(spot_prices) > max_intervals:
             spot_prices = spot_prices[:max_intervals]
             export_prices = export_prices[:max_intervals]
@@ -1941,6 +1949,17 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
 
     current_interval_naive = bucket_start.replace(tzinfo=None)
     spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
+    try:
+        # Forecast beyond the published prices: scored in shadow, used in "on".
+        spot_prices, export_prices = await async_apply_price_forecast(
+            sensor, spot_prices, export_prices
+        )
+    except Exception as err:  # the forecast never stops the plan
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Price forecast skipped: %s",
+            err,
+        )
 
     solar_forecast = sensor._get_solar_forecast()
 

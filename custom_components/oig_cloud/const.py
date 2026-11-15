@@ -184,6 +184,13 @@ DEFAULT_FLEX_PV_BATTERY_FIRST = True
 CONF_LIVE_LOAD_REPLAN = "live_load_replan"
 DEFAULT_LIVE_LOAD_REPLAN = False
 
+# Spot price forecast beyond the published day-ahead prices
+# (battery_forecast/data/price_forecast.py). Shadow scores it without using it.
+CONF_PRICE_FORECAST_ENTITY = "price_forecast_entity"
+CONF_PRICE_FORECAST_MODE = "price_forecast_mode"
+DEFAULT_PRICE_FORECAST_MODE = "shadow"
+PRICE_FORECAST_MODES = ("off", "shadow", "on")
+
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"
 STORAGE_KEY_BOILER_SCHEDULE = "boiler_schedule"
