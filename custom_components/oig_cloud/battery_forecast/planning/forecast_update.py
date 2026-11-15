@@ -49,7 +49,7 @@ from ..timeline.planner import (
 from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION, CBBMode
 from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
-from .live_load import blend_live_load
+from .live_load import blend_live_load, live_load_enabled
 from .flex_glue import battery_outranks_car, boiler_on_backup, coordinate_flex_loads
 from .flex_loads import FlexPlan
 
@@ -643,7 +643,7 @@ def _apply_live_load(
 ) -> None:
     """The house's live backup load in the current slot, fading over an hour."""
     tracker = getattr(sensor, "_live_load_tracker", None)
-    if tracker is None or not load_forecast:
+    if tracker is None or not load_forecast or not live_load_enabled(sensor):
         return
     live_kw = tracker.mean_kw(now or dt_util.now())
     if live_kw is None:

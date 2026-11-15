@@ -177,6 +177,13 @@ DEFAULT_FLEX_PRIORITY = "ev,boiler,battery"
 CONF_FLEX_PV_BATTERY_FIRST = "flex_pv_battery_first"
 DEFAULT_FLEX_PV_BATTERY_FIRST = True
 
+# Live backup load in the near-term forecast and a replan when it jumps
+# (battery_forecast/planning/live_load.py). Off by default: replayed on the
+# reference box's real data 7.-15. 11. 2026 it changed the money by +0.9 CZK
+# (worse) over nine days, so it stays opt-in until it shows a gain.
+CONF_LIVE_LOAD_REPLAN = "live_load_replan"
+DEFAULT_LIVE_LOAD_REPLAN = False
+
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"
 STORAGE_KEY_BOILER_SCHEDULE = "boiler_schedule"

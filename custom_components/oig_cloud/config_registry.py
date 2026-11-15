@@ -409,6 +409,9 @@ _register(
     Field("flex_priority", "battery", str, default="ev,boiler,battery",
           enum=("ev,boiler,battery", "ev,battery,boiler", "boiler,ev,battery", "boiler,battery,ev", "battery,ev,boiler", "battery,boiler,ev")),
     Field("flex_pv_battery_first", "battery", bool, default=True),
+    # Opt-in: replayed on real data it did not pay (see const.CONF_LIVE_LOAD_REPLAN).
+    # The backup-load listener starts at setup, so a change reloads the entry.
+    Field("live_load_replan", "battery", bool, default=False, reload_on_change=True),
 )
 
 # --- section: boiler --------------------------------------------------------

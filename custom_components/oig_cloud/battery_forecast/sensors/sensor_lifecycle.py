@@ -18,7 +18,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..planning import auto_switch as auto_switch_module
-from ..planning.live_load import handle_live_load_reading
+from ..planning.live_load import handle_live_load_reading, live_load_enabled
 
 _LOGGER = logging.getLogger(__name__)
 DATE_FMT = "%Y-%m-%d"
@@ -212,7 +212,7 @@ def _subscribe_live_load(sensor) -> None:
     A state listener only: no database work here (start-up performance rule).
     """
     hass = getattr(sensor, "_hass", None) or getattr(sensor, "hass", None)
-    if hass is None:
+    if hass is None or not hasattr(hass, "states") or not live_load_enabled(sensor):
         return
     entity_id = f"sensor.oig_{sensor._box_id}_actual_aco_p"
     current = hass.states.get(entity_id)

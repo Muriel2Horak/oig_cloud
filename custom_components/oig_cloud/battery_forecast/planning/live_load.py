@@ -148,6 +148,13 @@ def planned_kw_at(timeline: Sequence[Dict[str, Any]], now: datetime) -> Optional
     return None
 
 
+def live_load_enabled(sensor: Any) -> bool:
+    from ...const import CONF_LIVE_LOAD_REPLAN, DEFAULT_LIVE_LOAD_REPLAN
+
+    options = getattr(getattr(sensor, "_config_entry", None), "options", None) or {}
+    return bool(options.get(CONF_LIVE_LOAD_REPLAN, DEFAULT_LIVE_LOAD_REPLAN))
+
+
 def handle_live_load_reading(sensor: Any, when: datetime, watts: float) -> None:
     """Feed one backup-load reading; ask the forecast sensor to replan on a jump.
 
@@ -164,6 +171,8 @@ def handle_live_load_reading(sensor: Any, when: datetime, watts: float) -> None:
         detector = LoadJumpDetector()
         sensor._live_load_detector = detector
     tracker.add(when, watts)
+    if not live_load_enabled(sensor):
+        return
     planned = planned_kw_at(getattr(sensor, "_timeline_data", None) or [], when)
     if detector.should_replan(when, live_kw=tracker.mean_kw(when), planned_kw=planned):
         sensor._live_load_replan = True

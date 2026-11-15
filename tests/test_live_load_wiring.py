@@ -31,6 +31,7 @@ def _sensor(**kw):
     values.update(kw)
     sensor = SimpleNamespace(**values)
     sensor._schedule_forecast_retry = lambda delay: sensor.retries.append(delay)
+    sensor._config_entry = SimpleNamespace(options={"live_load_replan": True})
     return sensor
 
 
@@ -139,3 +140,43 @@ def test_lifecycle_feeds_backup_load_state_changes_to_the_tracker(monkeypatch):
     captured["action"](bad)
     assert len(sensor._live_load_tracker) == 2
     assert removers
+
+
+def _options_sensor(enabled, **kw):
+    sensor = _sensor(**kw)
+    sensor._config_entry = SimpleNamespace(options={"live_load_replan": enabled})
+    return sensor
+
+
+def test_live_load_stays_out_of_the_forecast_unless_enabled():
+    now = dt_util.now()
+    tracker = LiveLoadTracker()
+    tracker.add(now - timedelta(minutes=6), 6500.0)
+    forecast = [0.35, 0.35]
+    forecast_update_module._apply_live_load(
+        _options_sensor(False, _live_load_tracker=tracker), forecast, now=now
+    )
+    assert forecast == [0.35, 0.35]
+
+
+def test_a_jump_asks_for_nothing_unless_enabled():
+    now = dt_util.now()
+    sensor = _options_sensor(False, _timeline_data=_timeline_for(now, 0.35))
+    handle_live_load_reading(sensor, now - timedelta(minutes=6), 6500.0)
+    handle_live_load_reading(sensor, now, 6500.0)
+    assert getattr(sensor, "_live_load_replan", False) is False
+    assert sensor.retries == []
+
+
+def test_lifecycle_does_not_listen_while_disabled(monkeypatch):
+    from custom_components.oig_cloud.battery_forecast.sensors import sensor_lifecycle
+
+    calls = []
+    monkeypatch.setattr(
+        sensor_lifecycle, "async_track_state_change_event", lambda *a: calls.append(a)
+    )
+    hass = SimpleNamespace(states=SimpleNamespace(get=lambda _e: None))
+    sensor = _options_sensor(False, _hass=hass, hass=hass, _box_id="1")
+    sensor.async_on_remove = lambda _u: None
+    sensor_lifecycle._subscribe_live_load(sensor)
+    assert calls == []
