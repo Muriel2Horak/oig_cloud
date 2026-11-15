@@ -19,6 +19,21 @@ Plánovač baterie je zatím ověřený jen na jednom domě. Přehrání na 5min
 5. **Uchování:** 12 měsíců, ať jsou vidět všechna roční období. Pak se data mažou automaticky (retence bucketu).
 6. **Vyhodnocení:** skript `scripts/replay_boxes.py` stáhne sloty z Influxu a pro každý box přehraje plánovač v uzavřené smyčce. Porovná varianty a ukáže, které parametry (opotřebení, hodnota energie na konci horizontu, nabíjecí výkon) se mezi domy liší.
 
-## Rozhodnutí pro Martina
+## Stav (15. 11. 2026, větev `claude/ev-boiler-planning`, PR #82)
 
-Viz formulář v session: souhlas, rozsah dat, uchování, přenos.
+Martin řekl „udělejme to“. U voleb, které nevybral, platí doporučené výchozí hodnoty: souhlas přepínačem (výchozí vypnuto), otisk místo čísla boxu, jen TLS, retence 12 měsíců.
+
+- Integrace: volba `share_energy_data` (Nastavení → Baterie a plánovač → „Sdílet anonymní data o energii“). Kód je v `shared/energy_telemetry.py`, `shared/energy_publisher.py` a `battery_forecast/planning/energy_telemetry_job.py`. Odesílá se v minutě :07 každé hodiny, jen přes TLS na port 8883.
+- Server: návrh změny je v `docs/telemetry-energy-server-change.md`. Dokud ho Martin neschválí a neprovede, data se neodesílají (TLS spojení se nenaváže).
+- Vyhodnocení: `scripts/replay_boxes.py`.
+
+## Jak spustit přehrávač
+
+```bash
+INFLUX_URL=http://10.0.0.161:8086 INFLUX_TOKEN=<token pro čtení bucketu energy> INFLUX_ORG=<org> \
+  python scripts/replay_boxes.py --days 30
+```
+
+Pro každou instalaci a každý souvislý úsek dat (nejméně 2 dny) vypíše upravený náklad v Kč ve variantách `deployed` (dnešní plánovač), `no_wear` (bez opotřebení) a `live_load` (živá spotřeba). Upravený náklad znamená peníze minus energie, která na konci zůstala v baterii.
+
+Ověřeno na datech našeho boxu za 7.–15. 11. (7,9 dne): `deployed` 1 311,1 Kč, `no_wear` 1 303,3 Kč, `live_load` 1 310,7 Kč.
