@@ -49,6 +49,7 @@ from ..timeline.planner import (
 from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION, CBBMode
 from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
+from .live_load import blend_live_load
 from .flex_glue import battery_outranks_car, boiler_on_backup, coordinate_flex_loads
 from .flex_loads import FlexPlan
 
@@ -617,9 +618,37 @@ def _should_skip_bucket(sensor: Any, bucket_start: datetime) -> bool:
     if (
         sensor._last_forecast_bucket == bucket_start
         and not getattr(sensor, "_profiles_dirty", False)
+        and not getattr(sensor, "_live_load_replan", False)
     ):
         return True
     return False
+
+
+def _consume_live_load_replan(sensor: Any) -> None:
+    """A replan the live load asked for (planning.live_load) starts now.
+
+    It releases the plan lock: the lock stops a rerun from flipping the box on
+    a close call, but a load that left the plan is a new fact. The box-level
+    guard (time since the last real mode change) still applies.
+    """
+    if not getattr(sensor, "_live_load_replan", False):
+        return
+    sensor._live_load_replan = False
+    sensor._plan_lock_until = None
+    sensor._plan_lock_modes = {}
+
+
+def _apply_live_load(
+    sensor: Any, load_forecast: list[float], *, now: Optional[datetime] = None
+) -> None:
+    """The house's live backup load in the current slot, fading over an hour."""
+    tracker = getattr(sensor, "_live_load_tracker", None)
+    if tracker is None or not load_forecast:
+        return
+    live_kw = tracker.mean_kw(now or dt_util.now())
+    if live_kw is None:
+        return
+    blend_live_load(load_forecast, live_kw)
 
 
 def _ensure_capacity(sensor: Any) -> tuple[float, float, float] | None:
@@ -736,6 +765,9 @@ async def _build_load_forecast(
     await _maybe_apply_consumption_boost(
         adaptive_helper, adaptive_profiles, load_forecast
     )
+    # The hourly correction above lags by an hour or more; the live load does
+    # not (planning.live_load).
+    _apply_live_load(sensor, load_forecast)
     return load_forecast
 
 
@@ -1982,6 +2014,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         # Enforce single in-flight computation.
         if _should_skip_bucket(sensor, bucket_start):
             return
+        _consume_live_load_replan(sensor)
 
         # The box's own bat_min trigger is a planning input, not a decoration:
         # publish nothing until it is readable (or provably absent). Leaving the

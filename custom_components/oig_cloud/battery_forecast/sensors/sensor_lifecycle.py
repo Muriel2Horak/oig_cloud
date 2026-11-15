@@ -9,11 +9,16 @@ import logging
 from datetime import datetime, timedelta
 
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.core import callback
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..planning import auto_switch as auto_switch_module
+from ..planning.live_load import handle_live_load_reading
 
 _LOGGER = logging.getLogger(__name__)
 DATE_FMT = "%Y-%m-%d"
@@ -36,6 +41,7 @@ async def async_added_to_hass(sensor) -> None:
 
     _schedule_forecast_refresh(sensor)
     _subscribe_profiles(sensor)
+    _subscribe_live_load(sensor)
     _schedule_initial_refresh(sensor)
     _schedule_aggregations(sensor)
 
@@ -190,6 +196,43 @@ def _schedule_forecast_refresh(sensor) -> None:
             )
         )
     _LOGGER.info(" Scheduled forecast refresh every 15 minutes")
+
+
+def _live_load_watts(state) -> float | None:
+    try:
+        value = float(state.state)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return value if value == value else None
+
+
+def _subscribe_live_load(sensor) -> None:
+    """Follow the backup load so a jump replans at once (planning.live_load).
+
+    A state listener only: no database work here (start-up performance rule).
+    """
+    hass = getattr(sensor, "_hass", None) or getattr(sensor, "hass", None)
+    if hass is None:
+        return
+    entity_id = f"sensor.oig_{sensor._box_id}_actual_aco_p"
+    current = hass.states.get(entity_id)
+    watts = _live_load_watts(current) if current is not None else None
+    if watts is not None:
+        handle_live_load_reading(
+            sensor, getattr(current, "last_updated", None) or dt_util.now(), watts
+        )
+
+    @callback
+    def _on_change(event) -> None:
+        new_state = event.data.get("new_state")
+        reading = _live_load_watts(new_state) if new_state is not None else None
+        if reading is None:
+            return
+        handle_live_load_reading(
+            sensor, getattr(new_state, "last_updated", None) or dt_util.now(), reading
+        )
+
+    sensor.async_on_remove(async_track_state_change_event(hass, [entity_id], _on_change))
 
 
 def _subscribe_profiles(sensor) -> None:
