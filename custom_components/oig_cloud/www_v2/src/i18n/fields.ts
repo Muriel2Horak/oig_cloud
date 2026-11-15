@@ -186,6 +186,7 @@ const CS_LABELS: Record<string, string> = {
   'field.flex_pv_battery_first.label': 'Přetoky nejdřív do baterie',
   'field.boiler_on_backup_circuit.label': 'Bojler na zálohovaném výstupu',
   'field.live_load_replan.label': 'Okamžitě reagovat na skok spotřeby',
+  'field.share_energy_data.label': 'Sdílet anonymní data o energii',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -203,6 +204,7 @@ const CS_HINTS: Record<string, string> = {
   'field.grid_reserve_a.hint': 'Rezerva na špičky domu, které 15min průměr nevidí',
   'field.flex_priority.hint': 'Kdo dostane jistič první, když se všichni nevejdou',
   'field.flex_pv_battery_first.hint': 'Tak to dělá box: přetok jde do baterie dřív než do auta a bojleru. Vypnout až při řízení nabíjení baterie z FVE',
+  'field.share_energy_data.hint': 'Jednou za hodinu odešle 15min součty spotřeby, FVE, SoC, režimu a cen. Bez čísla boxu, jmen a polohy, šifrovaně. Pomáhá ladit plánovač na víc domech',
   'field.live_load_replan.hint': 'Plán vezme aktuální odběr domu a při změně o 1,5 kW hned přepočítá. Na datech z 7.–15. 11. nic neušetřil, proto je vypnuté',
   'field.boiler_on_backup_circuit.hint': 'Zapnout, jen když bojler napájí záložní výstup boxu (baterie ho pak kryje)',
 

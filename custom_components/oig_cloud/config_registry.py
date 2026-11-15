@@ -412,6 +412,9 @@ _register(
     # Opt-in: replayed on real data it did not pay (see const.CONF_LIVE_LOAD_REPLAN).
     # The backup-load listener starts at setup, so a change reloads the entry.
     Field("live_load_replan", "battery", bool, default=False, reload_on_change=True),
+    # Consent to anonymous 15-minute energy slots (shared/energy_telemetry.py);
+    # the job starts at setup, so a change reloads the entry.
+    Field("share_energy_data", "battery", bool, default=False, reload_on_change=True),
 )
 
 # --- section: boiler --------------------------------------------------------

@@ -219,6 +219,11 @@ SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 TELEMETRY_MQTT_HOST = "telemetry.muriel-cz.cz"
 TELEMETRY_MQTT_PORT = 1883
 TELEMETRY_MQTT_PREFIX = "oig/cloud-telemetry"
+# Anonymous energy slots (shared/energy_telemetry.py): consent only, TLS only.
+TELEMETRY_ENERGY_PORT = 8883
+TELEMETRY_ENERGY_PREFIX = "oig/energy"
+CONF_SHARE_ENERGY_DATA = "share_energy_data"
+DEFAULT_SHARE_ENERGY_DATA = False
 
 # CBB Modes (Battery Box Control Modes) per BR-1
 HOME_I = 0  # Grid priority (normal operation)
