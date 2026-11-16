@@ -82,3 +82,11 @@ Senzor `sensor.oig_2206237016_ev_charging_plan` má stav `charge`, když se má 
 - Integrace auto nespíná sama, spínání zatím obstará automatizace podle senzoru.
 - Vlastní předpověď teploty v plánovači bojleru (`_predict_slots`) pořád nepočítá s odběrem a ztrátami. Predikce ohřevu je zatím samostatná, plánovač bojleru ji nepoužívá.
 - Pokles nabíjecího výkonu auta nad 90 % plán nepočítá. Posledních pár procent proto může trvat déle.
+
+## Doladění 16. 11. 2026 (na HA od 2d6ecc94)
+
+- **Záložka Auto v dashboardu.** Ukazuje stav (nabíjet teď, čeká na levný čas, nabito, odpojeno, nestihne), nabití a cíl, odjezd, pás slotů do odjezdu obarvený podle ceny s vyznačeným nabíjením a profil po dnech. Data bere z `GET /api/oig_cloud/<box>/ev`.
+- **Cíl nabití: do limitu.** Zpětný test na 180 dnech (17. 5.–15. 11.) v uzavřené smyčce: s cílem podle obvyklé potřeby (p80) by auto dojelo 215 kWh na benzín, s nabíjením do limitu 22 kWh. Co se nevyjezdí, zůstane v baterii na další den. Volba `ev_target_mode` (výchozí `limit`, alternativa `need`).
+- **Profil auta za 12 týdnů, odjezd jako nejčasnější desetina prvních jízd.** Jízd, které začaly dřív, než plán čekal, ubylo z 26 na 10 ze 103.
+- **Ztráty nádrže bojleru: 2,4 W/K** podle 9 nocí bez ohřevu (chladnutí 0,08–0,26 K/h při 27–43 °C, místnost 19–20 °C).
+- **Kalibrace odběrů bojleru.** Profil odběru vidí jen rychlý pokles horní teploty a odběry podhodnocuje: počítal asi 3,8 kWh denně, bojler přitom dostal 11,6 kWh. Jednou denně se proto z denních součtů energie bojleru (FVE, síť, alternativa) za 14 dní dopočítá násobek odběrů v rozmezí 0,5–4. Na HA vyšlo 2,31.
