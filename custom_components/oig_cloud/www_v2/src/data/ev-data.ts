@@ -356,3 +356,106 @@ export function formatTime(iso: string | null | undefined): string {
   if (d.toDateString() === tomorrow.toDateString()) return `zítra ${hm}`;
   return `${WEEKDAYS[(d.getDay() + 6) % 7]} ${d.getDate()}. ${d.getMonth() + 1}. ${hm}`;
 }
+
+// ── car tab, plain-language summary ────────────────────────────────────
+
+export interface HourBar {
+  start: string;
+  hour: number;
+  price: number;
+  energyKwh: number;
+  pvKwh: number;
+  estimated: boolean;
+}
+
+/** Quarter-hour slots summed per hour (price = mean) for a readable axis. */
+export function hourlyTimeline(slots: EvSlot[]): HourBar[] {
+  const bars: HourBar[] = [];
+  let current: (HourBar & { n: number }) | null = null;
+  for (const s of slots) {
+    const d = new Date(s.start);
+    const key = `${d.toDateString()} ${d.getHours()}`;
+    if (!current || current.start !== key) {
+      current = { start: key, hour: d.getHours(), price: 0, energyKwh: 0, pvKwh: 0, estimated: false, n: 0 };
+      bars.push(current);
+    }
+    current.price += s.price;
+    current.energyKwh += s.energy_kwh;
+    current.pvKwh += s.pv_kwh;
+    current.estimated = current.estimated || s.estimated;
+    current.n += 1;
+  }
+  return bars.map((b) => {
+    const { n, ...bar } = b as HourBar & { n: number };
+    return { ...bar, price: n ? bar.price / n : 0 };
+  });
+}
+
+/** Charging blocks as "02:00–03:15" (contiguous charging quarter-hours). */
+export function chargingWindows(slots: EvSlot[]): string[] {
+  const windows: string[] = [];
+  let start: string | null = null;
+  let end: Date | null = null;
+  for (const s of slots) {
+    if (s.energy_kwh > 0.01) {
+      if (!start) start = s.start;
+      end = new Date(new Date(s.start).getTime() + 15 * 60_000);
+    } else if (start && end) {
+      windows.push(`${hhmm(start)}–${hhmm(end.toISOString())}`);
+      start = null;
+    }
+  }
+  if (start && end) windows.push(`${hhmm(start)}–${hhmm(end.toISOString())}`);
+  return windows;
+}
+
+export interface EvHeadline {
+  tone: 'charging' | 'waiting' | 'ready' | 'warn' | 'idle';
+  title: string;
+  detail: string;
+}
+
+function dayWord(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  if (d.toDateString() === today.toDateString()) return 'dnes';
+  if (d.toDateString() === tomorrow.toDateString()) return 'zítra';
+  return dayTitle(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+}
+
+/** One sentence that says what happens with the car, and one with numbers. */
+export function evHeadline(data: EvData): EvHeadline {
+  const plan = data.plan;
+  if (data.issue === 'soc_unavailable') return { tone: 'idle', title: 'Nabití auta není známé', detail: 'Senzor nabití auta teď nehlásí hodnotu.' };
+  if (data.issue === 'capacity_unknown') return { tone: 'idle', title: 'Chybí kapacita baterie auta', detail: 'Doplňte ji v nastavení auta nebo počkejte na první nabíjení.' };
+  if (!plan) return { tone: 'idle', title: 'Plán se počítá', detail: 'Do pár minut tu bude.' };
+  const kwh = `${plan.planned_kwh.toFixed(1)} kWh`;
+  const cost = plan.cost_czk > 0.5 ? ` za ${plan.cost_czk.toFixed(0)} Kč` : '';
+  const timeline = plan.timeline ?? plan.slots;
+  const windows = chargingWindows(timeline);
+  const source = timeline.some((s) => s.pv_kwh > s.grid_kwh && s.energy_kwh > 0) ? ', část z přetoků FVE' : '';
+  if (plan.status === 'unplugged') return { tone: 'idle', title: 'Auto není připojené', detail: 'Po připojení se plán hned přepočítá.' };
+  if (data.charge_override?.mode === 'now') return { tone: 'charging', title: 'Nabíjí se hned', detail: `${kwh}${cost}. Po odjezdu zase podle plánu.` };
+  if (plan.charge_now) return { tone: 'charging', title: windows[0] ? `Nabíjí se, do ${windows[0].split('–')[1]}` : 'Nabíjí se', detail: `${kwh}${cost}${source}.` };
+  if (plan.status === 'shortfall') return { tone: 'warn', title: 'Do odjezdu se nenabije celé', detail: `Chybí ${plan.shortfall_kwh.toFixed(1)} kWh. Zkuste „Nabít ihned“ nebo pozdější čas.` };
+  if (plan.next_start && windows.length) {
+    const when = `${dayWord(plan.next_start)} ${windows[0]}`;
+    const more = windows.length > 1 ? ` a ještě ${windows.length - 1}× později` : '';
+    return { tone: 'waiting', title: `Nabije se ${when}`, detail: `${kwh}${cost}${source}${more}, v nejlevnějších hodinách.` };
+  }
+  return { tone: 'ready', title: 'Připraveno na odjezd', detail: 'Auto má dost, do odjezdu se nabíjet nemusí.' };
+}
+
+/** "zítra 9:00 · svátek, jako neděle" for the next departure. */
+export function departureText(day: EvDay | null | undefined): { when: string; why: string } {
+  if (!day?.departure) return { when: 'bez odjezdu', why: '' };
+  const why: Record<string, string> = {
+    profile: 'podle jízd',
+    holiday: `${day.holiday ?? 'svátek'}, jako neděle`,
+    trip: 'dlouhá cesta',
+    workday: 'jako pracovní den',
+    dayoff: 'jako neděle',
+  };
+  return { when: `${dayWord(day.departure)} ${hhmm(day.departure)}`, why: why[day.source] ?? '' };
+}

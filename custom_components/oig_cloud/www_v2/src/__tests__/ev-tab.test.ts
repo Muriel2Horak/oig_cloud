@@ -60,16 +60,14 @@ describe('oig-ev-tab', () => {
     return el;
   }
 
-  it('shows status, a slot per quarter hour and the weekly profile', async () => {
+  it('says when the car charges, with an hourly axis', async () => {
     const el = await mount({ enabled: true, car: { soc_pct: 30, plugged_in: true, capacity_kwh: 26.3 }, need_pct: 79, plan: plan as any, profile: {} });
     const root = el.shadowRoot!;
-    expect(root.querySelector('[data-testid="ev-status"]')!.textContent).toContain('Čeká na levný čas');
-    expect(root.querySelectorAll('[data-testid="ev-strip"] .slot')).toHaveLength(2);
-    expect(root.querySelectorAll('[data-testid="ev-strip"] .bar')).toHaveLength(1);
-    expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('4.70–6.00 Kč/kWh');
-    (root.querySelector('[data-testid="ev-tab-calendar"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    expect(root.querySelectorAll('[data-testid="ev-profile"] tr')).toHaveLength(8);
+    expect(root.querySelector('[data-testid="ev-status"]')!.textContent).toMatch(/^Nabije se .*02:00–02:15$/);
+    // 01:45 and 02:00 are two different hours.
+    expect(root.querySelectorAll('[data-testid="ev-strip"] .bar')).toHaveLength(2);
+    expect(root.querySelectorAll('[data-testid="ev-strip"] .bar.charging')).toHaveLength(1);
+    expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('cena 4.7–6.0 Kč/kWh');
     el.remove();
   });
 
@@ -124,9 +122,8 @@ describe('car tab actions', () => {
     fetchOIGAPI.mockResolvedValue({ days: [] });
     const holiday = day('2026-11-17', 'holiday', { holiday: 'Den boje za svobodu a demokracii' });
     const el = await mount({ enabled: true, plan: plan as any, next_day: holiday as any });
-    const notice = el.shadowRoot!.querySelector('[data-testid="ev-holiday"]')!;
-    expect(notice.textContent).toContain('Den boje');
-    (notice.querySelectorAll('button')[1] as HTMLButtonElement).click();
+    expect(el.shadowRoot!.querySelector('.departure')!.textContent).toContain('Den boje');
+    (el.shadowRoot!.querySelector('[data-testid="ev-holiday"]') as HTMLButtonElement).click();
     await flush();
     expect(JSON.parse(fetchOIGAPI.mock.calls[0][1].body)).toMatchObject({ date: '2026-11-17', kind: 'workday' });
     el.remove();
@@ -137,20 +134,21 @@ describe('car tab actions', () => {
     const days = [day('2026-11-16', 'profile'), day('2026-11-17', 'holiday'), day('2026-11-21', 'profile')];
     const el = await mount({ enabled: true, plan: plan as any, days: days as any, vacations: [['2026-12-23', '2026-12-27']] });
     const root = el.shadowRoot!;
-    (root.querySelector('[data-testid="ev-tab-calendar"]') as HTMLButtonElement).click();
-    await el.updateComplete;
     const cells = root.querySelectorAll('[data-testid="ev-days"] .day');
     expect(cells).toHaveLength(3);
-    expect(cells[1].textContent).toContain('státní svátek');
-    expect(cells[2].textContent).toContain('víkend');
+    expect(cells[1].textContent).toContain('svátek');
+    expect(cells[0].textContent).toContain('06:00');
     (cells[0] as HTMLButtonElement).click();
     await el.updateComplete;
     const editor = root.querySelector('[data-testid="ev-day-editor"]')!;
-    const home = [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Jsem doma') as HTMLButtonElement;
+    const home = [...editor.querySelectorAll('button')].find((b) => b.textContent!.includes('Jsem doma')) as HTMLButtonElement;
     home.click();
     await flush();
     expect(JSON.parse(fetchOIGAPI.mock.calls[0][1].body)).toMatchObject({ date: '2026-11-16', kind: 'home' });
     expect(root.querySelector('[data-testid="ev-vacations"]')!.textContent).toContain('St 23. 12.');
+    (root.querySelector('[data-testid="ev-vacations"] button.link') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(root.querySelectorAll('[data-testid="ev-vacations"] input[type="date"]')).toHaveLength(2);
     el.remove();
   });
 
@@ -175,6 +173,7 @@ describe('car tab actions', () => {
     await flush();
     await el.updateComplete;
     expect((root.querySelector('#role-ev_soc_entity') as HTMLSelectElement).value).toBe('sensor.car_soc');
+    expect(root.querySelectorAll('[data-testid="ev-profile"] tr')).toHaveLength(8);
     (root.querySelector('[data-testid="ev-setup-save"]') as HTMLButtonElement).click();
     await flush();
     const save = fetchOIGAPI.mock.calls.find((c) => String(c[0]).endsWith('/module_config'))!;
