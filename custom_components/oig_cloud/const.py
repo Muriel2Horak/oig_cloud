@@ -166,6 +166,41 @@ DEFAULT_EV_TARGET_MODE = "limit"
 CONF_EV_PHASES = "ev_phases"
 DEFAULT_EV_PHASES = 3
 KEY_EV_RUNTIME = "ev_runtime"
+# Calendar: Czech public holidays count as a Sunday; a trip without a time
+# leaves at this hour.
+CONF_EV_HOLIDAYS = "ev_holidays"
+DEFAULT_EV_HOLIDAYS = True
+CONF_EV_TRIP_DEPARTURE = "ev_trip_departure"
+DEFAULT_EV_TRIP_DEPARTURE = "07:00"
+# Control: what switches the charging. "none" = the plan only (an automation
+# acts on the plan sensor), "wallbox" = the wallbox's pause/resume switch
+# (local), "car" = the car's charging switch (vendor cloud).
+CONF_EV_CONTROL_MODE = "ev_control_mode"
+DEFAULT_EV_CONTROL_MODE = "none"
+EV_CONTROL_MODES = ("none", "wallbox", "car")
+CONF_EV_SWITCH_ENTITY = "ev_switch_entity"
+CONF_EV_CURRENT_ENTITY = "ev_current_entity"  # optional number (A)
+CONF_EV_CURRENT_CONTROL = "ev_current_control"
+DEFAULT_EV_CURRENT_CONTROL = False
+CONF_EV_RAISE_LIMIT_FOR_TRIP = "ev_raise_limit_for_trip"
+DEFAULT_EV_RAISE_LIMIT_FOR_TRIP = False
+# When the integration stops: "resume" lets the car charge, "keep" leaves it.
+CONF_EV_FAILSAFE = "ev_failsafe"
+DEFAULT_EV_FAILSAFE = "resume"
+# Heating the car before departure.
+CONF_EV_CLIMATE_ENTITY = "ev_climate_entity"
+CONF_EV_CLIMATE_WHEN = "ev_climate_when"  # off|cold|always|calendar
+DEFAULT_EV_CLIMATE_WHEN = "off"
+CONF_EV_CLIMATE_TEMP_C = "ev_climate_temp_c"
+DEFAULT_EV_CLIMATE_TEMP_C = 22.0
+CONF_EV_CLIMATE_MINUTES = "ev_climate_minutes"
+DEFAULT_EV_CLIMATE_MINUTES = 20
+CONF_EV_CLIMATE_COLD_C = "ev_climate_cold_c"
+DEFAULT_EV_CLIMATE_COLD_C = 5.0
+CONF_EV_OUTSIDE_TEMP_ENTITY = "ev_outside_temp_entity"  # sensor or weather
+CONF_EV_CLIMATE_PLUGGED_ONLY = "ev_climate_plugged_only"
+DEFAULT_EV_CLIMATE_PLUGGED_ONLY = True
+CONF_EV_WINDOW_HEATING_ENTITY = "ev_window_heating_entity"  # optional switch
 SIGNAL_EV_PLAN_UPDATED = "oig_cloud_ev_plan_updated_{entry_id}"
 
 # Main breaker shared by the car, the boiler and the battery's grid charging.

@@ -625,9 +625,22 @@ def _should_skip_bucket(sensor: Any, bucket_start: datetime) -> bool:
         sensor._last_forecast_bucket == bucket_start
         and not getattr(sensor, "_profiles_dirty", False)
         and not getattr(sensor, "_live_load_replan", False)
+        and not getattr(sensor, "_flex_replan", False)
     ):
         return True
     return False
+
+
+def request_flex_replan(sensor: Any) -> None:
+    """The car's charging choice or calendar changed: plan again now.
+
+    Unlike a live-load replan it keeps the battery's plan lock: the battery's
+    inputs did not change, only the car's.
+    """
+    sensor._flex_replan = True
+    retry = getattr(sensor, "_schedule_forecast_retry", None)
+    if callable(retry):
+        retry(1.0)
 
 
 def _consume_live_load_replan(sensor: Any) -> None:
@@ -2039,6 +2052,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         if _should_skip_bucket(sensor, bucket_start):
             return
         _consume_live_load_replan(sensor)
+        sensor._flex_replan = False
 
         # The box's own bat_min trigger is a planning input, not a decoration:
         # publish nothing until it is readable (or provably absent). Leaving the

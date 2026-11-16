@@ -25,23 +25,39 @@ from ..const import (
     CONF_EV_CHARGE_LIMIT_ENTITY,
     CONF_EV_CHARGE_LIMIT_PCT,
     CONF_EV_CHARGER_POWER_ENTITY,
+    CONF_EV_HOLIDAYS,
     CONF_EV_MAX_POWER_KW,
     CONF_EV_MIN_POWER_KW,
     CONF_EV_PHASES,
     CONF_EV_PLUGGED_ENTITY,
     CONF_EV_SOC_ENTITY,
+    CONF_EV_RAISE_LIMIT_FOR_TRIP,
     CONF_EV_TARGET_MODE,
+    CONF_EV_TRIP_DEPARTURE,
     DEFAULT_EV_CAPACITY_KWH,
     DEFAULT_EV_CHARGE_LIMIT_PCT,
     DEFAULT_EV_MAX_POWER_KW,
     DEFAULT_EV_MIN_POWER_KW,
     DEFAULT_EV_PHASES,
+    DEFAULT_EV_HOLIDAYS,
+    DEFAULT_EV_RAISE_LIMIT_FOR_TRIP,
     DEFAULT_EV_TARGET_MODE,
+    DEFAULT_EV_TRIP_DEPARTURE,
     SIGNAL_EV_PLAN_UPDATED,
 )
 from ..shared.background import start_background
+from .calendar import (
+    DayOverride,
+    EvCalendarData,
+    EvDay,
+    _parse_time,
+    need_for,
+    next_departure_day,
+    upcoming_days,
+)
+from .charge_override import MODE_NOW, ChargeOverride, make_override, override_need
 from .planner import EvPlan
-from .profile import EvProfile, HourlySoc, NextNeed, build_ev_profile, estimate_capacity_kwh, next_need
+from .profile import EvProfile, HourlySoc, NextNeed, build_ev_profile, estimate_capacity_kwh
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +69,13 @@ PROFILE_REFRESH = timedelta(hours=24)
 # A charger hour below this mean power did not really charge.
 CHARGING_HOUR_MIN_KW = 0.3
 _PLUGGED_STATES = {"on", "true", "connected", "plugged", "plugged_in", "home", "charging"}
+STORE_VERSION = 1
+
+
+def _make_store(hass: Any, entry_id: str) -> Any:
+    from homeassistant.helpers.storage import Store
+
+    return Store(hass, STORE_VERSION, f"oig_cloud.ev_{entry_id}")
 
 
 def _float_state(hass: Any, entity_id: Optional[str]) -> Optional[float]:
@@ -129,22 +152,172 @@ class EvRuntime:
         self.last_plan: Optional[EvPlan] = None
         self.last_need: Optional[NextNeed] = None
         self.last_request_issue: Optional[str] = None
+        self.calendar = EvCalendarData()
+        self.charge_override: Optional[ChargeOverride] = None
+        self.next_day: Optional[EvDay] = None
+        self.last_plugged: Optional[bool] = None
+        # Set by the forecast cycle: asks it to plan again soon.
+        self.request_replan: Any = None
+        # Controller state that must survive a restart (the limit to restore).
+        self.control_state: Dict[str, Any] = {}
+        self.controller: Any = None
+        self._store: Any = None
+        self._unsub_plug: Any = None
         self._unsub: Any = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
     async def async_start(self) -> None:
+        from .control import EvController
+
+        start_background(self.hass, self.async_load(), name="oig_cloud_ev_store")
         start_background(self.hass, self.async_refresh_profile(), name="oig_cloud_ev_profile")
         self._unsub = async_track_time_interval(
             self.hass, self._async_periodic_refresh, PROFILE_REFRESH
         )
+        self.controller = EvController(self)
+        self.controller.start()
+        plugged_entity = self.options.get(CONF_EV_PLUGGED_ENTITY)
+        if plugged_entity:
+            from homeassistant.helpers.event import async_track_state_change_event
+
+            # Plugging in or out changes the plan at once, not at the next slot.
+            self._unsub_plug = async_track_state_change_event(
+                self.hass, [plugged_entity], self._on_plug_change
+            )
 
     async def async_stop(self) -> None:
         if self._unsub is not None:
             self._unsub()
             self._unsub = None
+        if self._unsub_plug is not None:
+            self._unsub_plug()
+            self._unsub_plug = None
+        if self.controller is not None:
+            await self.controller.async_stop()
+            self.controller = None
+
+    def _on_plug_change(self, _event: Any = None) -> None:
+        self._replan()
 
     async def _async_periodic_refresh(self, _now: Any = None) -> None:
         await self.async_refresh_profile()
+
+    # ── options (live: calendar and control options need no reload) ─────
+    def live_options(self) -> Dict[str, Any]:
+        entries = getattr(self.hass, "config_entries", None)
+        entry = None
+        if entries is not None and hasattr(entries, "async_get_entry"):
+            try:
+                entry = entries.async_get_entry(self.entry_id)
+            except Exception:  # pragma: no cover - test doubles
+                entry = None
+        options = getattr(entry, "options", None)
+        merged = dict(self.options)
+        if isinstance(options, Mapping):
+            merged.update(options)
+        return merged
+
+    def _trip_departure(self) -> Any:
+        from datetime import time
+
+        raw = self.live_options().get(CONF_EV_TRIP_DEPARTURE, DEFAULT_EV_TRIP_DEPARTURE)
+        return _parse_time(raw) or time(7, 0)
+
+    def _holidays(self) -> bool:
+        return bool(self.live_options().get(CONF_EV_HOLIDAYS, DEFAULT_EV_HOLIDAYS))
+
+    # ── persistence (calendar + one-off choice) ──────────────────────────
+    async def async_load(self, now: Optional[datetime] = None) -> None:
+        if self._store is None:
+            self._store = _make_store(self.hass, self.entry_id)
+        try:
+            raw = await self._store.async_load()
+        except Exception as err:  # corrupt file: start empty
+            _LOGGER.warning("EV calendar not readable: %s", err)
+            raw = None
+        raw = raw if isinstance(raw, dict) else {}
+        self.calendar = EvCalendarData.from_dict(raw.get("calendar"))
+        self.charge_override = ChargeOverride.from_dict(raw.get("charge_override"))
+        control = raw.get("control")
+        self.control_state = dict(control) if isinstance(control, dict) else {}
+        self.calendar.prune((now or dt_util.now()).date())
+
+    async def async_save(self) -> None:
+        if self._store is None:
+            self._store = _make_store(self.hass, self.entry_id)
+        data = {
+            "calendar": self.calendar.as_dict(),
+            "charge_override": self.charge_override.as_dict() if self.charge_override else None,
+            "control": dict(self.control_state),
+        }
+        await self._store.async_save(data)
+
+    def _replan(self) -> None:
+        if callable(self.request_replan):
+            try:
+                self.request_replan()
+            except Exception as err:  # never break the caller over a replan
+                _LOGGER.debug("EV replan request failed: %s", err)
+
+    async def async_set_charge_mode(
+        self, mode: str, *, by: Optional[datetime] = None, now: Optional[datetime] = None
+    ) -> Optional[ChargeOverride]:
+        now = now or dt_util.now()
+        day = self.resolve_next_day(now)
+        self.charge_override = make_override(
+            mode, now, by=by, departure=day.departure if day else None
+        )
+        await self.async_save()
+        self._replan()
+        return self.charge_override
+
+    async def async_set_day(self, day: Any, override: DayOverride) -> None:
+        self.calendar.set_day(day, override)
+        await self.async_save()
+        self._replan()
+
+    async def async_add_vacation(self, start: Any, end: Any) -> bool:
+        ok = self.calendar.add_vacation(start, end)
+        if ok:
+            await self.async_save()
+            self._replan()
+        return ok
+
+    async def async_remove_vacation(self, start: Any, end: Any) -> None:
+        self.calendar.remove_vacation(start, end)
+        await self.async_save()
+        self._replan()
+
+    # ── calendar ─────────────────────────────────────────────────────────
+    def resolve_next_day(self, now: Optional[datetime] = None) -> Optional[EvDay]:
+        now = now or dt_util.now()
+        if not self.profile or not self.profile.total_samples:
+            profile = None
+        else:
+            profile = self.profile
+        return next_departure_day(
+            profile,
+            now,
+            self.calendar,
+            trip_departure=self._trip_departure(),
+            holidays_enabled=self._holidays(),
+        )
+
+    def days(self, now: Optional[datetime] = None, count: int = 14) -> List[EvDay]:
+        now = now or dt_util.now()
+        return upcoming_days(
+            self.profile,
+            now,
+            self.calendar,
+            days=count,
+            trip_departure=self._trip_departure(),
+            holidays_enabled=self._holidays(),
+        )
+
+    def raise_limit_for_trip(self) -> bool:
+        return bool(
+            self.live_options().get(CONF_EV_RAISE_LIMIT_FOR_TRIP, DEFAULT_EV_RAISE_LIMIT_FOR_TRIP)
+        )
 
     # ── profile ──────────────────────────────────────────────────────────
     async def async_refresh_profile(self, now: Optional[datetime] = None) -> None:
@@ -206,24 +379,54 @@ class EvRuntime:
         limit = _float_state(self.hass, self.options.get(CONF_EV_CHARGE_LIMIT_ENTITY))
         if limit is None or not 0 < limit <= 100:
             limit = float(self.options.get(CONF_EV_CHARGE_LIMIT_PCT, DEFAULT_EV_CHARGE_LIMIT_PCT))
-        need = next_need(self.profile, now) if self.profile and self.profile.total_samples else None
+        max_power = float(self.options.get(CONF_EV_MAX_POWER_KW, DEFAULT_EV_MAX_POWER_KW))
+        target_mode = str(self.options.get(CONF_EV_TARGET_MODE, DEFAULT_EV_TARGET_MODE))
+
+        # Unplugging ends "charge now"; a chosen time that passed ends "charge by".
+        override = self.charge_override
+        unplugged_now = self.last_plugged is True and not plugged
+        if override is not None and (
+            not override.active(now) or (override.mode == MODE_NOW and unplugged_now)
+        ):
+            self.charge_override = override = None
+            start_background(self.hass, self.async_save(), name="oig_cloud_ev_store_save")
+        self.last_plugged = plugged
+
+        day = self.resolve_next_day(now)
+        self.next_day = day
+        if override is not None:
+            need = override_need(
+                override, now, soc_pct=soc, limit_pct=limit,
+                capacity_kwh=float(capacity), max_power_kw=max_power,
+            )
+            target_mode = "limit"
+        else:
+            need = need_for(day)
+            if day is not None and day.full_charge:
+                # A trip: charge to the limit, or to 100 % when the integration
+                # may raise the car's limit for it.
+                target_mode = "limit"
+                if self.raise_limit_for_trip():
+                    limit = 100.0
         self.last_need = need
         self.last_request_issue = None
         return EvRequest(
             soc_pct=soc,
             capacity_kwh=float(capacity),
             charge_limit_pct=limit,
-            max_power_kw=float(self.options.get(CONF_EV_MAX_POWER_KW, DEFAULT_EV_MAX_POWER_KW)),
+            max_power_kw=max_power,
             min_power_kw=float(self.options.get(CONF_EV_MIN_POWER_KW, DEFAULT_EV_MIN_POWER_KW)),
             need=need,
             plugged_in=plugged,
             phases=int(self.options.get(CONF_EV_PHASES, DEFAULT_EV_PHASES)),
-            target_mode=str(self.options.get(CONF_EV_TARGET_MODE, DEFAULT_EV_TARGET_MODE)),
+            target_mode=target_mode,
         )
 
     def publish(self, plan: Optional[EvPlan]) -> None:
         self.last_plan = plan
         async_dispatcher_send(self.hass, SIGNAL_EV_PLAN_UPDATED.format(entry_id=self.entry_id))
+        if self.controller is not None:
+            start_background(self.hass, self.controller.async_apply(), name="oig_cloud_ev_control")
 
     def as_dict(self) -> Dict[str, Any]:
         need = self.last_need
@@ -237,6 +440,10 @@ class EvRuntime:
                 self.profile_updated_at.isoformat() if self.profile_updated_at else None
             ),
             "issue": self.last_request_issue,
+            "next_day": self.next_day.as_dict() if self.next_day else None,
+            "charge_override": self.charge_override.as_dict() if self.charge_override else None,
+            "vacations": self.calendar.as_dict()["vacations"],
+            "control": self.controller.as_dict() if self.controller is not None else None,
         }
 
 

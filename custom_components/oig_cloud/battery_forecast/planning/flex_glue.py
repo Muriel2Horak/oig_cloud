@@ -199,6 +199,10 @@ def coordinate_flex_loads(
     n = len(starts)
 
     ev_runtime = _ev_runtime(sensor)
+    if ev_runtime is not None:
+        from .forecast_update import request_flex_replan
+
+        ev_runtime.request_replan = lambda: request_flex_replan(sensor)
     ev_request = ev_runtime.build_request() if ev_runtime is not None else None
     boiler_kwh = boiler_electric_forecast(sensor, starts)
     if ev_request is None and not boiler_kwh:

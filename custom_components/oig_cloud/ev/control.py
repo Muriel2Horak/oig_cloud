@@ -1,0 +1,313 @@
+"""Acting on the car's plan: the charging switch, the current, the limit, heating.
+
+What switches the charging is the user's choice (``ev_control_mode``):
+
+* ``none``: nothing; an automation reads the plan sensor;
+* ``wallbox``: the wallbox's pause/resume switch (on = may charge);
+* ``car``: the car's own charging switch through the vendor cloud.
+
+Rules:
+
+* The switch follows the plan's "charge now" while the car is plugged in.
+* Someone else flipping the switch (wallbox app, car app, a person) wins until
+  the next departure or until the car is unplugged, like a manual box mode.
+* A command is not repeated before the device had time to answer (both
+  integrations poll a cloud), and a car cloud gets fewer commands.
+* With current control on, the wallbox current follows the planned power of
+  the slot (the breaker share and PV), within the number entity's range.
+* With limit raising on, a trip day raises the car's charge limit to 100 %
+  and the old limit comes back after the departure.
+* When the integration stops, ``ev_failsafe`` = ``resume`` lets the car charge,
+  so a stopped Home Assistant never leaves it paused for the morning.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+
+from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
+
+from ..const import (
+    CONF_EV_CHARGE_LIMIT_ENTITY,
+    CONF_EV_CLIMATE_COLD_C,
+    CONF_EV_CLIMATE_ENTITY,
+    CONF_EV_CLIMATE_MINUTES,
+    CONF_EV_CLIMATE_PLUGGED_ONLY,
+    CONF_EV_CLIMATE_TEMP_C,
+    CONF_EV_CLIMATE_WHEN,
+    CONF_EV_CONTROL_MODE,
+    CONF_EV_CURRENT_CONTROL,
+    CONF_EV_CURRENT_ENTITY,
+    CONF_EV_FAILSAFE,
+    CONF_EV_OUTSIDE_TEMP_ENTITY,
+    CONF_EV_PHASES,
+    CONF_EV_SWITCH_ENTITY,
+    CONF_EV_WINDOW_HEATING_ENTITY,
+    DEFAULT_EV_CLIMATE_COLD_C,
+    DEFAULT_EV_CLIMATE_MINUTES,
+    DEFAULT_EV_CLIMATE_PLUGGED_ONLY,
+    DEFAULT_EV_CLIMATE_TEMP_C,
+    DEFAULT_EV_CLIMATE_WHEN,
+    DEFAULT_EV_CONTROL_MODE,
+    DEFAULT_EV_CURRENT_CONTROL,
+    DEFAULT_EV_FAILSAFE,
+    DEFAULT_EV_PHASES,
+)
+from .precondition import PreconditionDecision, decide_precondition
+
+_LOGGER = logging.getLogger(__name__)
+
+MODE_NONE = "none"
+MODE_WALLBOX = "wallbox"
+MODE_CAR = "car"
+# Time a cloud-polled device needs to show a command in its state, and the
+# least time between two commands. The wallbox integration polls its cloud
+# about once a minute; the car cloud is slower and rate-limited.
+SETTLE = {MODE_WALLBOX: timedelta(minutes=3), MODE_CAR: timedelta(minutes=10)}
+TICK = timedelta(minutes=1)
+# A manual change without a known departure holds this long.
+MANUAL_HOLD_FALLBACK = timedelta(hours=12)
+# Mains phase voltage (CZ, ČSN EN 50160): amps from planned kW.
+PHASE_VOLTAGE_V = 230.0
+_ON = {"on", "true"}
+
+
+@dataclass
+class _Command:
+    on: bool
+    at: datetime
+
+
+def amps_for_power(power_kw: float, phases: int, low: float, high: float) -> int:
+    """Wallbox current for a planned power, within the charger's range."""
+    if power_kw <= 0:
+        return int(low)
+    amps = math.ceil(power_kw * 1000.0 / (PHASE_VOLTAGE_V * max(1, phases)) - 1e-9)
+    return int(max(low, min(high, amps)))
+
+
+class EvController:
+    def __init__(self, runtime: Any) -> None:
+        self.runtime = runtime
+        self.hass = runtime.hass
+        self.manual_hold_until: Optional[datetime] = None
+        self.last_command: Optional[_Command] = None
+        self.last_current_a: Optional[int] = None
+        self.last_precondition: Optional[PreconditionDecision] = None
+        self.preconditioned_for: Optional[datetime] = None
+        self.last_error: Optional[str] = None
+        self._unsub: Any = None
+
+    # ── lifecycle ────────────────────────────────────────────────────────
+    def start(self) -> None:
+        self._unsub = async_track_time_interval(self.hass, self._async_tick, TICK)
+
+    async def async_stop(self) -> None:
+        if self._unsub is not None:
+            self._unsub()
+            self._unsub = None
+        options = self._options()
+        mode = options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE)
+        switch = options.get(CONF_EV_SWITCH_ENTITY)
+        if mode in (MODE_WALLBOX, MODE_CAR) and switch and (
+            options.get(CONF_EV_FAILSAFE, DEFAULT_EV_FAILSAFE) == "resume"
+        ):
+            if self._switch_on(switch) is False:
+                await self._call("switch", "turn_on", {"entity_id": switch})
+
+    async def _async_tick(self, _now: Any = None) -> None:
+        await self.async_apply()
+
+    # ── helpers ──────────────────────────────────────────────────────────
+    def _options(self) -> Dict[str, Any]:
+        return self.runtime.live_options()
+
+    def _switch_on(self, entity_id: str) -> Optional[bool]:
+        state = self.hass.states.get(entity_id)
+        if state is None or str(state.state) in ("unavailable", "unknown"):
+            return None
+        return str(state.state).lower() in _ON
+
+    def _number(self, entity_id: Optional[str]) -> Optional[Any]:
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        try:
+            float(state.state)
+        except (TypeError, ValueError):
+            return None
+        return state
+
+    def _outside_c(self, entity_id: Optional[str]) -> Optional[float]:
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        raw = state.attributes.get("temperature") if entity_id.startswith("weather.") else state.state
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if value == value else None
+
+    async def _call(self, domain: str, service: str, data: Dict[str, Any]) -> bool:
+        try:
+            await self.hass.services.async_call(domain, service, data, blocking=False)
+        except Exception as err:  # a missing entity must not stop the plan
+            self.last_error = f"{domain}.{service}: {err}"
+            _LOGGER.warning("EV control: %s.%s failed: %s", domain, service, err)
+            return False
+        self.last_error = None
+        return True
+
+    # ── the loop ─────────────────────────────────────────────────────────
+    async def async_apply(self, now: Optional[datetime] = None) -> None:
+        now = now or dt_util.now()
+        options = self._options()
+        plugged = self.runtime.last_plugged is not False
+        if not plugged:
+            # Unplugging ends a manual hold and forgets the last command.
+            self.manual_hold_until = None
+            self.last_command = None
+        await self._apply_switch(now, options, plugged)
+        await self._apply_limit(now, options)
+        await self._apply_precondition(now, options, plugged)
+
+    async def _apply_switch(self, now: datetime, options: Dict[str, Any], plugged: bool) -> None:
+        mode = options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE)
+        switch = options.get(CONF_EV_SWITCH_ENTITY)
+        plan = self.runtime.last_plan
+        if mode not in (MODE_WALLBOX, MODE_CAR) or not switch or plan is None or not plugged:
+            return
+        current = self._switch_on(switch)
+        if current is None:
+            return
+        settle = SETTLE[mode]
+        last = self.last_command
+        if last is not None and current != last.on and now - last.at > settle:
+            # The switch moved away from our command: somebody else decided.
+            day = self.runtime.next_day
+            departure = day.departure if day is not None else None
+            self.manual_hold_until = departure if departure and departure > now else now + MANUAL_HOLD_FALLBACK
+            self.last_command = None
+            _LOGGER.info("EV control: manual change, holding until %s", self.manual_hold_until)
+        if self.manual_hold_until is not None:
+            if now < self.manual_hold_until:
+                return
+            self.manual_hold_until = None
+        want = bool(plan.charge_now)
+        if want and options.get(CONF_EV_CURRENT_CONTROL, DEFAULT_EV_CURRENT_CONTROL):
+            await self._apply_current(options, plan)
+        if current == want:
+            if last is None or last.on != want:
+                self.last_command = _Command(want, now)
+            return
+        if last is not None and last.on == want and now - last.at <= settle:
+            return  # sent, the device has not answered yet
+        if await self._call("switch", "turn_on" if want else "turn_off", {"entity_id": switch}):
+            self.last_command = _Command(want, now)
+
+    async def _apply_current(self, options: Dict[str, Any], plan: Any) -> None:
+        entity = options.get(CONF_EV_CURRENT_ENTITY)
+        state = self._number(entity)
+        if state is None or not plan.slots:
+            return
+        low = float(state.attributes.get("min", 6) or 6)
+        high = float(state.attributes.get("max", 16) or 16)
+        phases = int(options.get(CONF_EV_PHASES, DEFAULT_EV_PHASES) or 3)
+        amps = amps_for_power(plan.slots[0].power_kw, phases, low, high)
+        if abs(float(state.state) - amps) < 1:
+            self.last_current_a = amps
+            return
+        if await self._call("number", "set_value", {"entity_id": entity, "value": amps}):
+            self.last_current_a = amps
+
+    async def _apply_limit(self, now: datetime, options: Dict[str, Any]) -> None:
+        entity = options.get(CONF_EV_CHARGE_LIMIT_ENTITY)
+        if not entity or not entity.startswith("number."):
+            return
+        state = self._number(entity)
+        if state is None:
+            return
+        value = float(state.state)
+        day = self.runtime.next_day
+        trip = (
+            day is not None
+            and day.full_charge
+            and self.runtime.raise_limit_for_trip()
+            and self.runtime.charge_override is None
+        )
+        saved = self.runtime.control_state.get("restore_limit")
+        if trip and value < 100:
+            if saved is None:
+                self.runtime.control_state["restore_limit"] = value
+                await self.runtime.async_save()
+            await self._call("number", "set_value", {"entity_id": entity, "value": 100})
+        elif not trip and saved is not None:
+            if abs(value - float(saved)) >= 1:
+                await self._call("number", "set_value", {"entity_id": entity, "value": float(saved)})
+            self.runtime.control_state.pop("restore_limit", None)
+            await self.runtime.async_save()
+
+    async def _apply_precondition(self, now: datetime, options: Dict[str, Any], plugged: bool) -> None:
+        climate = options.get(CONF_EV_CLIMATE_ENTITY)
+        if not climate:
+            self.last_precondition = None
+            return
+        day = self.runtime.next_day
+        decision = decide_precondition(
+            day,
+            now,
+            when=str(options.get(CONF_EV_CLIMATE_WHEN, DEFAULT_EV_CLIMATE_WHEN)),
+            minutes=int(options.get(CONF_EV_CLIMATE_MINUTES, DEFAULT_EV_CLIMATE_MINUTES)),
+            cold_c=float(options.get(CONF_EV_CLIMATE_COLD_C, DEFAULT_EV_CLIMATE_COLD_C)),
+            outside_c=self._outside_c(options.get(CONF_EV_OUTSIDE_TEMP_ENTITY)),
+            plugged=plugged,
+            plugged_only=bool(options.get(CONF_EV_CLIMATE_PLUGGED_ONLY, DEFAULT_EV_CLIMATE_PLUGGED_ONLY)),
+            already_done_for=self.preconditioned_for,
+        )
+        self.last_precondition = decision
+        if not decision.start or day is None:
+            return
+        state = self.hass.states.get(climate)
+        modes = list((state.attributes.get("hvac_modes") if state is not None else None) or [])
+        hvac = next((m for m in ("heat_cool", "heat", "auto") if m in modes), None)
+        data: Dict[str, Any] = {
+            "entity_id": climate,
+            "temperature": float(options.get(CONF_EV_CLIMATE_TEMP_C, DEFAULT_EV_CLIMATE_TEMP_C)),
+        }
+        if hvac:
+            data["hvac_mode"] = hvac
+        if await self._call("climate", "set_temperature", data):
+            self.preconditioned_for = day.departure
+            window = options.get(CONF_EV_WINDOW_HEATING_ENTITY)
+            if window:
+                await self._call("switch", "turn_on", {"entity_id": window})
+            _LOGGER.info("EV control: heating the car for the %s departure", day.departure)
+
+    def as_dict(self) -> Dict[str, Any]:
+        options = self._options()
+        return {
+            "mode": options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE),
+            "switch_entity": options.get(CONF_EV_SWITCH_ENTITY) or None,
+            "manual_hold_until": (
+                self.manual_hold_until.isoformat() if self.manual_hold_until else None
+            ),
+            "last_command": (
+                {"on": self.last_command.on, "at": self.last_command.at.isoformat()}
+                if self.last_command
+                else None
+            ),
+            "current_a": self.last_current_a,
+            "precondition": self.last_precondition.as_dict() if self.last_precondition else None,
+            "climate_entity": options.get(CONF_EV_CLIMATE_ENTITY) or None,
+            "error": self.last_error,
+        }

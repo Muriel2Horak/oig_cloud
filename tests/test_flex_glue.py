@@ -239,3 +239,23 @@ async def test_boiler_calibration_failure_never_stops_the_plan(monkeypatch):
         "custom_components.oig_cloud.boiler.heating_forecast_live.async_refresh_draw_scale", boom
     )
     await flex_glue.async_refresh_boiler_calibration(_sensor(boiler_runtimes={"k": SimpleNamespace()}))
+
+
+def test_car_runtime_gets_a_replan_hook_that_keeps_the_plan_lock():
+    request = EvRequest(20.0, 25.0, 100.0, 11.0, 4.1, NextNeed(T0 + timedelta(hours=1), 31.0, 0))
+    sensor = _sensor(ev_request=request)
+    retries = []
+    sensor._schedule_forecast_retry = retries.append
+    sensor._plan_lock_until = "locked"
+    _coordinate(sensor)
+    runtime = sensor.hass.data[DOMAIN]["entry"][KEY_EV_RUNTIME]
+
+    runtime.request_replan()
+
+    assert sensor._flex_replan is True
+    assert retries == [1.0]
+    sensor._forecast_in_progress = False
+    sensor._last_forecast_bucket = T0
+    sensor._profiles_dirty = False
+    assert forecast_update_module._should_skip_bucket(sensor, T0) is False
+    assert sensor._plan_lock_until == "locked"
