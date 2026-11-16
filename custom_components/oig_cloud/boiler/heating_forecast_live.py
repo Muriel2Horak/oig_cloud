@@ -124,11 +124,12 @@ async def async_refresh_draw_scale(
     except (TypeError, ValueError):
         target = 60.0
     loss = TANK_LOSS_W_PER_K * max(0.0, target - AMBIENT_TEMP_C) * 24 / 1000.0
-    scale = draw_scale(
-        [measured[d] for d in days],
-        [model_daily_draw_kwh(coordinator, d) for d in days],
-        loss,
-    )
+    model = [model_daily_draw_kwh(coordinator, d) for d in days]
+    if not any(model):
+        # Demand profile not loaded yet (right after start): try again next
+        # cycle rather than settle on 1.0 for a day.
+        return current
+    scale = draw_scale([measured[d] for d in days], model, loss)
     runtime.heating_draw_scale = scale
     runtime.heating_draw_scale_at = now
     _LOGGER.info(

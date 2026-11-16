@@ -163,3 +163,16 @@ async def test_calibration_scales_the_profile_draws_to_measured_heat():
     forecast = boiler_heating_forecast(hass, runtime, _starts(4), now=NOW)
     assert forecast.draw_scale == pytest.approx(scale)
     assert forecast.as_dict()["draw_scale"] == pytest.approx(round(scale, 2))
+
+
+async def test_calibration_waits_for_the_demand_profile_before_settling():
+    # Right after start the profiler is not ready: no draws, no factor yet,
+    # and the next cycle tries again instead of keeping 1.0 for a day.
+    runtime = _runtime(profiler=None)
+    runtime.box_id = "123"
+    hass = SimpleNamespace(states=_States({"sensor.top": "60.0"}))
+    days = [NOW - timedelta(days=k) for k in range(1, 8)]
+    rows = {"sensor.oig_123_boiler_alt_energy": [{"start": d.timestamp(), "change": 11.0} for d in days]}
+    with patch.object(live, "async_fetch_daily_change", AsyncMock(return_value=rows)):
+        assert await live.async_refresh_draw_scale(hass, runtime, now=NOW) == 1.0
+    assert getattr(runtime, "heating_draw_scale_at", None) is None
