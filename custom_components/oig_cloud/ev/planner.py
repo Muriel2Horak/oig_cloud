@@ -112,6 +112,17 @@ class EvPlan:
     def pv_kwh_by_slot(self) -> List[float]:
         return [slot.pv_kwh for slot in self.slots[: self.known_slots]]
 
+    def as_detail_dict(self) -> dict:
+        """``as_dict`` plus every slot until departure (for the dashboard)."""
+        until = [
+            slot
+            for slot in self.slots
+            if self.deadline is None or slot.start < self.deadline
+        ]
+        detail = self.as_dict()
+        detail["timeline"] = [slot.as_dict() for slot in until[:192]]
+        return detail
+
     def as_dict(self) -> dict:
         charging = [slot for slot in self.slots if slot.energy_kwh > _EPS_KWH]
         return {
