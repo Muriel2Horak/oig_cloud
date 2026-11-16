@@ -7,7 +7,7 @@ departure) is too big for the sensor's attributes (the recorder keeps at most
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Optional, Tuple
 
 from aiohttp import web

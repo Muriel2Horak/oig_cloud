@@ -631,18 +631,6 @@ def _should_skip_bucket(sensor: Any, bucket_start: datetime) -> bool:
     return False
 
 
-def request_flex_replan(sensor: Any) -> None:
-    """The car's charging choice or calendar changed: plan again now.
-
-    Unlike a live-load replan it keeps the battery's plan lock: the battery's
-    inputs did not change, only the car's.
-    """
-    sensor._flex_replan = True
-    retry = getattr(sensor, "_schedule_forecast_retry", None)
-    if callable(retry):
-        retry(1.0)
-
-
 def _consume_live_load_replan(sensor: Any) -> None:
     """A replan the live load asked for (planning.live_load) starts now.
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
@@ -157,7 +157,7 @@ class EvRuntime:
         self.next_day: Optional[EvDay] = None
         self.last_plugged: Optional[bool] = None
         # Set by the forecast cycle: asks it to plan again soon.
-        self.request_replan: Any = None
+        self.request_replan: Optional[Callable[[], None]] = None
         # Controller state that must survive a restart (the limit to restore).
         self.control_state: Dict[str, Any] = {}
         self.controller: Any = None
@@ -253,9 +253,10 @@ class EvRuntime:
         await self._store.async_save(data)
 
     def _replan(self) -> None:
-        if callable(self.request_replan):
+        hook = self.request_replan
+        if hook is not None:
             try:
-                self.request_replan()
+                hook()
             except Exception as err:  # never break the caller over a replan
                 _LOGGER.debug("EV replan request failed: %s", err)
 

@@ -164,6 +164,19 @@ async def async_refresh_boiler_calibration(sensor: Any) -> None:
             _LOGGER.debug("Boiler draw calibration failed: %s", err)
 
 
+def request_flex_replan(sensor: Any) -> None:
+    """The car's charging choice or calendar changed: plan again now.
+
+    Unlike a live-load replan it keeps the battery's plan lock: the battery's
+    inputs did not change, only the car's. ``forecast_update`` runs the bucket
+    again while ``_flex_replan`` is set.
+    """
+    sensor._flex_replan = True
+    retry = getattr(sensor, "_schedule_forecast_retry", None)
+    if callable(retry):
+        retry(1.0)
+
+
 def _ev_runtime(sensor: Any) -> Any:
     from ...ev.runtime import get_ev_runtime
 
@@ -200,8 +213,6 @@ def coordinate_flex_loads(
 
     ev_runtime = _ev_runtime(sensor)
     if ev_runtime is not None:
-        from .forecast_update import request_flex_replan
-
         ev_runtime.request_replan = lambda: request_flex_replan(sensor)
     ev_request = ev_runtime.build_request() if ev_runtime is not None else None
     boiler_kwh = boiler_electric_forecast(sensor, starts)
