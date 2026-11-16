@@ -213,3 +213,29 @@ def test_non_backup_boiler_adds_only_its_battery_heat_to_the_battery_load():
     assert list(with_grid.values()) == [pytest.approx(1.0)]
     assert list(without.values()) == [pytest.approx(0.25)]
     assert flex_glue.boiler_on_backup(sensor) is False
+
+
+async def test_boiler_calibration_runs_for_every_boiler_runtime(monkeypatch):
+    calls = []
+
+    async def fake_refresh(hass, runtime, now=None):
+        calls.append(runtime)
+        return 2.0
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.heating_forecast_live.async_refresh_draw_scale",
+        fake_refresh,
+    )
+    runtime = SimpleNamespace()
+    await flex_glue.async_refresh_boiler_calibration(_sensor(boiler_runtimes={"k": runtime}))
+    assert calls == [runtime]
+
+
+async def test_boiler_calibration_failure_never_stops_the_plan(monkeypatch):
+    async def boom(hass, runtime, now=None):
+        raise RuntimeError("db")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.heating_forecast_live.async_refresh_draw_scale", boom
+    )
+    await flex_glue.async_refresh_boiler_calibration(_sensor(boiler_runtimes={"k": SimpleNamespace()}))

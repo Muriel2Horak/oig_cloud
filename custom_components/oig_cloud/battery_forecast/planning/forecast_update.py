@@ -51,7 +51,12 @@ from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
 from .live_load import blend_live_load, live_load_enabled
 from .price_forecast_glue import async_apply_price_forecast
-from .flex_glue import battery_outranks_car, boiler_on_backup, coordinate_flex_loads
+from .flex_glue import (
+    async_refresh_boiler_calibration,
+    battery_outranks_car,
+    boiler_on_backup,
+    coordinate_flex_loads,
+)
 from .flex_loads import FlexPlan
 
 _LOGGER = logging.getLogger(__name__)
@@ -2110,6 +2115,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             min_capacity=min_capacity,
             charge_rate_kw=_flex_charge_rate_kw(sensor),
         )
+        await async_refresh_boiler_calibration(sensor)
         car_first = not battery_outranks_car(
             dict(getattr(sensor._config_entry, "options", None) or {})
         )

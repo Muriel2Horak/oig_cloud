@@ -27,7 +27,8 @@ def _find_entry(hass: Any, box_id: str) -> Optional[Any]:
     for entry in hass.config_entries.async_entries(DOMAIN):
         entry_data = (hass.data.get(DOMAIN, {}) or {}).get(entry.entry_id, {})
         coordinator = entry_data.get("coordinator") if isinstance(entry_data, dict) else None
-        if isinstance(getattr(coordinator, "data", None), dict) and box_id in coordinator.data:
+        box_map = getattr(coordinator, "data", None)
+        if isinstance(box_map, dict) and box_id in box_map:
             return entry
     return None
 

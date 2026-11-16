@@ -155,3 +155,24 @@ def test_no_inputs_give_an_empty_forecast():
     assert forecast.method == "none"
     assert forecast.slots == []
     assert forecast.as_dict()["total_heat_kwh"] == 0.0
+
+
+# ── draw calibration ───────────────────────────────────────────────────────
+
+from custom_components.oig_cloud.boiler.heating_forecast import draw_scale  # noqa: E402
+
+
+def test_draw_scale_matches_measured_heat_minus_losses():
+    # Measured 11 kWh a day, 2 kWh of it standing loss, profile says 3 kWh of draws.
+    assert draw_scale([10.0, 12.0, 11.0], [3.0, 3.0, 3.0], 2.0) == pytest.approx(3.0)
+
+
+def test_draw_scale_is_clamped_and_needs_enough_days():
+    assert draw_scale([50.0, 50.0, 50.0], [1.0, 1.0, 1.0], 0.0) == 4.0
+    assert draw_scale([1.0, 1.0, 1.0], [5.0, 5.0, 5.0], 0.0) == 0.5
+    assert draw_scale([10.0, 12.0], [3.0, 3.0], 2.0) == 1.0  # too few days
+    assert draw_scale([10.0, 12.0, 11.0], [0.0, 0.0, 0.0], 2.0) == 1.0  # no profile
+
+
+def test_days_without_measured_heat_are_left_out():
+    assert draw_scale([0.0, 10.0, 12.0, 11.0], [3.0, 3.0, 3.0, 3.0], 2.0) == pytest.approx(3.0)

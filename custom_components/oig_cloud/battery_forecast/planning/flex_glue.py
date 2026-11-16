@@ -152,6 +152,18 @@ def boiler_electric_forecast(
     return total
 
 
+async def async_refresh_boiler_calibration(sensor: Any) -> None:
+    """Daily draw calibration of every boiler's heating forecast (never raises)."""
+    hass = _hass(sensor)
+    from ...boiler import heating_forecast_live
+
+    for runtime in _boiler_runtimes(hass):
+        try:
+            await heating_forecast_live.async_refresh_draw_scale(hass, runtime)
+        except Exception as err:  # the boiler never stops the battery plan
+            _LOGGER.debug("Boiler draw calibration failed: %s", err)
+
+
 def _ev_runtime(sensor: Any) -> Any:
     from ...ev.runtime import get_ev_runtime
 

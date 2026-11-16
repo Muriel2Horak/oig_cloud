@@ -68,6 +68,8 @@ class HeatingSlot:
 class BoilerHeatingForecast:
     method: str
     slots: List[HeatingSlot] = field(default_factory=list)
+    # Factor on the demand profile's draws (draw_scale), 1.0 = uncalibrated.
+    draw_scale: float = 1.0
 
     @property
     def total_heat_kwh(self) -> float:
@@ -91,8 +93,44 @@ class BoilerHeatingForecast:
             "total_heat_kwh": round(self.total_heat_kwh, 2),
             "electric_kwh": round(self.electric_kwh, 2),
             "first_heat_at": first.isoformat() if first else None,
+            "draw_scale": round(self.draw_scale, 2),
             "slots": [s.as_dict() for s in self.slots if s.heat_kwh > _EPS_KWH],
         }
+
+
+# Bounds on the draw calibration: outside them the measurement or the profile
+# is broken rather than the household different.
+DRAW_SCALE_MIN = 0.5
+DRAW_SCALE_MAX = 4.0
+DRAW_SCALE_MIN_DAYS = 3
+
+
+def draw_scale(
+    measured_daily_kwh: Sequence[float],
+    model_draw_daily_kwh: Sequence[float],
+    daily_loss_kwh: float,
+) -> float:
+    """Factor that makes profile draws plus standing loss match measured heat.
+
+    The demand profile sees a draw only as a fast drop of the top temperature;
+    cold water entering at the bottom of a stratified tank barely moves it, so
+    the profile undercounts (reference tank 11/2026: about 3 kWh of draws a
+    day against 11 kWh of measured heat). Days without measured heat are left
+    out; with fewer than three days the profile stays as it is.
+    """
+    pairs = [
+        (float(m), float(d))
+        for m, d in zip(measured_daily_kwh, model_draw_daily_kwh)
+        if m > 0
+    ]
+    if len(pairs) < DRAW_SCALE_MIN_DAYS:
+        return 1.0
+    measured = sum(m for m, _ in pairs) / len(pairs)
+    model = sum(d for _, d in pairs) / len(pairs)
+    if model <= 0:
+        return 1.0
+    scale = (measured - daily_loss_kwh) / model
+    return max(DRAW_SCALE_MIN, min(DRAW_SCALE_MAX, scale))
 
 
 def simulate_thermostat(
@@ -185,6 +223,7 @@ def build_heating_forecast(
     plan_result: Any,
     thermostat: Optional[Sequence[HeatingSlot]],
     electric: bool = True,
+    scale: float = 1.0,
 ) -> BoilerHeatingForecast:
     """The plan when there is one, the thermostat simulation otherwise.
 
@@ -193,12 +232,15 @@ def build_heating_forecast(
     """
     planned = forecast_from_plan(plan_result) if plan_result is not None else []
     if planned:
-        return BoilerHeatingForecast(method=METHOD_PLAN, slots=planned)
+        return BoilerHeatingForecast(method=METHOD_PLAN, slots=planned, draw_scale=scale)
     if thermostat:
         if electric:
-            return BoilerHeatingForecast(method=METHOD_THERMOSTAT, slots=list(thermostat))
+            return BoilerHeatingForecast(
+                method=METHOD_THERMOSTAT, slots=list(thermostat), draw_scale=scale
+            )
         return BoilerHeatingForecast(
             method=METHOD_THERMOSTAT,
+            draw_scale=scale,
             slots=[
                 HeatingSlot(
                     start=s.start,
