@@ -1,5 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { evStatus, priceLevel, profileRows, type EvData } from '@/data/ev-data';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fetchOIGAPI = vi.fn();
+vi.mock('@/data/ha-client', () => ({ haClient: { fetchOIGAPI: (...args: unknown[]) => fetchOIGAPI(...args) } }));
+
+import {
+  dayTag,
+  evStatus,
+  preconditionText,
+  priceLevel,
+  profileRows,
+  wizardValues,
+  type EvData,
+} from '@/data/ev-data';
 import '@/ui/features/ev';
 
 const plan = {
@@ -52,8 +64,10 @@ describe('oig-ev-tab', () => {
     expect(root.querySelector('[data-testid="ev-status"]')!.textContent).toContain('Čeká na levný čas');
     expect(root.querySelectorAll('[data-testid="ev-strip"] .slot')).toHaveLength(2);
     expect(root.querySelectorAll('[data-testid="ev-strip"] .bar')).toHaveLength(1);
-    expect(root.querySelectorAll('[data-testid="ev-profile"] tr')).toHaveLength(8);
     expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('4.70–6.00 Kč/kWh');
+    (root.querySelector('[data-testid="ev-tab-calendar"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(root.querySelectorAll('[data-testid="ev-profile"] tr')).toHaveLength(8);
     el.remove();
   });
 
@@ -61,5 +75,133 @@ describe('oig-ev-tab', () => {
     const el = await mount({ enabled: false });
     expect(el.shadowRoot!.textContent).toContain('Elektroauto');
     el.remove();
+  });
+});
+
+const day = (date: string, source: string, extra: Record<string, unknown> = {}) => ({
+  date, source, departure: `${date}T06:00:00+01:00`, need_pct: 40, full_charge: false, holiday: null, precondition: null, ...extra,
+});
+
+describe('car tab actions', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+  });
+
+  async function mount(data: EvData) {
+    const el = document.createElement('oig-ev-tab');
+    el.data = data;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    return el;
+  }
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('charge now posts the choice and asks for a refresh', async () => {
+    fetchOIGAPI.mockResolvedValue({ charge_override: { mode: 'now' } });
+    const el = await mount({ enabled: true, plan: plan as any });
+    const refresh = vi.fn();
+    el.addEventListener('oig-ev-refresh', refresh);
+    (el.shadowRoot!.querySelector('[data-testid="ev-charge-now"]') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchOIGAPI).toHaveBeenCalledWith(expect.stringMatching(/\/ev\/charge$/), expect.objectContaining({ method: 'POST', body: JSON.stringify({ mode: 'now' }) }));
+    expect(refresh).toHaveBeenCalled();
+    el.remove();
+  });
+
+  it('charge by sends the chosen time', async () => {
+    fetchOIGAPI.mockResolvedValue({ charge_override: { mode: 'by' } });
+    const el = await mount({ enabled: true, plan: plan as any });
+    (el.shadowRoot!.querySelector('[data-testid="ev-charge-by"]') as HTMLButtonElement).click();
+    await flush();
+    expect(JSON.parse(fetchOIGAPI.mock.calls[0][1].body)).toEqual({ mode: 'by', time: '05:00' });
+    el.remove();
+  });
+
+  it('a holiday tomorrow offers to drive as on a working day', async () => {
+    fetchOIGAPI.mockResolvedValue({ days: [] });
+    const holiday = day('2026-11-17', 'holiday', { holiday: 'Den boje za svobodu a demokracii' });
+    const el = await mount({ enabled: true, plan: plan as any, next_day: holiday as any });
+    const notice = el.shadowRoot!.querySelector('[data-testid="ev-holiday"]')!;
+    expect(notice.textContent).toContain('Den boje');
+    (notice.querySelectorAll('button')[1] as HTMLButtonElement).click();
+    await flush();
+    expect(JSON.parse(fetchOIGAPI.mock.calls[0][1].body)).toMatchObject({ date: '2026-11-17', kind: 'workday' });
+    el.remove();
+  });
+
+  it('the calendar edits a day and adds a vacation', async () => {
+    fetchOIGAPI.mockResolvedValue({ days: [], vacations: [] });
+    const days = [day('2026-11-16', 'profile'), day('2026-11-17', 'holiday'), day('2026-11-21', 'profile')];
+    const el = await mount({ enabled: true, plan: plan as any, days: days as any, vacations: [['2026-12-23', '2026-12-27']] });
+    const root = el.shadowRoot!;
+    (root.querySelector('[data-testid="ev-tab-calendar"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const cells = root.querySelectorAll('[data-testid="ev-days"] .day');
+    expect(cells).toHaveLength(3);
+    expect(cells[1].textContent).toContain('státní svátek');
+    expect(cells[2].textContent).toContain('víkend');
+    (cells[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+    const editor = root.querySelector('[data-testid="ev-day-editor"]')!;
+    const home = [...editor.querySelectorAll('button')].find((b) => b.textContent === 'Jsem doma') as HTMLButtonElement;
+    home.click();
+    await flush();
+    expect(JSON.parse(fetchOIGAPI.mock.calls[0][1].body)).toMatchObject({ date: '2026-11-16', kind: 'home' });
+    expect(root.querySelector('[data-testid="ev-vacations"]')!.textContent).toContain('St 23. 12.');
+    el.remove();
+  });
+
+  it('the setup wizard proposes the best candidates and saves them', async () => {
+    fetchOIGAPI.mockImplementation((path: string, opts?: RequestInit) => {
+      if (path.endsWith('/ev/discover')) {
+        return Promise.resolve({
+          control_mode: 'wallbox',
+          switch_inverted: false,
+          roles: {
+            ev_soc_entity: [{ entity_id: 'sensor.car_soc', name: 'Car SoC', device: 'Car', score: 9, reasons: ['belongs to a car'] }],
+            ev_switch_entity: [{ entity_id: 'switch.charger', name: 'Charger', device: 'Charger', score: 6, reasons: [] }],
+          },
+        });
+      }
+      if (path.endsWith('/module_config') && opts?.method === 'POST') return Promise.resolve({ updated: true });
+      return Promise.resolve(null);
+    });
+    const el = await mount({ enabled: true, plan: plan as any });
+    const root = el.shadowRoot!;
+    (root.querySelector('[data-testid="ev-tab-setup"]') as HTMLButtonElement).click();
+    await flush();
+    await el.updateComplete;
+    expect((root.querySelector('#role-ev_soc_entity') as HTMLSelectElement).value).toBe('sensor.car_soc');
+    (root.querySelector('[data-testid="ev-setup-save"]') as HTMLButtonElement).click();
+    await flush();
+    const save = fetchOIGAPI.mock.calls.find((c) => String(c[0]).endsWith('/module_config'))!;
+    expect(JSON.parse(save[1].body).values).toEqual({
+      ev_soc_entity: 'sensor.car_soc',
+      ev_switch_entity: 'switch.charger',
+      ev_control_mode: 'wallbox',
+      ev_switch_inverted: false,
+    });
+    el.remove();
+  });
+});
+
+describe('car data helpers', () => {
+  it('wizard values follow the choices', () => {
+    const values = wizardValues(
+      { ev_soc_entity: 's', ev_switch_entity: 'sw', ev_current_entity: 'n', ev_climate_entity: 'c' },
+      { control_mode: 'car', switch_inverted: true },
+      { control: true, heating: false },
+    );
+    expect(values).toMatchObject({ ev_control_mode: 'car', ev_switch_inverted: true, ev_current_control: true, ev_climate_when: 'off' });
+    expect(wizardValues({ ev_soc_entity: 's' }, { control_mode: 'none', switch_inverted: false }, { control: true, heating: true }).ev_control_mode).toBe('none');
+  });
+
+  it('names days and heating states in Czech', () => {
+    expect(dayTag(day('2026-11-18', 'profile') as any)).toBe('pracovní den');
+    expect(dayTag(day('2026-11-22', 'profile') as any)).toBe('víkend');
+    expect(dayTag(day('2026-11-18', 'trip') as any)).toBe('dlouhá cesta');
+    expect(preconditionText(null)).toContain('není nastavené');
+    expect(preconditionText({ climate_entity: 'climate.c', precondition: { start: false, reason: 'warm', starts_at: null } } as any)).toBe('Venku je teplo, netopí se.');
   });
 });

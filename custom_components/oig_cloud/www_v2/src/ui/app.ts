@@ -1700,7 +1700,8 @@ export class OigApp extends LitElement {
              <!-- ===== CAR TAB ===== -->
              <div class="tab-content ${this.activeTab === 'ev' ? 'active' : ''}">
                ${this.activeTab === 'ev' ? html`
-                 <oig-ev-tab .data=${this.evData} ?loading=${this.evLoading}></oig-ev-tab>
+                 <oig-ev-tab .data=${this.evData} ?loading=${this.evLoading}
+                   @oig-ev-refresh=${() => void this.loadEvDataAsync()}></oig-ev-tab>
                ` : nothing}
              </div>
 

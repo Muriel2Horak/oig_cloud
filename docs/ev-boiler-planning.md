@@ -90,3 +90,25 @@ Senzor `sensor.oig_2206237016_ev_charging_plan` má stav `charge`, když se má 
 - **Profil auta za 12 týdnů, odjezd jako nejčasnější desetina prvních jízd.** Jízd, které začaly dřív, než plán čekal, ubylo z 26 na 10 ze 103.
 - **Ztráty nádrže bojleru: 2,4 W/K** podle 9 nocí bez ohřevu (chladnutí 0,08–0,26 K/h při 27–43 °C, místnost 19–20 °C).
 - **Kalibrace odběrů bojleru.** Profil odběru vidí jen rychlý pokles horní teploty a odběry podhodnocuje: počítal asi 3,8 kWh denně, bojler přitom dostal 11,6 kWh. Jednou denně se proto z denních součtů energie bojleru (FVE, síť, alternativa) za 14 dní dopočítá násobek odběrů v rozmezí 0,5–4. Na HA vyšlo 2,31.
+
+## Auto: kalendář, volby nabíjení, spínání a topení (16. 11. 2026)
+
+Všechno je obecné. Integrace nezná značku auta ani nabíječky, ovládací entity se vybírají v nastavení nebo v průvodci.
+
+- **Kalendář odjezdů** (`ev/calendar.py`). Základ je profil po dnech v týdnu. České státní svátky (včetně Velkého pátku a Velikonočního pondělí) plán bere jako neděli, vypíná se volbou `ev_holidays`. Dovolená (nejvýš 62 dní) znamená žádný odjezd, auto bere jen levné přetoky. Jednotlivý den jde přepsat na „doma“, „dlouhá cesta“ (nabít do limitu, případně na 100 %, s vlastním časem odjezdu, výchozí `ev_trip_departure`), „jako pracovní den“ nebo „jako neděle“. Ke každému dni jde zvlášť zapnout nebo vypnout topení. Uloženo v `.storage/oig_cloud.ev_<entry>`.
+- **Nabít ihned / nabít do HH:MM** (`ev/charge_override.py`). Platí jen pro jednu jízdu. „Ihned“ skončí odjezdem nebo odpojením auta, „do“ skončí v zadaném čase. Obojí nabíjí do limitu. Změna přepočítá plán hned (`request_flex_replan`), zámek plánu baterie přitom zůstane.
+- **Spínání** (`ev/control.py`, `ev_control_mode`):
+  - `none`: jen plán, spíná automatizace podle senzoru plánu (výchozí).
+  - `wallbox`: spínač nabíječky.
+  - `car`: spínač v autě přes cloud výrobce, příkazy chodí řidčeji.
+
+  Spínač je jakýkoli `switch` nebo `input_boolean`. Volba `ev_switch_inverted` je pro spínač typu „pozastavit“. Když spínač přepne někdo jiný, integrace do odjezdu nebo do odpojení auta nesahá. Volitelně se řídí proud (`ev_current_control`, číslo v A, přepočet na 230 V a počet fází) a na dlouhou cestu se zvedne limit na 100 % (`ev_raise_limit_for_trip`). Původní limit se po odjezdu vrátí a přežije restart. Při zastavení integrace se nabíjení pustí (`ev_failsafe` = `resume`).
+- **Topení před odjezdem** (`ev/precondition.py`): `ev_climate_when` je `off`, `cold` (pod `ev_climate_cold_c` podle `ev_outside_temp_entity`, což je senzor nebo `weather.*`), `always` nebo `calendar`. Začne `ev_climate_minutes` před odjezdem, jednou na odjezd, standardně jen u nabíječky. Zapíná `climate.set_temperature` (heat_cool, heat nebo auto podle entity) a volitelně spínač vyhřívání oken.
+- **Průvodce napojením** (`ev/discovery.py`, `GET /api/oig_cloud/<box>/ev/discover`). Kandidáty hledá podle domény, třídy zařízení, jednotky, rozsahu, slov v názvu (cs, en, de) a podle zařízení, ke kterému entita patří: zařízení se senzorem kabelu nebo dojezdem je auto, zařízení s výkonem a proudem nabíjení je nabíječka. Vlastní entity integrace vynechá. Na HA 16. 11. našel správně všech 9 rolí. Spínač nabíjení našel přes OCPP (`switch.charger_charge_control`, místně) i přes cloud Wallboxu (`switch.wallbox_garaz_pozastavit_pokracovat`).
+- **AI** se při napojování nepoužívá. Pravidlo soukromí K2b posílá do AI jen anonymní čísla, ne názvy entit ani volný text. Přesné hledání entit na datech z HA stačilo.
+- **API**:
+  - `POST /ev/charge` `{mode: plan|now|by, time}`;
+  - `POST /ev/day` `{date, kind, departure, precondition}`;
+  - `POST` a `DELETE /ev/vacation` `{start, end}`;
+  - `GET /ev` nově vrací i `days` (14 dní), `next_day`, `charge_override`, `vacations` a `control`.
+- **Záložka Auto** má tři části. Plán: stav, volby nabíjení, upozornění na svátek, pás cen, řízení a topení. Odjezdy: 14 dní, úprava dne, dovolená a profil. Napojení: průvodce.
