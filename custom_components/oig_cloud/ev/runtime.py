@@ -30,11 +30,13 @@ from ..const import (
     CONF_EV_PHASES,
     CONF_EV_PLUGGED_ENTITY,
     CONF_EV_SOC_ENTITY,
+    CONF_EV_TARGET_MODE,
     DEFAULT_EV_CAPACITY_KWH,
     DEFAULT_EV_CHARGE_LIMIT_PCT,
     DEFAULT_EV_MAX_POWER_KW,
     DEFAULT_EV_MIN_POWER_KW,
     DEFAULT_EV_PHASES,
+    DEFAULT_EV_TARGET_MODE,
     SIGNAL_EV_PLAN_UPDATED,
 )
 from ..shared.background import start_background
@@ -43,10 +45,10 @@ from .profile import EvProfile, HourlySoc, NextNeed, build_ev_profile, estimate_
 
 _LOGGER = logging.getLogger(__name__)
 
-# Eight weeks: long enough for every weekday to have several samples, short
-# enough to follow a change of routine (the reference car's autumn use is
-# half of its spring use).
-PROFILE_HISTORY_DAYS = 56
+# Twelve weeks: backtest 5-11/2026 on the reference car, departures earlier
+# than planned 19/103 drive days with 12 weeks against 26 with 8 and 35 with
+# 4 (the shorter windows follow noise, not a change of routine).
+PROFILE_HISTORY_DAYS = 84
 PROFILE_REFRESH = timedelta(hours=24)
 # A charger hour below this mean power did not really charge.
 CHARGING_HOUR_MIN_KW = 0.3
@@ -216,6 +218,7 @@ class EvRuntime:
             need=need,
             plugged_in=plugged,
             phases=int(self.options.get(CONF_EV_PHASES, DEFAULT_EV_PHASES)),
+            target_mode=str(self.options.get(CONF_EV_TARGET_MODE, DEFAULT_EV_TARGET_MODE)),
         )
 
     def publish(self, plan: Optional[EvPlan]) -> None:

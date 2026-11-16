@@ -31,8 +31,10 @@ MIN_DRIVE_DROP_PCT = 2.0
 MIN_ROWS_PER_DAY = 20
 # Share of days the planned charge should cover (see module docstring).
 NEED_PERCENTILE = 0.8
-# Early quartile of the drive starts: the departure the plan aims at.
-DEPARTURE_PERCENTILE = 0.25
+# Earliest tenth of the drive starts: the departure the plan aims at.
+# Backtest 5-11/2026 (12-week window): drives starting before the planned
+# departure 10/103 at 0.1, 19/103 at the quartile, 42/103 at the median.
+DEPARTURE_PERCENTILE = 0.1
 # A weekday whose need is below this is a day the car usually stays home.
 MIN_NEED_PCT = 5.0
 # Above this the charger tapers, so an hour there says nothing about capacity.

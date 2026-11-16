@@ -68,6 +68,7 @@ class EvRequest:
     need: Optional[NextNeed]
     plugged_in: bool = True
     phases: int = 3
+    target_mode: str = "need"
 
 
 @dataclass(frozen=True)
@@ -212,6 +213,7 @@ def plan_flex_loads(inputs: FlexInputs) -> FlexPlan:  # noqa: C901
                     need=ev.need,
                     plugged_in=ev.plugged_in,
                     slot_minutes=inputs.slot_minutes,
+                    target_mode=ev.target_mode,
                 )
             )
             for i, (grid_kwh, pv_kwh) in enumerate(

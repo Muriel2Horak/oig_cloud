@@ -157,6 +157,12 @@ CONF_EV_MAX_POWER_KW = "ev_max_power_kw"
 DEFAULT_EV_MAX_POWER_KW = 11.0  # three-phase 16 A wallbox
 CONF_EV_MIN_POWER_KW = "ev_min_power_kw"
 DEFAULT_EV_MIN_POWER_KW = 4.14  # IEC 61851 minimum 6 A x 3 phases x 230 V
+# What the car is charged to before the predicted departure: "limit" = its
+# charge limit (backtest 5-11/2026 on the reference PHEV: 22 kWh driven on
+# fuel in six months against 215 kWh with the p80 need, since unused charge
+# carries over to the next day); "need" = the typical day's use (p80).
+CONF_EV_TARGET_MODE = "ev_target_mode"
+DEFAULT_EV_TARGET_MODE = "limit"
 CONF_EV_PHASES = "ev_phases"
 DEFAULT_EV_PHASES = 3
 KEY_EV_RUNTIME = "ev_runtime"

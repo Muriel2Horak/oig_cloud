@@ -403,6 +403,8 @@ _register(
           show_if=_EV_ON, reload_on_change=True),
     Field("ev_phases", "battery", int, default=3, min=1, max=3, show_if=_EV_ON,
           reload_on_change=True),
+    Field("ev_target_mode", "battery", str, default="limit", enum=("limit", "need"),
+          show_if=_EV_ON, reload_on_change=True),
     Field("grid_breaker_a", "battery", float, default=25.0, min=0.0, max=100.0, step=1.0),
     Field("grid_reserve_a", "battery", float, default=2.0, min=0.0, max=10.0, step=0.5),
     Field("grid_phases", "battery", int, default=3, min=1, max=3),

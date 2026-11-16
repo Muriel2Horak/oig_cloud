@@ -13,6 +13,8 @@ const CS_ENUM_LABELS: Record<string, string> = {
   'field.solar_forecast_provider.enum.forecast_solar': 'Forecast.Solar (zdarma, bez registrace)',
   'field.solar_forecast_provider.enum.solcast': 'Solcast (přesnější, vyžaduje registraci)',
 
+  'field.ev_target_mode.enum.limit': 'Do limitu nabíjení',
+  'field.ev_target_mode.enum.need': 'Podle obvyklé potřeby (4 dny z 5)',
   'field.price_forecast_mode.enum.off': 'Vypnuto',
   'field.price_forecast_mode.enum.shadow': 'Stínově (jen měřit přesnost)',
   'field.price_forecast_mode.enum.on': 'Zapnuto (plánovat podle odhadu)',

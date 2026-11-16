@@ -142,3 +142,9 @@ def test_publish_stores_the_plan_and_signals():
         runtime.publish(None)
     send.assert_called_once()
     assert runtime.as_dict()["plan"] is None
+
+
+def test_target_mode_defaults_to_the_limit_and_follows_the_option():
+    hass = _hass({"sensor.car_soc": "35"})
+    assert EvRuntime(hass, "entry", OPTIONS).build_request().target_mode == "limit"
+    assert EvRuntime(hass, "entry", {**OPTIONS, "ev_target_mode": "need"}).build_request().target_mode == "need"

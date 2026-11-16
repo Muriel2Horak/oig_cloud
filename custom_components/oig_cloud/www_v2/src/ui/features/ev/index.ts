@@ -108,7 +108,7 @@ export class OigEvTab extends LitElement {
         <div class="card">
           <div class="label">Odjezd</div>
           <div class="value">${formatTime(plan?.deadline ?? data.next_departure)}</div>
-          <div class="sub">potřeba ${data.need_pct != null ? `${Math.round(data.need_pct)} %` : '—'}</div>
+          <div class="sub">obvykle spotřebuje ${data.need_pct != null ? `${Math.round(data.need_pct)} %` : '—'}</div>
         </div>
         <div class="card">
           <div class="label">Nabíjení</div>
@@ -125,12 +125,12 @@ export class OigEvTab extends LitElement {
       </section>
 
       <section class="card">
-        <h3>Profil jízd (posledních 8 týdnů)</h3>
+        <h3>Profil jízd (posledních 12 týdnů)</h3>
         <table data-testid="ev-profile">
           <tr><th>Den</th><th>Odjezd</th><th>Potřeba</th><th>Dní</th></tr>
           ${profileRows(data.profile).map((r) => html`<tr><td>${r.day}</td><td>${r.departure}</td><td>${r.needPct} %</td><td>${r.samples}</td></tr>`)}
         </table>
-        <div class="sub">Odjezd je ranní kvartil prvních jízd, potřeba pokryje 4 dny z 5. Aktualizováno ${formatTime(data.profile_updated_at)}.</div>
+        <div class="sub">Odjezd je nejčasnější desetina prvních jízd daného dne, potřeba je spotřeba, která stačí na 4 dny z 5. Aktualizováno ${formatTime(data.profile_updated_at)}.</div>
       </section>
     `;
   }

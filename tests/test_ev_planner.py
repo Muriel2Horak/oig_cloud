@@ -196,3 +196,18 @@ def test_grid_and_pv_series_line_up_with_the_input_slots():
 
     assert plan.grid_kwh_by_slot() == pytest.approx([2.25, 2.25])
     assert plan.pv_kwh_by_slot() == pytest.approx([0.5, 0.0])
+
+
+def test_limit_mode_charges_to_the_charge_limit_before_departure():
+    plan = plan_ev_charging(
+        _input([1.0] * 12, need=NextNeed(NOW + timedelta(hours=3), 40.0, 1), charge_limit_pct=80.0, target_mode="limit")
+    )
+
+    # 20 % -> 80 % of 25 kWh = 15 kWh, whatever the typical need says.
+    assert plan.target_soc_pct == pytest.approx(80.0)
+    assert plan.needed_kwh == pytest.approx(15.0)
+
+
+def test_limit_mode_without_a_predicted_drive_takes_only_cheap_surplus():
+    plan = plan_ev_charging(_input([1.0, 1.0], need=None, target_mode="limit"))
+    assert plan.needed_kwh == 0.0

@@ -62,6 +62,8 @@ class EvPlanInput:
     need: Optional[NextNeed]
     plugged_in: bool = True
     slot_minutes: int = 15
+    # "limit": charge to the charge limit by departure; "need": to the need.
+    target_mode: str = "need"
 
 
 @dataclass(frozen=True)
@@ -170,7 +172,12 @@ def plan_ev_charging(plan_input: EvPlanInput) -> EvPlan:
     limit_pct = max(0.0, min(100.0, plan_input.charge_limit_pct))
     soc_pct = max(0.0, min(100.0, plan_input.soc_pct))
     need = plan_input.need
-    target_pct = min(limit_pct, need.need_pct) if need else soc_pct
+    if need is None:
+        target_pct = soc_pct
+    elif plan_input.target_mode == "limit":
+        target_pct = limit_pct
+    else:
+        target_pct = min(limit_pct, need.need_pct)
     needed_kwh = max(0.0, (target_pct - soc_pct) / 100.0 * capacity)
     room_kwh = max(0.0, (limit_pct - soc_pct) / 100.0 * capacity)
 
