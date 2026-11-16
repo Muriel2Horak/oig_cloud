@@ -220,8 +220,18 @@ class OIGCloudEvDiscoverView(HomeAssistantView):
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         hass = request.app["hass"]
-        if _find_entry(hass, box_id) is None:
+        entry = _find_entry(hass, box_id)
+        if entry is None:
             return web.json_response({"error": "Box not found"}, status=404)
-        from .discovery import discover, entities_from_hass
+        from .discovery import ROLES, discover, entities_from_hass
 
-        return web.json_response(discover(entities_from_hass(hass)))
+        result = discover(entities_from_hass(hass))
+        options = dict(entry.options or {})
+        # What is configured now: the wizard starts from it, not from the
+        # best guess, so saving never silently replaces a working entity.
+        result["current"] = {role: options.get(role) or None for role in ROLES}
+        result["current_settings"] = {
+            key: options.get(key)
+            for key in ("ev_control_mode", "ev_switch_inverted", "ev_climate_when")
+        }
+        return web.json_response(result)

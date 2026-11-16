@@ -16,9 +16,11 @@ import {
   evStatus,
   formatTime,
   hhmm,
+  initialChoices,
   preconditionText,
   priceLevel,
   profileRows,
+  reasonText,
   removeVacation,
   saveEvSettings,
   setChargeMode,
@@ -157,14 +159,14 @@ export class OigEvTab extends LitElement {
     try {
       const found = await discoverEntities();
       this.discovery = found;
-      const chosen: Record<string, string> = {};
-      for (const role of DISCOVERY_ROLES) {
-        const best = found?.roles?.[role.key]?.[0];
-        if (best) chosen[role.key] = best.entity_id;
-      }
+      if (!found) return;
+      const chosen = initialChoices(found);
       this.chosen = chosen;
-      this.wizardControl = Boolean(chosen.ev_switch_entity);
-      this.wizardHeating = Boolean(chosen.ev_climate_entity);
+      const mode = found.current_settings?.ev_control_mode;
+      const heating = found.current_settings?.ev_climate_when;
+      // Configured before: show what is set. New: suggest what was found.
+      this.wizardControl = mode ? mode !== 'none' : Boolean(chosen.ev_switch_entity);
+      this.wizardHeating = heating ? heating !== 'off' : Boolean(chosen.ev_climate_entity);
     } finally {
       this.discovering = false;
     }
@@ -403,9 +405,15 @@ export class OigEvTab extends LitElement {
         <h3>Napojení auta a nabíječky</h3>
         <div class="sub">Návrh podle typu entity, jednotky, rozsahu, názvu a zařízení, ke kterému patří. Funguje s jakoukoli integrací. Zkontrolujte a uložte.</div>
         ${DISCOVERY_ROLES.map((role) => {
-          const candidates = found.roles[role.key] ?? [];
+          const found_ = found.roles[role.key] ?? [];
+          const configured = found.current?.[role.key];
+          // A configured entity the search did not rank stays selectable.
+          const candidates = configured && !found_.some((c) => c.entity_id === configured)
+            ? [{ entity_id: configured, name: configured, device: '', score: 0, reasons: [] }, ...found_]
+            : found_;
           const current = this.chosen[role.key] ?? '';
           const pick = candidates.find((c) => c.entity_id === current);
+          const note = current && current === configured ? 'nastaveno teď' : '';
           return html`
             <div class="role">
               <label for="role-${role.key}">${role.label}</label>
@@ -414,7 +422,7 @@ export class OigEvTab extends LitElement {
                 <option value="" ?selected=${!current}>${candidates.length ? 'Nepoužít' : 'Nic nenalezeno'}</option>
                 ${candidates.map((c) => html`<option value=${c.entity_id} ?selected=${c.entity_id === current}>${c.name} (${c.entity_id})</option>`)}
               </select>
-              ${pick ? html`<div class="reasons">${pick.device ? `${pick.device}: ` : ''}${pick.reasons.join(', ')}</div>` : nothing}
+              ${pick ? html`<div class="reasons">${[note, pick.device, reasonText(pick.reasons)].filter(Boolean).join(' · ')}</div>` : nothing}
             </div>`;
         })}
         <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px">

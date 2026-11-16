@@ -138,6 +138,52 @@ export interface Discovery {
   roles: Record<string, DiscoveryCandidate[]>;
   control_mode: 'none' | 'wallbox' | 'car';
   switch_inverted: boolean;
+  /** Entities configured now, per role (the wizard starts from these). */
+  current?: Record<string, string | null>;
+  current_settings?: {
+    ev_control_mode?: string | null;
+    ev_switch_inverted?: boolean | null;
+    ev_climate_when?: string | null;
+  };
+}
+
+const REASON_LABELS: Record<string, string> = {
+  class_battery: 'typ baterie',
+  name_soc: 'název jako nabití',
+  device_car: 'patří autu',
+  device_charger: 'patří nabíječce',
+  class_plug: 'typ zástrčka',
+  name_plug: 'název jako kabel',
+  name_limit: 'název jako limit nabíjení',
+  class_power: 'typ výkon',
+  name_power: 'název jako nabíjecí výkon',
+  name_charging: 'název jako nabíjení',
+  name_pause: 'název jako pozastavit/pokračovat',
+  device_charger_fast: 'patří nabíječce (reaguje rychle)',
+  device_car_cloud: 'patří autu (přes cloud výrobce)',
+  name_current: 'název jako nabíjecí proud',
+  name_car: 'název jako auto',
+  name_window: 'název jako vyhřívání oken',
+  weather_temperature: 'teplota z předpovědi počasí',
+  outdoor_temperature: 'venkovní teplota',
+  unavailable: 'teď nedostupná',
+};
+
+/** Czech text for the discovery reason codes. */
+export function reasonText(reasons: string[]): string {
+  return reasons.map((r) => REASON_LABELS[r] ?? r).join(', ');
+}
+
+/** Starting choice per role: what is configured, else the best candidate. */
+export function initialChoices(found: Discovery): Record<string, string> {
+  const chosen: Record<string, string> = {};
+  for (const role of DISCOVERY_ROLES) {
+    const current = found.current?.[role.key];
+    const best = found.roles?.[role.key]?.[0]?.entity_id;
+    const pick = current || best;
+    if (pick) chosen[role.key] = pick;
+  }
+  return chosen;
 }
 
 export function discoverEntities() {
@@ -162,24 +208,36 @@ export const DISCOVERY_ROLES: { key: string; label: string; required?: boolean }
   { key: 'ev_outside_temp_entity', label: 'Venkovní teplota' },
 ];
 
-/** Settings the wizard saves from the chosen entities. */
+/**
+ * Settings the wizard saves from the chosen entities.
+ *
+ * A mode already set (switching, heating rule) is kept; the wizard only
+ * turns it on or off. Current control stays a setting of its own.
+ */
 export function wizardValues(
   chosen: Record<string, string>,
-  discovery: Pick<Discovery, 'control_mode' | 'switch_inverted'>,
+  discovery: Pick<Discovery, 'control_mode' | 'switch_inverted' | 'current' | 'current_settings'>,
   options: { control: boolean; heating: boolean },
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const role of DISCOVERY_ROLES) {
     if (chosen[role.key]) values[role.key] = chosen[role.key];
   }
+  const settings = discovery.current_settings ?? {};
+  const switchChanged = chosen.ev_switch_entity !== (discovery.current?.ev_switch_entity ?? undefined);
   if (options.control && chosen.ev_switch_entity) {
-    values.ev_control_mode = discovery.control_mode === 'none' ? 'wallbox' : discovery.control_mode;
-    values.ev_switch_inverted = discovery.switch_inverted;
+    const keep = settings.ev_control_mode && settings.ev_control_mode !== 'none' && !switchChanged;
+    values.ev_control_mode = keep
+      ? settings.ev_control_mode
+      : discovery.control_mode === 'none' ? 'wallbox' : discovery.control_mode;
+    values.ev_switch_inverted = keep ? Boolean(settings.ev_switch_inverted) : discovery.switch_inverted;
   } else {
     values.ev_control_mode = 'none';
   }
-  if (chosen.ev_current_entity && options.control) values.ev_current_control = true;
-  if (chosen.ev_climate_entity) values.ev_climate_when = options.heating ? 'cold' : 'off';
+  if (chosen.ev_climate_entity) {
+    const when = settings.ev_climate_when;
+    values.ev_climate_when = options.heating ? (when && when !== 'off' ? when : 'cold') : 'off';
+  }
   return values;
 }
 

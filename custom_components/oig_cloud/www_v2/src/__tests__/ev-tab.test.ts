@@ -6,6 +6,8 @@ vi.mock('@/data/ha-client', () => ({ haClient: { fetchOIGAPI: (...args: unknown[
 import {
   dayTag,
   evStatus,
+  initialChoices,
+  reasonText,
   preconditionText,
   priceLevel,
   profileRows,
@@ -187,13 +189,32 @@ describe('car tab actions', () => {
 });
 
 describe('car data helpers', () => {
+  it('starts from what is configured and keeps the set modes', () => {
+    const found = {
+      control_mode: 'wallbox' as const,
+      switch_inverted: false,
+      roles: {
+        ev_charger_power_entity: [{ entity_id: 'sensor.ocpp_power', name: '', device: '', score: 7, reasons: ['device_charger'] }],
+        ev_switch_entity: [{ entity_id: 'switch.ocpp', name: '', device: '', score: 6, reasons: [] }],
+      },
+      current: { ev_charger_power_entity: 'sensor.wallbox_power', ev_switch_entity: 'switch.ocpp' },
+      current_settings: { ev_control_mode: 'car', ev_switch_inverted: true, ev_climate_when: 'calendar' },
+    };
+    const chosen = initialChoices(found);
+    expect(chosen.ev_charger_power_entity).toBe('sensor.wallbox_power');
+    const values = wizardValues({ ...chosen, ev_climate_entity: 'climate.c' }, found, { control: true, heating: true });
+    expect(values).toMatchObject({ ev_control_mode: 'car', ev_switch_inverted: true, ev_climate_when: 'calendar' });
+    expect(reasonText(['device_car', 'class_plug', 'x'])).toBe('patří autu, typ zástrčka, x');
+  });
+
   it('wizard values follow the choices', () => {
     const values = wizardValues(
       { ev_soc_entity: 's', ev_switch_entity: 'sw', ev_current_entity: 'n', ev_climate_entity: 'c' },
       { control_mode: 'car', switch_inverted: true },
       { control: true, heating: false },
     );
-    expect(values).toMatchObject({ ev_control_mode: 'car', ev_switch_inverted: true, ev_current_control: true, ev_climate_when: 'off' });
+    expect(values).toMatchObject({ ev_control_mode: 'car', ev_switch_inverted: true, ev_climate_when: 'off' });
+    expect(values).not.toHaveProperty('ev_current_control');
     expect(wizardValues({ ev_soc_entity: 's' }, { control_mode: 'none', switch_inverted: false }, { control: true, heating: true }).ev_control_mode).toBe('none');
   });
 

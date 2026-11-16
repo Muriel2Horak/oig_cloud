@@ -217,4 +217,7 @@ async def test_discover_endpoint(monkeypatch):
     monkeypatch.setattr(discovery, "entities_from_hass", lambda h: [])
     body = json.loads((await OIGCloudEvDiscoverView().get(_Request(hass), "123")).body)
     assert body["control_mode"] == "none"
+    assert body["current"]["ev_soc_entity"] == "sensor.car_soc"
+    assert body["current"]["ev_switch_entity"] is None
+    assert body["current_settings"]["ev_control_mode"] is None
     assert (await OIGCloudEvDiscoverView().get(_Request(hass), "999")).status == 404

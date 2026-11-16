@@ -5,8 +5,8 @@ matched on what Home Assistant says about an entity: its domain, device class,
 unit, value range and words in its id and name (Czech, English, German), plus
 the device it belongs to: a device with a plug sensor or a range is a car, a
 device with a charging power and a current setting is a charger. The setup
-wizard shows the best candidates per role with the reasons, and the user
-confirms; nothing is saved here.
+wizard shows the best candidates per role with the reasons (short codes the
+dashboard translates), and the user confirms; nothing is saved here.
 """
 
 from __future__ import annotations
@@ -150,26 +150,26 @@ def _score(role: str, e: EntityInfo, kind: Optional[str]) -> Optional[Candidate]
         if value is not None and not 0 <= value <= 100:
             return None
         if cls == "battery":
-            add(3, "device class battery")
+            add(3, "class_battery")
         if _has(text, _SOC):
-            add(2, "named like a state of charge")
+            add(2, "name_soc")
         if _has(text, _LIMIT) or _has(text, ("fuel", "palivo", "tank")):
             return None
         if kind == "car":
-            add(4, "belongs to a car")
+            add(4, "device_car")
         elif kind == "charger":
-            add(1, "belongs to a charger")
+            add(1, "device_charger")
     elif role == ROLE_PLUGGED:
         if e.domain != "binary_sensor":
             return None
         if cls == "plug":
-            add(4, "device class plug")
+            add(4, "class_plug")
         if _has(text, _PLUG):
-            add(2, "named like a cable or plug")
+            add(2, "name_plug")
         if kind == "car":
-            add(2, "belongs to a car")
+            add(2, "device_car")
         elif kind == "charger":
-            add(2, "belongs to a charger")
+            add(2, "device_charger")
     elif role == ROLE_LIMIT:
         if e.domain != "number":
             return None
@@ -177,22 +177,22 @@ def _score(role: str, e: EntityInfo, kind: Optional[str]) -> Optional[Candidate]
         if unit != "%" or (high is not None and high > 100):
             return None
         if _has(text, _LIMIT) or _has(text, _CHARGE):
-            add(3, "named like a charge limit")
+            add(3, "name_limit")
         if cls == "battery":
-            add(1, "device class battery")
+            add(1, "class_battery")
         if kind == "car":
-            add(3, "belongs to a car")
+            add(3, "device_car")
     elif role == ROLE_POWER:
         if e.domain != "sensor" or unit not in ("kW", "W"):
             return None
         if cls == "power":
-            add(1, "device class power")
+            add(1, "class_power")
         if _has(text, _CHARGE):
-            add(2, "named like charging power")
+            add(2, "name_power")
         if kind == "charger":
-            add(4, "belongs to a charger")
+            add(4, "device_charger")
         elif kind == "car":
-            add(2, "belongs to a car")
+            add(2, "device_car")
         if _has(text, ("max", "available", "dostup", "offered")):
             score -= 3
         if _has(text, ("export", "discharg", "vybit")):
@@ -203,18 +203,18 @@ def _score(role: str, e: EntityInfo, kind: Optional[str]) -> Optional[Candidate]
         if not _has(text, _CHARGE) and not _has(text, _PAUSE):
             return None
         if _has(text, _CHARGE):
-            add(2, "named like charging")
+            add(2, "name_charging")
         if _has(text, _PAUSE):
-            add(2, "named like pause or resume")
+            add(2, "name_pause")
         if _has(text, ("unlock", "odemkn", "reduced", "snizen", "lock", "timer", "casov", "schedule",
                        "pre_release", "beta", "update")):
             return None
         if _has(text, ("availab", "dostupn")):
             score -= 1.5  # takes the whole charger out of service, not just the charge
         if kind == "charger":
-            add(4, "belongs to a charger (answers quickly)")
+            add(4, "device_charger_fast")
         elif kind == "car":
-            add(2, "belongs to the car (vendor cloud)")
+            add(2, "device_car_cloud")
     elif role == ROLE_CURRENT:
         if e.domain != "number" or unit != "A":
             return None
@@ -222,35 +222,35 @@ def _score(role: str, e: EntityInfo, kind: Optional[str]) -> Optional[Candidate]
         if high is not None and not 6 <= high <= 80:
             return None
         if _has(text, _CURRENT) or _has(text, _CHARGE):
-            add(2, "named like charging current")
+            add(2, "name_current")
         if _has(text, ("icp", "breaker", "jistic", "main", "household")):
             return None
         if kind == "charger":
-            add(4, "belongs to a charger")
+            add(4, "device_charger")
     elif role == ROLE_CLIMATE:
         if e.domain != "climate":
             return None
         if kind == "car":
-            add(5, "belongs to a car")
+            add(5, "device_car")
         elif _has(text, _CAR) or _has(e.device_text, _CAR):
-            add(2, "named like a car")
+            add(2, "name_car")
         else:
             return None
     elif role == ROLE_WINDOW:
         if e.domain != "switch" or not _has(text, _WINDOW):
             return None
-        add(3, "named like window heating")
+        add(3, "name_window")
         if kind == "car":
-            add(3, "belongs to a car")
+            add(3, "device_car")
     elif role == ROLE_OUTSIDE:
         if e.domain == "weather":
             if _float(attrs.get("temperature")) is None:
                 return None
-            add(2, "weather forecast temperature")
+            add(2, "weather_temperature")
         elif e.domain == "sensor" and cls == "temperature":
             if not _has(text, _OUTSIDE):
                 return None
-            add(4, "outdoor temperature")
+            add(4, "outdoor_temperature")
             if kind == "car":
                 score -= 1  # the car's own reading is warm in a garage
         else:
@@ -260,7 +260,7 @@ def _score(role: str, e: EntityInfo, kind: Optional[str]) -> Optional[Candidate]
 
     if str(e.state) in ("unavailable", "unknown") and role not in (ROLE_CLIMATE,):
         score -= 2
-        reasons.append("currently unavailable")
+        reasons.append("unavailable")
     if score <= 0:
         return None
     return Candidate(e.entity_id, e.name or e.entity_id, e.device_name, score, reasons)

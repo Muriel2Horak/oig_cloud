@@ -66,7 +66,7 @@ def test_own_entities_and_lookalikes_are_left_out():
     assert "switch.kodiaq_unlock_cable_after_charging" not in switches
     currents = [c["entity_id"] for c in result["roles"]["ev_current_entity"]]
     assert "number.garage_charger_max_icp_current" not in currents
-    assert result["roles"]["ev_soc_entity"][0]["reasons"]
+    assert "device_car" in result["roles"]["ev_soc_entity"][0]["reasons"]
 
 
 def test_without_a_charger_the_car_switch_is_used_through_the_cloud():
