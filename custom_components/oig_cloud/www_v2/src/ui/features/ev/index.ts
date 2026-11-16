@@ -116,7 +116,7 @@ export class OigEvTab extends LitElement {
     .soc-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--green); }
     .soc-target { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; background: ${u(CSS_VARS.textPrimary)}; }
     .soc-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.85rem; }
-    .departure { flex: 0 0 auto; min-width: 180px; padding-left: 20px; border-left: 1px solid ${u(CSS_VARS.divider)}; }
+    .departure { flex: 0 0 auto; min-width: 200px; padding: 12px 16px; border-radius: 12px; background: rgba(150, 150, 150, 0.1); }
     .departure .big { font-size: 1.4rem; font-weight: 650; margin: 4px 0 2px; }
     .choice { margin-top: 18px; padding-top: 16px; border-top: 1px solid ${u(CSS_VARS.divider)}; }
     .seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 12px; background: rgba(150, 150, 150, 0.15); flex-wrap: wrap; }
@@ -144,6 +144,9 @@ export class OigEvTab extends LitElement {
     .day[aria-pressed='true'] { border-color: var(--blue); background: rgba(47, 125, 246, 0.12); }
     .day .d { font-size: 0.8rem; color: ${u(CSS_VARS.textSecondary)}; white-space: nowrap; }
     .day .t { font-size: 1.1rem; font-weight: 650; }
+    .day .t.past { color: ${u(CSS_VARS.textSecondary)}; font-weight: 400; text-decoration: line-through; }
+    .trip { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 8px 14px; border-radius: 10px; border: 1px solid ${u(CSS_VARS.divider)}; }
+    .trip.on { border-color: var(--blue); background: rgba(47, 125, 246, 0.12); }
     .tag { font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
     .tag.orange { color: var(--orange); background: rgba(240, 140, 46, 0.15); }
     .tag.green { color: var(--green); background: rgba(63, 178, 127, 0.15); }
@@ -174,7 +177,7 @@ export class OigEvTab extends LitElement {
     .empty { padding: 28px; text-align: center; color: ${u(CSS_VARS.textSecondary)}; }
 
     @media (max-width: 720px) {
-      .departure { border-left: 0; padding-left: 0; }
+      .departure { flex: 1 1 100%; }
       .days { grid-template-columns: repeat(7, minmax(84px, 1fr)); overflow-x: auto; }
       .field { grid-template-columns: 1fr; }
       .field .why { grid-column: 1; }
@@ -262,7 +265,7 @@ export class OigEvTab extends LitElement {
                   <div class="soc-fill" style="width:${Math.max(0, Math.min(100, soc))}%"></div>
                   ${target != null ? html`<div class="soc-target" style="left:calc(${Math.max(0, Math.min(100, target))}% - 1px)"></div>` : nothing}
                 </div>
-                <div class="soc-labels"><span><strong>${Math.round(soc)} %</strong> teď</span>${target != null ? html`<span class="muted">cíl ${Math.round(target)} %</span>` : nothing}</div>
+                <div class="soc-labels"><span><strong>${Math.round(soc)} %</strong> teď</span>${target != null ? html`<span class="muted">${soc >= target ? 'limit nabíjení' : 'cíl'} ${Math.round(target)} %</span>` : nothing}</div>
               </div>` : nothing}
           </div>
           <div class="departure">
@@ -345,13 +348,11 @@ export class OigEvTab extends LitElement {
             <button class="option" aria-pressed=${kind === o.kind} ?disabled=${this.busy} @click=${() => this.changeDay(day, o.kind)}>
               <span>${o.label}</span><span class="hint">${o.hint}</span>
             </button>`)}
-          <div class="option" style="border:1px solid ${kind === 'trip' ? 'var(--blue)' : 'transparent'}; border-radius:10px; padding:8px 14px">
-            <span>Dlouhá cesta</span>
-            <div class="row" style="margin-top:4px">
-              <input aria-label="Odjezd na cestu" type="time" .value=${keepTrip ?? this.tripTime}
-                @change=${(e: Event) => { this.tripTime = (e.target as HTMLInputElement).value; }}>
-              <button ?disabled=${this.busy} @click=${() => this.changeDay(day, 'trip', { departure: this.tripTime })}>Nabít naplno</button>
-            </div>
+          <div class="trip ${kind === 'trip' ? 'on' : ''}">
+            <span>Dlouhá cesta, odjezd</span>
+            <input aria-label="Odjezd na cestu" type="time" .value=${keepTrip ?? this.tripTime}
+              @change=${(e: Event) => { this.tripTime = (e.target as HTMLInputElement).value; }}>
+            <button ?disabled=${this.busy} @click=${() => this.changeDay(day, 'trip', { departure: this.tripTime })}>Nabít naplno</button>
           </div>
         </div>
         <div class="row" style="margin-top:12px">
@@ -385,12 +386,15 @@ export class OigEvTab extends LitElement {
           </div>
         </div>
         <div class="days" data-testid="ev-days">
-          ${days.map((d) => {
+          ${days.map((d, i) => {
             const chip = dayChip(d);
+            const index = this.week * 7 + i;
+            const label = index === 0 ? 'Dnes' : index === 1 ? 'Zítra' : dayTitle(d.date);
+            const past = Boolean(d.departure) && new Date(d.departure as string).getTime() < Date.now();
             return html`<button class="day" aria-pressed=${d.date === this.selectedDate}
               @click=${() => { this.selectedDate = this.selectedDate === d.date ? null : d.date; this.message = ''; }}>
-              <span class="d">${dayTitle(d.date)}</span>
-              <span class="t">${chip.time}</span>
+              <span class="d">${label}</span>
+              <span class="t ${past ? 'past' : ''}">${chip.time}</span>
               ${chip.tag ? html`<span class="tag ${chip.tone}">${chip.tag}</span>` : nothing}
             </button>`;
           })}

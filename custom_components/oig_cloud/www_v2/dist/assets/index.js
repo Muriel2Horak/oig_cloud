@@ -7555,7 +7555,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
                   <div class="soc-fill" style="width:${Math.max(0,Math.min(100,i))}%"></div>
                   ${r!=null?s`<div class="soc-target" style="left:calc(${Math.max(0,Math.min(100,r))}% - 1px)"></div>`:b}
                 </div>
-                <div class="soc-labels"><span><strong>${Math.round(i)} %</strong> teď</span>${r!=null?s`<span class="muted">cíl ${Math.round(r)} %</span>`:b}</div>
+                <div class="soc-labels"><span><strong>${Math.round(i)} %</strong> teď</span>${r!=null?s`<span class="muted">${i>=r?"limit nabíjení":"cíl"} ${Math.round(r)} %</span>`:b}</div>
               </div>`:b}
           </div>
           <div class="departure">
@@ -7612,13 +7612,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
             <button class="option" aria-pressed=${t===r.kind} ?disabled=${this.busy} @click=${()=>this.changeDay(e,r.kind)}>
               <span>${r.label}</span><span class="hint">${r.hint}</span>
             </button>`)}
-          <div class="option" style="border:1px solid ${t==="trip"?"var(--blue)":"transparent"}; border-radius:10px; padding:8px 14px">
-            <span>Dlouhá cesta</span>
-            <div class="row" style="margin-top:4px">
-              <input aria-label="Odjezd na cestu" type="time" .value=${i??this.tripTime}
-                @change=${r=>{this.tripTime=r.target.value}}>
-              <button ?disabled=${this.busy} @click=${()=>this.changeDay(e,"trip",{departure:this.tripTime})}>Nabít naplno</button>
-            </div>
+          <div class="trip ${t==="trip"?"on":""}">
+            <span>Dlouhá cesta, odjezd</span>
+            <input aria-label="Odjezd na cestu" type="time" .value=${i??this.tripTime}
+              @change=${r=>{this.tripTime=r.target.value}}>
+            <button ?disabled=${this.busy} @click=${()=>this.changeDay(e,"trip",{departure:this.tripTime})}>Nabít naplno</button>
           </div>
         </div>
         <div class="row" style="margin-top:12px">
@@ -7641,11 +7639,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
           </div>
         </div>
         <div class="days" data-testid="ev-days">
-          ${i.map(n=>{const o=Z5(n);return s`<button class="day" aria-pressed=${n.date===this.selectedDate}
+          ${i.map((n,o)=>{const l=Z5(n),c=this.week*7+o,p=c===0?"Dnes":c===1?"Zítra":Ia(n.date),u=!!n.departure&&new Date(n.departure).getTime()<Date.now();return s`<button class="day" aria-pressed=${n.date===this.selectedDate}
               @click=${()=>{this.selectedDate=this.selectedDate===n.date?null:n.date,this.message=""}}>
-              <span class="d">${Ia(n.date)}</span>
-              <span class="t">${o.time}</span>
-              ${o.tag?s`<span class="tag ${o.tone}">${o.tag}</span>`:b}
+              <span class="d">${p}</span>
+              <span class="t ${u?"past":""}">${l.time}</span>
+              ${l.tag?s`<span class="tag ${l.tone}">${l.tag}</span>`:b}
             </button>`})}
         </div>
         ${r?this.renderDayEditor(r):s`<div class="muted small" style="margin-top:10px">Klikněte na den, když pojedete jinak než obvykle. Státní svátky plán bere jako neděli.</div>`}
@@ -7747,7 +7745,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     .soc-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--green); }
     .soc-target { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; background: ${_e(d.textPrimary)}; }
     .soc-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.85rem; }
-    .departure { flex: 0 0 auto; min-width: 180px; padding-left: 20px; border-left: 1px solid ${_e(d.divider)}; }
+    .departure { flex: 0 0 auto; min-width: 200px; padding: 12px 16px; border-radius: 12px; background: rgba(150, 150, 150, 0.1); }
     .departure .big { font-size: 1.4rem; font-weight: 650; margin: 4px 0 2px; }
     .choice { margin-top: 18px; padding-top: 16px; border-top: 1px solid ${_e(d.divider)}; }
     .seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 12px; background: rgba(150, 150, 150, 0.15); flex-wrap: wrap; }
@@ -7775,6 +7773,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     .day[aria-pressed='true'] { border-color: var(--blue); background: rgba(47, 125, 246, 0.12); }
     .day .d { font-size: 0.8rem; color: ${_e(d.textSecondary)}; white-space: nowrap; }
     .day .t { font-size: 1.1rem; font-weight: 650; }
+    .day .t.past { color: ${_e(d.textSecondary)}; font-weight: 400; text-decoration: line-through; }
+    .trip { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 8px 14px; border-radius: 10px; border: 1px solid ${_e(d.divider)}; }
+    .trip.on { border-color: var(--blue); background: rgba(47, 125, 246, 0.12); }
     .tag { font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
     .tag.orange { color: var(--orange); background: rgba(240, 140, 46, 0.15); }
     .tag.green { color: var(--green); background: rgba(63, 178, 127, 0.15); }
@@ -7805,7 +7806,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     .empty { padding: 28px; text-align: center; color: ${_e(d.textSecondary)}; }
 
     @media (max-width: 720px) {
-      .departure { border-left: 0; padding-left: 0; }
+      .departure { flex: 1 1 100%; }
       .days { grid-template-columns: repeat(7, minmax(84px, 1fr)); overflow-x: auto; }
       .field { grid-template-columns: 1fr; }
       .field .why { grid-column: 1; }
