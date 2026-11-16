@@ -66,14 +66,18 @@ def model_daily_draw_kwh(coordinator: Any, day: date) -> float:
     return float(sum(float(slot.p80_kwh or 0.0) for slot in demand.slots))
 
 
-async def async_fetch_daily_change(
+async def async_fetch_daily_totals(
     hass: Any, statistic_ids: set[str], start: datetime, end: datetime
 ) -> Mapping[str, List[Any]]:
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import statistics_during_period
 
     def _read() -> Mapping[str, List[Any]]:
-        return statistics_during_period(hass, start, end, statistic_ids, "day", None, {"change"})
+        # "state" = the counter's last value of the day. The boiler energy
+        # sensors reset at midnight, and "change" double-counts every restart
+        # (the counter drops to 0 and comes back), e.g. 52 kWh on 5. 11. 2026
+        # for a 13 kWh day.
+        return statistics_during_period(hass, start, end, statistic_ids, "day", None, {"state"})
 
     return await get_instance(hass).async_add_executor_job(_read)
 
@@ -105,7 +109,7 @@ async def async_refresh_draw_scale(
     ids = {f"sensor.oig_{box_id}_boiler_{part}_energy" for part in ("fve", "grid", "alt")}
     today = dt_util.as_local(now).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
-        rows = await async_fetch_daily_change(
+        rows = await async_fetch_daily_totals(
             hass, ids, today - timedelta(days=CALIBRATION_DAYS), today
         )
     except Exception as err:  # recorder busy or missing: keep the last factor
@@ -115,9 +119,9 @@ async def async_refresh_draw_scale(
     for entity_rows in (rows or {}).values():
         for row in entity_rows or []:
             day = _row_day(row)
-            change = row.get("change")
-            if day is not None and isinstance(change, (int, float)) and change > 0:
-                measured[day] = measured.get(day, 0.0) + float(change)
+            total = row.get("state")
+            if day is not None and isinstance(total, (int, float)) and total > 0:
+                measured[day] = measured.get(day, 0.0) + float(total)
     days = sorted(measured)
     try:
         target = float(config.get("boiler_target_temp_c", 60.0))

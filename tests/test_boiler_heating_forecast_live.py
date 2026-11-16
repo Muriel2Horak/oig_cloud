@@ -146,18 +146,18 @@ async def test_calibration_scales_the_profile_draws_to_measured_heat():
     hass = SimpleNamespace(states=_States({"sensor.top": "60.0"}))
     days = [NOW - timedelta(days=k) for k in range(1, 8)]
     rows = {
-        "sensor.oig_123_boiler_alt_energy": [{"start": d.timestamp(), "change": 11.0} for d in days],
-        "sensor.oig_123_boiler_fve_energy": [{"start": d.timestamp(), "change": 0.0} for d in days],
-        "sensor.oig_123_boiler_grid_energy": [{"start": d.timestamp(), "change": 0.0} for d in days],
+        "sensor.oig_123_boiler_alt_energy": [{"start": d.timestamp(), "state": 11.0} for d in days],
+        "sensor.oig_123_boiler_fve_energy": [{"start": d.timestamp(), "state": 0.0} for d in days],
+        "sensor.oig_123_boiler_grid_energy": [{"start": d.timestamp(), "state": 0.0} for d in days],
     }
-    with patch.object(live, "async_fetch_daily_change", AsyncMock(return_value=rows)):
+    with patch.object(live, "async_fetch_daily_totals", AsyncMock(return_value=rows)):
         scale = await live.async_refresh_draw_scale(hass, runtime, now=NOW)
     loss = live.TANK_LOSS_W_PER_K * (60.0 - live.AMBIENT_TEMP_C) * 24 / 1000
     assert scale == pytest.approx((11.0 - loss) / 3.0, rel=1e-3)
     assert runtime.heating_draw_scale == scale
 
     # Once a day: a second call does not read statistics again.
-    with patch.object(live, "async_fetch_daily_change", AsyncMock(side_effect=AssertionError)):
+    with patch.object(live, "async_fetch_daily_totals", AsyncMock(side_effect=AssertionError)):
         assert await live.async_refresh_draw_scale(hass, runtime, now=NOW + timedelta(hours=2)) == scale
 
     forecast = boiler_heating_forecast(hass, runtime, _starts(4), now=NOW)
@@ -172,7 +172,7 @@ async def test_calibration_waits_for_the_demand_profile_before_settling():
     runtime.box_id = "123"
     hass = SimpleNamespace(states=_States({"sensor.top": "60.0"}))
     days = [NOW - timedelta(days=k) for k in range(1, 8)]
-    rows = {"sensor.oig_123_boiler_alt_energy": [{"start": d.timestamp(), "change": 11.0} for d in days]}
-    with patch.object(live, "async_fetch_daily_change", AsyncMock(return_value=rows)):
+    rows = {"sensor.oig_123_boiler_alt_energy": [{"start": d.timestamp(), "state": 11.0} for d in days]}
+    with patch.object(live, "async_fetch_daily_totals", AsyncMock(return_value=rows)):
         assert await live.async_refresh_draw_scale(hass, runtime, now=NOW) == 1.0
     assert getattr(runtime, "heating_draw_scale_at", None) is None
