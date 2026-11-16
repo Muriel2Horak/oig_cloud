@@ -53,6 +53,7 @@ describe('oig-ev-tab', () => {
     expect(root.querySelectorAll('[data-testid="ev-strip"] .slot')).toHaveLength(2);
     expect(root.querySelectorAll('[data-testid="ev-strip"] .bar')).toHaveLength(1);
     expect(root.querySelectorAll('[data-testid="ev-profile"] tr')).toHaveLength(8);
+    expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('4.70–6.00 Kč/kWh');
     el.remove();
   });
 

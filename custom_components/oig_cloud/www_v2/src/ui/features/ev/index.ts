@@ -59,7 +59,7 @@ export class OigEvTab extends LitElement {
       <div class="strip" data-testid="ev-strip">
         ${slots.map((s) => {
           const level = priceLevel(s.price, min, max);
-          const bg = `rgba(${Math.round(80 + 175 * level)}, ${Math.round(170 - 110 * level)}, 80, 0.25)`;
+          const bg = `rgba(${Math.round(60 + 190 * level)}, ${Math.round(185 - 125 * level)}, 80, 0.6)`;
           const h = (s.energy_kwh / maxKwh) * 100;
           const title = `${formatTime(s.start)} · ${s.price.toFixed(2)} Kč/kWh${s.energy_kwh > 0 ? ` · ${s.energy_kwh.toFixed(2)} kWh` : ''}${s.estimated ? ' · odhad ceny' : ''}`;
           return html`<div class="slot" style="background:${bg}" title=${title}>
@@ -67,10 +67,14 @@ export class OigEvTab extends LitElement {
           </div>`;
         })}
       </div>
-      <div class="axis"><span>${formatTime(slots[0].start)}</span><span>${formatTime(slots[slots.length - 1].start)}</span></div>
+      <div class="axis">
+        <span>${formatTime(slots[0].start)}</span>
+        <span data-testid="ev-price-range">${min.toFixed(2)}–${max.toFixed(2)} Kč/kWh</span>
+        <span>${formatTime(slots[slots.length - 1].start)}</span>
+      </div>
       <div class="legend">
-        <span><span class="dot" style="background:rgba(80,170,80,0.5)"></span>levná elektřina</span>
-        <span><span class="dot" style="background:rgba(255,60,80,0.5)"></span>drahá elektřina</span>
+        <span><span class="dot" style="background:rgba(60,185,80,0.6)"></span>levná elektřina</span>
+        <span><span class="dot" style="background:rgba(250,60,80,0.6)"></span>drahá elektřina</span>
         <span><span class="dot" style="background:#4caf50"></span>nabíjení ze sítě</span>
         <span><span class="dot" style="background:#ff9800"></span>nabíjení z přetoku</span>
       </div>
