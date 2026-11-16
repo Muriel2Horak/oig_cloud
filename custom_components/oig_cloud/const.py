@@ -188,7 +188,7 @@ DEFAULT_LIVE_LOAD_REPLAN = False
 # (battery_forecast/data/price_forecast.py). Shadow scores it without using it.
 CONF_PRICE_FORECAST_ENTITY = "price_forecast_entity"
 CONF_PRICE_FORECAST_MODE = "price_forecast_mode"
-DEFAULT_PRICE_FORECAST_MODE = "shadow"
+DEFAULT_PRICE_FORECAST_MODE = "off"
 PRICE_FORECAST_MODES = ("off", "shadow", "on")
 
 KEY_BOILER_RUNTIMES = "boiler_runtimes"

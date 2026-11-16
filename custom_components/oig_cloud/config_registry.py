@@ -419,7 +419,9 @@ _register(
     # read every planner cycle: no reload needed.
     Field("price_forecast_entity", "battery", str, default="", entity_domain="sensor",
           optional=True),
-    Field("price_forecast_mode", "battery", str, default="shadow",
+    # Off: replayed on real data, even a perfect 36-120 h forecast saved
+    # 2.1 CZK in nine days (docs/spot-price-forecast.md).
+    Field("price_forecast_mode", "battery", str, default="off",
           enum=("off", "shadow", "on")),
 )
 

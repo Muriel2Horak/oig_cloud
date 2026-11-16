@@ -1,5 +1,7 @@
 # Předpověď ceny spotu v plánovači
 
+**Stav 16. 11. 2026: vypnuto.** Přehrání plánovače na datech 7.–15. 11. ukázalo, že ani dokonalá znalost cen na 36, 72 nebo 120 h dopředu neušetří víc než 2,1 Kč za 9 dní (asi 90 Kč za rok). Martin rozhodl předpověď nepoužívat. Kód zůstává jako volba, výchozí režim je „Vypnuto“.
+
 OTE zveřejňuje ceny na zítřek kolem 13:00, ráno tedy plánovač vidí jen do půlnoci. Doplněk Energy Price Forecast EU (licence MIT, zóna CZ, 15 minut, 48 h zdarma) doplní ceny, které OTE ještě nezveřejnilo. Integrace je přepočítá stejným ceníkem jako zveřejněné ceny (`pricing/price_formula.py`): obchodní přirážka, distribuce VT/NT a DPH, u výkupu srážka.
 
 ## Instalace (Martin)
