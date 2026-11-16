@@ -228,16 +228,15 @@ def resolve_day(
     override = calendar.days.get(day, DayOverride())
     holiday = holiday_name(day) if holidays_enabled else None
 
-    def at(hour_or_time: object) -> datetime:
+    def at(hour_or_time: "time | int") -> datetime:
         when = hour_or_time if isinstance(hour_or_time, time) else time(int(hour_or_time), 0)
         return datetime.combine(day, when, tzinfo=tzinfo)  # type: ignore[arg-type]
 
     if override.kind == DAY_HOME:
         return EvDay(day, DAY_HOME, None, 0.0, holiday=holiday, precondition=override.precondition)
     if override.kind == DAY_TRIP:
-        departure = override.departure or trip_departure
         return EvDay(
-            day, DAY_TRIP, at(departure), 100.0, full_charge=True,
+            day, DAY_TRIP, at(override.departure or trip_departure), 100.0, full_charge=True,
             holiday=holiday, precondition=override.precondition,
         )
     if override.kind is None and calendar.on_vacation(day):
@@ -254,7 +253,7 @@ def resolve_day(
     hour, need = _profile_departure(profile, weekday)
     if override.kind == DAY_WORKDAY and hour is None:
         hour, need = _profile_departure(profile, _WORKDAY_FALLBACK)
-    departure = None
+    departure: Optional[datetime] = None
     if override.departure is not None:
         departure = at(override.departure)
     elif hour is not None:

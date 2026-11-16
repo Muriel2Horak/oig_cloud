@@ -178,7 +178,7 @@ class EvController:
             value = float(raw)
         except (TypeError, ValueError):
             return None
-        return value if value == value else None
+        return None if math.isnan(value) else value
 
     async def _call(self, domain: str, service: str, data: Dict[str, Any]) -> bool:
         try:

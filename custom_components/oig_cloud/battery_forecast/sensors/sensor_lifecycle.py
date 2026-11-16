@@ -6,6 +6,7 @@ import asyncio
 import copy
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -210,7 +211,7 @@ def _live_load_watts(state) -> float | None:
         value = float(state.state)
     except (AttributeError, TypeError, ValueError):
         return None
-    return value if value == value else None
+    return None if math.isnan(value) else value
 
 
 def _subscribe_live_load(sensor) -> None:

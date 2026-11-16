@@ -11,6 +11,7 @@ confirms; nothing is saved here.
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -57,7 +58,7 @@ def _float(value: Any) -> Optional[float]:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return number if number == number else None
+    return None if math.isnan(number) else number
 
 
 @dataclass(frozen=True)
@@ -287,14 +288,15 @@ def discover(
         switch_info = next((e for e in usable if e.entity_id == switch["entity_id"]), None)
         kind = kinds.get(switch_info.device_id or "") if switch_info else None
         mode = "car" if kind == "car" else "wallbox"
-    inverted = bool(switch) and _has(_norm(switch["entity_id"]), ("pause", "pozastav")) and not _has(
-        _norm(switch["entity_id"]), ("resume", "pokrac")
-    )
+    switch_id = _norm(switch["entity_id"]) if switch is not None else ""
+    inverted = _has(switch_id, ("pause", "pozastav")) and not _has(switch_id, ("resume", "pokrac"))
     return {"roles": roles, "control_mode": mode, "switch_inverted": inverted}
 
 
 def entities_from_hass(hass: Any) -> List[EntityInfo]:
     """Every state with its registry name and device (none without registry)."""
+    ent_reg: Any = None
+    dev_reg: Any = None
     try:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er

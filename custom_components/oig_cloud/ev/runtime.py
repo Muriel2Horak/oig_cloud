@@ -13,6 +13,7 @@ background task after setup and then once a day, never inside an entity's
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
@@ -88,7 +89,7 @@ def _float_state(hass: Any, entity_id: Optional[str]) -> Optional[float]:
         value = float(state.state)
     except (TypeError, ValueError):
         return None
-    return value if value == value else None  # NaN guard
+    return None if math.isnan(value) else value
 
 
 def _row_start(row: Mapping[str, Any]) -> Optional[datetime]:
@@ -395,6 +396,7 @@ class EvRuntime:
 
         day = self.resolve_next_day(now)
         self.next_day = day
+        need: Optional[NextNeed]
         if override is not None:
             need = override_need(
                 override, now, soc_pct=soc, limit_pct=limit,
