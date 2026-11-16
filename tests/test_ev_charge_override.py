@@ -194,3 +194,32 @@ def test_summary_carries_calendar_state():
     assert summary["next_day"]["source"] == "holiday"
     assert summary["charge_override"] is None
     assert summary["vacations"] == []
+
+
+async def test_start_wires_the_controller_and_the_plug_listener(monkeypatch):
+    from custom_components.oig_cloud.ev import control as ev_control
+
+    unsubs = []
+    monkeypatch.setattr(ev_runtime, "async_track_time_interval", lambda hass, cb, every: unsubs.append("profile") or (lambda: unsubs.remove("profile")))
+    monkeypatch.setattr(ev_control, "async_track_time_interval", lambda hass, cb, every: unsubs.append("tick") or (lambda: unsubs.remove("tick")))
+    listeners = []
+
+    def track(hass, entities, cb):
+        listeners.append((entities, cb))
+        return lambda: listeners.clear()
+
+    monkeypatch.setattr("homeassistant.helpers.event.async_track_state_change_event", track)
+    started = []
+    monkeypatch.setattr(ev_runtime, "start_background", lambda hass, coro, name=None: (started.append(name), coro.close()))
+    runtime, replans = _runtime()
+    await runtime.async_start()
+    assert sorted(unsubs) == ["profile", "tick"]
+    assert listeners[0][0] == ["binary_sensor.plug"]
+    listeners[0][1](None)
+    assert replans == [1]
+    monkeypatch.setattr(ev_runtime, "async_dispatcher_send", lambda hass, signal: None)
+    runtime.publish(None)
+    assert "oig_cloud_ev_control" in started
+    await runtime.async_stop()
+    assert unsubs == [] and listeners == []
+    assert runtime.controller is None

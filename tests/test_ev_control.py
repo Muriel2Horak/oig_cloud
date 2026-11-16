@@ -206,3 +206,19 @@ def test_precondition_without_departure():
         plugged_only=True, already_done_for=None,
     )
     assert decision.reason == "no_departure"
+
+
+async def test_an_inverted_pause_switch_and_an_input_boolean_work_too():
+    options = {"ev_control_mode": "wallbox", "ev_switch_entity": "input_boolean.pause", "ev_switch_inverted": True}
+    runtime = _Runtime({"input_boolean.pause": "off"}, options, plan=_plan(False), day=_day())
+    await EvController(runtime).async_apply(NOW)
+    assert runtime.hass.services.calls == [("input_boolean", "turn_on", {"entity_id": "input_boolean.pause"})]
+
+
+async def test_an_unsupported_switch_domain_is_reported_not_called():
+    options = {"ev_control_mode": "wallbox", "ev_switch_entity": "light.charger"}
+    runtime = _Runtime({"light.charger": "on"}, options, plan=_plan(False), day=_day())
+    ctl = EvController(runtime)
+    await ctl.async_apply(NOW)
+    assert runtime.hass.services.calls == []
+    assert "unsupported" in ctl.as_dict()["error"]

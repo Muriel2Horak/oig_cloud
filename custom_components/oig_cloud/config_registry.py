@@ -413,6 +413,7 @@ _register(
           show_if=_EV_ON),
     Field("ev_switch_entity", "battery", str, default="", entity_domain="switch",
           optional=True, show_if=_EV_ON),
+    Field("ev_switch_inverted", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_current_control", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_current_entity", "battery", str, default="", entity_domain="number",
           optional=True, show_if=_EV_ON),

@@ -104,3 +104,117 @@ async def test_unknown_box_is_404():
     hass = _hass(None)
     response = await OIGCloudEvView().get(_Request(hass), "999")
     assert response.status == 404
+
+
+# ── write endpoints ────────────────────────────────────────────────────────
+
+from custom_components.oig_cloud.ev.api import (  # noqa: E402
+    OIGCloudEvChargeView,
+    OIGCloudEvDayView,
+    OIGCloudEvDiscoverView,
+    OIGCloudEvVacationView,
+)
+
+
+class _Store:
+    def __init__(self):
+        self.saved = []
+
+    async def async_load(self):
+        return None
+
+    async def async_save(self, data):
+        self.saved.append(data)
+
+
+class _JsonRequest(_Request):
+    def __init__(self, hass, payload):
+        super().__init__(hass)
+        self._payload = payload
+
+    async def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+def _with_runtime():
+    hass = _hass(None)
+    runtime = EvRuntime(hass, "e", hass.config_entries.async_entries(DOMAIN)[0].options)
+    runtime._store = _Store()
+    hass.data[DOMAIN]["e"][KEY_EV_RUNTIME] = runtime
+    return hass, runtime
+
+
+async def test_charge_now_and_back_to_plan():
+    hass, runtime = _with_runtime()
+    response = await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "now"}), "123")
+    assert response.status == 200
+    assert json.loads(response.body)["charge_override"]["mode"] == "now"
+    response = await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "plan"}), "123")
+    assert json.loads(response.body)["charge_override"] is None
+    assert runtime.charge_override is None
+
+
+async def test_charge_by_validates_the_time():
+    hass, runtime = _with_runtime()
+    bad = await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "by", "time": "25:99"}), "123")
+    assert bad.status == 400
+    ok = await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "by", "time": "05:00"}), "123")
+    assert ok.status == 200
+    assert runtime.charge_override.mode == "by"
+    assert (await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "x"}), "123")).status == 400
+    assert (await OIGCloudEvChargeView().post(_JsonRequest(hass, ValueError()), "123")).status == 400
+
+
+async def test_day_endpoint_sets_and_validates():
+    hass, runtime = _with_runtime()
+    day = (datetime.now() + timedelta(days=2)).date().isoformat()
+    response = await OIGCloudEvDayView().post(
+        _JsonRequest(hass, {"date": day, "kind": "trip", "departure": "05:30", "precondition": True}), "123"
+    )
+    assert response.status == 200
+    days = json.loads(response.body)["days"]
+    assert any(d["date"] == day and d["source"] == "trip" for d in days)
+    for payload in ({"date": "x"}, {"date": day, "kind": "boat"}, {"date": day, "departure": "noon"},
+                    {"date": day, "precondition": "yes"}):
+        assert (await OIGCloudEvDayView().post(_JsonRequest(hass, payload), "123")).status == 400
+
+
+async def test_vacation_add_and_remove():
+    hass, runtime = _with_runtime()
+    start = (datetime.now() + timedelta(days=3)).date()
+    end = start + timedelta(days=4)
+    payload = {"start": start.isoformat(), "end": end.isoformat()}
+    response = await OIGCloudEvVacationView().post(_JsonRequest(hass, payload), "123")
+    assert json.loads(response.body)["vacations"] == [[start.isoformat(), end.isoformat()]]
+    response = await OIGCloudEvVacationView().delete(_JsonRequest(hass, payload), "123")
+    assert json.loads(response.body)["vacations"] == []
+    reversed_range = {"start": end.isoformat(), "end": start.isoformat()}
+    assert (await OIGCloudEvVacationView().post(_JsonRequest(hass, reversed_range), "123")).status == 400
+    assert (await OIGCloudEvVacationView().post(_JsonRequest(hass, {"start": "x"}), "123")).status == 400
+
+
+async def test_write_endpoints_need_the_car_enabled():
+    hass = _hass(None)
+    response = await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "now"}), "123")
+    assert response.status == 409
+    assert (await OIGCloudEvChargeView().post(_JsonRequest(hass, {"mode": "now"}), "999")).status == 404
+
+
+async def test_view_lists_the_days_and_control(monkeypatch):
+    hass, runtime = _with_runtime()
+    body = json.loads((await OIGCloudEvView().get(_Request(hass), "123")).body)
+    assert len(body["days"]) == 14
+    assert body["control"] is None
+    assert body["charge_override"] is None
+
+
+async def test_discover_endpoint(monkeypatch):
+    hass, _ = _with_runtime()
+    from custom_components.oig_cloud.ev import discovery
+
+    monkeypatch.setattr(discovery, "entities_from_hass", lambda h: [])
+    body = json.loads((await OIGCloudEvDiscoverView().get(_Request(hass), "123")).body)
+    assert body["control_mode"] == "none"
+    assert (await OIGCloudEvDiscoverView().get(_Request(hass), "999")).status == 404

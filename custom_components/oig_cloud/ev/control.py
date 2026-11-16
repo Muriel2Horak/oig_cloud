@@ -3,8 +3,12 @@
 What switches the charging is the user's choice (``ev_control_mode``):
 
 * ``none``: nothing; an automation reads the plan sensor;
-* ``wallbox``: the wallbox's pause/resume switch (on = may charge);
-* ``car``: the car's own charging switch through the vendor cloud.
+* ``wallbox``: a charger's switch (any integration; answers within minutes);
+* ``car``: the car's own charging switch (a vendor cloud: slower, fewer
+  commands).
+
+The switch is any ``switch`` or ``input_boolean``; ``ev_switch_inverted``
+reads it as "pause" (on = paused) for chargers that expose it that way.
 
 Rules:
 
@@ -47,6 +51,7 @@ from ..const import (
     CONF_EV_OUTSIDE_TEMP_ENTITY,
     CONF_EV_PHASES,
     CONF_EV_SWITCH_ENTITY,
+    CONF_EV_SWITCH_INVERTED,
     CONF_EV_WINDOW_HEATING_ENTITY,
     DEFAULT_EV_CLIMATE_COLD_C,
     DEFAULT_EV_CLIMATE_MINUTES,
@@ -57,6 +62,7 @@ from ..const import (
     DEFAULT_EV_CURRENT_CONTROL,
     DEFAULT_EV_FAILSAFE,
     DEFAULT_EV_PHASES,
+    DEFAULT_EV_SWITCH_INVERTED,
 )
 from .precondition import PreconditionDecision, decide_precondition
 
@@ -117,8 +123,8 @@ class EvController:
         if mode in (MODE_WALLBOX, MODE_CAR) and switch and (
             options.get(CONF_EV_FAILSAFE, DEFAULT_EV_FAILSAFE) == "resume"
         ):
-            if self._switch_on(switch) is False:
-                await self._call("switch", "turn_on", {"entity_id": switch})
+            if self._charging_allowed(switch, options) is False:
+                await self._set_charging(switch, options, True)
 
     async def _async_tick(self, _now: Any = None) -> None:
         await self.async_apply()
@@ -132,6 +138,22 @@ class EvController:
         if state is None or str(state.state) in ("unavailable", "unknown"):
             return None
         return str(state.state).lower() in _ON
+
+    def _charging_allowed(self, entity_id: str, options: Dict[str, Any]) -> Optional[bool]:
+        on = self._switch_on(entity_id)
+        if on is None:
+            return None
+        inverted = bool(options.get(CONF_EV_SWITCH_INVERTED, DEFAULT_EV_SWITCH_INVERTED))
+        return (not on) if inverted else on
+
+    async def _set_charging(self, entity_id: str, options: Dict[str, Any], allow: bool) -> bool:
+        inverted = bool(options.get(CONF_EV_SWITCH_INVERTED, DEFAULT_EV_SWITCH_INVERTED))
+        domain = entity_id.split(".", 1)[0]
+        if domain not in ("switch", "input_boolean"):
+            self.last_error = f"unsupported switch entity {entity_id}"
+            return False
+        turn_on = allow != inverted
+        return await self._call(domain, "turn_on" if turn_on else "turn_off", {"entity_id": entity_id})
 
     def _number(self, entity_id: Optional[str]) -> Optional[Any]:
         if not entity_id:
@@ -187,7 +209,7 @@ class EvController:
         plan = self.runtime.last_plan
         if mode not in (MODE_WALLBOX, MODE_CAR) or not switch or plan is None or not plugged:
             return
-        current = self._switch_on(switch)
+        current = self._charging_allowed(switch, options)
         if current is None:
             return
         settle = SETTLE[mode]
@@ -212,7 +234,7 @@ class EvController:
             return
         if last is not None and last.on == want and now - last.at <= settle:
             return  # sent, the device has not answered yet
-        if await self._call("switch", "turn_on" if want else "turn_off", {"entity_id": switch}):
+        if await self._set_charging(switch, options, want):
             self.last_command = _Command(want, now)
 
     async def _apply_current(self, options: Dict[str, Any], plan: Any) -> None:

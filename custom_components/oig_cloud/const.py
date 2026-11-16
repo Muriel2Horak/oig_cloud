@@ -178,7 +178,10 @@ DEFAULT_EV_TRIP_DEPARTURE = "07:00"
 CONF_EV_CONTROL_MODE = "ev_control_mode"
 DEFAULT_EV_CONTROL_MODE = "none"
 EV_CONTROL_MODES = ("none", "wallbox", "car")
-CONF_EV_SWITCH_ENTITY = "ev_switch_entity"
+CONF_EV_SWITCH_ENTITY = "ev_switch_entity"  # switch or input_boolean
+# Some chargers expose "pause" (on = paused) instead of "charge" (on = charging).
+CONF_EV_SWITCH_INVERTED = "ev_switch_inverted"
+DEFAULT_EV_SWITCH_INVERTED = False
 CONF_EV_CURRENT_ENTITY = "ev_current_entity"  # optional number (A)
 CONF_EV_CURRENT_CONTROL = "ev_current_control"
 DEFAULT_EV_CURRENT_CONTROL = False
