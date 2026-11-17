@@ -113,3 +113,29 @@ def test_a_change_after_our_request_to_another_mode_is_still_manual(switch_runti
     runtime.state.last_changed = runtime.clock.now - timedelta(minutes=2)
 
     assert auto_switch.manual_hold_until(runtime.sensor) is not None
+
+
+async def test_home_ups_entered_without_us_gets_the_charge_current_once(switch_runtime, monkeypatch):  # noqa: F811
+    """Every mode change resets the box to 50 A; a Home UPS after a restart or a
+    manual switch gets the configured current written once."""
+    from custom_components.oig_cloud.control import proxy_control as pc
+
+    runtime = switch_runtime
+    monkeypatch.setattr(pc, "ups_charge_current", lambda hass, entry, box_id: 125)
+    readback = {"value": 50.0}
+    monkeypatch.setattr(pc, "read_proxy_number", lambda hass, box_id, key, control=False: readback["value"])
+    runtime.state.state = "Home UPS"
+    runtime.state.last_changed = runtime.clock.now - timedelta(minutes=1)
+
+    # Not while the box may still be applying the mode.
+    assert not await auto_switch.ensure_ups_charge_current(runtime.sensor, runtime.clock.now)
+    runtime.clock.now += timedelta(minutes=2)
+    assert await auto_switch.ensure_ups_charge_current(runtime.sensor, runtime.clock.now)
+    assert runtime.calls[-1][3] == {"charge_current": 125, "acknowledgement": True}
+    # Once per Home UPS stretch, even if the readback still says 50 A.
+    assert not await auto_switch.ensure_ups_charge_current(runtime.sensor, runtime.clock.now)
+    # Already at the configured current: nothing.
+    readback["value"] = 125.0
+    runtime.state.last_changed = runtime.clock.now
+    runtime.clock.now += timedelta(minutes=5)
+    assert not await auto_switch.ensure_ups_charge_current(runtime.sensor, runtime.clock.now)

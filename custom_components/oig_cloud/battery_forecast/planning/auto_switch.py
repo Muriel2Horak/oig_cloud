@@ -299,6 +299,8 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
 
     current_mode = get_current_box_mode(sensor)
     if current_mode == desired_mode:
+        if desired_mode == "Home UPS":
+            await ensure_ups_charge_current(sensor, now)
         return
 
     context = SwitchContext(
@@ -315,6 +317,55 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
     await ensure_current_mode(
         sensor, desired_mode, "watchdog enforcement", context=context
     )
+
+
+# Every mode change ends with the box resetting its AC charge current to 50 A
+# (inverter command MUCHGC0500). A Home UPS the integration did not enter
+# itself (restart, manual switch) therefore runs at 50 A unless the configured
+# current is written again; this is done once per Home UPS stretch, after the
+# box finished applying the mode.
+UPS_CHARGE_SETTLE = timedelta(minutes=2)
+
+
+async def ensure_ups_charge_current(sensor: Any, now: datetime) -> bool:
+    """Write the configured Home UPS charge current once per Home UPS stretch."""
+    hass = getattr(sensor, "_hass", None)
+    entry = getattr(sensor, "_config_entry", None)
+    box_id = getattr(sensor, "_box_id", None)
+    if hass is None or entry is None or not box_id:
+        return False
+    from ...control import proxy_control as pc
+
+    try:
+        amps = pc.ups_charge_current(hass, entry, box_id)
+        current = pc.read_proxy_number(hass, box_id, pc.PARAM_CHARGE_CURRENT)
+    except Exception as err:  # proxy entities missing: nothing to do
+        _LOGGER.debug("[AutoModeSwitch] UPS charge current check skipped: %s", err)
+        return False
+    if not amps or (current is not None and abs(current - amps) < 1):
+        return False
+    since = _get_last_mode_change_time(sensor)
+    if since is None or now - since < UPS_CHARGE_SETTLE:
+        return False
+    if getattr(sensor, "_ups_charge_sent_for", None) == since:
+        return False  # already written in this Home UPS stretch
+    shield = get_service_shield(sensor)
+    if shield is not None and (
+        getattr(shield, "pending", None) or getattr(shield, "queue", None) or getattr(shield, "running", None)
+    ):
+        return False  # our own mode/charge steps are still running
+    sensor._ups_charge_sent_for = since
+    try:
+        await hass.services.async_call(
+            DOMAIN, "set_box_mode", {"charge_current": amps, "acknowledgement": True}, blocking=False
+        )
+    except Exception as err:  # never break the watchdog
+        _LOGGER.warning("[AutoModeSwitch] UPS charge current write failed: %s", err)
+        return False
+    _LOGGER.info(
+        "[AutoModeSwitch] Home UPS at %s A after a mode change: writing %s A", current, amps
+    )
+    return True
 
 
 def get_planned_mode_for_time(
