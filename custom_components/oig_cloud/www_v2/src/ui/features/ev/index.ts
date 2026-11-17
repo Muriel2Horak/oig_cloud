@@ -15,7 +15,6 @@ import {
   DISCOVERY_ROLES,
   evHeadline,
   hhmm,
-  hourlyTimeline,
   initialChoices,
   preconditionText,
   profileRows,
@@ -29,7 +28,6 @@ import {
   type Discovery,
   type EvData,
   type EvDay,
-  type HourBar,
 } from '@/data/ev-data';
 
 const u = unsafeCSS;
@@ -136,6 +134,8 @@ export class OigEvTab extends LitElement {
     .bar.pv .kwh { color: var(--orange); }
     .bar.estimated .fill { opacity: 0.55; }
     .hours { display: flex; gap: 3px; margin-top: 4px; }
+    .bars.slots, .hours.slots { gap: 1px; }
+    .bars.slots .bar .fill { border-radius: 1px 1px 0 0; }
     .hours span { flex: 1 1 0; text-align: center; font-size: 0.72rem; color: ${u(CSS_VARS.textSecondary)}; min-width: 0; overflow: visible; white-space: nowrap; }
     .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 0.8rem; color: ${u(CSS_VARS.textSecondary)}; }
     .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
@@ -307,37 +307,54 @@ export class OigEvTab extends LitElement {
 
   // ── timeline ──────────────────────────────────────────────────────────
   private renderTimeline(data: EvData) {
+    // The plan's own 15-minute slots: the final price (spot, supplier fee,
+    // distribution, VAT) the battery planner and the flow use, not recomputed.
     const slots = data.plan?.timeline ?? [];
     if (!slots.length) return nothing;
-    const bars = hourlyTimeline(slots);
-    const prices = bars.map((b) => b.price);
+    const prices = slots.map((s) => s.price);
     const min = Math.min(...prices);
     const max = Math.max(...prices);
-    const every = bars.length > 48 ? 6 : bars.length > 16 ? 3 : 1;
-    const estimated = bars.some((b) => b.estimated);
-    const height = (b: HourBar) => (max > min ? 25 + ((b.price - min) / (max - min)) * 75 : 60);
+    const hours = slots.length / 4;
+    const every = hours > 48 ? 12 : hours > 24 ? 6 : hours > 12 ? 3 : 1;
+    const estimated = slots.some((s) => s.estimated);
+    const height = (price: number) => (max > min ? 25 + ((price - min) / (max - min)) * 75 : 60);
+    // kWh of each charging block, written over its first slot.
+    const blockKwh: Record<number, number> = {};
+    let blockStart = -1;
+    slots.forEach((s, i) => {
+      if (s.energy_kwh > 0.01) {
+        if (blockStart < 0) blockStart = i;
+        blockKwh[blockStart] = (blockKwh[blockStart] ?? 0) + s.energy_kwh;
+      } else {
+        blockStart = -1;
+      }
+    });
     return html`
       <section class="card">
         <div class="row" style="justify-content:space-between">
           <h2>Do odjezdu</h2>
-          <span class="muted small" data-testid="ev-price-range">cena ${min.toFixed(1)}–${max.toFixed(1)} Kč/kWh</span>
+          <span class="muted small" data-testid="ev-price-range">cena ${min.toFixed(2)}–${max.toFixed(2)} Kč/kWh</span>
         </div>
-        <div class="bars" data-testid="ev-strip">
-          ${bars.map((b) => {
-            const charging = b.energyKwh > 0.01;
-            const pv = charging && b.pvKwh > b.energyKwh / 2;
-            return html`<div class="bar ${charging ? 'charging' : ''} ${pv ? 'pv' : ''} ${b.estimated ? 'estimated' : ''}"
-              title="${String(b.hour).padStart(2, '0')}:00 · ${b.price.toFixed(2)} Kč/kWh${charging ? ` · ${b.energyKwh.toFixed(1)} kWh` : ''}${b.estimated ? ' · odhad ceny' : ''}">
-              ${charging ? html`<span class="kwh">${b.energyKwh.toFixed(1)}</span>` : nothing}
-              <div class="fill" style="height:${height(b)}%"></div>
+        <div class="bars slots" data-testid="ev-strip">
+          ${slots.map((s, i) => {
+            const charging = s.energy_kwh > 0.01;
+            const pv = charging && s.pv_kwh > s.grid_kwh;
+            return html`<div class="bar ${charging ? 'charging' : ''} ${pv ? 'pv' : ''} ${s.estimated ? 'estimated' : ''}"
+              title="${hhmm(s.start)} · ${s.price.toFixed(2)} Kč/kWh${charging ? ` · ${s.energy_kwh.toFixed(2)} kWh` : ''}${s.estimated ? ' · odhad ceny' : ''}">
+              ${blockKwh[i] !== undefined ? html`<span class="kwh">${blockKwh[i].toFixed(1)}</span>` : nothing}
+              <div class="fill" style="height:${height(s.price)}%"></div>
             </div>`;
           })}
         </div>
-        <div class="hours">${bars.map((b, i) => html`<span>${i % every === 0 ? String(b.hour).padStart(2, '0') : ''}</span>`)}</div>
+        <div class="hours slots">${slots.map((s) => {
+          const d = new Date(s.start);
+          const show = d.getMinutes() === 0 && d.getHours() % every === 0;
+          return html`<span>${show ? String(d.getHours()).padStart(2, '0') : ''}</span>`;
+        })}</div>
         <div class="legend">
-          <span><span class="sw" style="background:var(--blue)"></span>nabíjení ze sítě (kWh)</span>
+          <span><span class="sw" style="background:var(--blue)"></span>nabíjení ze sítě (kWh za blok)</span>
           <span><span class="sw" style="background:var(--orange)"></span>z přetoků FVE</span>
-          <span>výška sloupce = cena v dané hodině</span>
+          <span>sloupec = čtvrthodina, výška = cena včetně distribuce a DPH</span>
           ${estimated ? html`<span>světlé sloupce: ceny ještě nejsou vyhlášené, počítá se s odhadem</span>` : nothing}
         </div>
       </section>

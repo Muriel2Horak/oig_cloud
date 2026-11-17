@@ -425,38 +425,6 @@ export function formatTime(iso: string | null | undefined): string {
 
 // ── car tab, plain-language summary ────────────────────────────────────
 
-export interface HourBar {
-  start: string;
-  hour: number;
-  price: number;
-  energyKwh: number;
-  pvKwh: number;
-  estimated: boolean;
-}
-
-/** Quarter-hour slots summed per hour (price = mean) for a readable axis. */
-export function hourlyTimeline(slots: EvSlot[]): HourBar[] {
-  const bars: HourBar[] = [];
-  let current: (HourBar & { n: number }) | null = null;
-  for (const s of slots) {
-    const d = new Date(s.start);
-    const key = `${d.toDateString()} ${d.getHours()}`;
-    if (!current || current.start !== key) {
-      current = { start: key, hour: d.getHours(), price: 0, energyKwh: 0, pvKwh: 0, estimated: false, n: 0 };
-      bars.push(current);
-    }
-    current.price += s.price;
-    current.energyKwh += s.energy_kwh;
-    current.pvKwh += s.pv_kwh;
-    current.estimated = current.estimated || s.estimated;
-    current.n += 1;
-  }
-  return bars.map((b) => {
-    const { n, ...bar } = b as HourBar & { n: number };
-    return { ...bar, price: n ? bar.price / n : 0 };
-  });
-}
-
 /** Charging blocks as "02:00–03:15" (contiguous charging quarter-hours). */
 export function chargingWindows(slots: EvSlot[]): string[] {
   const windows: string[] = [];

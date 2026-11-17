@@ -60,14 +60,15 @@ describe('oig-ev-tab', () => {
     return el;
   }
 
-  it('says when the car charges, with an hourly axis', async () => {
+  it('says when the car charges and shows every 15-minute slot as it is', async () => {
     const el = await mount({ enabled: true, car: { soc_pct: 30, plugged_in: true, capacity_kwh: 26.3 }, need_pct: 79, plan: plan as any, profile: {} });
     const root = el.shadowRoot!;
     expect(root.querySelector('[data-testid="ev-status"]')!.textContent).toMatch(/^Nabije se .*02:00–02:15$/);
-    // 01:45 and 02:00 are two different hours.
+    // One bar per quarter hour, the plan's own price (no hourly averaging).
     expect(root.querySelectorAll('[data-testid="ev-strip"] .bar')).toHaveLength(2);
+    expect(root.querySelector('[data-testid="ev-strip"] .bar')!.getAttribute('title')).toContain('6.00 Kč/kWh');
     expect(root.querySelectorAll('[data-testid="ev-strip"] .bar.charging')).toHaveLength(1);
-    expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('cena 4.7–6.0 Kč/kWh');
+    expect(root.querySelector('[data-testid="ev-price-range"]')!.textContent).toBe('cena 4.70–6.00 Kč/kWh');
     el.remove();
   });
 
