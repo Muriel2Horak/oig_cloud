@@ -112,3 +112,8 @@ Všechno je obecné. Integrace nezná značku auta ani nabíječky, ovládací e
   - `POST` a `DELETE /ev/vacation` `{start, end}`;
   - `GET /ev` nově vrací i `days` (14 dní), `next_day`, `charge_override`, `vacations` a `control`.
 - **Záložka Auto** má tři části. Plán: stav, volby nabíjení, upozornění na svátek, pás cen, řízení a topení. Odjezdy: 14 dní, úprava dne, dovolená a profil. Napojení: průvodce.
+
+## Vlastní cíl nabíjení a testovací prostředí (17. 11. 2026)
+
+- **Nabíjet do** (`ev_target_limit_pct`, 0 = limit v autě): plán počítá s cílem uživatele místo limitu v autě. Bez přepínače `ev_set_car_limit` auto skončí na svém limitu a plán počítá s nižší z obou hodnot. S přepínačem integrace limit v autě před každým nabíjením (nebo 15 minut před ním) přepíše na cíl, se zaokrouhlením na krok entity (Škoda po 10 %) a nejvýš jednou za 10 minut. To je pro auta, která si limit po nabití vracejí (Kodiaq na 80 %). Nastavení je na záložce Auto v „Nastavení auta“.
+- **Místní testy podle CI:** `.ha-env` v hlavní složce je teď Python 3.14.3 a HA 2026.8.1, nainstalované z `requirements-dev.txt` s hashi, stejně jako v CI. Tři dřívější chyby prostředí (pylint `ChatLog`, vlákno `_run_safe_shutdown_loop` z pycares v `test_api_chmu_more` a `test_oig_cloud_api`) byly jen rozdíl starého prostředí (Python 3.12, HA 2025.1.4). Celá sada prochází bez chyby. Staré prostředí je v `.ha-env-py312-ha2025.1`.

@@ -74,6 +74,10 @@ MODE_CAR = "car"
 # about once a minute; the car cloud is slower and rate-limited.
 SETTLE = {MODE_WALLBOX: timedelta(minutes=3), MODE_CAR: timedelta(minutes=10)}
 TICK = timedelta(minutes=1)
+# The car's limit is set this long before a planned charge, and a limit
+# command is not repeated sooner (car clouds answer in minutes).
+LIMIT_LEAD = timedelta(minutes=15)
+LIMIT_SETTLE = timedelta(minutes=10)
 # A manual change without a known departure holds this long.
 MANUAL_HOLD_FALLBACK = timedelta(hours=12)
 # Mains phase voltage (CZ, ČSN EN 50160): amps from planned kW.
@@ -98,6 +102,7 @@ def amps_for_power(power_kw: float, phases: int, low: float, high: float) -> int
 class EvController:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
+        self._last_limit_cmd: Optional[tuple] = None
         self.hass = runtime.hass
         self.manual_hold_until: Optional[datetime] = None
         self.last_command: Optional[_Command] = None
@@ -262,12 +267,45 @@ class EvController:
             if saved is None:
                 self.runtime.control_state["restore_limit"] = value
                 await self.runtime.async_save()
-            await self._call("number", "set_value", {"entity_id": entity, "value": 100})
-        elif not trip and saved is not None:
+            await self._set_limit(now, entity, state, 100)
+            return
+        if not trip and saved is not None:
             if abs(value - float(saved)) >= 1:
-                await self._call("number", "set_value", {"entity_id": entity, "value": float(saved)})
+                await self._set_limit(now, entity, state, float(saved))
             self.runtime.control_state.pop("restore_limit", None)
             await self.runtime.async_save()
+            return
+        # The user's target, written into the car when a charge is due: many
+        # cars put their limit back (e.g. to 80 %) after every charge.
+        target = self.runtime.user_target_limit()
+        plan = self.runtime.last_plan
+        if (
+            target
+            and self.runtime.set_car_limit()
+            and plan is not None
+            and (plan.charge_now or self._charge_soon(now, plan))
+            and value < target - 0.5
+        ):
+            await self._set_limit(now, entity, state, target)
+
+    @staticmethod
+    def _charge_soon(now: datetime, plan: Any) -> bool:
+        start = getattr(plan, "next_start", None)
+        return start is not None and start - now <= LIMIT_LEAD
+
+    async def _set_limit(self, now: datetime, entity: str, state: Any, value: float) -> None:
+        """Set the car's limit within its range and step, once per settle time."""
+        low = float(state.attributes.get("min", 0) or 0)
+        high = float(state.attributes.get("max", 100) or 100)
+        step = float(state.attributes.get("step", 1) or 1)
+        wanted = min(high, max(low, math.ceil(value / step - 1e-9) * step))
+        if abs(float(state.state) - wanted) < 0.5:
+            return
+        last = self._last_limit_cmd
+        if last is not None and last[0] == wanted and now - last[1] < LIMIT_SETTLE:
+            return  # sent; the car cloud has not answered yet
+        if await self._call("number", "set_value", {"entity_id": entity, "value": wanted}):
+            self._last_limit_cmd = (wanted, now)
 
     async def _apply_precondition(self, now: datetime, options: Dict[str, Any], plugged: bool) -> None:
         climate = options.get(CONF_EV_CLIMATE_ENTITY)

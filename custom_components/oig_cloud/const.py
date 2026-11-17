@@ -185,6 +185,13 @@ DEFAULT_EV_SWITCH_INVERTED = False
 CONF_EV_CURRENT_ENTITY = "ev_current_entity"  # optional number (A)
 CONF_EV_CURRENT_CONTROL = "ev_current_control"
 DEFAULT_EV_CURRENT_CONTROL = False
+# The user's own charge target (0 = the car's limit), and whether the
+# integration writes it into the car before each charge (cars that reset their
+# limit after charging).
+CONF_EV_TARGET_LIMIT_PCT = "ev_target_limit_pct"
+DEFAULT_EV_TARGET_LIMIT_PCT = 0
+CONF_EV_SET_CAR_LIMIT = "ev_set_car_limit"
+DEFAULT_EV_SET_CAR_LIMIT = False
 CONF_EV_RAISE_LIMIT_FOR_TRIP = "ev_raise_limit_for_trip"
 DEFAULT_EV_RAISE_LIMIT_FOR_TRIP = False
 # Heating the car before departure.

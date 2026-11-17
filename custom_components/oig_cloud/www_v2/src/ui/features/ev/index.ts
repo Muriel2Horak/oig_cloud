@@ -84,6 +84,8 @@ export class OigEvTab extends LitElement {
   @state() private chosen: Record<string, string> = {};
   @state() private wizardControl = true;
   @state() private wizardHeating = true;
+  @state() private targetLimit = 0;
+  @state() private setCarLimit = false;
 
   static styles = css`
     :host { display: block; font-family: ${u(CSS_VARS.fontFamily)}; color: ${u(CSS_VARS.textPrimary)}; --blue: #2f7df6; --orange: #f08c2e; --green: #3fb27f; }
@@ -230,6 +232,8 @@ export class OigEvTab extends LitElement {
       const heating = found.current_settings?.ev_climate_when;
       this.wizardControl = mode ? mode !== 'none' : Boolean(this.chosen.ev_switch_entity);
       this.wizardHeating = heating ? heating !== 'off' : Boolean(this.chosen.ev_climate_entity);
+      this.targetLimit = Number(found.current_settings?.ev_target_limit_pct ?? 0) || 0;
+      this.setCarLimit = Boolean(found.current_settings?.ev_set_car_limit);
     } finally {
       this.discovering = false;
     }
@@ -237,7 +241,12 @@ export class OigEvTab extends LitElement {
 
   private saveSettings(): void {
     if (!this.discovery) return;
-    const values = wizardValues(this.chosen, this.discovery, { control: this.wizardControl, heating: this.wizardHeating });
+    const values = wizardValues(this.chosen, this.discovery, {
+      control: this.wizardControl,
+      heating: this.wizardHeating,
+      targetLimit: this.targetLimit,
+      setCarLimit: this.setCarLimit,
+    });
     void this.run(async () => {
       const res = await saveEvSettings(values);
       return res.ok ? res : null;
@@ -457,6 +466,22 @@ export class OigEvTab extends LitElement {
               </div>`;
             })}
           </div>`)}
+        <div class="group" data-testid="ev-target-limit">
+          <h3>Kam nabíjet</h3>
+          <div class="field">
+            <label for="ev-target">Nabíjet do</label>
+            <select id="ev-target" .value=${String(this.targetLimit)}
+              @change=${(e: Event) => { this.targetLimit = Number((e.target as HTMLSelectElement).value); }}>
+              <option value="0" ?selected=${this.targetLimit === 0}>podle limitu v autě</option>
+              ${[50, 60, 70, 80, 90, 100].map((v) => html`<option value=${String(v)} ?selected=${this.targetLimit === v}>${v} %</option>`)}
+            </select>
+            <div class="why">Plán počítá s tímto cílem místo limitu nastaveného v autě.</div>
+          </div>
+          <label class="check"><input type="checkbox" .checked=${this.setCarLimit} ?disabled=${!this.targetLimit || !this.chosen.ev_charge_limit_entity}
+            @change=${(e: Event) => { this.setCarLimit = (e.target as HTMLInputElement).checked; }}>
+            Před každým nabíjením nastavit tento limit i v autě (auto si ho po nabití vrací)</label>
+          ${this.targetLimit && !this.setCarLimit ? html`<div class="muted small" style="margin-top:6px">Bez přepínače auto skončí na svém limitu, plán s tím počítá.</div>` : nothing}
+        </div>
         <label class="check"><input type="checkbox" .checked=${this.wizardControl} ?disabled=${!this.chosen.ev_switch_entity}
           @change=${(e: Event) => { this.wizardControl = (e.target as HTMLInputElement).checked; }}>
           Integrace sama spíná nabíjení podle plánu</label>

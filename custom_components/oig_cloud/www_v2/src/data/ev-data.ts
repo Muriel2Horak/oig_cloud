@@ -144,6 +144,8 @@ export interface Discovery {
     ev_control_mode?: string | null;
     ev_switch_inverted?: boolean | null;
     ev_climate_when?: string | null;
+    ev_target_limit_pct?: number | null;
+    ev_set_car_limit?: boolean | null;
   };
 }
 
@@ -217,7 +219,7 @@ export const DISCOVERY_ROLES: { key: string; label: string; required?: boolean }
 export function wizardValues(
   chosen: Record<string, string>,
   discovery: Pick<Discovery, 'control_mode' | 'switch_inverted' | 'current' | 'current_settings'>,
-  options: { control: boolean; heating: boolean },
+  options: { control: boolean; heating: boolean; targetLimit?: number; setCarLimit?: boolean },
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const role of DISCOVERY_ROLES) {
@@ -234,6 +236,8 @@ export function wizardValues(
   } else {
     values.ev_control_mode = 'none';
   }
+  if (options.targetLimit !== undefined) values.ev_target_limit_pct = options.targetLimit;
+  if (options.setCarLimit !== undefined) values.ev_set_car_limit = options.targetLimit ? options.setCarLimit : false;
   if (chosen.ev_climate_entity) {
     const when = settings.ev_climate_when;
     values.ev_climate_when = options.heating ? (when && when !== 'off' ? when : 'cold') : 'off';

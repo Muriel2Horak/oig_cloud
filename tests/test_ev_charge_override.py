@@ -223,3 +223,17 @@ async def test_start_wires_the_controller_and_the_plug_listener(monkeypatch):
     await runtime.async_stop()
     assert unsubs == [] and listeners == []
     assert runtime.controller is None
+
+
+def test_user_target_limit_drives_the_plan(monkeypatch):
+    runtime, _ = _runtime(states={"number.limit": "80"}, options={"ev_charge_limit_entity": "number.limit"})
+    assert runtime.build_request(NOW).charge_limit_pct == 80.0
+    entry = SimpleNamespace(options={**OPTIONS, "ev_charge_limit_entity": "number.limit", "ev_target_limit_pct": 100})
+    runtime.hass.config_entries = SimpleNamespace(async_get_entry=lambda _id: entry)
+    # Without writing it into the car, the car still stops at its 80 %.
+    assert runtime.build_request(NOW).charge_limit_pct == 80.0
+    entry.options["ev_set_car_limit"] = True
+    assert runtime.build_request(NOW).charge_limit_pct == 100.0
+    entry.options["ev_target_limit_pct"] = 70
+    entry.options["ev_set_car_limit"] = False
+    assert runtime.build_request(NOW).charge_limit_pct == 70.0

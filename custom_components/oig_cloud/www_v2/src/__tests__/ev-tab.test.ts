@@ -182,6 +182,8 @@ describe('car tab actions', () => {
       ev_switch_entity: 'switch.charger',
       ev_control_mode: 'wallbox',
       ev_switch_inverted: false,
+      ev_target_limit_pct: 0,
+      ev_set_car_limit: false,
     });
     el.remove();
   });
@@ -204,6 +206,10 @@ describe('car data helpers', () => {
     const values = wizardValues({ ...chosen, ev_climate_entity: 'climate.c' }, found, { control: true, heating: true });
     expect(values).toMatchObject({ ev_control_mode: 'car', ev_switch_inverted: true, ev_climate_when: 'calendar' });
     expect(reasonText(['device_car', 'class_plug', 'x'])).toBe('patří autu, typ zástrčka, x');
+    const limit = wizardValues(chosen, found, { control: true, heating: true, targetLimit: 100, setCarLimit: true });
+    expect(limit).toMatchObject({ ev_target_limit_pct: 100, ev_set_car_limit: true });
+    const off = wizardValues(chosen, found, { control: true, heating: true, targetLimit: 0, setCarLimit: true });
+    expect(off).toMatchObject({ ev_target_limit_pct: 0, ev_set_car_limit: false });
   });
 
   it('wizard values follow the choices', () => {

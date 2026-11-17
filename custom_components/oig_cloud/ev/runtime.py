@@ -33,6 +33,8 @@ from ..const import (
     CONF_EV_PLUGGED_ENTITY,
     CONF_EV_SOC_ENTITY,
     CONF_EV_RAISE_LIMIT_FOR_TRIP,
+    CONF_EV_SET_CAR_LIMIT,
+    CONF_EV_TARGET_LIMIT_PCT,
     CONF_EV_TARGET_MODE,
     CONF_EV_TRIP_DEPARTURE,
     DEFAULT_EV_CAPACITY_KWH,
@@ -42,6 +44,8 @@ from ..const import (
     DEFAULT_EV_PHASES,
     DEFAULT_EV_HOLIDAYS,
     DEFAULT_EV_RAISE_LIMIT_FOR_TRIP,
+    DEFAULT_EV_SET_CAR_LIMIT,
+    DEFAULT_EV_TARGET_LIMIT_PCT,
     DEFAULT_EV_TARGET_MODE,
     DEFAULT_EV_TRIP_DEPARTURE,
     SIGNAL_EV_PLAN_UPDATED,
@@ -316,6 +320,17 @@ class EvRuntime:
             holidays_enabled=self._holidays(),
         )
 
+    def user_target_limit(self) -> float:
+        """The user's charge target in %, 0 when the car's own limit applies."""
+        try:
+            target = float(self.live_options().get(CONF_EV_TARGET_LIMIT_PCT, DEFAULT_EV_TARGET_LIMIT_PCT) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        return target if 0 < target <= 100 else 0.0
+
+    def set_car_limit(self) -> bool:
+        return bool(self.live_options().get(CONF_EV_SET_CAR_LIMIT, DEFAULT_EV_SET_CAR_LIMIT))
+
     def raise_limit_for_trip(self) -> bool:
         return bool(
             self.live_options().get(CONF_EV_RAISE_LIMIT_FOR_TRIP, DEFAULT_EV_RAISE_LIMIT_FOR_TRIP)
@@ -378,9 +393,16 @@ class EvRuntime:
         if plugged_entity:
             state = self.hass.states.get(plugged_entity)
             plugged = state is not None and str(state.state).lower() in _PLUGGED_STATES
-        limit = _float_state(self.hass, self.options.get(CONF_EV_CHARGE_LIMIT_ENTITY))
-        if limit is None or not 0 < limit <= 100:
-            limit = float(self.options.get(CONF_EV_CHARGE_LIMIT_PCT, DEFAULT_EV_CHARGE_LIMIT_PCT))
+        car_limit = _float_state(self.hass, self.options.get(CONF_EV_CHARGE_LIMIT_ENTITY))
+        limit = car_limit if car_limit is not None and 0 < car_limit <= 100 else float(
+            self.options.get(CONF_EV_CHARGE_LIMIT_PCT, DEFAULT_EV_CHARGE_LIMIT_PCT)
+        )
+        target = self.user_target_limit()
+        if target:
+            # The user's target. The car still stops at its own limit unless
+            # the integration may write the target into the car.
+            known_car_limit = car_limit is not None and 0 < car_limit <= 100
+            limit = target if self.set_car_limit() or not known_car_limit else min(target, limit)
         max_power = float(self.options.get(CONF_EV_MAX_POWER_KW, DEFAULT_EV_MAX_POWER_KW))
         target_mode = str(self.options.get(CONF_EV_TARGET_MODE, DEFAULT_EV_TARGET_MODE))
 

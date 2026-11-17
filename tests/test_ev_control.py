@@ -55,6 +55,12 @@ class _Runtime:
     def raise_limit_for_trip(self):
         return bool(self.options.get("ev_raise_limit_for_trip"))
 
+    def user_target_limit(self):
+        return 0.0
+
+    def set_car_limit(self):
+        return False
+
     async def async_save(self):
         self.saved += 1
 
@@ -220,3 +226,42 @@ async def test_an_unsupported_switch_domain_is_reported_not_called():
     await ctl.async_apply(NOW)
     assert runtime.hass.services.calls == []
     assert "unsupported" in ctl.as_dict()["error"]
+
+
+async def test_user_target_is_written_into_the_car_before_a_charge():
+    options = {"ev_charge_limit_entity": "number.limit", "ev_target_limit_pct": 100, "ev_set_car_limit": True}
+    runtime = _Runtime({"number.limit": ("80", {"min": 50, "max": 100, "step": 10})}, options, plan=_plan(True), day=_day())
+    runtime.user_target_limit = lambda: 100.0
+    runtime.set_car_limit = lambda: True
+    ctl = EvController(runtime)
+    await ctl.async_apply(NOW)
+    assert runtime.hass.services.calls == [("number", "set_value", {"entity_id": "number.limit", "value": 100.0})]
+    # Not repeated while the car cloud has not answered.
+    await ctl.async_apply(NOW + timedelta(minutes=2))
+    assert len(runtime.hass.services.calls) == 1
+    # The car put it back to 80 % after charging: set again at the next charge.
+    await ctl.async_apply(NOW + timedelta(minutes=30))
+    assert len(runtime.hass.services.calls) == 2
+
+
+async def test_user_target_waits_for_a_charge_and_respects_the_step():
+    options = {"ev_charge_limit_entity": "number.limit"}
+    plan = SimpleNamespace(charge_now=False, next_start=NOW + timedelta(hours=3), slots=[SimpleNamespace(power_kw=0.0)])
+    runtime = _Runtime({"number.limit": ("80", {"min": 50, "max": 100, "step": 10})}, options, plan=plan, day=_day())
+    runtime.user_target_limit = lambda: 95.0
+    runtime.set_car_limit = lambda: True
+    ctl = EvController(runtime)
+    await ctl.async_apply(NOW)
+    assert runtime.hass.services.calls == []  # no charge soon
+    plan.next_start = NOW + timedelta(minutes=10)
+    await ctl.async_apply(NOW)
+    assert runtime.hass.services.calls == [("number", "set_value", {"entity_id": "number.limit", "value": 100.0})]
+
+
+async def test_user_target_is_not_written_without_the_switch():
+    options = {"ev_charge_limit_entity": "number.limit"}
+    runtime = _Runtime({"number.limit": "80"}, options, plan=_plan(True), day=_day())
+    runtime.user_target_limit = lambda: 100.0
+    runtime.set_car_limit = lambda: False
+    await EvController(runtime).async_apply(NOW)
+    assert runtime.hass.services.calls == []

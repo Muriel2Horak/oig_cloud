@@ -232,6 +232,12 @@ class OIGCloudEvDiscoverView(HomeAssistantView):
         result["current"] = {role: options.get(role) or None for role in ROLES}
         result["current_settings"] = {
             key: options.get(key)
-            for key in ("ev_control_mode", "ev_switch_inverted", "ev_climate_when")
+            for key in (
+                "ev_control_mode",
+                "ev_switch_inverted",
+                "ev_climate_when",
+                "ev_target_limit_pct",
+                "ev_set_car_limit",
+            )
         }
         return web.json_response(result)

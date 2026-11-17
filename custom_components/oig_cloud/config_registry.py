@@ -417,6 +417,8 @@ _register(
     Field("ev_current_control", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_current_entity", "battery", str, default="", entity_domain="number",
           optional=True, show_if=_EV_ON),
+    Field("ev_target_limit_pct", "battery", int, default=0, min=0, max=100, step=5, show_if=_EV_ON),
+    Field("ev_set_car_limit", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_raise_limit_for_trip", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_climate_when", "battery", str, default="off",
           enum=("off", "cold", "always", "calendar"), show_if=_EV_ON),
