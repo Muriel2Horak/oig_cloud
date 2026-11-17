@@ -474,6 +474,14 @@ _register(
           reload_on_change=True),
     Field("boiler_current_power_entity", "boiler", str, default="", reload_on_change=True,
           entity_domain="sensor", optional=True),
+    # Set by the HA config flow so far; listed so the dashboard can show and
+    # fill them (boiler entity discovery).
+    Field("boiler_heater_switch_entity", "boiler", str, default="", reload_on_change=True,
+          entity_domain="switch", optional=True),
+    Field("boiler_alt_heater_switch_entity", "boiler", str, default="", reload_on_change=True,
+          entity_domain="switch", optional=True),
+    Field("boiler_circulation_pump_switch_entity", "boiler", str, default="",
+          reload_on_change=True, entity_domain="switch", optional=True),
     Field("boiler_alt_energy_sensor", "boiler", str, default="", reload_on_change=True,
           entity_domain="sensor", optional=True),
     Field("boiler_alt_energy_daily", "boiler", bool, default=False, reload_on_change=True),

@@ -40,6 +40,7 @@ import '@/ui/components/reload-overlay';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 import { ergoStyles } from '@/ui/features/onboarding/ergo-styles';
 import { haClient } from '@/data/ha-client';
+import { boilerSuggestions, discoverBoilerEntities, reasonText, type BoilerSuggestion } from '@/data/ev-data';
 import {
   loadAiStatus,
   renderAiStatusPanel,
@@ -110,6 +111,7 @@ const BOILER_TANK_KEYS = [
   'boiler_temp_sensor_top',
   'boiler_enable_second_thermometer',
   'boiler_temp_sensor_bottom',
+  'boiler_heater_switch_entity',
   'boiler_current_power_entity',
   'boiler_target_temp_c',
   'boiler_deadline_time',
@@ -195,6 +197,8 @@ export class OigSettings extends LitElement {
   @state() private aiValidation: AiValidationState = { kind: 'idle' };
   /** True while a RELOAD_SECTIONS save waits out the backend's config-entry reload (fix D). */
   @state() private reloading = false;
+  @state() private boilerFinding: 'idle' | 'busy' | 'done' | 'failed' = 'idle';
+  @state() private boilerFound: BoilerSuggestion[] = [];
 
   /** Cached entity catalog built from hassStates (rebuilt when hassStates changes). */
   private _entityCatalog: EntityEntry[] = [];
@@ -714,6 +718,58 @@ export class OigSettings extends LitElement {
     return this.renderField(section, f, disabled);
   }
 
+  /** Ask the backend which entities look like the boiler's. */
+  private async findBoilerEntities(): Promise<void> {
+    this.boilerFinding = 'busy';
+    const found = await discoverBoilerEntities();
+    if (!found) {
+      this.boilerFinding = 'failed';
+      return;
+    }
+    const states = this.hassStates;
+    const exists = (id: string) => (states ? id in states : true);
+    this.boilerFound = boilerSuggestions(found, exists);
+    this.boilerFinding = 'done';
+  }
+
+  private useBoilerSuggestion(s: BoilerSuggestion): void {
+    this.setPending('boiler', s.key, s.candidate.entity_id);
+    if (s.key === 'boiler_temp_sensor_bottom') this.setPending('boiler', 'boiler_enable_second_thermometer', true);
+    if (s.key === 'boiler_circulation_pump_switch_entity') this.setPending('boiler', 'boiler_circulation_enabled', true);
+    if (s.key === 'boiler_alt_heater_switch_entity' || s.key === 'boiler_alt_energy_sensor') {
+      this.setPending('boiler', 'boiler_has_alternative_heating', true);
+    }
+    this.boilerFound = this.boilerFound.filter((x) => x.key !== s.key);
+  }
+
+  private renderBoilerFinder() {
+    const found = this.boilerFound;
+    return html`
+      <div class="bsec" data-testid="boiler-finder" style="padding:10px 12px; margin:10px 0; border-radius:10px">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+          <span>Integrace umí entity bojleru najít sama. Návrh jen potvrdíte.</span>
+          <button class="discard" ?disabled=${this.boilerFinding === 'busy'} @click=${() => void this.findBoilerEntities()}
+            data-testid="boiler-find">${this.boilerFinding === 'busy' ? 'Hledám…' : 'Najít entity automaticky'}</button>
+        </div>
+        ${this.boilerFinding === 'failed' ? html`<div class="sub">Hledání se nepovedlo.</div>` : nothing}
+        ${this.boilerFinding === 'done' && !found.length ? html`<div class="sub" data-testid="boiler-find-none">Všechno potřebné je nastavené, nic jiného jsem nenašel.</div>` : nothing}
+        ${found.length ? html`
+          <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px" data-testid="boiler-suggestions">
+            ${found.map((s) => html`
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+                <div>
+                  <strong>${s.label}:</strong> ${s.candidate.name || s.candidate.entity_id}
+                  <div class="sub">${s.candidate.entity_id}${s.currentMissing ? ` · teď nastavené ${s.current} v HA neexistuje` : ''}${s.candidate.reasons.length ? ` · ${reasonText(s.candidate.reasons)}` : ''}</div>
+                </div>
+                <button class="discard" @click=${() => this.useBoilerSuggestion(s)}>Použít</button>
+              </div>`)}
+            <div><button class="discard" @click=${() => [...found].forEach((s) => this.useBoilerSuggestion(s))} data-testid="boiler-use-all">Použít vše</button>
+              <span class="sub">Pak nastavení uložte.</span></div>
+          </div>` : nothing}
+      </div>
+    `;
+  }
+
   /**
    * Render the boiler card with collapsible sub-sections and status badges.
    *
@@ -773,6 +829,8 @@ export class OigSettings extends LitElement {
         <h2>🔥 Bojler</h2>
         <div class="sub">Parametry inteligentního ohřevu vody — mirroruje průvodce v HA.</div>
 
+        ${this.renderBoilerFinder()}
+
         <!-- ══ Nádrž a čidla — OPEN by default ══ -->
         <details class="bsec" open>
           <summary>Nádrž a čidla</summary>
@@ -795,6 +853,7 @@ export class OigSettings extends LitElement {
             ${hasAlt ? html`
               ${field('boiler_alt_source_type') ? this.renderField(section, { ...field('boiler_alt_source_type')!, hint: undefined }) : nothing}
               ${altCostFieldWithHint ? this.renderField(section, altCostFieldWithHint) : nothing}
+              ${renderBoilerField('boiler_alt_heater_switch_entity')}
               ${renderBoilerField('boiler_alt_energy_sensor')}
               ${renderBoilerField('boiler_alt_energy_daily')}
               ${renderBoilerField('boiler_alt_power_kw')}
@@ -815,6 +874,7 @@ export class OigSettings extends LitElement {
           <div class="bsec-body">
             ${renderBoilerField('boiler_circulation_enabled')}
             ${circEnabled ? html`
+              ${renderBoilerField('boiler_circulation_pump_switch_entity')}
               ${renderBoilerField('boiler_circulation_lead_minutes')}
               ${renderBoilerField('boiler_circulation_run_minutes')}
               ${renderBoilerField('boiler_circulation_max_runs_per_day')}

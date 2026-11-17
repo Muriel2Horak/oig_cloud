@@ -171,6 +171,68 @@ const REASON_LABELS: Record<string, string> = {
   unavailable: 'teď nedostupná',
 };
 
+const BOILER_REASON_LABELS: Record<string, string> = {
+  class_temperature: 'teplotní čidlo',
+  name_boiler: 'název jako bojler',
+  device_boiler: 'patří bojleru',
+  name_top: 'název jako horní',
+  name_bottom: 'název jako dolní',
+  name_heater: 'název jako ohřev',
+  name_main: 'hlavní spínač zařízení',
+  class_energy: 'energie v kWh',
+  name_alt: 'název jako druhý zdroj (plyn, kotel)',
+  name_circulation: 'název jako cirkulace',
+  name_pump: 'název jako čerpadlo',
+  name_socket: 'zásuvka nebo relé',
+};
+Object.assign(REASON_LABELS, BOILER_REASON_LABELS);
+
+export interface BoilerDiscovery {
+  roles: Record<string, DiscoveryCandidate[]>;
+  current?: Record<string, string | null>;
+}
+
+export function discoverBoilerEntities() {
+  return haClient.fetchOIGAPI<BoilerDiscovery>(`/${INVERTER_SN}/boiler/discover`);
+}
+
+export const BOILER_ROLES: { key: string; label: string }[] = [
+  { key: 'boiler_temp_sensor_top', label: 'Horní teplota' },
+  { key: 'boiler_temp_sensor_bottom', label: 'Dolní teplota' },
+  { key: 'boiler_heater_switch_entity', label: 'Spínač ohřevu' },
+  { key: 'boiler_current_power_entity', label: 'Výkon ohřevu' },
+  { key: 'boiler_alt_heater_switch_entity', label: 'Spínač druhého zdroje' },
+  { key: 'boiler_alt_energy_sensor', label: 'Energie z druhého zdroje' },
+  { key: 'boiler_circulation_pump_switch_entity', label: 'Čerpadlo cirkulace' },
+];
+
+export interface BoilerSuggestion {
+  key: string;
+  label: string;
+  current: string | null;
+  candidate: DiscoveryCandidate;
+  /** Configured entity is missing from Home Assistant. */
+  currentMissing: boolean;
+}
+
+/**
+ * What to offer: the best candidate per setting when it differs from what is
+ * set, or when the setting is empty or points at an entity that no longer
+ * exists.
+ */
+export function boilerSuggestions(found: BoilerDiscovery, exists: (entityId: string) => boolean): BoilerSuggestion[] {
+  const out: BoilerSuggestion[] = [];
+  for (const role of BOILER_ROLES) {
+    const best = found.roles?.[role.key]?.[0];
+    if (!best) continue;
+    const current = found.current?.[role.key] ?? null;
+    const currentMissing = Boolean(current) && !exists(current as string);
+    if (current && !currentMissing) continue; // a working setting stays
+    out.push({ key: role.key, label: role.label, current, candidate: best, currentMissing });
+  }
+  return out;
+}
+
 /** Czech text for the discovery reason codes. */
 export function reasonText(reasons: string[]): string {
   return reasons.map((r) => REASON_LABELS[r] ?? r).join(', ');
