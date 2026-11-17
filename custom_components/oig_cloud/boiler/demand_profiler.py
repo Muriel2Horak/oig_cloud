@@ -327,8 +327,15 @@ def detect_draws(
 # ---------------------------------------------------------------------------
 
 def _get_day_category(dt: datetime) -> str:
-    """Return workday|weekend × spring|summer|autumn|winter category."""
-    is_weekend = dt.weekday() >= 5
+    """Return workday|weekend × spring|summer|autumn|winter category.
+
+    Czech public holidays count as weekend days: on the reference household's
+    draw data (8-11/2026) the first draw on a holiday came at 7:15-7:45 like on
+    a weekend (median 7:45), not at 6:30 like on a working day.
+    """
+    from ..ev.calendar import holiday_name
+
+    is_weekend = dt.weekday() >= 5 or holiday_name(dt.date()) is not None
     season = SEASON_MAP.get(dt.month, "spring")
     day_type = "weekend" if is_weekend else "workday"
     return f"{day_type}_{season}"

@@ -514,6 +514,8 @@ _register(
           reload_on_change=True),
     Field("boiler_circulation_min_gap_minutes", "boiler", int, default=None, min=10, max=480,
           reload_on_change=True),
+    Field("boiler_circulation_presence_entity", "boiler", str, default="", entity_domain="zone",
+          optional=True, reload_on_change=True),
     Field("boiler_legionella_interval_days", "boiler", int, default=None, min=0, max=30,
           reload_on_change=True),
     Field("boiler_legionella_target_temp_c", "boiler", float, default=None,

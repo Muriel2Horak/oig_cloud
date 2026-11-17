@@ -208,6 +208,7 @@ const ALL_REGISTRY_KEYS: Record<string, string[]> = {
     'boiler_volume_l', 'boiler_temp_sensor_top', 'boiler_temp_sensor_bottom',
     'boiler_enable_second_thermometer', 'boiler_current_power_entity',
     'boiler_heater_switch_entity', 'boiler_alt_heater_switch_entity', 'boiler_circulation_pump_switch_entity',
+    'boiler_circulation_presence_entity',
     'boiler_alt_energy_sensor', 'boiler_alt_energy_daily', 'boiler_alt_cost_kwh',
     'boiler_has_alternative_heating', 'boiler_target_temp_c', 'boiler_deadline_time',
     'boiler_alt_source_type', 'boiler_battery_cycle_cost_czk_kwh',

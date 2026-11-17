@@ -875,6 +875,7 @@ export class OigSettings extends LitElement {
             ${renderBoilerField('boiler_circulation_enabled')}
             ${circEnabled ? html`
               ${renderBoilerField('boiler_circulation_pump_switch_entity')}
+              ${renderBoilerField('boiler_circulation_presence_entity')}
               ${renderBoilerField('boiler_circulation_lead_minutes')}
               ${renderBoilerField('boiler_circulation_run_minutes')}
               ${renderBoilerField('boiler_circulation_max_runs_per_day')}

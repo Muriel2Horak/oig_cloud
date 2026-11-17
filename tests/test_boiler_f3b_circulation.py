@@ -334,6 +334,7 @@ def _make_runtime(
 
     coordinator = MagicMock()
     coordinator.config = config
+    coordinator._demand_profiler = None  # schedule set by the test, not rebuilt
 
     # Minimal protocol stubs
     read_model = MagicMock()
