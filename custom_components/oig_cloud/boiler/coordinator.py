@@ -159,19 +159,24 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # 5. Update plánu přes runtime seam (pokud je profil dostupný)
             runtime = None
-            if self._current_profile and self.entry_id:
+            if self.entry_id:
                 from .runtime import get_boiler_runtime
 
                 runtime = get_boiler_runtime(self.hass, self.entry_id, self.box_id)
-                if runtime:
+            if runtime:
+                if self._current_profile:
                     await runtime.async_create_plan()
                     self._current_plan = runtime.get_current_plan()
-                    # R5: tick circulation pump actuation each 5-min cycle
-                    await runtime._async_tick_circulation_pump()
-                    # R3: tick Home 5 maneuver actuation each 5-min cycle
-                    # (async_create_plan may return early on cache hit, so we must
-                    # tick independently to release the bit when a battery slot ends)
-                    await runtime._async_tick_home5_maneuver()
+                # R5: tick circulation pump actuation each 5-min cycle. It runs on
+                # the demand profile (draws from the tank temperature), not on the
+                # energy profile the plan needs: a gas-heated boiler has almost no
+                # electric history, so gating it on that profile left the pump
+                # unplanned (17. 11. 2026).
+                await runtime._async_tick_circulation_pump()
+                # R3: tick Home 5 maneuver actuation each 5-min cycle
+                # (async_create_plan may return early on cache hit, so we must
+                # tick independently to release the bit when a battery slot ends)
+                await runtime._async_tick_home5_maneuver()
 
             # 6. Aktuální slot a doporučení
             current_slot = None
