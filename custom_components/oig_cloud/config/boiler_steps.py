@@ -13,6 +13,7 @@ from ..const import (
     CONF_BOILER_CIRCULATION_LEAD_MINUTES,
     CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
+    CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_RUN_MINUTES,
     CONF_BOILER_DEADLINE_TIME,
@@ -425,6 +426,14 @@ def get_boiler_simple_7_schema(
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=10, max=480, step=10, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
+                default=defaults.get(CONF_BOILER_CIRCULATION_PRESENCE_ENTITY, ""),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["binary_sensor", "person", "device_tracker", "input_boolean"]
                 )
             ),
             # Anti-legionella (0 = vypnuto)

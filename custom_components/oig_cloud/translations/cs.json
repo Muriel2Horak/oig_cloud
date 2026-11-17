@@ -556,7 +556,8 @@
           "boiler_circulation_min_gap_minutes": "Min. pauza mezi běhy (min)",
           "boiler_legionella_interval_days": "Interval ochrany (dny)",
           "boiler_legionella_target_temp_c": "Teplota dezinfekce (°C)",
-          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)",
+          "boiler_circulation_presence_entity": "Cirkulace jen když je někdo doma"
         },
         "data_description": {
           "boiler_circulation_enabled": "Automaticky spouštět cirkulační čerpadlo TUV v naplánovaných časech",
@@ -566,7 +567,8 @@
           "boiler_circulation_min_gap_minutes": "Minimální pauza mezi dvěma běhy čerpadla (10–480 min)",
           "boiler_legionella_interval_days": "Ohřej na dezinfekční teplotu každých N dní (0 = vypnuto; doporučeno 7–14)",
           "boiler_legionella_target_temp_c": "Minimální teplota pro spolehlivé usmrcení legionelly (min 60 °C)",
-          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět",
+          "boiler_circulation_presence_entity": "Čidlo přítomnosti (např. binary_sensor, person, device_tracker). Prázdné = cirkulace jede bez ohledu na přítomnost. Když čidlo nehlásí stav, cirkulace jede."
         },
         "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Komfort a hygiena**\n\nNastav plánování cirkulace TUV a ochranu proti legionelle.",
         "title": "🚿 Bojler — Komfort a hygiena"

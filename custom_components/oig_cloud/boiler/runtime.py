@@ -21,6 +21,7 @@ from ..const import (
     CONF_BOILER_CIRCULATION_LEAD_MINUTES,
     CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
+    CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_RUN_MINUTES,
     CONF_BOILER_COLD_INLET_TEMP_C,
@@ -1310,6 +1311,32 @@ def _build_circulation_schedule(
     except Exception as err:  # pragma: no cover
         _LOGGER.warning("Circulation schedule build failed: %s", err, exc_info=True)
         return []
+
+
+_PRESENT_STATES = frozenset({"on", "home"})
+_ABSENT_STATES = frozenset({"off", "not_home"})
+
+
+def _circulation_presence_allows_run(hass: HomeAssistant, presence_entity: Optional[str]) -> bool:
+    """Return False only when the configured presence entity says nobody is home.
+
+    No entity configured → True (old behaviour). An entity that is missing,
+    unavailable, unknown or in any other state also yields True: a broken
+    presence sensor must not take hot water away (fail-open).
+    """
+    if not presence_entity:
+        return True
+    state = _state_for_entity(hass, presence_entity)
+    value = str(getattr(state, "state", "") or "").lower()
+    if value in _ABSENT_STATES:
+        return False
+    if value not in _PRESENT_STATES:
+        _LOGGER.debug(
+            "Circulation presence entity %s is %r — treating as present",
+            presence_entity,
+            value,
+        )
+    return True
 
 
 async def _async_actuate_circulation_pump(
@@ -2936,6 +2963,8 @@ class BoilerRuntime:
         - Feature disabled or no pump entity → always turn_off if we turned it on.
         - Inside a run window → turn_on (if not already on and entity available).
         - Outside all run windows → turn_off only if we turned it on (non-interference).
+        - Presence entity configured and reporting nobody home → treated as outside
+          every run window (so a pump we turned on is switched off).
         - Pump entity unavailable → emit CIRCULATION_PUMP_UNAVAILABLE reason code;
           do not turn_on.
         """
@@ -2984,6 +3013,11 @@ class BoilerRuntime:
             if run_start <= now < run_end:
                 inside_run = True
                 break
+
+        if inside_run and not _circulation_presence_allows_run(
+            self.hass, config.get(CONF_BOILER_CIRCULATION_PRESENCE_ENTITY)
+        ):
+            inside_run = False
 
         if inside_run and not self._circulation_pump_on:
             success = await _async_actuate_circulation_pump(

@@ -581,3 +581,139 @@ class TestCirculationRunsDto:
         config = {CONF_BOILER_CIRCULATION_ENABLED: True}
         result = _build_circulation_runs_dto(runtime, config)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Presence gate: circulation runs only while somebody is home
+# ---------------------------------------------------------------------------
+
+
+def _make_presence_runtime(
+    *,
+    presence_entity: str | None,
+    states: dict[str, str],
+    pump_on_by_us: bool = False,
+) -> Any:
+    """Runtime with per-entity states so pump and presence can differ."""
+    from custom_components.oig_cloud.const import (
+        CONF_BOILER_CIRCULATION_ENABLED,
+        CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
+        CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
+    )
+
+    config: dict[str, Any] = {
+        CONF_BOILER_CIRCULATION_ENABLED: True,
+        CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY: "switch.circ_pump",
+    }
+    if presence_entity is not None:
+        config[CONF_BOILER_CIRCULATION_PRESENCE_ENTITY] = presence_entity
+    runtime = _make_runtime(config=config)
+
+    def _get(entity_id: str) -> Any:
+        if entity_id not in states:
+            return None
+        state = MagicMock()
+        state.state = states[entity_id]
+        return state
+
+    runtime.hass.states.get = MagicMock(side_effect=_get)
+    runtime._circulation_runs = [(_dt(8, 45), _dt(8, 55), "morning")]
+    runtime._circulation_pump_on = pump_on_by_us
+    return runtime
+
+
+async def _tick_at(runtime: Any, now: datetime) -> None:
+    with patch("custom_components.oig_cloud.boiler.runtime.dt_util") as mock_dt:
+        mock_dt.now.return_value = now
+        await runtime._async_tick_circulation_pump()
+
+
+class TestCirculationPresenceGate:
+    @pytest.mark.asyncio
+    async def test_nobody_home_skips_turn_on_inside_run(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="binary_sensor.nekdo_doma",
+            states={"switch.circ_pump": "off", "binary_sensor.nekdo_doma": "off"},
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_not_called()
+        assert runtime._circulation_pump_on is False
+
+    @pytest.mark.asyncio
+    async def test_somebody_home_turns_on_inside_run(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="binary_sensor.nekdo_doma",
+            states={"switch.circ_pump": "off", "binary_sensor.nekdo_doma": "on"},
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_called_once_with(
+            "switch", "turn_on", {"entity_id": "switch.circ_pump"}, blocking=False
+        )
+        assert runtime._circulation_pump_on is True
+
+    @pytest.mark.asyncio
+    async def test_everybody_leaves_mid_run_turns_off_our_pump(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="binary_sensor.nekdo_doma",
+            states={"switch.circ_pump": "on", "binary_sensor.nekdo_doma": "off"},
+            pump_on_by_us=True,
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_called_once_with(
+            "switch", "turn_off", {"entity_id": "switch.circ_pump"}, blocking=False
+        )
+        assert runtime._circulation_pump_on is False
+
+    @pytest.mark.asyncio
+    async def test_person_or_tracker_home_counts_as_present(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="person.martin",
+            states={"switch.circ_pump": "off", "person.martin": "home"},
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_called_once()
+        assert runtime._circulation_pump_on is True
+
+    @pytest.mark.asyncio
+    async def test_person_not_home_counts_as_absent(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="person.martin",
+            states={"switch.circ_pump": "off", "person.martin": "not_home"},
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("presence_state", ["unavailable", "unknown", None])
+    async def test_presence_unknown_fails_open(self, presence_state: str | None) -> None:
+        """A broken presence sensor must not take hot water away."""
+        states = {"switch.circ_pump": "off"}
+        if presence_state is not None:
+            states["binary_sensor.nekdo_doma"] = presence_state
+        runtime = _make_presence_runtime(
+            presence_entity="binary_sensor.nekdo_doma", states=states
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_called_once_with(
+            "switch", "turn_on", {"entity_id": "switch.circ_pump"}, blocking=False
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("presence_entity", [None, ""])
+    async def test_no_presence_entity_keeps_old_behaviour(self, presence_entity: str | None) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity=presence_entity, states={"switch.circ_pump": "off"}
+        )
+        await _tick_at(runtime, _dt(8, 50))
+        runtime.hass.services.async_call.assert_called_once()
+        assert runtime._circulation_pump_on is True
+
+    @pytest.mark.asyncio
+    async def test_nobody_home_outside_run_does_not_touch_manual_pump(self) -> None:
+        runtime = _make_presence_runtime(
+            presence_entity="binary_sensor.nekdo_doma",
+            states={"switch.circ_pump": "on", "binary_sensor.nekdo_doma": "off"},
+            pump_on_by_us=False,
+        )
+        await _tick_at(runtime, _dt(10, 0))
+        runtime.hass.services.async_call.assert_not_called()

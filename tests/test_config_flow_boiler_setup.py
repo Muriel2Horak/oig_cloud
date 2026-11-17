@@ -277,6 +277,7 @@ async def test_boiler_simple_full_path_creates_entry():
             "boiler_circulation_run_minutes": 10,
             "boiler_circulation_max_runs_per_day": 3,
             "boiler_circulation_min_gap_minutes": 120,
+            "boiler_circulation_presence_entity": "binary_sensor.nekdo_doma",
             "boiler_legionella_interval_days": 0,
             "boiler_legionella_target_temp_c": 60.0,
         }
@@ -305,6 +306,7 @@ async def test_boiler_simple_full_path_creates_entry():
     assert options["boiler_battery_cycle_cost_czk_kwh"] == 0.50
     assert options["boiler_circulation_enabled"] is False
     assert options["boiler_legionella_interval_days"] == 0
+    assert options["boiler_circulation_presence_entity"] == "binary_sensor.nekdo_doma"
 
 
 @pytest.mark.asyncio
@@ -755,3 +757,18 @@ def test_boiler_simple_schemas_hide_dead_keys():
     assert "boiler_recovery_rate_c_per_hour" not in keys
     assert "boiler_alt_source_mode" not in keys
     assert "boiler_comfort_profile_mode" not in keys
+
+
+def test_boiler_simple_7_schema_offers_presence_entity():
+    from custom_components.oig_cloud.config.boiler_steps import get_boiler_simple_7_schema
+
+    schema = get_boiler_simple_7_schema({})
+    keys = {str(k) for k in schema.schema}
+    assert "boiler_circulation_presence_entity" in keys
+
+
+def test_boiler_options_default_presence_entity_is_empty():
+    from custom_components.oig_cloud.config.steps import WizardMixin
+
+    options = WizardMixin._build_boiler_options({"enable_boiler": True})
+    assert options.get("boiler_circulation_presence_entity", "") == ""

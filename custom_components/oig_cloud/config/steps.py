@@ -559,6 +559,9 @@ class WizardMixin:
             "boiler_circulation_min_gap_minutes": wizard_data.get(
                 "boiler_circulation_min_gap_minutes", 120
             ),
+            "boiler_circulation_presence_entity": wizard_data.get(
+                "boiler_circulation_presence_entity", ""
+            ),
             "boiler_legionella_interval_days": wizard_data.get(
                 "boiler_legionella_interval_days", 0
             ),

@@ -678,7 +678,8 @@
           "boiler_circulation_min_gap_minutes": "Min gap between runs (min)",
           "boiler_legionella_interval_days": "Anti-legionella interval (days)",
           "boiler_legionella_target_temp_c": "Disinfection temperature (°C)",
-          "go_back": "⬅️ I want to go back (check + click Submit)"
+          "go_back": "⬅️ I want to go back (check + click Submit)",
+          "boiler_circulation_presence_entity": "Run circulation only when someone is home"
         },
         "data_description": {
           "boiler_circulation_enabled": "Turn on the DHW circulation pump automatically at set times",
@@ -688,7 +689,8 @@
           "boiler_circulation_min_gap_minutes": "Minimum pause between two pump runs (10–480 min)",
           "boiler_legionella_interval_days": "Heat to disinfection temperature every N days (0 = disabled; recommended 7–14)",
           "boiler_legionella_target_temp_c": "Minimum temperature for reliable legionella kill (min 60 °C)",
-          "go_back": "Check this box and press 'Submit' - you will go back one step"
+          "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "boiler_circulation_presence_entity": "Presence entity (e.g. binary_sensor, person, device_tracker). Empty = circulation runs regardless of presence. If the entity reports no state, circulation runs."
         },
         "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Comfort & hygiene**\n\nConfigure DHW circulation scheduling and anti-legionella protection.",
         "title": "🚿 Boiler — Comfort & Hygiene"

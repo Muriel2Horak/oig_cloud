@@ -71,6 +71,9 @@ CONF_BOILER_CIRCULATION_LEAD_MINUTES = "boiler_circulation_lead_minutes"
 CONF_BOILER_CIRCULATION_RUN_MINUTES = "boiler_circulation_run_minutes"
 CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = "boiler_circulation_max_runs_per_day"
 CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES = "boiler_circulation_min_gap_minutes"
+# Optional presence entity (binary_sensor / person / device_tracker / input_boolean).
+# Empty = no presence gate. When set, the pump runs only while it reports on/home.
+CONF_BOILER_CIRCULATION_PRESENCE_ENTITY = "boiler_circulation_presence_entity"
 # R3/R7: Home 5 maneuver (battery-discharge boiler heating)
 # Box-level capability flag — also gates control-panel buttons (F5).
 CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
