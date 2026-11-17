@@ -265,3 +265,27 @@ async def test_user_target_is_not_written_without_the_switch():
     runtime.set_car_limit = lambda: False
     await EvController(runtime).async_apply(NOW)
     assert runtime.hass.services.calls == []
+
+
+async def test_hold_ends_when_the_switch_is_back_where_the_plan_wants_it():
+    runtime = _Runtime({"switch.wb": "off"}, WALLBOX, plan=_plan(False), day=_day())
+    ctl = EvController(runtime)
+    await ctl.async_apply(NOW)
+    runtime.hass.states.values["switch.wb"] = "on"  # person starts a charge
+    await ctl.async_apply(NOW + timedelta(minutes=5))
+    assert ctl.manual_hold_until == DEPARTURE
+    runtime.hass.states.values["switch.wb"] = "off"  # and stops it again
+    await ctl.async_apply(NOW + timedelta(minutes=10))
+    assert ctl.manual_hold_until is None
+    # The plan decides again: a cheap slot later turns it on.
+    runtime.last_plan = _plan(True)
+    await ctl.async_apply(NOW + timedelta(minutes=20))
+    assert runtime.hass.services.calls == [("switch", "turn_on", {"entity_id": "switch.wb"})]
+
+
+def test_a_dashboard_choice_releases_the_hold():
+    runtime = _Runtime({"switch.wb": "on"}, WALLBOX, plan=_plan(False), day=_day())
+    ctl = EvController(runtime)
+    ctl.manual_hold_until = DEPARTURE
+    ctl.release_manual_hold()
+    assert ctl.manual_hold_until is None and ctl.last_command is None

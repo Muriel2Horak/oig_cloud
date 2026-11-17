@@ -14,7 +14,9 @@ Rules:
 
 * The switch follows the plan's "charge now" while the car is plugged in.
 * Someone else flipping the switch (wallbox app, car app, a person) wins until
-  the next departure or until the car is unplugged, like a manual box mode.
+  the next departure, until the car is unplugged, until the switch is back
+  where the plan wants it, or until the user picks a charging choice in the
+  dashboard.
 * A command is not repeated before the device had time to answer (both
   integrations poll a cloud), and a car cloud gets fewer commands.
 * With current control on, the wallbox current follows the planned power of
@@ -121,6 +123,11 @@ class EvController:
             self._unsub()
             self._unsub = None
 
+    def release_manual_hold(self) -> None:
+        """The user chose in the dashboard: the plan decides again."""
+        self.manual_hold_until = None
+        self.last_command = None
+
     async def _async_tick(self, _now: Any = None) -> None:
         await self.async_apply()
 
@@ -216,11 +223,15 @@ class EvController:
             self.manual_hold_until = departure if departure and departure > now else now + MANUAL_HOLD_FALLBACK
             self.last_command = None
             _LOGGER.info("EV control: manual change, holding until %s", self.manual_hold_until)
+        want = bool(plan.charge_now)
         if self.manual_hold_until is not None:
-            if now < self.manual_hold_until:
+            # The hold ends at departure, or as soon as the switch is back
+            # where the plan wants it (the person undid their change).
+            if now < self.manual_hold_until and current != want:
                 return
             self.manual_hold_until = None
-        want = bool(plan.charge_now)
+            if current == want:
+                self.last_command = _Command(want, now)
         if want and options.get(CONF_EV_CURRENT_CONTROL, DEFAULT_EV_CURRENT_CONTROL):
             await self._apply_current(options, plan)
         if current == want:

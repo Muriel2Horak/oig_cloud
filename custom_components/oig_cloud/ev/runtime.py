@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
@@ -273,6 +274,8 @@ class EvRuntime:
         self.charge_override = make_override(
             mode, now, by=by, departure=day.departure if day else None
         )
+        if self.controller is not None:
+            self.controller.release_manual_hold()
         await self.async_save()
         self._replan()
         return self.charge_override
@@ -407,10 +410,16 @@ class EvRuntime:
         target_mode = str(self.options.get(CONF_EV_TARGET_MODE, DEFAULT_EV_TARGET_MODE))
 
         # Unplugging ends "charge now"; a chosen time that passed ends "charge by".
+        # "Charge now" ends when the cable comes out after it was in (also
+        # across a restart: the override remembers it saw the car plugged).
         override = self.charge_override
         unplugged_now = self.last_plugged is True and not plugged
+        if override is not None and plugged and not override.seen_plugged:
+            self.charge_override = override = replace(override, seen_plugged=True)
+            start_background(self.hass, self.async_save(), name="oig_cloud_ev_store_save")
         if override is not None and (
-            not override.active(now) or (override.mode == MODE_NOW and unplugged_now)
+            not override.active(now)
+            or (override.mode == MODE_NOW and not plugged and (unplugged_now or override.seen_plugged))
         ):
             self.charge_override = override = None
             start_background(self.hass, self.async_save(), name="oig_cloud_ev_store_save")

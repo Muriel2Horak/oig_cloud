@@ -521,9 +521,12 @@ async def execute_mode_change(
 def manual_hold_until(sensor: Any) -> Optional[datetime]:
     """End of the hold on a mode the user set by hand, or None when it was ours.
 
-    A change counts as manual when the integration had asked for something
-    else: its last request was another mode, or that mode long before the box
-    reported the change. Without any request since start the origin is
+    A change counts as manual when it came after the integration's last
+    request and the integration had asked for something else: its last
+    request was another mode, or that mode long before the box reported the
+    change. A box that has not changed since the request is still applying it
+    (17. 11. 2026: a pending Home 1 was taken for a manual UPS and blocked the
+    plan for 15 minutes). Without any request since start the origin is
     unknown (our own switch before a restart looks the same), so nothing is
     held and the 5-minute anti-flapping interval alone applies.
     """
@@ -533,6 +536,11 @@ def manual_hold_until(sensor: Any) -> Optional[datetime]:
         return None
     current_mode = get_current_box_mode(sensor)
     requested_mode, requested_at = request
+    if last_changed <= requested_at:
+        # The box has not changed since our last request: it is still
+        # applying it (the proxy takes about a minute) or did not take it.
+        # Nobody else changed anything, so there is nothing to hold.
+        return None
     if (
         requested_mode == current_mode
         and abs((last_changed - requested_at).total_seconds())

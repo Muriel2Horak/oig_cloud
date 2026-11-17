@@ -28,12 +28,14 @@ class ChargeOverride:
     mode: str
     until: datetime  # the override ends here (departure or the chosen time)
     set_at: datetime
+    seen_plugged: bool = False  # the car was plugged in while it was active
 
     def as_dict(self) -> dict:
         return {
             "mode": self.mode,
             "until": self.until.isoformat(),
             "set_at": self.set_at.isoformat(),
+            "seen_plugged": self.seen_plugged,
         }
 
     @classmethod
@@ -45,6 +47,7 @@ class ChargeOverride:
                 mode=str(raw["mode"]),
                 until=datetime.fromisoformat(str(raw["until"])),
                 set_at=datetime.fromisoformat(str(raw["set_at"])),
+                seen_plugged=bool(raw.get("seen_plugged", False)),
             )
         except (KeyError, TypeError, ValueError):
             return None

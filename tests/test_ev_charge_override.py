@@ -118,8 +118,8 @@ def test_holiday_tomorrow_moves_the_departure_to_sunday_time():
     assert runtime.next_day.source == "holiday"
 
 
-async def test_charge_now_replans_and_changes_the_request():
-    runtime, replans = _runtime()
+async def test_charge_now_replans_and_changes_the_request(monkeypatch):
+    runtime, replans = _runtime(monkeypatch=monkeypatch)
     await runtime.async_set_charge_mode(MODE_NOW, now=NOW)
     assert replans == [1]
     assert runtime._store.saved[-1]["charge_override"]["mode"] == MODE_NOW
@@ -237,3 +237,31 @@ def test_user_target_limit_drives_the_plan(monkeypatch):
     entry.options["ev_target_limit_pct"] = 70
     entry.options["ev_set_car_limit"] = False
     assert runtime.build_request(NOW).charge_limit_pct == 70.0
+
+
+async def test_unplugging_ends_charge_now_even_after_a_restart(monkeypatch):
+    runtime, _ = _runtime(monkeypatch=monkeypatch)
+    await runtime.async_set_charge_mode(MODE_NOW, now=NOW)
+    runtime.build_request(NOW)  # sees the car plugged in
+    assert runtime.charge_override.seen_plugged is True
+
+    restarted, _ = _runtime(monkeypatch=monkeypatch)
+    restarted.charge_override = runtime.charge_override  # loaded from the store
+    restarted.hass.states.values["binary_sensor.plug"] = "off"
+    restarted.build_request(NOW + timedelta(minutes=5))  # first look: unplugged
+    assert restarted.charge_override is None
+
+
+async def test_charge_now_set_before_plugging_in_waits_for_the_car(monkeypatch):
+    runtime, _ = _runtime(states={"binary_sensor.plug": "off"}, monkeypatch=monkeypatch)
+    await runtime.async_set_charge_mode(MODE_NOW, now=NOW)
+    runtime.build_request(NOW)
+    assert runtime.charge_override is not None  # not plugged yet: keep it
+
+
+async def test_a_dashboard_choice_releases_a_manual_hold():
+    runtime, _ = _runtime()
+    released = []
+    runtime.controller = SimpleNamespace(release_manual_hold=lambda: released.append(1))
+    await runtime.async_set_charge_mode(MODE_NOW, now=NOW)
+    assert released == [1]

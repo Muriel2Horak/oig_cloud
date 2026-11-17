@@ -92,3 +92,24 @@ async def test_without_any_request_since_start_nothing_is_held(switch_runtime): 
     assert auto_switch.manual_hold_until(runtime.sensor) is None
     await auto_switch.auto_switch_watchdog_tick(runtime.sensor, runtime.clock.now)
     assert runtime.calls and runtime.calls[-1][3]["mode"] == "Home UPS"
+
+
+def test_a_request_the_box_is_still_applying_is_not_a_manual_mode(switch_runtime):  # noqa: F811
+    """Field case 17. 11. 2026, 09:59: Home 1 was requested, the box (proxy,
+    about a minute) still showed the Home UPS it had since the restart, and
+    that was taken for a manual UPS: the plan was blocked until 10:15."""
+    runtime = switch_runtime
+    runtime.state.state = "Home UPS"
+    runtime.state.last_changed = runtime.clock.now - timedelta(minutes=6)
+    runtime.sensor._last_auto_switch_request = ("Home 1", runtime.clock.now - timedelta(seconds=30))
+
+    assert auto_switch.manual_hold_until(runtime.sensor) is None
+
+
+def test_a_change_after_our_request_to_another_mode_is_still_manual(switch_runtime):  # noqa: F811
+    runtime = switch_runtime
+    runtime.sensor._last_auto_switch_request = ("Home 1", runtime.clock.now - timedelta(minutes=20))
+    runtime.state.state = "Home 2"
+    runtime.state.last_changed = runtime.clock.now - timedelta(minutes=2)
+
+    assert auto_switch.manual_hold_until(runtime.sensor) is not None
