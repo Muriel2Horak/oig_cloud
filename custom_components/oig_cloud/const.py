@@ -187,9 +187,6 @@ CONF_EV_CURRENT_CONTROL = "ev_current_control"
 DEFAULT_EV_CURRENT_CONTROL = False
 CONF_EV_RAISE_LIMIT_FOR_TRIP = "ev_raise_limit_for_trip"
 DEFAULT_EV_RAISE_LIMIT_FOR_TRIP = False
-# When the integration stops: "resume" lets the car charge, "keep" leaves it.
-CONF_EV_FAILSAFE = "ev_failsafe"
-DEFAULT_EV_FAILSAFE = "resume"
 # Heating the car before departure.
 CONF_EV_CLIMATE_ENTITY = "ev_climate_entity"
 CONF_EV_CLIMATE_WHEN = "ev_climate_when"  # off|cold|always|calendar

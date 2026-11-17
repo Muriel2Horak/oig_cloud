@@ -18,8 +18,6 @@ const CS_ENUM_LABELS: Record<string, string> = {
   'field.ev_control_mode.enum.none': 'Jen plán (spíná automatizace)',
   'field.ev_control_mode.enum.wallbox': 'Spínač nabíječky',
   'field.ev_control_mode.enum.car': 'Spínač v autě (cloud výrobce)',
-  'field.ev_failsafe.enum.resume': 'Nechat nabíjet',
-  'field.ev_failsafe.enum.keep': 'Nechat, jak to je',
   'field.ev_climate_when.enum.off': 'Ne',
   'field.ev_climate_when.enum.cold': 'Když je venku zima',
   'field.ev_climate_when.enum.always': 'Před každým odjezdem',

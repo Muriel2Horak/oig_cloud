@@ -136,11 +136,9 @@ async def test_trip_raises_the_limit_and_restores_it_after():
     assert runtime.control_state == {}
 
 
-async def test_failsafe_resumes_charging_on_stop():
+async def test_stopping_the_integration_leaves_the_switch_alone():
+    # A restart must not start a charge: the switch stays as it is.
     runtime = _Runtime({"switch.wb": "off"}, WALLBOX)
-    await EvController(runtime).async_stop()
-    assert runtime.hass.services.calls == [("switch", "turn_on", {"entity_id": "switch.wb"})]
-    runtime = _Runtime({"switch.wb": "off"}, {**WALLBOX, "ev_failsafe": "keep"})
     await EvController(runtime).async_stop()
     assert runtime.hass.services.calls == []
 

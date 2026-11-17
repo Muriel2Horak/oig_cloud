@@ -21,8 +21,8 @@ Rules:
   the slot (the breaker share and PV), within the number entity's range.
 * With limit raising on, a trip day raises the car's charge limit to 100 %
   and the old limit comes back after the departure.
-* When the integration stops, ``ev_failsafe`` = ``resume`` lets the car charge,
-  so a stopped Home Assistant never leaves it paused for the morning.
+* Stopping or restarting the integration leaves the switch as it is; after a
+  restart the first tick puts it back in line with the plan.
 """
 
 from __future__ import annotations
@@ -47,7 +47,6 @@ from ..const import (
     CONF_EV_CONTROL_MODE,
     CONF_EV_CURRENT_CONTROL,
     CONF_EV_CURRENT_ENTITY,
-    CONF_EV_FAILSAFE,
     CONF_EV_OUTSIDE_TEMP_ENTITY,
     CONF_EV_PHASES,
     CONF_EV_SWITCH_ENTITY,
@@ -60,7 +59,6 @@ from ..const import (
     DEFAULT_EV_CLIMATE_WHEN,
     DEFAULT_EV_CONTROL_MODE,
     DEFAULT_EV_CURRENT_CONTROL,
-    DEFAULT_EV_FAILSAFE,
     DEFAULT_EV_PHASES,
     DEFAULT_EV_SWITCH_INVERTED,
 )
@@ -117,14 +115,6 @@ class EvController:
         if self._unsub is not None:
             self._unsub()
             self._unsub = None
-        options = self._options()
-        mode = options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE)
-        switch = options.get(CONF_EV_SWITCH_ENTITY)
-        if mode in (MODE_WALLBOX, MODE_CAR) and switch and (
-            options.get(CONF_EV_FAILSAFE, DEFAULT_EV_FAILSAFE) == "resume"
-        ):
-            if self._charging_allowed(switch, options) is False:
-                await self._set_charging(switch, options, True)
 
     async def _async_tick(self, _now: Any = None) -> None:
         await self.async_apply()

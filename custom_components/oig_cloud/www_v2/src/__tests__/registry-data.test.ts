@@ -293,7 +293,6 @@ const ALL_ENUM_FIELDS: Record<string, { values: readonly string[]; skipValues?: 
   export_pricing_model: { values: ['percentage', 'fixed', 'fixed_prices'] },
   data_source_mode: { values: ['cloud_only', 'local_only', 'hybrid'], skipValues: ['hybrid'] },
   ev_control_mode: { values: ['none', 'wallbox', 'car'] },
-  ev_failsafe: { values: ['resume', 'keep'] },
   ev_climate_when: { values: ['off', 'cold', 'always', 'calendar'] },
 };
 

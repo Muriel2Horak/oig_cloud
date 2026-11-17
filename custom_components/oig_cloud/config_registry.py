@@ -418,8 +418,6 @@ _register(
     Field("ev_current_entity", "battery", str, default="", entity_domain="number",
           optional=True, show_if=_EV_ON),
     Field("ev_raise_limit_for_trip", "battery", bool, default=False, show_if=_EV_ON),
-    Field("ev_failsafe", "battery", str, default="resume", enum=("resume", "keep"),
-          show_if=_EV_ON),
     Field("ev_climate_when", "battery", str, default="off",
           enum=("off", "cold", "always", "calendar"), show_if=_EV_ON),
     Field("ev_climate_entity", "battery", str, default="", entity_domain="climate",
