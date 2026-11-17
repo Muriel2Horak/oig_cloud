@@ -7581,24 +7581,25 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
           <div class="msg" role="status">${this.message||(e.charge_override?"Platí jen pro tuto jízdu, pak zase podle plánu.":"Plán vybírá nejlevnější hodiny před odjezdem.")}</div>
         </div>
       </section>
-    `}renderTimeline(e){var c;const t=((c=e.plan)==null?void 0:c.timeline)??[];if(!t.length)return b;const i=E5(t),r=i.map(p=>p.price),a=Math.min(...r),n=Math.max(...r),o=i.length>16?3:1,l=p=>n>a?25+(p.price-a)/(n-a)*75:60;return s`
+    `}renderTimeline(e){var p;const t=((p=e.plan)==null?void 0:p.timeline)??[];if(!t.length)return b;const i=E5(t),r=i.map(u=>u.price),a=Math.min(...r),n=Math.max(...r),o=i.length>48?6:i.length>16?3:1,l=i.some(u=>u.estimated),c=u=>n>a?25+(u.price-a)/(n-a)*75:60;return s`
       <section class="card">
         <div class="row" style="justify-content:space-between">
           <h2>Do odjezdu</h2>
           <span class="muted small" data-testid="ev-price-range">cena ${a.toFixed(1)}–${n.toFixed(1)} Kč/kWh</span>
         </div>
         <div class="bars" data-testid="ev-strip">
-          ${i.map(p=>{const u=p.energyKwh>.01,h=u&&p.pvKwh>p.energyKwh/2;return s`<div class="bar ${u?"charging":""} ${h?"pv":""} ${p.estimated?"estimated":""}"
-              title="${String(p.hour).padStart(2,"0")}:00 · ${p.price.toFixed(2)} Kč/kWh${u?` · ${p.energyKwh.toFixed(1)} kWh`:""}${p.estimated?" · odhad ceny":""}">
-              ${u?s`<span class="kwh">${p.energyKwh.toFixed(1)}</span>`:b}
-              <div class="fill" style="height:${l(p)}%"></div>
+          ${i.map(u=>{const h=u.energyKwh>.01,g=h&&u.pvKwh>u.energyKwh/2;return s`<div class="bar ${h?"charging":""} ${g?"pv":""} ${u.estimated?"estimated":""}"
+              title="${String(u.hour).padStart(2,"0")}:00 · ${u.price.toFixed(2)} Kč/kWh${h?` · ${u.energyKwh.toFixed(1)} kWh`:""}${u.estimated?" · odhad ceny":""}">
+              ${h?s`<span class="kwh">${u.energyKwh.toFixed(1)}</span>`:b}
+              <div class="fill" style="height:${c(u)}%"></div>
             </div>`})}
         </div>
-        <div class="hours">${i.map((p,u)=>s`<span>${u%o===0?String(p.hour).padStart(2,"0"):""}</span>`)}</div>
+        <div class="hours">${i.map((u,h)=>s`<span>${h%o===0?String(u.hour).padStart(2,"0"):""}</span>`)}</div>
         <div class="legend">
           <span><span class="sw" style="background:var(--blue)"></span>nabíjení ze sítě (kWh)</span>
           <span><span class="sw" style="background:var(--orange)"></span>z přetoků FVE</span>
           <span>výška sloupce = cena v dané hodině</span>
+          ${l?s`<span>světlé sloupce: ceny ještě nejsou vyhlášené, počítá se s odhadem</span>`:b}
         </div>
       </section>
     `}renderDayEditor(e){const t=["home","trip","workday","dayoff"].find(r=>r===e.source)??null,i=t==="trip"?ni(e.departure):null;return s`
@@ -7779,7 +7780,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     .bar.pv .kwh { color: var(--orange); }
     .bar.estimated .fill { opacity: 0.55; }
     .hours { display: flex; gap: 3px; margin-top: 4px; }
-    .hours span { flex: 1 1 0; text-align: center; font-size: 0.72rem; color: ${_e(d.textSecondary)}; min-width: 0; overflow: hidden; }
+    .hours span { flex: 1 1 0; text-align: center; font-size: 0.72rem; color: ${_e(d.textSecondary)}; min-width: 0; overflow: visible; white-space: nowrap; }
     .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 0.8rem; color: ${_e(d.textSecondary)}; }
     .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 

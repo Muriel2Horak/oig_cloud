@@ -136,7 +136,7 @@ export class OigEvTab extends LitElement {
     .bar.pv .kwh { color: var(--orange); }
     .bar.estimated .fill { opacity: 0.55; }
     .hours { display: flex; gap: 3px; margin-top: 4px; }
-    .hours span { flex: 1 1 0; text-align: center; font-size: 0.72rem; color: ${u(CSS_VARS.textSecondary)}; min-width: 0; overflow: hidden; }
+    .hours span { flex: 1 1 0; text-align: center; font-size: 0.72rem; color: ${u(CSS_VARS.textSecondary)}; min-width: 0; overflow: visible; white-space: nowrap; }
     .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 0.8rem; color: ${u(CSS_VARS.textSecondary)}; }
     .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
@@ -313,7 +313,8 @@ export class OigEvTab extends LitElement {
     const prices = bars.map((b) => b.price);
     const min = Math.min(...prices);
     const max = Math.max(...prices);
-    const every = bars.length > 16 ? 3 : 1;
+    const every = bars.length > 48 ? 6 : bars.length > 16 ? 3 : 1;
+    const estimated = bars.some((b) => b.estimated);
     const height = (b: HourBar) => (max > min ? 25 + ((b.price - min) / (max - min)) * 75 : 60);
     return html`
       <section class="card">
@@ -337,6 +338,7 @@ export class OigEvTab extends LitElement {
           <span><span class="sw" style="background:var(--blue)"></span>nabíjení ze sítě (kWh)</span>
           <span><span class="sw" style="background:var(--orange)"></span>z přetoků FVE</span>
           <span>výška sloupce = cena v dané hodině</span>
+          ${estimated ? html`<span>světlé sloupce: ceny ještě nejsou vyhlášené, počítá se s odhadem</span>` : nothing}
         </div>
       </section>
     `;
