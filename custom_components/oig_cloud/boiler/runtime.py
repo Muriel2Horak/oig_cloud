@@ -3046,11 +3046,18 @@ class BoilerRuntime:
                 coordinator=self.coordinator, now=now, horizon_hours=CIRCULATION_HORIZON_HOURS
             )
         except Exception as err:  # keep the last schedule
-            _LOGGER.debug("Circulation schedule refresh failed: %s", err)
+            _LOGGER.warning("Circulation schedule refresh failed: %s", err)
             return
-        self._circulation_runs = _build_circulation_schedule(
-            demand_targets=targets, now=now, config=config
-        )
+        runs = _build_circulation_schedule(demand_targets=targets, now=now, config=config)
+        summary = (len(targets), [r[0].isoformat() for r in runs])
+        if summary != getattr(self, "_circulation_summary", None):
+            self._circulation_summary = summary
+            _LOGGER.info(
+                "Circulation: %d demand windows ahead, runs %s",
+                len(targets),
+                ", ".join(f"{r[0]:%d.%m %H:%M}-{r[1]:%H:%M}" for r in runs) or "none",
+            )
+        self._circulation_runs = runs
 
     def _is_home5_currently_set(self) -> bool:
         """Return True when the hardware home_grid_v bit is already ON.
