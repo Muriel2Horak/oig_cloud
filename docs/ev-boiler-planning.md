@@ -117,3 +117,18 @@ Všechno je obecné. Integrace nezná značku auta ani nabíječky, ovládací e
 
 - **Nabíjet do** (`ev_target_limit_pct`, 0 = limit v autě): plán počítá s cílem uživatele místo limitu v autě. Bez přepínače `ev_set_car_limit` auto skončí na svém limitu a plán počítá s nižší z obou hodnot. S přepínačem integrace limit v autě před každým nabíjením (nebo 15 minut před ním) přepíše na cíl, se zaokrouhlením na krok entity (Škoda po 10 %) a nejvýš jednou za 10 minut. To je pro auta, která si limit po nabití vracejí (Kodiaq na 80 %). Nastavení je na záložce Auto v „Nastavení auta“.
 - **Místní testy podle CI:** `.ha-env` v hlavní složce je teď Python 3.14.3 a HA 2026.8.1, nainstalované z `requirements-dev.txt` s hashi, stejně jako v CI. Tři dřívější chyby prostředí (pylint `ChatLog`, vlákno `_run_safe_shutdown_loop` z pycares v `test_api_chmu_more` a `test_oig_cloud_api`) byly jen rozdíl starého prostředí (Python 3.12, HA 2025.1.4). Celá sada prochází bez chyby. Staré prostředí je v `.ha-env-py312-ha2025.1`.
+
+## Cirkulace teplé vody podle profilu odběrů (17. 11. 2026)
+
+- **Dřív:** Martinova automatizace v HA každou čtvrthodinu přepínala čerpadlo mezi 5 a 21 hodinou, když byl doma nebo síť stahovala přes 100. Za 7,8 dne čerpadlo běželo 469× a dohromady 62,9 hodiny, asi 8 hodin denně. To je nejspíš velká část toho, proč bojler dostává asi 2,3× víc tepla, než odpovídá změřeným odběrům.
+- **Teď řídí integrace** čerpadlo `switch.cirkulace_zasuvka_1` podle profilu odběrů z teploty nádrže:
+  - pustí ho 15 min před každým oknem odběru na 15 min;
+  - nejvýš 4× denně, s rozestupem aspoň 60 min;
+  - jen když je někdo v `zone.home`.
+
+  Ve všední den je to 5:45, 19:45 a 20:45, tedy 45 minut denně. Automatizace „Cirkulace“ je vypnutá, ne smazaná.
+- **Svátky jako víkend** (`boiler/demand_profiler._get_day_category`). Data z 8.–11. 2026: první odběr v pracovní den v 6:30 (medián), o víkendu v 7:45, o svátcích v 7:15–7:45.
+- **Opravy:**
+  - Rozpis se přepočítá v každém pětiminutovém cyklu na příštích 24 hodin. Dřív se počítal jen s plánem ohřevu (ten je platný až den) a jen pro jeden den, takže večerní plán neměl běh na ráno.
+  - Koordinátor bojleru spouštěl cirkulaci a Home 5 jen s energetickým profilem. Bojler na plyn ho nemá, a tak se čerpadlo nikdy nenaplánovalo.
+- **Volba přítomnosti** `boiler_circulation_presence_entity` (zone, person, device_tracker, binary_sensor): když nikdo není doma, čerpadlo nejede. Neznámý stav se počítá jako doma.
