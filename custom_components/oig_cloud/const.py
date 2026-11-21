@@ -197,6 +197,11 @@ CONF_EV_SET_CAR_LIMIT = "ev_set_car_limit"
 DEFAULT_EV_SET_CAR_LIMIT = False
 CONF_EV_RAISE_LIMIT_FOR_TRIP = "ev_raise_limit_for_trip"
 DEFAULT_EV_RAISE_LIMIT_FOR_TRIP = False
+# The wallbox hangs on the box's backup output: in Home 1 the inverter feeds the
+# car from the battery and overloads (21. 11. 2026: 11 kW car, inverter error
+# ERR_ELSE=4, box bypass after ~2 min). The car then only charges in Home UPS.
+CONF_EV_ON_BACKUP_CIRCUIT = "ev_on_backup_circuit"
+DEFAULT_EV_ON_BACKUP_CIRCUIT = False
 # Heating the car before departure.
 CONF_EV_CLIMATE_ENTITY = "ev_climate_entity"
 CONF_EV_CLIMATE_WHEN = "ev_climate_when"  # off|cold|always|calendar

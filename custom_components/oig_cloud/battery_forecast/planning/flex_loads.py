@@ -1,9 +1,12 @@
 """Car, boiler and home battery against one PV surplus and one main breaker.
 
-The car and the boiler hang on the box's non-backup circuit (measured on the
-reference install: 11 kW in the wallbox showed on ``acinb``, not on the backup
-load). The battery therefore never feeds them; they draw from the grid side,
-where they meet the battery's grid charging under one main breaker.
+By default the car and the boiler hang on the box's non-backup circuit. The
+battery then never feeds them: they draw from the grid side, where they meet
+the battery's grid charging under one main breaker. (The reference install
+looked like that, but the 11 kW on ``acinb`` was measured while the box had
+its bypass on; the wallbox there is on the backup output. With
+``ev_on_backup`` every car slot must be Home UPS, ``ups_required``, see
+``ev.backup_guard``.)
 
 Two resources are shared, each in priority order:
 
@@ -89,6 +92,9 @@ class FlexInputs:
     # first; None when this runs before the battery plan.
     battery_ups_kwh: Optional[Sequence[float]] = None
     slot_minutes: int = 15
+    # The wallbox hangs on the box's backup output: every slot the car charges
+    # in must be Home UPS (ev.backup_guard).
+    ev_on_backup: bool = False
 
 
 @dataclass
@@ -100,6 +106,9 @@ class FlexPlan:
     boiler_pv_kwh: List[float] = field(default_factory=list)
     boiler_grid_kwh: List[float] = field(default_factory=list)
     overloaded_slots: List[int] = field(default_factory=list)
+    # Slots where the battery plan must be Home UPS: the car charges there on
+    # the backup output. Empty when the car is on the non-backup circuit.
+    ups_required: List[bool] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -110,6 +119,7 @@ class FlexPlan:
             },
             "ups_blocked_slots": [i for i, ok in enumerate(self.ups_allowed) if not ok],
             "overloaded_slots": list(self.overloaded_slots),
+            "ups_required_slots": [i for i, req in enumerate(self.ups_required) if req],
         }
 
 
@@ -232,6 +242,17 @@ def plan_flex_loads(inputs: FlexInputs) -> FlexPlan:  # noqa: C901
                 if boiler_grid[i] > _EPS:
                     phases[i].add_symmetric(boiler_grid[i] / hours, 1)
 
+    ups_required: List[bool] = []
+    if inputs.ev_on_backup and ev_plan is not None:
+        charged = [
+            grid + pv > _EPS
+            for grid, pv in zip(ev_plan.grid_kwh_by_slot(), ev_plan.pv_kwh_by_slot())
+        ]
+        ups_required = [i < len(charged) and charged[i] for i in range(n)]
+        # The car's slots are Home UPS whatever the breaker says about the
+        # battery's charging there: the box lowers that charge current to fit.
+        ups_allowed = [allowed or required for allowed, required in zip(ups_allowed, ups_required)]
+
     solar_for_battery = [
         max(0.0, float(inputs.solar_kwh[i]) - pv_taken_before_battery[i])
         if i < len(inputs.solar_kwh)
@@ -246,4 +267,5 @@ def plan_flex_loads(inputs: FlexInputs) -> FlexPlan:  # noqa: C901
         boiler_pv_kwh=boiler_pv,
         boiler_grid_kwh=boiler_grid,
         overloaded_slots=[i for i in range(n) if phases[i].overloaded()],
+        ups_required=ups_required,
     )

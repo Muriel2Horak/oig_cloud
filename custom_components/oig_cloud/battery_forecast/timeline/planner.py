@@ -11,6 +11,7 @@ from ...physics import simulate_interval
 from ..data.input import get_solar_for_timestamp
 from ..economic_planner import (
     REASON_END_OF_HORIZON,
+    REASON_EV_ON_BACKUP,
     REASON_FLOOR_DEFENSE,
     REASON_FLOOR_RECOVERY,
     REASON_HOLD_FOR_LATER,
@@ -33,6 +34,7 @@ _UPS_REASON_TEXTS: Dict[str, str] = {
     REASON_END_OF_HORIZON: "Nabíjení ze sítě do zásoby, spotřebuje se až po konci plánu",
     REASON_HOLD_FOR_LATER: "Plná baterie čeká na dražší hodiny, spotřeba jde ze sítě",
     REASON_SWITCH_NOT_WORTH_IT: "UPS zůstává, přepnutí by se nevyplatilo",
+    REASON_EV_ON_BACKUP: "UPS kvůli nabíjení auta na záložním výstupu",
 }
 
 

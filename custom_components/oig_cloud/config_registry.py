@@ -420,6 +420,8 @@ _register(
     Field("ev_target_limit_pct", "battery", int, default=0, min=0, max=100, step=5, show_if=_EV_ON),
     Field("ev_set_car_limit", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_raise_limit_for_trip", "battery", bool, default=False, show_if=_EV_ON),
+    # Read every planner cycle and watchdog tick, no reload.
+    Field("ev_on_backup_circuit", "battery", bool, default=False, show_if=_EV_ON),
     Field("ev_climate_when", "battery", str, default="off",
           enum=("off", "cold", "always", "calendar"), show_if=_EV_ON),
     Field("ev_climate_entity", "battery", str, default="", entity_domain="climate",

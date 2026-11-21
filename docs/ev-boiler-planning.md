@@ -132,3 +132,20 @@ Všechno je obecné. Integrace nezná značku auta ani nabíječky, ovládací e
   - Rozpis se přepočítá v každém pětiminutovém cyklu na příštích 24 hodin. Dřív se počítal jen s plánem ohřevu (ten je platný až den) a jen pro jeden den, takže večerní plán neměl běh na ráno.
   - Koordinátor bojleru spouštěl cirkulaci a Home 5 jen s energetickým profilem. Bojler na plyn ho nemá, a tak se čerpadlo nikdy nenaplánovalo.
 - **Volba přítomnosti** `boiler_circulation_presence_entity` (zone, person, device_tracker, binary_sensor): když nikdo není doma, čerpadlo nejede. Neznámý stav se počítá jako doma.
+
+## Wallbox na záložním výstupu boxu (21. 11. 2026)
+
+Data z 21. 11. ukázala, že wallbox visí na záložním výstupu boxu. Box při startu UPS hlásí „Load: 11 402 W, LoadNB: 211 W“. Starší měření „auto na acinb“ vzniklo v bypassu boxu, kdy se záložní zátěž počítá jako nezálohovaná. Co se dělo v Home 1:
+
+- Střídač táhl auto z baterie: 02:45–04:01 auto 11 kW, baterie spadla na 19 %.
+- Do minuty od každého startu hlásil chybu `ERR_ELSE=4`.
+- Asi po dvou minutách přepnul box záložní zátěž na bypass (11:07:35 start, 11:09:48 bypass).
+
+Nová volba `ev_on_backup_circuit` („Wallbox je na záložním výstupu boxu“). Když je zapnutá, auto nabíjí jen v Home UPS:
+
+- **Plán baterie:** ve slotech, kde plán auta nabíjí, je Home UPS povinné (`ups_required`). Má přednost před omezením kvůli jističi. Plán auta se proto počítá před plánem baterie, ať je priorita jakákoli. Zámek plánu ani minimální délka bloku tyto sloty nepřepíšou. V časové ose je důvod „UPS kvůli nabíjení auta na záložním výstupu“.
+- **Start nabíjení:** řadič auta zapne wallbox, až box hlásí Home UPS. Pokud tam box není, sám o UPS požádá. Čeká nejvýš 5 minut, pak nabíjí i tak, aby nepropásl odjezd.
+- **Hlídání přetížení:** watchdog (každých 30 s) sleduje výkon wallboxu. Když auto bere víc než 1 kW mimo Home UPS déle než 60 s, vynutí Home UPS. Obejde přitom 5minutový interval i ruční držení. Pokrývá to start auta mimo plán, ruční zapnutí i změnu plánu. Dokud auto nabíjí, box z UPS neodejde: plánované přepnutí i watchdog počkají.
+- **Jistič:** v Home UPS box zároveň nabíjí baterii ze sítě. Dokud auto nabíjí, nabíjecí proud baterie se sníží na to, co jistič nechá vedle domu a auta: (jistič − rezerva) × 230 V × fáze − (zátěž + nezáloha). Spodní mez je 10 A, přepočet nejvýš každých 5 minut a jen při změně o 10 A a víc. Po dobití auta se vrátí nastavený proud.
+
+Neověřeno na boxu: zápis nízkého nabíjecího proudu (10–20 A) během UPS. Box ho dosud dostával jen v hodnotách 50 a 125 A.

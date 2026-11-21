@@ -164,6 +164,10 @@ class EvRuntime:
         self.last_plugged: Optional[bool] = None
         # Set by the forecast cycle: asks it to plan again soon.
         self.request_replan: Optional[Callable[[], None]] = None
+        # Set by the battery forecast (planning.flex_glue): is the box in Home
+        # UPS, and ask for it. A car on the backup output starts only there.
+        self.box_in_ups: Optional[Callable[[], Optional[bool]]] = None
+        self.request_ups: Optional[Callable[[], None]] = None
         # Controller state that must survive a restart (the limit to restore).
         self.control_state: Dict[str, Any] = {}
         self.controller: Any = None

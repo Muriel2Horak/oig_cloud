@@ -64,6 +64,7 @@ from ..const import (
     DEFAULT_EV_PHASES,
     DEFAULT_EV_SWITCH_INVERTED,
 )
+from . import backup_guard
 from .precondition import PreconditionDecision, decide_precondition
 
 _LOGGER = logging.getLogger(__name__)
@@ -112,6 +113,9 @@ class EvController:
         self.last_precondition: Optional[PreconditionDecision] = None
         self.preconditioned_for: Optional[datetime] = None
         self.last_error: Optional[str] = None
+        # Since when a start waits for the box to report Home UPS (car on the
+        # backup output).
+        self.ups_wait_since: Optional[datetime] = None
         self._unsub: Any = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
@@ -224,6 +228,8 @@ class EvController:
             self.last_command = None
             _LOGGER.info("EV control: manual change, holding until %s", self.manual_hold_until)
         want = bool(plan.charge_now)
+        if not want:
+            self.ups_wait_since = None
         if self.manual_hold_until is not None:
             # The hold ends at departure, or as soon as the switch is back
             # where the plan wants it (the person undid their change).
@@ -240,8 +246,43 @@ class EvController:
             return
         if last is not None and last.on == want and now - last.at <= settle:
             return  # sent, the device has not answered yet
+        if want and not self._box_ready_for_car(now, options):
+            return
         if await self._set_charging(switch, options, want):
             self.last_command = _Command(want, now)
+            if want:
+                self.ups_wait_since = None
+
+    def _box_ready_for_car(self, now: datetime, options: Dict[str, Any]) -> bool:
+        """A car on the backup output starts only once the box is in Home UPS.
+
+        Asks for Home UPS and waits for the box to report it, at most
+        ``PRESTART_MAX_WAIT``: a box that does not answer must not cost the
+        departure, and the auto-switch watchdog keeps forcing Home UPS while
+        the car draws.
+        """
+        if not backup_guard.on_backup(options):
+            return True
+        in_ups_hook = getattr(self.runtime, "box_in_ups", None)
+        in_ups = in_ups_hook() if callable(in_ups_hook) else None
+        if in_ups is None or in_ups:
+            self.ups_wait_since = None
+            return True
+        if self.ups_wait_since is None:
+            self.ups_wait_since = now
+            request = getattr(self.runtime, "request_ups", None)
+            if callable(request):
+                request()
+            _LOGGER.info("EV control: waiting for Home UPS before charging (car on the backup output)")
+            return False
+        if now - self.ups_wait_since >= backup_guard.PRESTART_MAX_WAIT:
+            _LOGGER.warning(
+                "EV control: box not in Home UPS after %s, charging anyway",
+                backup_guard.PRESTART_MAX_WAIT,
+            )
+            self.ups_wait_since = None
+            return True
+        return False
 
     async def _apply_current(self, options: Dict[str, Any], plan: Any) -> None:
         entity = options.get(CONF_EV_CURRENT_ENTITY)
@@ -371,4 +412,7 @@ class EvController:
             "precondition": self.last_precondition.as_dict() if self.last_precondition else None,
             "climate_entity": options.get(CONF_EV_CLIMATE_ENTITY) or None,
             "error": self.last_error,
+            "waiting_for_ups_since": (
+                self.ups_wait_since.isoformat() if self.ups_wait_since else None
+            ),
         }

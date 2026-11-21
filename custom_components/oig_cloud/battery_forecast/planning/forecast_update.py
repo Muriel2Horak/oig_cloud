@@ -54,6 +54,7 @@ from .price_forecast_glue import async_apply_price_forecast
 from .flex_glue import (
     async_refresh_boiler_calibration,
     battery_outranks_car,
+    ev_on_backup,
     boiler_on_backup,
     coordinate_flex_loads,
 )
@@ -1263,6 +1264,25 @@ def _flex_planner_inputs(
     return solar, (None if all(allowed) else allowed)
 
 
+def _flex_ups_required(flex_plan: Optional[FlexPlan], n: int) -> Optional[list[bool]]:
+    """Slots the car charges in on the box's backup output (Home UPS there)."""
+    required = list(getattr(flex_plan, "ups_required", None) or [])
+    if not any(required):
+        return None
+    return [bool(required[i]) if i < len(required) else False for i in range(n)]
+
+
+def _force_ups_required(modes: list[int], ups_required: Optional[list[bool]]) -> list[int]:
+    """Neither the plan lock nor the minimum block length may undo the car's UPS."""
+    if not ups_required:
+        return modes
+    home_ups = CBBMode.HOME_UPS.value
+    return [
+        home_ups if i < len(ups_required) and ups_required[i] else mode
+        for i, mode in enumerate(modes)
+    ]
+
+
 def _keep_ups_blocks(
     guarded: list[int], planned: list[int], ups_allowed: Optional[list[bool]]
 ) -> list[int]:
@@ -1314,6 +1334,7 @@ def _run_planner(
         planner_solar, ups_allowed = _flex_planner_inputs(
             flex_plan, solar_kwh_list, len(spot_prices)
         )
+        ups_required = _flex_ups_required(flex_plan, len(spot_prices))
 
         opts = getattr(sensor._config_entry, "options", None) or {}
         # NOTE: the `battery_efficiency` sensor measures DC/coulombic efficiency
@@ -1395,6 +1416,7 @@ def _run_planner(
             current_mode=get_current_mode() if callable(get_current_mode) else None,
             battery_wear_czk_per_kwh=_battery_wear_czk_per_kwh(opts),
             ups_allowed=ups_allowed,
+            ups_required=ups_required,
         )
 
         result = plan_battery_schedule(planner_inputs)
@@ -1441,6 +1463,7 @@ def _run_planner(
             logger=_LOGGER,
         )
         guarded_modes = _keep_ups_blocks(guarded_modes, result.modes, ups_allowed)
+        guarded_modes = _force_ups_required(guarded_modes, ups_required)
         timeline = build_planner_timeline(
             modes=guarded_modes,
             spot_prices=spot_prices,
@@ -2118,9 +2141,10 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             charge_rate_kw=_flex_charge_rate_kw(sensor),
         )
         await async_refresh_boiler_calibration(sensor)
-        car_first = not battery_outranks_car(
-            dict(getattr(sensor._config_entry, "options", None) or {})
-        )
+        flex_options = dict(getattr(sensor._config_entry, "options", None) or {})
+        # A car on the backup output decides where the battery must be in
+        # Home UPS, so its plan comes first whatever the priority.
+        car_first = ev_on_backup(flex_options) or not battery_outranks_car(flex_options)
         flex_plan = _safe_flex(sensor, **flex_kwargs) if car_first else None
         timeline, mode_result, recommendations = _run_planner(
             sensor,

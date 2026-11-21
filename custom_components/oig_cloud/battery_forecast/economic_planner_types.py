@@ -51,6 +51,10 @@ class PlannerInputs:
     # allows every slot. The hard minimum still wins: where Home 1 would end
     # below it, UPS stays the legal action.
     ups_allowed: Optional[List[bool]] = None
+    # Per slot, must the box be in Home UPS? True where the car on the box's
+    # backup output charges: in Home 1 the inverter would feed it from the
+    # battery and overload (ev.backup_guard). Wins over ups_allowed.
+    ups_required: Optional[List[bool]] = None
 
     @property
     def planning_min_kwh(self) -> float:
@@ -97,6 +101,9 @@ class PlannerInputs:
             raise ValueError("Forecast lengths must match intervals count")
 
         if self.ups_allowed is not None and len(self.ups_allowed) != n_intervals:
+            raise ValueError("Forecast lengths must match intervals count")
+
+        if self.ups_required is not None and len(self.ups_required) != n_intervals:
             raise ValueError("Forecast lengths must match intervals count")
 
         if not (0.0 <= self.battery_wear_czk_per_kwh < float("inf")):

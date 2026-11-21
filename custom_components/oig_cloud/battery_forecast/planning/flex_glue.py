@@ -72,6 +72,12 @@ def battery_outranks_car(options: Dict[str, Any]) -> bool:
     return order.index(CONSUMER_BATTERY) < order.index(CONSUMER_EV)
 
 
+def ev_on_backup(options: Dict[str, Any]) -> bool:
+    from ...ev.backup_guard import on_backup
+
+    return on_backup(options)
+
+
 def boiler_on_backup(sensor: Any) -> bool:
     return bool(_options(sensor).get(CONF_BOILER_ON_BACKUP_CIRCUIT, DEFAULT_BOILER_ON_BACKUP_CIRCUIT))
 
@@ -177,6 +183,31 @@ def request_flex_replan(sensor: Any) -> None:
         retry(1.0)
 
 
+def _attach_box_hooks(sensor: Any, ev_runtime: Any) -> None:
+    """Let the car controller see and ask for Home UPS (car on the backup output)."""
+    from .auto_switch import (
+        REASON_EV_BACKUP_PRESTART,
+        get_current_box_mode,
+        request_ev_backup_ups,
+    )
+    from ..types import SERVICE_MODE_HOME_UPS
+
+    def box_in_ups() -> Optional[bool]:
+        mode = get_current_box_mode(sensor)
+        return None if mode is None else mode == SERVICE_MODE_HOME_UPS
+
+    def request_ups() -> None:
+        hass = _hass(sensor)
+        if hass is None:
+            return
+        hass.async_create_task(
+            request_ev_backup_ups(sensor, REASON_EV_BACKUP_PRESTART, {"source": "ev_control"})
+        )
+
+    ev_runtime.box_in_ups = box_in_ups
+    ev_runtime.request_ups = request_ups
+
+
 def _ev_runtime(sensor: Any) -> Any:
     from ...ev.runtime import get_ev_runtime
 
@@ -214,6 +245,7 @@ def coordinate_flex_loads(
     ev_runtime = _ev_runtime(sensor)
     if ev_runtime is not None:
         ev_runtime.request_replan = lambda: request_flex_replan(sensor)
+        _attach_box_hooks(sensor, ev_runtime)
     ev_request = ev_runtime.build_request() if ev_runtime is not None else None
     boiler_kwh = boiler_electric_forecast(sensor, starts)
     if ev_request is None and not boiler_kwh:
@@ -257,6 +289,7 @@ def coordinate_flex_loads(
             ev=ev_request,
             boiler_electric_kwh=boiler_kwh,
             battery_ups_kwh=battery_ups_kwh,
+            ev_on_backup=ev_on_backup(options),
         )
     )
     if ev_runtime is not None:
