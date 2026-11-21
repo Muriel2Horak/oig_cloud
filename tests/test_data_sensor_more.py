@@ -684,3 +684,32 @@ def test_local_grid_mode_uses_control_domain_entities(monkeypatch):
     sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
     sensor.hass = hass
     assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON
+
+
+def test_bypass_status_prefers_the_proxys_flag(monkeypatch):
+    """21. 11. 2026, 12:01: automatic bypass, proxy BYPASS=1, the cloud
+    notifications still said off."""
+
+    class CloudSaysOff:
+        def get_bypass_status(self):
+            return "off"
+
+    config = {"local_entity_suffix": "tbl_box_prms_bypass"}
+    states = {"sensor.oig_local_123_tbl_box_prms_bypass": DummyState("1")}
+    sensor = _make_sensor(monkeypatch, "bypass_status", config, states=states)
+    sensor.coordinator.notification_manager = CloudSaysOff()
+    assert sensor.state == "on"
+    assert sensor.extra_state_attributes["source"] == "local"
+
+    states["sensor.oig_local_123_tbl_box_prms_bypass"] = DummyState("0")
+    assert sensor.state == "off"
+
+    # Without the proxy (or while it is unavailable) the cloud decides.
+    states["sensor.oig_local_123_tbl_box_prms_bypass"] = DummyState("unavailable")
+    assert sensor.state == "off"
+    assert sensor.extra_state_attributes["source"] == "cloud_notifications"
+    del states["sensor.oig_local_123_tbl_box_prms_bypass"]
+    sensor.coordinator.notification_manager = type(
+        "CloudSaysOn", (), {"get_bypass_status": lambda self: "on"}
+    )()
+    assert sensor.state == "on"

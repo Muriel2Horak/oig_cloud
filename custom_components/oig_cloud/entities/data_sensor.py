@@ -317,6 +317,14 @@ class OigCloudDataSensor(_DataSensorBase):
 
     def _get_notification_state(self) -> Any:
         notification_manager = getattr(self.coordinator, "notification_manager", None)
+        if self._sensor_type == "bypass_status":
+            # The box's own flag through the local proxy first: the cloud
+            # notifications miss the automatic bypass (21. 11. 2026, 12:01:
+            # BYPASS=1 on the proxy, 6.48 kW through the bypass, this sensor
+            # still "off").
+            local = self._local_bypass_state()
+            if local is not None:
+                return local
         if self._sensor_type == "latest_notification":
             return self._get_latest_notification_state(notification_manager)
 
@@ -353,6 +361,18 @@ class OigCloudDataSensor(_DataSensorBase):
             return ("get_notification_count", ("warning",), None)
         if self._sensor_type == "notification_count_unread":
             return ("get_unread_count", (), None)
+        return None
+
+    def _local_bypass_state(self) -> Optional[str]:
+        """"on"/"off" from the proxy's ``tbl_box_prms_bypass``, None without it."""
+        value = self._get_local_value()
+        if value is None:
+            return None
+        key = str(value).strip().lower()
+        if key in ("1", "1.0", "on", "true"):
+            return "on"
+        if key in ("0", "0.0", "off", "false"):
+            return "off"
         return None
 
     def _log_missing_notification_manager(self, method_name: str) -> None:
@@ -451,6 +471,8 @@ class OigCloudDataSensor(_DataSensorBase):
             notification_manager = getattr(
                 self.coordinator, "notification_manager", None
             )
+            local = self._local_bypass_state()
+            attributes["source"] = "local" if local is not None else "cloud_notifications"
             if notification_manager is not None:
                 attributes["last_check"] = datetime.now().isoformat()
 
