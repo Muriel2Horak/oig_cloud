@@ -150,8 +150,62 @@ def extract_expected_entities(
         return _expected_boiler_mode(shield, data, find_entity)
     if service_name == "oig_cloud.set_grid_delivery":
         return _expected_grid_delivery(shield, data, find_entity)
+    if service_name in ("oig_cloud.battery_export", "oig_cloud.stop_battery_export"):
+        return _expected_battery_export(shield, data)
 
     return {}
+
+
+def _proxy_readback(shield: Any, key: str) -> Optional[str]:
+    """Read-only proxy entity (the box's actual value) for a ``_cfg`` key."""
+    from ..control.proxy_control import find_proxy_entity
+
+    box_id = _resolve_box_id_for_shield(shield)
+    entity_id = find_proxy_entity(shield.hass, box_id, key, control=False) if box_id else None
+    if not entity_id:
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[FIND ENTITY] OIG Proxy readback for %s not found",
+            key,
+        )
+        shield._expected_entity_missing = True
+        return None
+    shield.last_checked_entity_id = entity_id
+    return entity_id
+
+
+def _expected_charge_current(shield: Any, data: Dict[str, Any]) -> Dict[str, str]:
+    from ..control.proxy_control import PARAM_CHARGE_CURRENT
+
+    entity_id = _proxy_readback(shield, PARAM_CHARGE_CURRENT)
+    if not entity_id:
+        return {}
+    return {entity_id: str(int(data["charge_current"]))}
+
+
+def _expected_battery_export(shield: Any, data: Dict[str, Any]) -> Dict[str, str]:
+    from ..control import proxy_control as pc
+
+    step = data.get("_export_step")
+    targets: Dict[str, tuple[str, Optional[str]]] = {
+        "limit": (pc.PARAM_EXPORT_LIMIT, str(int(data["limit"])) if "limit" in data else None),
+        "pv_off_on": (pc.PARAM_GRID_PV_OFF, "on"),
+        "pv_on_on": (pc.PARAM_GRID_PV_ON, "on"),
+        "pv_on_off": (pc.PARAM_GRID_PV_ON, "off"),
+        "pv_off_off": (pc.PARAM_GRID_PV_OFF, "off"),
+    }
+    if step == "finish":
+        restore = data.get("_restore_limit")
+        if restore is None:
+            return {}
+        targets["finish"] = (pc.PARAM_EXPORT_LIMIT, str(int(float(restore))))
+    if step not in targets:
+        return {}
+    key, expected = targets[step]
+    if expected is None:
+        return {}
+    entity_id = _proxy_readback(shield, key)
+    return {entity_id: expected} if entity_id else {}
 
 
 def _expected_formating_mode() -> Dict[str, str]:
@@ -167,6 +221,12 @@ def _expected_box_mode(
     shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
 ) -> Dict[str, Any]:
     box_mode_step = data.get("_box_mode_step")
+    if box_mode_step == "charge" or (
+        data.get("charge_current") is not None
+        and data.get("mode") is None
+        and not any(k in data for k in ("home_grid_v", "home_grid_vi"))
+    ):
+        return _expected_charge_current(shield, data)
     mode_raw = str(data.get("mode") or "").strip()
     has_mode = bool(mode_raw and mode_raw.lower() != "none")
     has_toggles = any(k in data for k in ("home_grid_v", "home_grid_vi"))

@@ -224,7 +224,7 @@ def test_coerce_value_truncates_long_string_to_200():
 # --- section: basic ---------------------------------------------------------
 
 
-def test_basic_section_has_six_fields():
+def test_basic_section_fields():
     basic = fields_for_section("basic")
     assert set(basic) == {
         "standard_scan_interval",
@@ -232,6 +232,9 @@ def test_basic_section_has_six_fields():
         "data_source_mode",
         "local_proxy_stale_minutes",
         "local_event_debounce_ms",
+        "control_via_proxy",
+        "proxy_max_charge_current_a",
+        "proxy_export_limit_w",
         "enable_dashboard",
     }
 

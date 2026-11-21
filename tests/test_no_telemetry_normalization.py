@@ -161,6 +161,9 @@ def _install_test_stubs() -> None:
             local_available=False,
         ),
         init_data_source_state=lambda *_a, **_k: None,
+        get_configured_mode=lambda entry: entry.options.get(
+            "data_source_mode", "cloud_only"
+        ),
     )
     sys.modules.setdefault(
         f"{TEST_PACKAGE}.oig_cloud.core.data_source", data_source_module
