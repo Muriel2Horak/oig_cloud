@@ -312,6 +312,8 @@ _register(
     # A capability of the box, not of the boiler: it decides whether the control
     # panel offers the Home 5 and Home 6 toggles.
     Field("box_has_home56", "modules", bool, default=False, reload_on_change=True),
+    # The car's runtime is built at setup from these options (ev/runtime.py).
+    Field("enable_ev", "modules", bool, default=False, reload_on_change=True),
 )
 
 # --- section: battery -------------------------------------------------------
@@ -380,7 +382,88 @@ _register(
           show_if_all=(("solar_forecast_provider", ("forecast_solar",)),)),
 )
 
+# --- section: battery — car and main breaker (planning.flex_loads) ---------
+_EV_ON = ("enable_ev", (True,))
+_register(
+    Field("ev_soc_entity", "battery", str, default="", entity_domain="sensor",
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_plugged_entity", "battery", str, default="", entity_domain="binary_sensor",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charge_limit_entity", "battery", str, default="", entity_domain="number",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charge_limit_pct", "battery", float, default=100.0, min=10.0, max=100.0,
+          step=1.0, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_charger_power_entity", "battery", str, default="", entity_domain="sensor",
+          optional=True, show_if=_EV_ON, reload_on_change=True),
+    Field("ev_capacity_kwh", "battery", float, default=0.0, min=0.0, max=200.0, step=0.1,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_max_power_kw", "battery", float, default=11.0, min=1.0, max=22.0, step=0.1,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_min_power_kw", "battery", float, default=4.14, min=1.0, max=11.0, step=0.01,
+          show_if=_EV_ON, reload_on_change=True),
+    Field("ev_phases", "battery", int, default=3, min=1, max=3, show_if=_EV_ON,
+          reload_on_change=True),
+    Field("ev_target_mode", "battery", str, default="limit", enum=("limit", "need"),
+          show_if=_EV_ON, reload_on_change=True),
+    # Calendar, control and pre-heating: the car runtime reads these live
+    # from the entry options, no reload.
+    Field("ev_holidays", "battery", bool, default=True, show_if=_EV_ON),
+    Field("ev_trip_departure", "battery", str, default="07:00", show_if=_EV_ON),
+    Field("ev_control_mode", "battery", str, default="none", enum=("none", "wallbox", "car"),
+          show_if=_EV_ON),
+    Field("ev_switch_entity", "battery", str, default="", entity_domain="switch",
+          optional=True, show_if=_EV_ON),
+    Field("ev_switch_inverted", "battery", bool, default=False, show_if=_EV_ON),
+    Field("ev_current_control", "battery", bool, default=False, show_if=_EV_ON),
+    Field("ev_current_entity", "battery", str, default="", entity_domain="number",
+          optional=True, show_if=_EV_ON),
+    Field("ev_target_limit_pct", "battery", int, default=0, min=0, max=100, step=5, show_if=_EV_ON),
+    Field("ev_set_car_limit", "battery", bool, default=False, show_if=_EV_ON),
+    Field("ev_raise_limit_for_trip", "battery", bool, default=False, show_if=_EV_ON),
+    # Read every planner cycle and watchdog tick, no reload.
+    Field("ev_on_backup_circuit", "battery", bool, default=False, show_if=_EV_ON),
+    Field("ev_climate_when", "battery", str, default="off",
+          enum=("off", "cold", "always", "calendar"), show_if=_EV_ON),
+    Field("ev_climate_entity", "battery", str, default="", entity_domain="climate",
+          optional=True, show_if=_EV_ON),
+    Field("ev_climate_temp_c", "battery", float, default=22.0, min=16.0, max=28.0, step=0.5,
+          show_if=_EV_ON),
+    Field("ev_climate_minutes", "battery", int, default=20, min=5, max=60, show_if=_EV_ON),
+    Field("ev_climate_cold_c", "battery", float, default=5.0, min=-20.0, max=20.0, step=0.5,
+          show_if=_EV_ON),
+    Field("ev_outside_temp_entity", "battery", str, default="", entity_domain="sensor",
+          optional=True, show_if=_EV_ON),
+    Field("ev_climate_plugged_only", "battery", bool, default=True, show_if=_EV_ON),
+    Field("ev_window_heating_entity", "battery", str, default="", entity_domain="switch",
+          optional=True, show_if=_EV_ON),
+    Field("grid_breaker_a", "battery", float, default=25.0, min=0.0, max=100.0, step=1.0),
+    Field("grid_reserve_a", "battery", float, default=2.0, min=0.0, max=10.0, step=0.5),
+    Field("grid_phases", "battery", int, default=3, min=1, max=3),
+    Field("flex_priority", "battery", str, default="ev,boiler,battery",
+          enum=("ev,boiler,battery", "ev,battery,boiler", "boiler,ev,battery", "boiler,battery,ev", "battery,ev,boiler", "battery,boiler,ev")),
+    Field("flex_pv_battery_first", "battery", bool, default=True),
+    # Opt-in: replayed on real data it did not pay (see const.CONF_LIVE_LOAD_REPLAN).
+    # The backup-load listener starts at setup, so a change reloads the entry.
+    Field("live_load_replan", "battery", bool, default=False, reload_on_change=True),
+    # Consent to anonymous 15-minute energy slots (shared/energy_telemetry.py);
+    # the job starts at setup, so a change reloads the entry.
+    Field("share_energy_data", "battery", bool, default=False, reload_on_change=True),
+    # Spot price forecast beyond OTE's published prices (data/price_forecast.py),
+    # read every planner cycle: no reload needed.
+    Field("price_forecast_entity", "battery", str, default="", entity_domain="sensor",
+          optional=True),
+    # Off: replayed on real data, even a perfect 36-120 h forecast saved
+    # 2.1 CZK in nine days (docs/spot-price-forecast.md).
+    Field("price_forecast_mode", "battery", str, default="off",
+          enum=("off", "shadow", "on")),
+)
+
 # --- section: boiler --------------------------------------------------------
+# The boiler's circuit decides whether its heat is a battery load or a
+# grid-side load (planning.flex_glue); read every planner cycle, no reload.
+_register(
+    Field("boiler_on_backup_circuit", "boiler", bool, default=False),
+)
 # TRANSCRIBED 1:1 from _MODULE_CONFIG_FIELDS["boiler"]; reload_on_change=True on every field.
 _register(
     Field("boiler_volume_l", "boiler", float, default=None, min=30.0, max=1000.0,
@@ -393,6 +476,14 @@ _register(
           reload_on_change=True),
     Field("boiler_current_power_entity", "boiler", str, default="", reload_on_change=True,
           entity_domain="sensor", optional=True),
+    # Set by the HA config flow so far; listed so the dashboard can show and
+    # fill them (boiler entity discovery).
+    Field("boiler_heater_switch_entity", "boiler", str, default="", reload_on_change=True,
+          entity_domain="switch", optional=True),
+    Field("boiler_alt_heater_switch_entity", "boiler", str, default="", reload_on_change=True,
+          entity_domain="switch", optional=True),
+    Field("boiler_circulation_pump_switch_entity", "boiler", str, default="",
+          reload_on_change=True, entity_domain="switch", optional=True),
     Field("boiler_alt_energy_sensor", "boiler", str, default="", reload_on_change=True,
           entity_domain="sensor", optional=True),
     Field("boiler_alt_energy_daily", "boiler", bool, default=False, reload_on_change=True),
@@ -425,6 +516,8 @@ _register(
           reload_on_change=True),
     Field("boiler_circulation_min_gap_minutes", "boiler", int, default=None, min=10, max=480,
           reload_on_change=True),
+    Field("boiler_circulation_presence_entity", "boiler", str, default="", entity_domain="zone",
+          optional=True, reload_on_change=True),
     Field("boiler_legionella_interval_days", "boiler", int, default=None, min=0, max=30,
           reload_on_change=True),
     Field("boiler_legionella_target_temp_c", "boiler", float, default=None,

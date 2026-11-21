@@ -287,17 +287,18 @@ def _flex_windows(hourly: List[Dict[str, Any]], today: date) -> Dict[str, Any]:
         by_day.setdefault((row["_dt"].date() - today).days, []).append((row, float(price), surplus))
     for offset, key in ((0, "dnes"), (1, "zitra")):
         rows = by_day.get(offset, [])
-        best = None
+        best_avg: Optional[float] = None
+        best_chunk: list = []
         for i in range(len(rows) - WINDOW_HOURS + 1):
             chunk = rows[i:i + WINDOW_HOURS]
             if chunk[-1][0]["_dt"] - chunk[0][0]["_dt"] != timedelta(hours=WINDOW_HOURS - 1):
                 continue
             avg = sum(c[1] for c in chunk) / WINDOW_HOURS
-            if best is None or avg < best[0]:
-                best = (avg, chunk)
-        if best is None:
+            if best_avg is None or avg < best_avg:
+                best_avg, best_chunk = avg, chunk
+        if best_avg is None:
             continue
-        avg, chunk = best
+        avg, chunk = best_avg, best_chunk
         surplus_hours = sum(1 for c in chunk if c[2])
         out[key] = {
             "od": chunk[0][0]["_dt"].strftime("%H:%M"),

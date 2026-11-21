@@ -11,6 +11,7 @@ from ...physics import simulate_interval
 from ..data.input import get_solar_for_timestamp
 from ..economic_planner import (
     REASON_END_OF_HORIZON,
+    REASON_EV_ON_BACKUP,
     REASON_FLOOR_DEFENSE,
     REASON_FLOOR_RECOVERY,
     REASON_HOLD_FOR_LATER,
@@ -33,6 +34,7 @@ _UPS_REASON_TEXTS: Dict[str, str] = {
     REASON_END_OF_HORIZON: "Nabíjení ze sítě do zásoby, spotřebuje se až po konci plánu",
     REASON_HOLD_FOR_LATER: "Plná baterie čeká na dražší hodiny, spotřeba jde ze sítě",
     REASON_SWITCH_NOT_WORTH_IT: "UPS zůstává, přepnutí by se nevyplatilo",
+    REASON_EV_ON_BACKUP: "UPS kvůli nabíjení auta na záložním výstupu",
 }
 
 
@@ -49,8 +51,13 @@ def build_planner_timeline(
     efficiency: float,
     home_charge_rate_kw: float,
     log_rate_limited: Optional[Any] = None,
+    solar_reduction_kwh: Optional[List[float]] = None,
 ) -> List[Dict[str, Any]]:
-    """Build timeline in legacy format from planner modes."""
+    """Build timeline in legacy format from planner modes.
+
+    ``solar_reduction_kwh`` is PV the car and the boiler take before the
+    battery (planning.flex_loads); the timeline shows the battery without it.
+    """
     timeline: List[Dict[str, Any]] = []
     soc = current_capacity
     charge_rate_kwh_15min = home_charge_rate_kw / 4.0
@@ -76,6 +83,8 @@ def build_planner_timeline(
             )
         except Exception:
             solar_kwh = 0.0
+        if solar_reduction_kwh and i < len(solar_reduction_kwh):
+            solar_kwh = max(0.0, solar_kwh - float(solar_reduction_kwh[i] or 0.0))
 
         load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
 
@@ -117,6 +126,9 @@ def build_planner_timeline(
                 "grid_charge_kwh": round(max(0.0, res.grid_charge_kwh), 6),
             }
         )
+        if spot_prices[i].get("estimated"):
+            # Forecast price, not published by OTE (data/price_forecast.py).
+            timeline[-1]["estimated"] = True
 
     return timeline
 

@@ -21,6 +21,7 @@ export interface ModulesConfig {
   enable_extended_sensors: boolean;
   enable_chmu_warnings: boolean;
   box_has_home56: boolean;
+  enable_ev?: boolean;
 }
 
 export interface BatteryConfig {

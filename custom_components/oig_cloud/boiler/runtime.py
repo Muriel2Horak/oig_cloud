@@ -18,6 +18,7 @@ from ..const import (
     CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_ENABLED,
+    CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
     CONF_BOILER_CIRCULATION_LEAD_MINUTES,
     CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
@@ -1275,6 +1276,33 @@ async def _async_build_legionella_obligation(
 # ---------------------------------------------------------------------------
 # R5: Circulation pre-peak scheduling helpers
 # ---------------------------------------------------------------------------
+
+# Demand windows the circulation schedule looks at (today and tomorrow morning).
+CIRCULATION_HORIZON_HOURS = 30
+_HOME_STATES = {"home", "on", "true", "occupied", "present"}
+
+
+def _someone_home(hass: Any, entity_id: Optional[str]) -> bool:
+    """True without a presence entity or when it says someone is home.
+
+    A zone counts its people (state is a number), a person or device_tracker
+    says "home", a binary_sensor or input_boolean says "on". An unknown or
+    unavailable entity counts as home, so a broken tracker never stops the
+    circulation.
+    """
+    if not entity_id:
+        return True
+    state = hass.states.get(entity_id) if hass is not None else None
+    if state is None:
+        return True
+    value = str(state.state).strip().lower()
+    if value in ("unknown", "unavailable", ""):
+        return True
+    try:
+        return float(value) > 0
+    except ValueError:
+        return value in _HOME_STATES
+
 
 def _build_circulation_schedule(
     *,
@@ -2979,11 +3007,14 @@ class BoilerRuntime:
             return
 
         now = dt_util.now()
+        self._refresh_circulation_runs(now, config)
         inside_run = False
         for run_start, run_end, _label in self._circulation_runs:
             if run_start <= now < run_end:
                 inside_run = True
                 break
+        if inside_run and not _someone_home(self.hass, config.get(CONF_BOILER_CIRCULATION_PRESENCE_ENTITY)):
+            inside_run = False  # nobody home: no warm loop needed
 
         if inside_run and not self._circulation_pump_on:
             success = await _async_actuate_circulation_pump(
@@ -3000,6 +3031,33 @@ class BoilerRuntime:
                 turn_on=False,
             )
             self._circulation_pump_on = False
+
+    def _refresh_circulation_runs(self, now: datetime, config: dict[str, Any]) -> None:
+        """Rebuild the circulation schedule from the demand profile every cycle.
+
+        The boiler plan is cached for up to a day; the schedule built with it
+        covered only its own day, so a plan made in the evening had no run for
+        the next morning.
+        """
+        if getattr(self.coordinator, "_demand_profiler", None) is None:
+            return
+        try:
+            targets = _build_demand_targets(
+                coordinator=self.coordinator, now=now, horizon_hours=CIRCULATION_HORIZON_HOURS
+            )
+        except Exception as err:  # keep the last schedule
+            _LOGGER.warning("Circulation schedule refresh failed: %s", err)
+            return
+        runs = _build_circulation_schedule(demand_targets=targets, now=now, config=config)
+        summary = (len(targets), [r[0].isoformat() for r in runs])
+        if summary != getattr(self, "_circulation_summary", None):
+            self._circulation_summary = summary
+            _LOGGER.info(
+                "Circulation: %d demand windows ahead, runs %s",
+                len(targets),
+                ", ".join(f"{r[0]:%d.%m %H:%M}-{r[1]:%H:%M}" for r in runs) or "none",
+            )
+        self._circulation_runs = runs
 
     def _is_home5_currently_set(self) -> bool:
         """Return True when the hardware home_grid_v bit is already ON.

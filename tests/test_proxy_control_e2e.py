@@ -76,6 +76,14 @@ PROXY = {
 }
 CLOUD_MODE_SENSOR = "sensor.oig_2206237016_box_prms_mode"
 READBACK_DELAY_S = 40  # box picks the setting up on its next poll
+EVENTS = "sensor.oig_local_oig_proxy_tbl_events_content"
+
+
+async def _box_applied(rig) -> None:
+    """The box ends its SetAsReq sequence (it reset the charge current there)."""
+    rig.hass.states.async_set(EVENTS, "SetAsReq End")
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(1)
 
 
 class ProxySim:
@@ -283,6 +291,9 @@ async def test_home_ups_then_charge_current_in_order(hass, freezer):
     assert rig.proxy.writes == [("select.oig_local_2206237016_tbl_box_prms_mode_cfg", "Home UPS")]
 
     await rig.advance(READBACK_DELAY_S + 1)
+    # The box reports Home UPS at the start of applying it: no current yet.
+    assert rig.proxy.writes == [("select.oig_local_2206237016_tbl_box_prms_mode_cfg", "Home UPS")]
+    await _box_applied(rig)
     assert rig.proxy.writes[-1] == ("number.2206237016_tbl_invertor_prm1_aac_max_chrg_cfg", "121.0")
 
     await rig.advance(READBACK_DELAY_S + 1)
@@ -522,6 +533,9 @@ async def test_planner_home_ups_writes_the_configured_current_after_the_mode(has
     await rig.hass.async_block_till_done(wait_background_tasks=True)
     assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
     await rig.advance(READBACK_DELAY_S + 1)
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    # No "SetAsReq End" seen: the current follows 90 s after the readback.
+    await rig.advance(90)
     assert rig.proxy.writes[-1] == (CHARGE_CFG, "100.0")
     await rig.advance(READBACK_DELAY_S + 1)
     assert _idle(rig.shield)
@@ -653,6 +667,8 @@ async def test_mode_before_charge_waits_for_readback_even_after_the_ack(hass, fr
     rig.hass.states.async_set(CLOUD_MODE_SENSOR, "Home UPS")
     await rig.hass.async_block_till_done(wait_background_tasks=True)
     await rig.advance(1)
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    await _box_applied(rig)
     assert rig.proxy.writes[-1] == (CHARGE_CFG, "121.0")
 
 
@@ -700,5 +716,29 @@ async def test_charge_current_follows_when_only_the_integration_knows_home_ups(h
     rig.hass.states.async_set(CLOUD_MODE_SENSOR, "Home UPS")
     await rig.hass.async_block_till_done(wait_background_tasks=True)
     await rig.advance(1)
+    await _box_applied(rig)
     assert rig.hass.states.get("sensor.oig_local_2206237016_tbl_box_prms_mode").state == "Home 1"
+    assert rig.proxy.writes[-1] == (CHARGE_CFG, "125.0")
+
+
+
+@pytest.mark.asyncio
+async def test_charge_current_is_not_written_while_the_box_still_applies_ups(hass, freezer):
+    """Field case 17. 11. 2026 16:16 UTC: the box reported Home UPS at the start
+    of applying it, the 125 A went out at once and the box reset the current to
+    50 A at the end of its SetAsReq sequence (MUCHGC0500)."""
+    rig = await _make_rig(hass, freezer)
+    rig.hass.states.async_set(EVENTS, "SetAsReq End")  # an old one, before the call
+    await rig.advance(5)
+    await rig.hass.services.async_call(
+        DOMAIN, "set_box_mode",
+        {"mode": "home_ups", "charge_current": 125, "acknowledgement": True},
+        blocking=True,
+    )
+    await rig.hass.async_block_till_done(wait_background_tasks=True)
+    await rig.advance(READBACK_DELAY_S + 1)
+    rig.hass.states.async_set(EVENTS, "Invertor ACK : ^S005EDB1")
+    await rig.advance(30)
+    assert rig.proxy.writes == [(MODE_CFG, "Home UPS")]
+    await _box_applied(rig)
     assert rig.proxy.writes[-1] == (CHARGE_CFG, "125.0")

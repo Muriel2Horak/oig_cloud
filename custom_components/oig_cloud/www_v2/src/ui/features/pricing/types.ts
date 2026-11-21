@@ -30,6 +30,7 @@ export interface TimelinePoint {
   mode_planned?: string;
   mode?: string;
   mode_display?: string;
+  estimated?: boolean;            // forecast price, not yet published by OTE
 }
 
 /** Simplified price point used by stat cards and block finder */

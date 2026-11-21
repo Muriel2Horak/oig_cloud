@@ -57,6 +57,7 @@ REASON_PRICE_SPREAD = "ECONOMIC_CHARGE_CHEAPER_FUTURE"
 REASON_HOLD_FOR_LATER = "PRICE_BAND_CONTINUATION"
 REASON_END_OF_HORIZON = "REACH_TARGET_SOC"
 REASON_SWITCH_NOT_WORTH_IT = "GAP_FILL"
+REASON_EV_ON_BACKUP = "EV_ON_BACKUP_CHARGING"
 _FLOOR_REASONS = frozenset({REASON_FLOOR_RECOVERY, REASON_FLOOR_DEFENSE})
 
 _SwitchCost = Callable[[Optional[int], int, float], float]
@@ -305,6 +306,14 @@ def _slot_cost(
     )
 
 
+def _ups_required(inputs: PlannerInputs, i: int) -> bool:
+    return inputs.ups_required is not None and bool(inputs.ups_required[i])
+
+
+def _ups_allowed(inputs: PlannerInputs, i: int) -> bool:
+    return _ups_required(inputs, i) or inputs.ups_allowed is None or bool(inputs.ups_allowed[i])
+
+
 def _soc_grid(inputs: PlannerInputs, floor_kwh: float) -> np.ndarray:
     """SoC levels the backward pass evaluates; the hard minimum is one of them."""
     span = inputs.max_capacity_kwh - inputs.hw_min_kwh
@@ -344,6 +353,8 @@ def _cost_to_go(
         # back up: a battery that lingers down there hands control to the box.
         # UPS never lowers the SoC, so a legal action always exists.
         via_home[new_soc < floor_kwh - _ENERGY_EPS_KWH] = np.inf
+        if _ups_required(inputs, i):
+            via_home = np.full_like(via_home, np.inf)
 
         new_soc, grid_import, grid_export = _simulate_interval_array(
             grid, solar, load, inputs, _HOME_UPS
@@ -351,6 +362,9 @@ def _cost_to_go(
         via_ups = _slot_cost(
             grid, new_soc, grid_import, grid_export, price, export_price, wear
         ) + np.interp(new_soc, grid, after_ups)
+        if not _ups_allowed(inputs, i):
+            # Blocked for the breaker, except where Home 1 is illegal anyway.
+            via_ups = np.where(np.isinf(via_home), via_ups, np.inf)
 
         to_go[i] = (
             np.minimum(via_home, via_ups + switch_cost(_HOME_1, _HOME_UPS, price)),
@@ -410,7 +424,7 @@ def _optimize_modes(
             soc, solar, load, price, inputs, _HOME_1
         )
         via_home: Optional[float] = None
-        if home_soc >= floor_kwh - _ENERGY_EPS_KWH:
+        if home_soc >= floor_kwh - _ENERGY_EPS_KWH and not _ups_required(inputs, i):
             via_home = float(
                 _slot_cost(soc, home_soc, home_import, home_export, price, export_price, wear)
                 + np.interp(home_soc, grid, after_home)
@@ -428,6 +442,8 @@ def _optimize_modes(
             None if via_home is None else via_home + switch_cost(previous, _HOME_1, price)
         )
         ups_total = via_ups + switch_cost(previous, _HOME_UPS, price)
+        if home_total is not None and not _ups_allowed(inputs, i):
+            ups_total = float("inf")
 
         if home_total is not None and ups_total >= home_total - _COST_TIE_EPS_CZK:
             mode = _HOME_1
@@ -467,7 +483,10 @@ def _ups_slot_reason(
     without_switch_cost: Set[int],
     floor_kwh: float,
     lowest_later_soc: float,
+    required: bool = False,
 ) -> str:
+    if required:
+        return REASON_EV_ON_BACKUP
     if slot.soc_before_kwh < floor_kwh - _ENERGY_EPS_KWH:
         return REASON_FLOOR_RECOVERY
     # Counterfactuals, not the slot's own figures: with flat prices a charge well
@@ -502,7 +521,10 @@ def _served_moment(
     deficit = 0.0
     price: Optional[float] = None
 
-    if reason in _FLOOR_REASONS:
+    if reason == REASON_EV_ON_BACKUP:
+        interval = first
+        moment_type = "EV_ON_BACKUP"
+    elif reason in _FLOOR_REASONS:
         breach = next((m for m in baseline_moments if m.interval >= first), None)
         moment_type = "PLANNING_MIN"
         interval = breach.interval if breach else first
@@ -553,7 +575,13 @@ def _ups_decisions(
         if slot.mode != _HOME_UPS:
             continue
         reason = _ups_slot_reason(
-            i, slot, without_floor, without_switch_cost, floor_kwh, lowest_later_soc[i]
+            i,
+            slot,
+            without_floor,
+            without_switch_cost,
+            floor_kwh,
+            lowest_later_soc[i],
+            required=_ups_required(inputs, i),
         )
         if blocks and blocks[-1][0] == reason and blocks[-1][1][-1] == i - 1:
             blocks[-1][1].append(i)

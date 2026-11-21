@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..battery_forecast.utils_common import get_tariff_for_datetime
+from ..pricing.price_formula import export_price_15min
 from ..pricing.spot_price_15min_base import BasePrice15MinSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,43 +80,8 @@ class ExportPrice15MinSensor(BasePrice15MinSensor):
     def _calculate_export_price_15min(
         self, spot_price_czk: float, target_datetime: datetime
     ) -> float:
-        """Vypočítat výkupní cenu BEZ distribuce a BEZ DPH.
-
-        Výkupní cena = Spotová cena - Poplatek za prodej (% nebo fixní)
-        """
-        options = self._entry.options
-
-        pricing_model: str = options.get("export_pricing_model", "percentage")
-        export_fee_percent: float = options.get("export_fee_percent", 15.0)
-        export_fixed_fee_czk: float = options.get("export_fixed_fee_czk", 0.20)
-        export_fixed_price: float = options.get("export_fixed_price", 2.50)
-        export_fee_percent_nt: float = options.get(
-            "export_fee_percent_nt", export_fee_percent
-        )
-        export_fixed_fee_czk_nt: float = options.get(
-            "export_fixed_fee_czk_nt", export_fixed_fee_czk
-        )
-
-        current_tariff = self._get_tariff_for_datetime(target_datetime)
-
-        if pricing_model == "percentage":
-            fee_percent = (
-                export_fee_percent_nt
-                if current_tariff == "NT"
-                else export_fee_percent
-            )
-            export_price = spot_price_czk * (1 - fee_percent / 100.0)
-        elif pricing_model == "fixed_prices":
-            export_price = export_fixed_price
-        else:
-            fixed_fee = (
-                export_fixed_fee_czk_nt
-                if current_tariff == "NT"
-                else export_fixed_fee_czk
-            )
-            export_price = spot_price_czk - fixed_fee
-
-        return round(export_price, 2)
+        """Vypočítat výkupní cenu BEZ distribuce a BEZ DPH."""
+        return export_price_15min(spot_price_czk, target_datetime, self._entry.options)
 
     def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
         """Get tariff (VT/NT) for a given datetime."""

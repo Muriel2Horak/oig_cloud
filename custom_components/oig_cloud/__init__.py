@@ -1520,6 +1520,40 @@ async def _init_boiler_runtime(
         return None
 
 
+async def _init_ev_runtime(hass: HomeAssistant, entry: ConfigEntry) -> Any | None:
+    """The car's runtime: entities, learned profile, last plan (ev/runtime.py)."""
+    from .const import CONF_ENABLE_EV, KEY_EV_RUNTIME
+
+    if not entry.options.get(CONF_ENABLE_EV, False):
+        return None
+    try:
+        from .ev.runtime import EvRuntime
+
+        runtime = EvRuntime(hass, entry.entry_id, entry.options)
+        hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})[KEY_EV_RUNTIME] = runtime
+        # The profile reads statistics: start_background inside async_start,
+        # so setup does not wait for the database.
+        await runtime.async_start()
+        _LOGGER.info("EV runtime created for entry %s", entry.entry_id)
+        return runtime
+    except Exception as err:
+        _LOGGER.error("Failed to initialize EV runtime: %s", err)
+        return None
+
+
+async def _teardown_ev_runtime(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    from .const import KEY_EV_RUNTIME
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    runtime = entry_data.pop(KEY_EV_RUNTIME, None) if isinstance(entry_data, dict) else None
+    if runtime is None:
+        return
+    try:
+        await runtime.async_stop()
+    except Exception as err:
+        _LOGGER.debug("EV runtime stop failed: %s", err)
+
+
 async def _teardown_boiler_runtime(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
@@ -1920,6 +1954,7 @@ async def async_setup_entry(
         hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["boiler_coordinator"] = boiler_coordinator
         boiler_runtime = await _init_boiler_runtime(hass, entry)
         _ = boiler_runtime
+        await _init_ev_runtime(hass, entry)
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
@@ -2263,6 +2298,7 @@ async def async_unload_entry(
                 _LOGGER.debug("DataSourceController stop failed: %s", err)
 
         await _teardown_boiler_runtime(hass, entry)
+        await _teardown_ev_runtime(hass, entry)
 
         boiler_coordinator = entry_data.get("boiler_coordinator")
         if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):

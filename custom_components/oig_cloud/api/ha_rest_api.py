@@ -2908,6 +2908,22 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudAiEvalRefreshView())
     hass.http.register_view(OIGCloudSolarTestView())
     hass.http.register_view(OIGCloudOnboardingView())
+    from ..ev.api import (
+        OIGCloudEvChargeView,
+        OIGCloudEvDayView,
+        OIGCloudEvDiscoverView,
+        OIGCloudEvVacationView,
+        OIGCloudEvView,
+    )
+
+    hass.http.register_view(OIGCloudEvView())
+    hass.http.register_view(OIGCloudEvChargeView())
+    hass.http.register_view(OIGCloudEvDayView())
+    hass.http.register_view(OIGCloudEvVacationView())
+    hass.http.register_view(OIGCloudEvDiscoverView())
+    from ..boiler.discovery_api import OIGCloudBoilerDiscoverView
+
+    hass.http.register_view(OIGCloudBoilerDiscoverView())
 
     _LOGGER.info(
         "✅ OIG Cloud REST API endpoints registered:\n"

@@ -31,6 +31,8 @@ def build_extra_state_attributes(
         ),
         "data_hash": sensor._data_hash if sensor._data_hash else "unknown",
         "api_endpoint": f"/api/oig_cloud/battery_forecast/{sensor._box_id}/timeline",
+        # Spot price forecast: mode, slots and accuracy per horizon (small).
+        "price_forecast": getattr(sensor, "_price_forecast_summary", None),
         "api_query_params": "?type=active (default) | baseline | both",
         "api_note": "Full timeline data available via REST API (reduces memory by 96%)",
     }
