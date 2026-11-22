@@ -833,6 +833,91 @@ def test_modified_function_retained_unused_param_shifted_by_unrelated_edit_passe
 
 # ---------- scope ----------
 
+def test_tracked_ignored_source_is_excluded_but_unignored_source_is_checked(repo):
+    ignored = "pkg/lib/bad.py"
+    repo.write(".gitignore", "lib/\n")
+    repo.write(ignored, "X = 1\n")
+    repo.git("add", "-f", "--", ignored)
+    repo.commit("base", ".gitignore")
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.write(ignored, branchy("bad", 16))
+    repo.write("pkg/good.py", branchy("bad", 16))
+    repo.commit("head", ignored, "pkg/good.py")
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert [(f.path, f.rule) for f in findings] == [("pkg/good.py", "S3776")]
+
+
+def test_ignore_rules_are_evaluated_at_each_revision(repo):
+    path = "pkg/mod.py"
+    repo.write(".gitignore", "pkg/\n")
+    repo.write(path, branchy("bad", 20))
+    repo.git("add", "-f", "--", path)
+    repo.commit("base", ".gitignore")
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.write(".gitignore", "")
+    repo.write(path, branchy("bad", 20, init=1))
+    repo.commit("head", ".gitignore", path)
+    # Working tree rules must not override either committed revision.
+    repo.write(".gitignore", "pkg/\n")
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "bad", 1, old=0, new=20)
+
+
+def test_scm_exclusion_can_be_disabled(repo):
+    repo.write_properties("sonar.sources=.\nsonar.scm.exclusions.disabled=true\n")
+    repo.write(".gitignore", "lib/\n")
+    repo.write("pkg/lib/mod.py", "X = 1\n")
+    repo.git("add", "-f", "--", "pkg/lib/mod.py")
+    repo.commit("base", ".gitignore")
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.write("pkg/lib/mod.py", branchy("bad", 16))
+    repo.commit("head", "pkg/lib/mod.py")
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "bad", 1, path="pkg/lib/mod.py", new=16)
+
+
+def test_nosonar_suppresses_declaration_issue_only(repo):
+    src = branchy("suppressed", 16).replace("def suppressed(a):", "def suppressed(a):  # NOSONAR")
+    src += "\n" + branchy("normal", 16).replace("    r = 0", "    r = 0  # NOSONAR")
+    scenario(repo, "X = 1\n", src)
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "normal", 1, new=16)
+    assert_no_finding(findings, "suppressed")
+
+
+def test_nosonar_string_and_other_comments_are_not_suppressions(repo):
+    src = branchy("bad", 16).replace("    r = 0", '    r = 0  # not suppressed\n    text = "NOSONAR"\n    print(text)')
+    scenario(repo, "X = 1\n", src)
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "bad", 1, new=16)
+
+
+def test_removing_nosonar_uses_new_issue_threshold(repo):
+    base = branchy("bad", 20).replace("def bad(a):", "def bad(a):  # NOSONAR")
+    scenario(repo, base, branchy("bad", 20, init=1))
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "bad", 1, old=0, new=20)
+
+
+def test_nosonar_only_suppresses_findings_on_their_own_lines(repo):
+    src = ("def f(a, b):  # NOSONAR\n"
+           "    unused = a + 1  # NOSONAR\n"
+           "    other = a + 2\n"
+           "    return a if b else (\n"
+           "        b if a else 0  # NOSONAR\n"
+           "    )\n")
+    scenario(repo, "X = 1\n", src)
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert [(f.rule, f.qual) for f in findings] == [("S1481", "f")]
+
+
 def test_sonar_excluded_directory_is_not_checked(repo):
     path = "scripts/opencode_workbench/fixtures/sample.py"
     scenario(repo, "X = 1\n", "X = 1\n\n\n" + branchy("bad", 30), path=path)

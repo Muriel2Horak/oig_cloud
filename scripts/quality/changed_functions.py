@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
+from collections.abc import Set
 import io
 import os
 import tokenize
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 
 MAX_COGNITIVE = 15
@@ -56,6 +58,7 @@ class _Scope:
     exclusions: tuple[re.Pattern[str], ...]
     test_inclusions: tuple[re.Pattern[str], ...]
     test_exclusions: tuple[re.Pattern[str], ...]
+    scm_exclusions: bool = True
 
 
 def _read_scope(repo: str) -> _Scope:
@@ -93,6 +96,7 @@ def _read_scope(repo: str) -> _Scope:
         exclusions=tuple(_glob_re(p) for p in values("sonar.exclusions")),
         test_inclusions=tuple(_glob_re(p) for p in values("sonar.test.inclusions")),
         test_exclusions=tuple(_glob_re(p) for p in values("sonar.test.exclusions")),
+        scm_exclusions=properties.get("sonar.scm.exclusions.disabled", "false").lower() != "true",
     )
 
 
@@ -278,8 +282,8 @@ def _conditional_anchor(statement: ast.stmt) -> str:
     return repr(anchor)
 
 
-def _conditional_findings(func: FuncNode) -> Counter[str]:
-    return _conditional_findings_in(func.body)
+def _conditional_findings(func: FuncNode, suppressed: Set[int] = frozenset()) -> Counter[str]:
+    return _conditional_findings_in(func.body, suppressed)
 
 
 def _conditional_list_children(field_name: str, values: list, path: tuple[str, ...]):
@@ -297,22 +301,22 @@ def _conditional_children(node: ast.AST, path: tuple[str, ...]):
 
 
 def _visit_conditional_node(node: ast.AST, inside: bool, statement: ast.stmt | None,
-                            path: tuple[str, ...], findings: Counter[str]) -> None:
+                            path: tuple[str, ...], findings: Counter[str], suppressed: Set[int]) -> None:
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, *_COMPREHENSIONS)):
         return
     if isinstance(node, ast.stmt):
         statement, path = node, ()
-    if isinstance(node, ast.IfExp) and inside and statement is not None:
+    if isinstance(node, ast.IfExp) and inside and statement is not None and node.lineno not in suppressed:
         findings[_conditional_anchor(statement) + ":" + repr(path)] += 1
     inside = isinstance(node, ast.IfExp) or (inside and not isinstance(node, _COND_BOUNDARY))
     for child, child_path in _conditional_children(node, path):
-        _visit_conditional_node(child, inside, statement, child_path, findings)
+        _visit_conditional_node(child, inside, statement, child_path, findings, suppressed)
 
 
-def _conditional_findings_in(statements: list[ast.stmt]) -> Counter[str]:
+def _conditional_findings_in(statements: list[ast.stmt], suppressed: Set[int] = frozenset()) -> Counter[str]:
     findings: Counter[str] = Counter()
     for stmt in statements:
-        _visit_conditional_node(stmt, False, None, (), findings)
+        _visit_conditional_node(stmt, False, None, (), findings, suppressed)
     return findings
 
 
@@ -671,6 +675,7 @@ class Unit:
     metrics: dict[str, int] = field(default_factory=dict)
     q4: dict[tuple[str, str], int] = field(default_factory=dict)
     q2: Counter[str] = field(default_factory=Counter)
+    nosonar: bool = False
 
 
 def _referenced_function_names(tree: ast.AST) -> set[str]:
@@ -726,6 +731,10 @@ class _Walker:
         self.tree = ast.parse(source)
         self.lines = source.splitlines()
         self.headers = _function_headers(source)
+        self.nosonar_lines = {
+            token.start[0] for token in tokenize.generate_tokens(io.StringIO(source).readline)
+            if token.type == tokenize.COMMENT and "NOSONAR" in token.string
+        }
         self.referenced = _referenced_function_names(self.tree)
         self.units: list[Unit] = []
 
@@ -737,6 +746,7 @@ class _Walker:
         qual = f"{prefix}{node.name}"
         first = min([node.lineno, *[d.lineno for d in node.decorator_list]])
         unit = Unit(qual, node, not in_function, first, node.end_lineno or node.lineno)
+        unit.nosonar = node.lineno in self.nosonar_lines
         unit.header_end = self.headers[node.lineno]
         unit.body_same_line = node.body[0].lineno == unit.header_end
         for child in ast.walk(node):
@@ -750,11 +760,13 @@ class _Walker:
         is_method, has_bases = class_info
         if unit.outermost:
             unit.metrics["Q1"] = cognitive_complexity(node)
-        unit.q2 = _conditional_findings(node)
+        unit.q2 = _conditional_findings(node, self.nosonar_lines)
         unit.metrics["Q3"] = parameter_count(node, is_method)
         if not in_function:  # Sonar reports unused names on top-level functions and methods only
             mentions = _mentions(self.lines, node)
             for f in unused_names(node, is_method, has_bases, self.referenced, mentions):
+                if f.line in self.nosonar_lines:
+                    continue
                 key = (f.rule, f.name)
                 unit.q4[key] = unit.q4.get(key, 0) + 1
         self.units.append(unit)
@@ -920,13 +932,16 @@ def _base_max(base_units: list[Unit] | None, getter) -> int:
 
 def _limit_findings(path: str, unit: Unit, base_units: list[Unit] | None) -> list[Finding]:
     findings = []
+    if unit.nosonar:
+        return findings
     for key, (rule, limit) in LIMITS.items():
         if key not in unit.metrics:
             continue
         new = unit.metrics[key]
-        old = _base_max(base_units, lambda b, k=key: b.metrics.get(k, 0))
+        unsuppressed_base = [b for b in base_units or [] if not b.nosonar] or None
+        old = _base_max(unsuppressed_base, lambda b, k=key: b.metrics.get(k, 0))
         # NEW: pass the threshold. MODIFIED: never increase, even below it.
-        if (base_units is None and new > limit) or (base_units is not None and new > old):
+        if (unsuppressed_base is None and new > limit) or (unsuppressed_base is not None and new > old):
             findings.append(Finding(path, unit.node.lineno, unit.qualname, rule, str(old), str(new)))
     return findings
 
@@ -960,14 +975,15 @@ def _analyze_or_none(source: str | None, path: str, warn) -> list[Unit] | None:
         return None
 
 
-def _check_file(repo: str, merge_base: str, head: str, path: str, lines: set[int], warn) -> list[Finding]:
+def _check_file(repo: str, merge_base: str, head: str, path: str, lines: set[int], warn,
+                base_in_scope: bool = True) -> list[Finding]:
     head_units = _analyze_or_none(_show(repo, head, path), path, warn)
     if not head_units:
         return []
     touched = [u for u in head_units if any(_body_line(u, n) for n in lines)]
     if not touched:
         return []
-    base_units = _analyze_or_none(_show(repo, merge_base, path), path, None)
+    base_units = _analyze_or_none(_show(repo, merge_base, path), path, None) if base_in_scope else None
     base_index = _base_index(base_units or [])
     findings: list[Finding] = []
     for unit in touched:
@@ -975,13 +991,55 @@ def _check_file(repo: str, merge_base: str, head: str, path: str, lines: set[int
     return findings
 
 
+def _ignored_at_revision(repo: str, rev: str, paths: list[str]) -> set[str]:
+    """Evaluate committed .gitignore files, including tracked paths, at a given revision.
+
+    An isolated Git directory avoids the caller's index, working tree, and local excludes.
+    Git performs the pattern matching, including nested negations and directory rules.
+    """
+    if not paths:
+        return set()
+    names = git(repo, "ls-tree", "-r", "-z", "--name-only", rev).split("\0")
+    with tempfile.TemporaryDirectory(prefix="changed-functions-ignore-") as work:
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith("GIT_"):
+                del env[key]
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        def run(*args, **kwargs):
+            return subprocess.run(["git", "-C", work, *args], env=env,
+                                  capture_output=True, **kwargs)
+        init = run("init", "-q", "--template=")
+        if init.returncode:
+            raise GitError("cannot initialize isolated Git ignore matcher")
+        for name in names:
+            if name == ".gitignore" or name.endswith("/.gitignore"):
+                content = _show(repo, rev, name)
+                if content is None:
+                    raise GitError(f"cannot read {rev}:{name}")
+                dest = os.path.join(work, name)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "w", encoding="utf-8") as stream:
+                    stream.write(content)
+        result = run("check-ignore", "--no-index", "-z", "--stdin",
+                     input="\0".join(paths).encode("utf-8") + b"\0")
+        if result.returncode not in (0, 1):
+            raise GitError(f"git check-ignore: {result.stderr.decode('utf-8', 'replace')}")
+        return set(result.stdout.decode("utf-8").split("\0")) - {""}
+
+
 def check_diff(repo: str, base: str, head: str = "HEAD", warn=None) -> list[Finding]:
     scope = _read_scope(repo)
     merge_base = git(repo, "merge-base", base, head).strip()
     if not merge_base:
         raise GitError(f"no merge-base between {base} and {head}")
+    changed = changed_lines(repo, merge_base, head)
+    paths = [path for path, lines in changed.items() if lines and in_scope(path, scope)]
+    head_ignored = _ignored_at_revision(repo, head, paths) if scope.scm_exclusions else set()
+    base_ignored = _ignored_at_revision(repo, merge_base, paths) if scope.scm_exclusions else set()
     findings: list[Finding] = []
-    for path, lines in sorted(changed_lines(repo, merge_base, head).items()):
-        if in_scope(path, scope) and lines:
-            findings.extend(_check_file(repo, merge_base, head, path, lines, warn))
+    for path in sorted(paths):
+        if path not in head_ignored:
+            findings.extend(_check_file(repo, merge_base, head, path, changed[path], warn,
+                                        path not in base_ignored))
     return findings

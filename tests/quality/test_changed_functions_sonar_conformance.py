@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,36 +23,10 @@ PINNED_FILE_COUNT = 53
 PINNED_ISSUE_DIGEST = "abbb288e43b1f139c07c1c47b316bf6ae4f13919e9073112a24109905ff78265"
 PINNED_FUNCTION_COUNT = 3338
 PINNED_FUNCTION_DIGEST = "aba1d5cdd857fed95dc96834bde31528d14fe9bbe21ca5e765dc303c8fa0089b"
-PINNED_UNFLAGGED_OVER_15 = [
-    {
-        "path": "custom_components/oig_cloud/lib/oig_cloud_client/api/oig_cloud_api.py",
-        "line": 213,
-        "qualname": "OigCloudApi._authenticate_internal",
-        "kind": "AsyncFunctionDef",
-        "local_score": 28,
-    },
-    {
-        "path": "custom_components/oig_cloud/lib/oig_cloud_client/api/oig_cloud_api.py",
-        "line": 388,
-        "qualname": "OigCloudApi._try_get_stats",
-        "kind": "AsyncFunctionDef",
-        "local_score": 36,
-    },
-    {
-        "path": "custom_components/oig_cloud/lib/oig_cloud_client/api/oig_cloud_api.py",
-        "line": 721,
-        "qualname": "OigCloudApi.get_extended_stats",
-        "kind": "AsyncFunctionDef",
-        "local_score": 24,
-    },
-    {
-        "path": "custom_components/oig_cloud/shared/cloud_contract.py",
-        "line": 467,
-        "qualname": "_normalize_event",
-        "kind": "FunctionDef",
-        "local_score": 27,
-    },
-]
+PINNED_INDEX_COUNT = 211
+PINNED_INDEX_DIGEST = "0c3875ea1619139840a0a11d197425d613138db730f333abcd44f7f613bb1752"
+IGNORED_API = "custom_components/oig_cloud/lib/oig_cloud_client/api/oig_cloud_api.py"
+SUPPRESSED_FILE = "custom_components/oig_cloud/shared/cloud_contract.py"
 
 
 def _load_fixture():
@@ -61,8 +36,9 @@ def _load_fixture():
     assert meta["record"] == "meta"
     issues = [record for record in records[1:] if record["record"] == "issue"]
     functions = [record for record in records[1:] if record["record"] == "function"]
-    assert len(issues) + len(functions) + 1 == len(records)
-    return meta, issues, functions
+    files = [record for record in records[1:] if record["record"] == "file"]
+    assert len(issues) + len(functions) + len(files) + 1 == len(records)
+    return meta, issues, functions, files
 
 
 def _identity_digest(issues):
@@ -110,7 +86,7 @@ def _parse_function(row):
 
 
 def test_fixture_is_complete_and_pinned():
-    meta, issues, functions = _load_fixture()
+    meta, issues, functions, files = _load_fixture()
     assert FIXTURE.stat().st_size < 300 * 1024
     assert meta["rule"] == "python:S3776"
     assert meta["analysis_key"] == PINNED_ANALYSIS_KEY
@@ -122,6 +98,14 @@ def test_fixture_is_complete_and_pinned():
     assert _identity_digest(issues) == PINNED_ISSUE_DIGEST
     assert meta["main_function_count"] == len(functions) == PINNED_FUNCTION_COUNT
     assert _function_digest(functions) == PINNED_FUNCTION_DIGEST
+    assert meta["indexed_python_file_count"] == len(files) == PINNED_INDEX_COUNT
+    rows = [(row["path"], row["sha256"]) for row in files]
+    assert rows == sorted(rows)
+    digest = hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest()
+    assert digest == meta["indexed_python_digest"] == PINNED_INDEX_DIGEST
+    assert IGNORED_API not in {row["path"] for row in files}
+    assert SUPPRESSED_FILE in {row["path"] for row in files}
+    assert {row["path"] for row in issues} <= {row["path"] for row in files}
 
     pages = meta["pages"]
     assert [page["p"] for page in pages] == list(range(1, len(pages) + 1))
@@ -140,7 +124,7 @@ def test_fixture_is_complete_and_pinned():
 
 
 def test_every_flagged_function_matches_sonar_exactly():
-    _, issues, _ = _load_fixture()
+    _, issues, _, _ = _load_fixture()
     checker = _checker()
     mismatches = []
     for row in issues:
@@ -150,14 +134,36 @@ def test_every_flagged_function_matches_sonar_exactly():
     assert not mismatches, "\n".join(map(str, mismatches))
 
 
-def test_unflagged_over_threshold_cases_are_exactly_pinned():
-    """Keep the four P0 discrepancies visible; do not hide or tolerate new cases."""
-    meta, issues, functions = _load_fixture()
-    flagged = {(row["path"], row["line"]) for row in issues}
-    unflagged_high = [
-        {key: row[key] for key in ("path", "line", "qualname", "kind", "local_score")}
-        for row in functions
-        if (row["path"], row["line"]) not in flagged and row["local_score"] > THRESHOLD
-    ]
-    assert meta["unflagged_over_15"] == PINNED_UNFLAGGED_OVER_15
-    assert unflagged_high == PINNED_UNFLAGGED_OVER_15
+def test_indexed_unsuppressed_unflagged_functions_are_within_threshold():
+    """Recompute from pinned Git blobs, using Sonar's captured FIL component index."""
+    _, issues, functions, files = _load_fixture()
+    checker = _checker()
+    flagged = {(row["path"], row["line"]): row for row in issues}
+    previous = {(row["path"], row["line"], row["qualname"]): row["local_score"]
+                for row in functions}
+    compared = set()
+    high = []
+    suppressed = set()
+    root = HERE.parents[1]
+    for row in files:
+        path = row["path"]
+        source = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{PINNED_SOURCE_SHA}:{path}"]
+        ).decode("utf-8")
+        assert hashlib.sha256(source.encode()).hexdigest() == row["sha256"]
+        for unit in checker.analyze_module(source):
+            if not unit.outermost:
+                continue
+            key = (path, unit.node.lineno)
+            score = unit.metrics["Q1"]
+            assert previous[(path, unit.node.lineno, unit.qualname)] == score
+            if unit.nosonar:
+                suppressed.add(key)
+            elif key in flagged:
+                assert score == flagged[key]["score"]
+                compared.add(key)
+            elif score > THRESHOLD:
+                high.append((path, unit.node.lineno, unit.qualname, score))
+    assert compared == set(flagged)
+    assert (SUPPRESSED_FILE, 467) in suppressed
+    assert not high, high
