@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+# Vendored from agent-ops 8c446efc5; scope from .sonar/local.properties.
+"""Blocking ratchet for changed Python functions (Sonar-aligned rules Q1-Q4).
+
+Exit 0 clean, 1 findings (`path:line qualname rule old->new`), 2 usage or git error.
+"""
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+import changed_functions as cf  # noqa: E402
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument("--base", default="origin/main", help="base revision (default origin/main)")
+    parser.add_argument("--head", default="HEAD", help="head revision (default HEAD)")
+    parser.add_argument("--repo", default=".", help="repository path (default cwd)")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return 2 if exc.code else 0
+    warnings = []
+    try:
+        findings = cf.check_diff(
+            args.repo, args.base, args.head, warn=warnings.append,
+        )
+    except cf.GitError as exc:
+        print(f"changed-functions-check: {exc}", file=sys.stderr)
+        return 2
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    for finding in findings:
+        print(finding.render())
+    return 2 if warnings else 1 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
