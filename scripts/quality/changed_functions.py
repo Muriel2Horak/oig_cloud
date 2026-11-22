@@ -61,14 +61,16 @@ class _Scope:
     scm_exclusions: bool = True
 
 
-def _read_scope(repo: str) -> _Scope:
+def _read_scope(repo: str, source: str | None = None) -> _Scope:
     """Read the source/test split from the project's minimal Sonar properties file."""
     path = os.path.join(repo, ".sonar", "local.properties")
-    try:
-        with open(path, encoding="utf-8") as properties_file:
-            lines = properties_file.readlines()
-    except (OSError, UnicodeError) as exc:
-        raise GitError(f"cannot read {path}: {exc}") from exc
+    if source is None:
+        try:
+            with open(path, encoding="utf-8") as properties_file:
+                source = properties_file.read()
+        except (OSError, UnicodeError) as exc:
+            raise GitError(f"cannot read {path}: {exc}") from exc
+    lines = source.splitlines()
 
     properties: dict[str, str] = {}
     for number, raw_line in enumerate(lines, 1):
@@ -1033,13 +1035,18 @@ def check_diff(repo: str, base: str, head: str = "HEAD", warn=None) -> list[Find
     merge_base = git(repo, "merge-base", base, head).strip()
     if not merge_base:
         raise GitError(f"no merge-base between {base} and {head}")
+    head_properties = _show(repo, head, ".sonar/local.properties")
+    if head_properties is not None:
+        scope = _read_scope(repo, head_properties)
+    base_properties = _show(repo, merge_base, ".sonar/local.properties")
+    base_scope = _read_scope(repo, base_properties) if base_properties is not None else scope
     changed = changed_lines(repo, merge_base, head)
     paths = [path for path, lines in changed.items() if lines and in_scope(path, scope)]
     head_ignored = _ignored_at_revision(repo, head, paths) if scope.scm_exclusions else set()
-    base_ignored = _ignored_at_revision(repo, merge_base, paths) if scope.scm_exclusions else set()
+    base_ignored = _ignored_at_revision(repo, merge_base, paths) if base_scope.scm_exclusions else set()
     findings: list[Finding] = []
     for path in sorted(paths):
         if path not in head_ignored:
             findings.extend(_check_file(repo, merge_base, head, path, changed[path], warn,
-                                        path not in base_ignored))
+                                        path not in base_ignored and in_scope(path, base_scope)))
     return findings

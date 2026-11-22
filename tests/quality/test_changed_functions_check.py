@@ -879,6 +879,19 @@ def test_scm_exclusion_can_be_disabled(repo):
     assert_finding(repo, findings, "bad", 1, path="pkg/lib/mod.py", new=16)
 
 
+def test_sonar_scope_is_compared_at_base_and_head(repo):
+    repo.write_properties("sonar.sources=other\n")
+    repo.write("pkg/mod.py", branchy("bad", 20))
+    repo.commit("base", "pkg/mod.py")
+    repo.git("checkout", "-q", "-b", "feature")
+    repo.write_properties("sonar.sources=pkg\n")
+    repo.write("pkg/mod.py", branchy("bad", 20, init=1))
+    repo.commit("head", "pkg/mod.py")
+    code, findings, res = repo.check()
+    assert code == 1, (res.stdout, res.stderr)
+    assert_finding(repo, findings, "bad", 1, old=0, new=20)
+
+
 def test_nosonar_suppresses_declaration_issue_only(repo):
     src = branchy("suppressed", 16).replace("def suppressed(a):", "def suppressed(a):  # NOSONAR")
     src += "\n" + branchy("normal", 16).replace("    r = 0", "    r = 0  # NOSONAR")
