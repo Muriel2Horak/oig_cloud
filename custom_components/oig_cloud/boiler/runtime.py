@@ -19,8 +19,7 @@ from ..const import (
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_ENABLED,
     CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
-    CONF_BOILER_CIRCULATION_KEEP_WARM,
-    CONF_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES,
+    CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
     CONF_BOILER_CIRCULATION_LEAD_MINUTES,
     CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
@@ -49,8 +48,7 @@ from ..const import (
     DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES,
     DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES,
-    DEFAULT_BOILER_CIRCULATION_KEEP_WARM,
-    DEFAULT_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES,
+    DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
     DEFAULT_BOILER_CIRCULATION_RUN_MINUTES,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
@@ -1313,15 +1311,13 @@ def _build_circulation_schedule(
     demand_targets: list[DemandTarget],
     now: datetime,
     config: dict[str, Any],
-    active_spans: Sequence[tuple[datetime, datetime]] = (),
 ) -> list[tuple[datetime, datetime, str]]:
     """Build a circulation run schedule from the current demand targets.
 
-    With keep-warm on, runs through each day's active hours (``active_spans``)
-    join the runs before the draw windows. Returns an empty list when
-    circulation is disabled. Never raises.
+    Returns an empty list when circulation is disabled (feature flag off) or
+    when no demand targets are available.  Never raises.
     """
-    from .circulation import build_circulation_runs, build_keep_warm_runs, merge_runs
+    from .circulation import build_circulation_runs
 
     enabled = bool(config.get(CONF_BOILER_CIRCULATION_ENABLED, DEFAULT_BOILER_CIRCULATION_ENABLED))
     if not enabled:
@@ -1333,7 +1329,7 @@ def _build_circulation_schedule(
     min_gap = int(config.get(CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES, DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES))
 
     try:
-        runs = build_circulation_runs(
+        return build_circulation_runs(
             demand_targets,
             now,
             lead_min=lead_min,
@@ -1341,20 +1337,14 @@ def _build_circulation_schedule(
             max_runs=max_runs,
             min_gap_min=min_gap,
         )
-        if active_spans and _keep_warm_enabled(config):
-            pause = int(
-                config.get(
-                    CONF_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES,
-                    DEFAULT_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES,
-                )
-            )
-            runs = merge_runs(
-                runs + build_keep_warm_runs(active_spans, now, run_min=run_min, pause_min=pause)
-            )
-        return runs
     except Exception as err:  # pragma: no cover
         _LOGGER.warning("Circulation schedule build failed: %s", err, exc_info=True)
         return []
+
+
+# Draw history is grouped in half hours: a draw that moves by a few minutes
+# from day to day still counts for its half hour.
+CIRCULATION_BLOCK_SLOTS = 2
 
 
 def _build_draw_targets(
@@ -1362,89 +1352,45 @@ def _build_draw_targets(
     coordinator: Any,
     now: datetime,
     horizon_hours: int,
+    min_probability: float = DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT / 100.0,
 ) -> list[DemandTarget]:
-    """One target per run of neighbouring profile slots with any draw.
+    """One target per half hour in which hot water was drawn on enough similar days.
 
-    The circulation pump has to run before every draw the profile expects,
-    including the small ones the heating plan's readiness windows leave out
-    (noise floor, at most three windows a day). Same confidence gate as the
-    windows.
+    The circulation pump has to run before every draw the history expects,
+    small ones too (washing hands), not only before the heating plan's
+    readiness windows (noise floor, at most three a day). A half hour counts
+    when at least ``min_probability`` of the days of the same category (workday
+    / weekend x season, holidays as weekend) had a draw in it. Same confidence
+    gate as the windows.
     """
     demand_profiler = getattr(coordinator, "_demand_profiler", None)
     if demand_profiler is None:
         return []
     horizon_end = now + timedelta(hours=horizon_hours)
+    block_minutes = 15 * CIRCULATION_BLOCK_SLOTS
     targets: list[DemandTarget] = []
     for day_offset in range(2):
         day = (now + timedelta(days=day_offset)).date()
-        demand_map = demand_profiler.get_demand_map(
-            _get_day_category(now + timedelta(days=day_offset))
-        )
+        category = _get_day_category(now + timedelta(days=day_offset))
+        demand_map = demand_profiler.get_demand_map(category)
         if demand_map.confidence < MIN_CONFIDENCE_THRESHOLD or demand_map.meta.level == "bootstrap":
             continue
+        probabilities = demand_profiler.draw_probability(category, CIRCULATION_BLOCK_SLOTS)
         day_start = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
         label_day = "today" if day_offset == 0 else "tomorrow"
-        cluster_start: Optional[int] = None
-        cluster_kwh = 0.0
-        kwh_by_slot = [float(slot.p80_kwh or 0.0) for slot in demand_map.slots] + [0.0]
-        for index, kwh in enumerate(kwh_by_slot):
-            if kwh > 0:
-                if cluster_start is None:
-                    cluster_start, cluster_kwh = index, 0.0
-                cluster_kwh += kwh
+        for block, probability in enumerate(probabilities):
+            if probability < min_probability:
                 continue
-            if cluster_start is None:
-                continue
-            start = day_start + timedelta(minutes=15 * cluster_start)
+            start = day_start + timedelta(minutes=block * block_minutes)
             if now < start < horizon_end:
                 targets.append(
                     DemandTarget(
                         start=start,
-                        required_kwh=cluster_kwh,
-                        label=f"{label_day}_draw_{start:%H%M}",
+                        required_kwh=0.0,
+                        label=f"{label_day}_draw_{start:%H%M}_{round(probability * 100)}pct",
                     )
                 )
-            cluster_start = None
     return targets
-
-
-def _keep_warm_enabled(config: dict[str, Any]) -> bool:
-    return bool(config.get(CONF_BOILER_CIRCULATION_KEEP_WARM, DEFAULT_BOILER_CIRCULATION_KEEP_WARM))
-
-
-def _build_active_spans(
-    *,
-    coordinator: Any,
-    now: datetime,
-    lead_min: int,
-) -> list[tuple[datetime, datetime]]:
-    """Today's and tomorrow's active hours from the demand profile.
-
-    From the first to the last slot with any draw in the day's category
-    (holidays count as weekend). Days whose profile is still bootstrap or below
-    the confidence threshold give no span, the same gate the draw windows use.
-    """
-    from .circulation import active_span
-
-    demand_profiler = getattr(coordinator, "_demand_profiler", None)
-    if demand_profiler is None:
-        return []
-    spans: list[tuple[datetime, datetime]] = []
-    for day_offset in range(2):
-        day = (now + timedelta(days=day_offset)).date()
-        demand_map = demand_profiler.get_demand_map(
-            _get_day_category(now + timedelta(days=day_offset))
-        )
-        if demand_map.confidence < MIN_CONFIDENCE_THRESHOLD or demand_map.meta.level == "bootstrap":
-            continue
-        # Same zone as the draw windows (_build_demand_targets).
-        day_start = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
-        span = active_span(
-            [slot.p80_kwh for slot in demand_map.slots], day_start, lead_min=lead_min
-        )
-        if span is not None:
-            spans.append(span)
-    return spans
 
 
 async def _async_actuate_circulation_pump(
@@ -3152,36 +3098,27 @@ class BoilerRuntime:
             # Every draw of the profile, small ones too, not only the (at most
             # three) readiness windows the heating plan uses (22. 11. 2026).
             targets = _build_draw_targets(
-                coordinator=self.coordinator, now=now, horizon_hours=CIRCULATION_HORIZON_HOURS
+                coordinator=self.coordinator,
+                now=now,
+                horizon_hours=CIRCULATION_HORIZON_HOURS,
+                min_probability=float(
+                    config.get(
+                        CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
+                        DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
+                    )
+                )
+                / 100.0,
             )
         except Exception as err:  # keep the last schedule
             _LOGGER.warning("Circulation schedule refresh failed: %s", err)
             return
-        spans: list[tuple[datetime, datetime]] = []
-        if _keep_warm_enabled(config):
-            try:
-                spans = _build_active_spans(
-                    coordinator=self.coordinator,
-                    now=now,
-                    lead_min=int(
-                        config.get(
-                            CONF_BOILER_CIRCULATION_LEAD_MINUTES,
-                            DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES,
-                        )
-                    ),
-                )
-            except Exception as err:  # the draw windows still plan
-                _LOGGER.warning("Circulation active hours failed: %s", err)
-        runs = _build_circulation_schedule(
-            demand_targets=targets, now=now, config=config, active_spans=spans
-        )
+        runs = _build_circulation_schedule(demand_targets=targets, now=now, config=config)
         summary = (len(targets), [r[0].isoformat() for r in runs])
         if summary != getattr(self, "_circulation_summary", None):
             self._circulation_summary = summary
             _LOGGER.info(
-                "Circulation: %d demand windows ahead, active hours %s, runs %s",
+                "Circulation: %d expected draws (half hours) ahead, runs %s",
                 len(targets),
-                ", ".join(f"{a:%d.%m %H:%M}-{b:%H:%M}" for a, b in spans) or "none",
                 ", ".join(f"{r[0]:%d.%m %H:%M}-{r[1]:%H:%M}" for r in runs) or "none",
             )
         self._circulation_runs = runs

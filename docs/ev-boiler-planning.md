@@ -150,16 +150,15 @@ Nová volba `ev_on_backup_circuit` („Wallbox je na záložním výstupu boxu�
 
 Neověřeno na boxu: zápis nízkého nabíjecího proudu (10–20 A) během UPS. Box ho dosud dostával jen v hodnotách 50 a 125 A.
 
-## Cirkulace přes den podle profilu (22. 11. 2026)
+## Cirkulace před každým odběrem z historie (22. 11. 2026)
 
-Cirkulace jela jen před velkými odběry, které profil pozná z teploty nádrže: nejvýš 3 okna denně, poklesy od 0,5 °C. Malé odběry (mytí rukou) teplota nádrže neukáže. Trubky tak byly většinu dne studené. 22. 11. jelo čerpadlo jen 07:48–08:03. Původní automatizace „Cirkulace“ přepínala čerpadlo každých 15 min od 5 do 21 h, když byl někdo doma.
+Cirkulace jela jen před okny připravenosti, která používá plán ohřevu. Ta mají práh šumu a jsou nejvýš tři za den, takže malé odběry vynechávala. 22. 11. jelo čerpadlo jen 07:48–08:03 a voda byla celý den studená. První pokus, pevná mřížka „každou hodinu 20 minut od prvního do posledního odběru“, byl špatně: časy nevycházely z dat a Martin ho zamítl. Je odstraněný.
 
-Nová volba `boiler_circulation_keep_warm` („Držet teplou vodu v trubkách přes den“) a k ní `boiler_circulation_keep_warm_pause_minutes` (výchozí 15):
+Teď:
 
-- **Aktivní hodiny dne:** od prvního do posledního 15min slotu s nenulovým odběrem (p80) v profilu daného dne (pracovní den / víkend × roční období, svátek jako víkend). Začínají o „předstih“ dřív. Víkend na podzim u Martina: 07:00–22:15.
-- **Běhy:** v aktivních hodinách běží čerpadlo „délku běhu“ a pak stojí po dobu pauzy (15/15 jako původní automatizace). Běhy před odběrovými okny zůstávají a překrývající se běhy se slijí. Limit běhů za den platí jen pro běhy před okny.
-- **Přítomnost:** běh se nespustí, když nikdo není doma.
-- Den, kdy profil ještě není spolehlivý (bootstrap, nízká důvěra), aktivní hodiny nemá. Platí pro něj jen běhy před okny.
-- Log ukáže aktivní hodiny: „Circulation: N demand windows ahead, active hours …, runs …“.
-
-**Běh před každým odběrem z profilu.** Cirkulace už nejede jen před okny připravenosti, která používá plán ohřevu: ta mají práh šumu a jsou nejvýš tři za den. Teď má běh každý shluk sousedních 15min slotů s nenulovým odběrem (p80) v profilu dne, i malý (víkend: 07:15, 08:00, 19:30 a 22:00). Martin 22. 11.: okruh se prohřívá asi 20 minut. U něj proto platí předstih 20 min, délka běhu 20 min, limit 20 běhů denně a minimální rozestup 10 min.
+- **Historie odběrů po půlhodinách:** pro každou půlhodinu se z profilu dne spočítá podíl podobných dnů, kdy v ní tekla teplá voda (pracovní den / víkend × roční období, svátek jako víkend). Půlhodina počítá den, když v kterémkoli z jejích slotů byl odběr. Odběr, který se den ode dne posune o pár minut, tak zůstane ve stejné půlhodině. `BoilerDemandProfiler.draw_probability`.
+- **Běh:** každá půlhodina s podílem aspoň `boiler_circulation_min_draw_probability_pct` (výchozí 10 %, tj. jeden den z deseti) dostane běh. Ten začne „předstih“ minut před ní a trvá „délku běhu“. U Martina je to 20 a 20, protože okruh se prohřívá asi 20 minut. V hustých obdobích to dává 20 minut běhu a 10 minut pauzy, ne nepřetržitý chod.
+- **Podle dat z HA (10/11 2026):** pracovní dny 05:30–08:00 a 19:00–22:00. Víkendy 07–10, k tomu 11:30, 13–14, 15:30–16:30 a 18:30–22:30.
+- **Limit běhů za den:** nově až 48 (jeden za půlhodinu). U Martina je 30.
+- **Přítomnost** dál blokuje každý běh, když nikdo není doma. Profil v bootstrapu nebo s nízkou důvěrou běhy nedává.
+- Log: „Circulation: N expected draws (half hours) ahead, runs …“.

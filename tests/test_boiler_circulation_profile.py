@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -109,93 +109,68 @@ async def test_nobody_home_means_no_circulation():
     act.assert_not_awaited()
 
 
-# ── keeping the loop warm through the day (22. 11. 2026: cold water all day) ──
+# ── a run before every expected draw, small ones too (22. 11. 2026) ──
 
-from custom_components.oig_cloud.boiler.circulation import (  # noqa: E402
-    active_span,
-    build_keep_warm_runs,
-    merge_runs,
-)
-
-# Weekend autumn p80 on the reference household: draws 07:15-09:15, 19:30-20:45
-# and a small one at 22:00.
-WEEKEND_P80 = [0.0] * 96
-for _slot, _kwh in {29: 0.03, 30: 0.2, 32: 0.45, 33: 0.34, 34: 0.72, 35: 0.07, 36: 0.15,
-                    37: 0.05, 78: 0.04, 79: 0.43, 80: 0.12, 81: 0.02, 82: 0.61, 83: 0.04,
-                    88: 0.02}.items():
-    WEEKEND_P80[_slot] = _kwh
+from custom_components.oig_cloud.boiler.demand_profiler import _block_draw_probability  # noqa: E402
 
 
-def test_active_hours_run_from_the_first_to_the_last_draw():
-    midnight = _dt(22, 0)
-    assert active_span(WEEKEND_P80, midnight, lead_min=15) == (_dt(22, 7), _dt(22, 22, 15))
-    assert active_span([0.0] * 96, midnight, lead_min=15) is None
+def test_draw_probability_counts_days_per_half_hour():
+    days = {
+        "d1": {48: 0.1},          # 12:00
+        "d2": {49: 0.05},         # 12:15: same half hour, a few minutes later
+        "d3": {},
+        "d4": {80: 0.5},          # 20:00
+    }
+    probability = _block_draw_probability(days, 2)
+    assert len(probability) == 48
+    assert probability[24] == 0.5   # 12:00-12:30 on two of four days
+    assert probability[40] == 0.25  # 20:00-20:30
+    assert probability[0] == 0.0
 
 
-def test_keep_warm_alternates_run_and_pause_through_the_span():
-    now = _dt(22, 10, 3)
-    runs = build_keep_warm_runs([(_dt(22, 7), _dt(22, 22, 15))], now, run_min=15, pause_min=15)
-    # The 10:00 run is still on; one every half hour until the span ends.
-    assert runs[0] == (_dt(22, 10), _dt(22, 10, 15), "keep_warm")
-    assert runs[1][0] == _dt(22, 10, 30)
-    assert runs[-1] == (_dt(22, 22), _dt(22, 22, 15), "keep_warm")
-    assert len(runs) == 25
+def _profiler(probabilities_today, probabilities_tomorrow=None, level="exact"):
+    demand_map = SimpleNamespace(confidence=1.0, meta=SimpleNamespace(level=level))
+    profiler = MagicMock()
+    profiler.get_demand_map.return_value = demand_map
+    profiler.draw_probability.side_effect = [
+        probabilities_today,
+        probabilities_tomorrow if probabilities_tomorrow is not None else probabilities_today,
+    ]
+    return SimpleNamespace(_demand_profiler=profiler)
 
 
-def test_runs_before_draws_and_keep_warm_runs_merge():
-    merged = merge_runs([
-        (_dt(22, 7), _dt(22, 7, 15), "keep_warm"),
-        (_dt(22, 7, 10), _dt(22, 7, 25), "today_morning"),
-        (_dt(22, 8), _dt(22, 8, 15), "keep_warm"),
-    ])
-    assert merged == [
-        (_dt(22, 7), _dt(22, 7, 25), "keep_warm"),
-        (_dt(22, 8), _dt(22, 8, 15), "keep_warm"),
+def _half_hours(**share):
+    """48 half-hour shares from {"HHMM": share}."""
+    out = [0.0] * 48
+    for key, value in share.items():
+        out[int(key[1:3]) * 2 + int(key[3:5]) // 30] = value
+    return out
+
+
+def test_every_half_hour_with_enough_draw_history_gets_a_run():
+    # Weekend autumn on the reference household (share of days with a draw).
+    weekend = _half_hours(t0700=0.41, t0730=0.41, t1300=0.18, t1230=0.06, t1530=0.18, t2030=0.35)
+    coordinator = _profiler(weekend)
+    targets = boiler_runtime._build_draw_targets(
+        coordinator=coordinator, now=_dt(22, 6), horizon_hours=30, min_probability=0.10
+    )
+    starts = [t.start for t in targets]
+    # 12:30 (one day in seventeen) stays out; tomorrow's 07:00 is within 30 h.
+    assert starts == [
+        _dt(22, 7), _dt(22, 7, 30), _dt(22, 13), _dt(22, 15, 30), _dt(22, 20, 30),
+        _dt(23, 7), _dt(23, 7, 30),
+    ]
+    # The loop needs 20 minutes: each run starts 20 minutes before its half hour.
+    runs = build_circulation_runs(targets, _dt(22, 6), lead_min=20, run_min=20, max_runs=20, min_gap_min=10)
+    assert [(r[0], r[1]) for r in runs][:3] == [
+        (_dt(22, 6, 40), _dt(22, 7)),
+        (_dt(22, 7, 10), _dt(22, 7, 30)),
+        (_dt(22, 12, 40), _dt(22, 13)),
     ]
 
 
-def test_schedule_adds_keep_warm_only_when_switched_on():
-    now = _dt(22, 10, 3)
-    spans = [(_dt(22, 7), _dt(22, 22, 15))]
-    targets = [DemandTarget(start=_dt(22, 19, 45), required_kwh=0.5, label="today_evening")]
-    config = {**CONFIG, "boiler_circulation_run_minutes": 15}
-    off = boiler_runtime._build_circulation_schedule(
-        demand_targets=targets, now=now, config=config, active_spans=spans
-    )
-    assert off == [(_dt(22, 19, 30), _dt(22, 19, 45), "today_evening")]
-    on = boiler_runtime._build_circulation_schedule(
-        demand_targets=targets,
-        now=now,
-        config={**config, "boiler_circulation_keep_warm": True},
-        active_spans=spans,
-    )
-    assert len(on) == 25
-    assert all(b - a == timedelta(minutes=15) for a, b, _ in on)
-
-
-def test_active_spans_follow_each_days_profile():
-    slots = [SimpleNamespace(p80_kwh=v) for v in WEEKEND_P80]
-    good = SimpleNamespace(slots=slots, confidence=1.0, meta=SimpleNamespace(level="exact"))
-    bootstrap = SimpleNamespace(slots=slots, confidence=1.0, meta=SimpleNamespace(level="bootstrap"))
-    profiler = MagicMock()
-    profiler.get_demand_map.side_effect = [good, bootstrap]
-    coordinator = SimpleNamespace(_demand_profiler=profiler)
-    spans = boiler_runtime._build_active_spans(coordinator=coordinator, now=_dt(22, 10), lead_min=15)
-    assert spans == [(_dt(22, 7), _dt(22, 22, 15))]  # tomorrow's bootstrap profile gives none
-
-
-def test_every_draw_of_the_profile_gets_a_run_not_only_the_windows():
-    """22. 11. 2026: circulation must run before the small draws too."""
-    slots = [SimpleNamespace(p80_kwh=v) for v in WEEKEND_P80]
-    good = SimpleNamespace(slots=slots, confidence=1.0, meta=SimpleNamespace(level="exact"))
-    profiler = MagicMock()
-    profiler.get_demand_map.side_effect = [good, good]
-    coordinator = SimpleNamespace(_demand_profiler=profiler)
-    targets = boiler_runtime._build_draw_targets(coordinator=coordinator, now=_dt(22, 6), horizon_hours=30)
-    starts = [t.start for t in targets]
-    # 07:15-07:30, 08:00-09:15, 19:30-20:45 and the small 22:00 draw; then tomorrow's morning.
-    assert starts[:4] == [_dt(22, 7, 15), _dt(22, 8), _dt(22, 19, 30), _dt(22, 22)]
-    assert starts[4] == _dt(23, 7, 15)
-    # 20 minutes for the loop to warm up: every draw gets its own run.
-    runs = build_circulation_runs(targets, _dt(22, 6), lead_min=20, run_min=20, max_runs=20, min_gap_min=10)
-    assert [r[0] for r in runs][:4] == [_dt(22, 6, 55), _dt(22, 7, 40), _dt(22, 19, 10), _dt(22, 21, 40)]
+def test_no_runs_from_a_bootstrap_profile():
+    coordinator = _profiler(_half_hours(t0700=1.0), level="bootstrap")
+    assert boiler_runtime._build_draw_targets(
+        coordinator=coordinator, now=_dt(22, 6), horizon_hours=30
+    ) == []

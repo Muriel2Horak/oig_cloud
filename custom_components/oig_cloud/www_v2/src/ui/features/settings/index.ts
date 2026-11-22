@@ -880,8 +880,7 @@ export class OigSettings extends LitElement {
               ${renderBoilerField('boiler_circulation_run_minutes')}
               ${renderBoilerField('boiler_circulation_max_runs_per_day')}
               ${renderBoilerField('boiler_circulation_min_gap_minutes')}
-              ${renderBoilerField('boiler_circulation_keep_warm')}
-              ${renderBoilerField('boiler_circulation_keep_warm_pause_minutes')}
+              ${renderBoilerField('boiler_circulation_min_draw_probability_pct')}
             ` : nothing}
           </div>
         </details>

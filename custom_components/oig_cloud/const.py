@@ -74,12 +74,9 @@ CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES = "boiler_circulation_min_gap_minutes"
 # Optional presence (zone, person, device_tracker, binary_sensor, input_boolean):
 # no circulation while nobody is home.
 CONF_BOILER_CIRCULATION_PRESENCE_ENTITY = "boiler_circulation_presence_entity"
-# Keep the loop warm through the day's active hours (first to last draw of the
-# day's profile): runs of boiler_circulation_run_minutes with this pause.
-# Small draws (washing hands) never show in the tank temperature, so the
-# draw windows alone leave the pipes cold most of the day (22. 11. 2026).
-CONF_BOILER_CIRCULATION_KEEP_WARM = "boiler_circulation_keep_warm"
-CONF_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES = "boiler_circulation_keep_warm_pause_minutes"
+# A half hour gets a circulation run when hot water was drawn in it on at
+# least this share (%) of the similar days (workday / weekend x season).
+CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT = "boiler_circulation_min_draw_probability_pct"
 # R3/R7: Home 5 maneuver (battery-discharge boiler heating)
 # Box-level capability flag — also gates control-panel buttons (F5).
 CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
@@ -125,9 +122,10 @@ DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES = 15
 DEFAULT_BOILER_CIRCULATION_RUN_MINUTES = 10
 DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = 3
 DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
-DEFAULT_BOILER_CIRCULATION_KEEP_WARM = False
-# 15 minutes on, 15 off: what the household's own automation did before.
-DEFAULT_BOILER_CIRCULATION_KEEP_WARM_PAUSE_MINUTES = 15
+# One day in ten: on the reference household (22. 11. 2026) this keeps the
+# mornings and evenings and the weekend's small midday draws, and leaves out
+# the half hours with a single draw in a month.
+DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT = 10
 # R3/R7: Home 5 maneuver defaults
 DEFAULT_BOX_HAS_HOME56 = False
 DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False

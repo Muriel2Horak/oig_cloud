@@ -638,6 +638,31 @@ def _category_label(category: str, days_used: int) -> str:
 # Main demand profiler class
 # ---------------------------------------------------------------------------
 
+def _block_draw_probability(
+    cat_data: dict[str, dict[int, float]], block_slots: int
+) -> list[float]:
+    """Share of the days with any draw in each block of ``block_slots`` slots.
+
+    Unlike the p80 profile this sees draws that move in time from day to day
+    (washing hands at 12:40 one day, 13:10 the next): a block counts a day
+    when any of its slots had a draw.
+    """
+    days = list(cat_data.values())
+    if not days or block_slots <= 0:
+        return []
+    blocks = SLOTS_PER_DAY // block_slots
+    result: list[float] = []
+    for block in range(blocks):
+        first = block * block_slots
+        hits = sum(
+            1
+            for day in days
+            if any(day.get(slot, 0.0) > 0 for slot in range(first, first + block_slots))
+        )
+        result.append(hits / len(days))
+    return result
+
+
 class BoilerDemandProfiler:
     """Demand-map profiler: detects draws from temperature history and builds
     per-category 96-slot percentile statistics.
@@ -769,6 +794,17 @@ class BoilerDemandProfiler:
         windows = _cluster_windows(slots, self.target_temp_c, self.cold_inlet_temp_c)
         confidence = self._compute_confidence(meta)
         return DemandMap(slots=slots, windows=windows, meta=meta, confidence=confidence)
+
+    def draw_probability(self, category: str, block_slots: int = 2) -> list[float]:
+        """Per block of slots, the share of the category's days with a draw.
+
+        Same fallback chain as ``get_demand_map``. Empty without history.
+        """
+        for cat_key, level in _fallback_chain(category):
+            cat_data = self._category_slots.get(cat_key)
+            if cat_data and (len(cat_data) >= MIN_SAMPLES_FOR_PERCENTILE or level == "global"):
+                return _block_draw_probability(cat_data, block_slots)
+        return []
 
     def _resolve_slots(
         self, category: str
@@ -1207,6 +1243,10 @@ class BoilerDemandProfilerAsync:
     def get_demand_map(self, category: str) -> DemandMap:
         """Return demand map for the given category."""
         return self._profiler.get_demand_map(category)
+
+    def draw_probability(self, category: str, block_slots: int = 2) -> list[float]:
+        """Per block of slots, the share of the category's days with a draw."""
+        return self._profiler.draw_probability(category, block_slots)
 
     def get_draw_map_dto(self) -> dict[str, Any]:
         """Weekly heatmap + P90 day-type profiles for the UI draw map."""
