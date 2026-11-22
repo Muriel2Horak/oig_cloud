@@ -93,6 +93,8 @@ export interface BoilerConfig {
   boiler_circulation_run_minutes: number | null;
   boiler_circulation_max_runs_per_day: number | null;
   boiler_circulation_min_gap_minutes: number | null;
+  boiler_circulation_keep_warm: boolean;
+  boiler_circulation_keep_warm_pause_minutes: number | null;
   // Anti-legionella
   boiler_legionella_interval_days: number | null;
   boiler_legionella_target_temp_c: number | null;

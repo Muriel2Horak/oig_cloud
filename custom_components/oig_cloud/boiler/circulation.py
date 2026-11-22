@@ -102,6 +102,69 @@ def build_circulation_runs(
     return accepted
 
 
+def active_span(
+    slot_kwh: Sequence[float],
+    day_start: datetime,
+    *,
+    lead_min: int,
+    slot_min: int = 15,
+) -> tuple[datetime, datetime] | None:
+    """From the first to the last slot of a day's profile that has any draw.
+
+    ``day_start`` is local midnight of that day (aware). The span opens
+    ``lead_min`` before the first draw slot and closes at the end of the last
+    one. None when the profile has no draw at all.
+    """
+    drawn = [i for i, kwh in enumerate(slot_kwh) if kwh and kwh > 0]
+    if not drawn:
+        return None
+    start = day_start + timedelta(minutes=drawn[0] * slot_min - max(0, lead_min))
+    end = day_start + timedelta(minutes=(drawn[-1] + 1) * slot_min)
+    return start, end
+
+
+def build_keep_warm_runs(
+    spans: Sequence[tuple[datetime, datetime]],
+    now: datetime,
+    *,
+    run_min: int,
+    pause_min: int,
+) -> list[tuple[datetime, datetime, str]]:
+    """Runs of ``run_min`` with ``pause_min`` between them through each span.
+
+    Keeps the loop warm for the small draws the tank temperature never shows.
+    Only runs that are not over yet and start within ``HORIZON_HOURS``.
+    """
+    if run_min <= 0 or pause_min < 0:
+        return []
+    horizon = now + timedelta(hours=HORIZON_HOURS)
+    step = timedelta(minutes=run_min + pause_min)
+    length = timedelta(minutes=run_min)
+    runs: list[tuple[datetime, datetime, str]] = []
+    for span_start, span_end in spans:
+        start = span_start
+        while start < span_end and start < horizon:
+            end = min(start + length, span_end)
+            if end > now:
+                runs.append((start, end, "keep_warm"))
+            start += step
+    return runs
+
+
+def merge_runs(
+    runs: Sequence[tuple[datetime, datetime, str]],
+) -> list[tuple[datetime, datetime, str]]:
+    """Sorted runs with overlapping or touching ones joined (first label kept)."""
+    merged: list[tuple[datetime, datetime, str]] = []
+    for start, end, label in sorted(runs, key=lambda r: (r[0], r[1])):
+        if merged and start <= merged[-1][1]:
+            last_start, last_end, last_label = merged[-1]
+            merged[-1] = (last_start, max(last_end, end), last_label)
+        else:
+            merged.append((start, end, label))
+    return merged
+
+
 def is_circulation_recommended(
     profile: Any,
     now: Any = None,

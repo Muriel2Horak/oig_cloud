@@ -149,3 +149,15 @@ Nová volba `ev_on_backup_circuit` („Wallbox je na záložním výstupu boxu�
 - **Jistič:** v Home UPS box zároveň nabíjí baterii ze sítě. Dokud auto nabíjí, nabíjecí proud baterie se sníží na to, co jistič nechá vedle domu a auta: (jistič − rezerva) × 230 V × fáze − (zátěž + nezáloha). Spodní mez je 10 A, přepočet nejvýš každých 5 minut a jen při změně o 10 A a víc. Po dobití auta se vrátí nastavený proud.
 
 Neověřeno na boxu: zápis nízkého nabíjecího proudu (10–20 A) během UPS. Box ho dosud dostával jen v hodnotách 50 a 125 A.
+
+## Cirkulace přes den podle profilu (22. 11. 2026)
+
+Cirkulace jela jen před velkými odběry, které profil pozná z teploty nádrže: nejvýš 3 okna denně, poklesy od 0,5 °C. Malé odběry (mytí rukou) teplota nádrže neukáže. Trubky tak byly většinu dne studené. 22. 11. jelo čerpadlo jen 07:48–08:03. Původní automatizace „Cirkulace“ přepínala čerpadlo každých 15 min od 5 do 21 h, když byl někdo doma.
+
+Nová volba `boiler_circulation_keep_warm` („Držet teplou vodu v trubkách přes den“) a k ní `boiler_circulation_keep_warm_pause_minutes` (výchozí 15):
+
+- **Aktivní hodiny dne:** od prvního do posledního 15min slotu s nenulovým odběrem (p80) v profilu daného dne (pracovní den / víkend × roční období, svátek jako víkend). Začínají o „předstih“ dřív. Víkend na podzim u Martina: 07:00–22:15.
+- **Běhy:** v aktivních hodinách běží čerpadlo „délku běhu“ a pak stojí po dobu pauzy (15/15 jako původní automatizace). Běhy před odběrovými okny zůstávají a překrývající se běhy se slijí. Limit běhů za den platí jen pro běhy před okny.
+- **Přítomnost:** běh se nespustí, když nikdo není doma.
+- Den, kdy profil ještě není spolehlivý (bootstrap, nízká důvěra), aktivní hodiny nemá. Platí pro něj jen běhy před okny.
+- Log ukáže aktivní hodiny: „Circulation: N demand windows ahead, active hours …, runs …“.

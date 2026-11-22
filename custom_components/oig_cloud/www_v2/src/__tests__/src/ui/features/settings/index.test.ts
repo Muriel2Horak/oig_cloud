@@ -152,6 +152,8 @@ const MODULE_CONFIG: ModuleConfig = {
     boiler_circulation_run_minutes: 10,
     boiler_circulation_max_runs_per_day: 3,
     boiler_circulation_min_gap_minutes: 120,
+    boiler_circulation_keep_warm: false,
+    boiler_circulation_keep_warm_pause_minutes: 15,
     boiler_legionella_interval_days: 0,
     boiler_legionella_target_temp_c: 60,
   },
