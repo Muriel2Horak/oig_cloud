@@ -1357,6 +1357,57 @@ def _build_circulation_schedule(
         return []
 
 
+def _build_draw_targets(
+    *,
+    coordinator: Any,
+    now: datetime,
+    horizon_hours: int,
+) -> list[DemandTarget]:
+    """One target per run of neighbouring profile slots with any draw.
+
+    The circulation pump has to run before every draw the profile expects,
+    including the small ones the heating plan's readiness windows leave out
+    (noise floor, at most three windows a day). Same confidence gate as the
+    windows.
+    """
+    demand_profiler = getattr(coordinator, "_demand_profiler", None)
+    if demand_profiler is None:
+        return []
+    horizon_end = now + timedelta(hours=horizon_hours)
+    targets: list[DemandTarget] = []
+    for day_offset in range(2):
+        day = (now + timedelta(days=day_offset)).date()
+        demand_map = demand_profiler.get_demand_map(
+            _get_day_category(now + timedelta(days=day_offset))
+        )
+        if demand_map.confidence < MIN_CONFIDENCE_THRESHOLD or demand_map.meta.level == "bootstrap":
+            continue
+        day_start = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
+        label_day = "today" if day_offset == 0 else "tomorrow"
+        cluster_start: Optional[int] = None
+        cluster_kwh = 0.0
+        kwh_by_slot = [float(slot.p80_kwh or 0.0) for slot in demand_map.slots] + [0.0]
+        for index, kwh in enumerate(kwh_by_slot):
+            if kwh > 0:
+                if cluster_start is None:
+                    cluster_start, cluster_kwh = index, 0.0
+                cluster_kwh += kwh
+                continue
+            if cluster_start is None:
+                continue
+            start = day_start + timedelta(minutes=15 * cluster_start)
+            if now < start < horizon_end:
+                targets.append(
+                    DemandTarget(
+                        start=start,
+                        required_kwh=cluster_kwh,
+                        label=f"{label_day}_draw_{start:%H%M}",
+                    )
+                )
+            cluster_start = None
+    return targets
+
+
 def _keep_warm_enabled(config: dict[str, Any]) -> bool:
     return bool(config.get(CONF_BOILER_CIRCULATION_KEEP_WARM, DEFAULT_BOILER_CIRCULATION_KEEP_WARM))
 
@@ -3098,7 +3149,9 @@ class BoilerRuntime:
         if getattr(self.coordinator, "_demand_profiler", None) is None:
             return
         try:
-            targets = _build_demand_targets(
+            # Every draw of the profile, small ones too, not only the (at most
+            # three) readiness windows the heating plan uses (22. 11. 2026).
+            targets = _build_draw_targets(
                 coordinator=self.coordinator, now=now, horizon_hours=CIRCULATION_HORIZON_HOURS
             )
         except Exception as err:  # keep the last schedule

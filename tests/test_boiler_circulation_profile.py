@@ -88,7 +88,7 @@ async def test_tick_rebuilds_the_schedule_and_runs_the_pump():
     now = _dt(18, 6, 50)
     rt = _runtime(CONFIG)
     targets = [DemandTarget(start=_dt(18, 7), required_kwh=1.0, label="today_morning")]
-    with patch.object(boiler_runtime, "_build_demand_targets", return_value=targets), \
+    with patch.object(boiler_runtime, "_build_draw_targets", return_value=targets), \
             patch.object(boiler_runtime.dt_util, "now", return_value=now), \
             patch.object(boiler_runtime, "_async_actuate_circulation_pump", AsyncMock(return_value=True)) as act:
         await rt._async_tick_circulation_pump()
@@ -102,7 +102,7 @@ async def test_nobody_home_means_no_circulation():
     now = _dt(18, 6, 50)
     rt = _runtime({**CONFIG, "boiler_circulation_presence_entity": "zone.home"}, presence="0")
     targets = [DemandTarget(start=_dt(18, 7), required_kwh=1.0, label="today_morning")]
-    with patch.object(boiler_runtime, "_build_demand_targets", return_value=targets), \
+    with patch.object(boiler_runtime, "_build_draw_targets", return_value=targets), \
             patch.object(boiler_runtime.dt_util, "now", return_value=now), \
             patch.object(boiler_runtime, "_async_actuate_circulation_pump", AsyncMock(return_value=True)) as act:
         await rt._async_tick_circulation_pump()
@@ -182,3 +182,20 @@ def test_active_spans_follow_each_days_profile():
     coordinator = SimpleNamespace(_demand_profiler=profiler)
     spans = boiler_runtime._build_active_spans(coordinator=coordinator, now=_dt(22, 10), lead_min=15)
     assert spans == [(_dt(22, 7), _dt(22, 22, 15))]  # tomorrow's bootstrap profile gives none
+
+
+def test_every_draw_of_the_profile_gets_a_run_not_only_the_windows():
+    """22. 11. 2026: circulation must run before the small draws too."""
+    slots = [SimpleNamespace(p80_kwh=v) for v in WEEKEND_P80]
+    good = SimpleNamespace(slots=slots, confidence=1.0, meta=SimpleNamespace(level="exact"))
+    profiler = MagicMock()
+    profiler.get_demand_map.side_effect = [good, good]
+    coordinator = SimpleNamespace(_demand_profiler=profiler)
+    targets = boiler_runtime._build_draw_targets(coordinator=coordinator, now=_dt(22, 6), horizon_hours=30)
+    starts = [t.start for t in targets]
+    # 07:15-07:30, 08:00-09:15, 19:30-20:45 and the small 22:00 draw; then tomorrow's morning.
+    assert starts[:4] == [_dt(22, 7, 15), _dt(22, 8), _dt(22, 19, 30), _dt(22, 22)]
+    assert starts[4] == _dt(23, 7, 15)
+    # 20 minutes for the loop to warm up: every draw gets its own run.
+    runs = build_circulation_runs(targets, _dt(22, 6), lead_min=20, run_min=20, max_runs=20, min_gap_min=10)
+    assert [r[0] for r in runs][:4] == [_dt(22, 6, 55), _dt(22, 7, 40), _dt(22, 19, 10), _dt(22, 21, 40)]

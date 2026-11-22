@@ -161,3 +161,5 @@ Nová volba `boiler_circulation_keep_warm` („Držet teplou vodu v trubkách p�
 - **Přítomnost:** běh se nespustí, když nikdo není doma.
 - Den, kdy profil ještě není spolehlivý (bootstrap, nízká důvěra), aktivní hodiny nemá. Platí pro něj jen běhy před okny.
 - Log ukáže aktivní hodiny: „Circulation: N demand windows ahead, active hours …, runs …“.
+
+**Běh před každým odběrem z profilu.** Cirkulace už nejede jen před okny připravenosti, která používá plán ohřevu: ta mají práh šumu a jsou nejvýš tři za den. Teď má běh každý shluk sousedních 15min slotů s nenulovým odběrem (p80) v profilu dne, i malý (víkend: 07:15, 08:00, 19:30 a 22:00). Martin 22. 11.: okruh se prohřívá asi 20 minut. U něj proto platí předstih 20 min, délka běhu 20 min, limit 20 běhů denně a minimální rozestup 10 min.
