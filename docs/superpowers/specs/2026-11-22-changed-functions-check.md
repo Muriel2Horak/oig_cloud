@@ -79,13 +79,13 @@ acceptance:
     cmd: npm --prefix custom_components/oig_cloud/www_v2 ci --ignore-scripts --no-audit --no-fund
     expect: 0
   - name: ts-tool-tests
-    cmd: npm --prefix custom_components/oig_cloud/www_v2 run test:quality
+    cmd: pnpm -C custom_components/oig_cloud/www_v2 vitest run tests/unit/quality
     expect: 0
 ```
 
 ### REQ 4 — Checks block in CI and are named in repo rules
 
-Acceptance: a pull-request CI workflow runs both checks against the PR base, independent of the
+Acceptance: a pull-request CI workflow (`.github/workflows/changed-functions.yml`) runs both checks against the PR base, independent of the
 existing Python 3.14.3 jobs; `CLAUDE.md` names both commands so author, fix and review slices cite
 their output.
 
@@ -95,10 +95,10 @@ priority: P1
 acceptance:
   ### integration
   - name: ci-py-step
-    cmd: grep -rq 'scripts/quality/changed-functions-check' .github/workflows
+    cmd: grep -q 'scripts/quality/changed-functions-check' .github/workflows/changed-functions.yml
     expect: 0
   - name: ci-ts-step
-    cmd: grep -rq 'changed-functions-check.mjs' .github/workflows
+    cmd: grep -q 'changed-functions-check.mjs' .github/workflows/changed-functions.yml
     expect: 0
   - name: repo-rules-name-it
     cmd: grep -q 'changed-functions-check' CLAUDE.md
