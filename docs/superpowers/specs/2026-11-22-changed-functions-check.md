@@ -25,8 +25,10 @@ TypeScript / JavaScript (`custom_components/oig_cloud/www_v2`):
 - Q1 S3776 `sonarjs/cognitive-complexity` 15; Q2 S3358 `sonarjs/no-nested-conditional`;
   Q3 S107 max 7 parameters; Q4 unused variables; Q5 S1871 / S4144 / S1186 duplicated branch,
   identical function, empty function.
-- Tool: `custom_components/oig_cloud/www_v2/scripts/quality/changed-functions-check.mjs`, ESLint with
-  `eslint-plugin-sonarjs`, reports mapped to functions, ratchet against the merge-base.
+- Tool: `scripts/quality/changed-functions-check.mjs` (repo root, next to the Python tool; its
+  dependencies `eslint-plugin-sonarjs` and `typescript-eslint` are root devDependencies, so the root
+  `npm ci` installs everything), ESLint with `eslint-plugin-sonarjs`, reports mapped to functions,
+  ratchet against the merge-base. Tests: root vitest, `tests/fe/unit/quality/`.
 
 <!-- fleet-spec: 2026-11-22-oig-cloud-changed-functions-check -->
 
@@ -65,7 +67,7 @@ acceptance:
 
 ### REQ 3 — TypeScript changed-functions check for www_v2
 
-Acceptance: `changed-functions-check.mjs --base <rev>` checks every added or modified TS/JS function
+Acceptance: `scripts/quality/changed-functions-check.mjs --base <rev>` checks every added or modified TS/JS function
 in www_v2 main code against the merge-base with ratchet semantics (Q1-Q5); every ESLint report maps to
 exactly one function or the tool fails closed (exit 2); exit codes as REQ 1; its S3776 values equal the
 SonarQube values at the P0 baseline for every flagged TS/JS function (committed fixture).
@@ -75,11 +77,8 @@ id: 2026-11-22-oig-cloud-changed-functions-check-REQ-3
 priority: P1
 acceptance:
   ### integration
-  - name: ts-deps
-    cmd: npm --prefix custom_components/oig_cloud/www_v2 ci --ignore-scripts --no-audit --no-fund
-    expect: 0
   - name: ts-tool-tests
-    cmd: pnpm -C custom_components/oig_cloud/www_v2 vitest run tests/unit/quality
+    cmd: npx vitest run tests/fe/unit/quality
     expect: 0
 ```
 
