@@ -5,9 +5,12 @@ import gzip
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE / "fixtures" / "changed_functions_s3776_baseline.jsonl.gz"
@@ -134,8 +137,23 @@ def test_every_flagged_function_matches_sonar_exactly():
     assert not mismatches, "\n".join(map(str, mismatches))
 
 
+def _require_pinned_source(root):
+    """Skip in a shallow checkout; fail when the workflow requires the baseline revision."""
+    present = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", f"{PINNED_SOURCE_SHA}^{{commit}}"],
+        capture_output=True, check=False,
+    ).returncode == 0
+    if present:
+        return
+    message = f"baseline revision {PINNED_SOURCE_SHA} not in this checkout (shallow clone)"
+    if os.environ.get("OIG_REQUIRE_SONAR_BASELINE") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def test_indexed_unsuppressed_unflagged_functions_are_within_threshold():
     """Recompute from pinned Git blobs, using Sonar's captured FIL component index."""
+    _require_pinned_source(HERE.parents[1])
     _, issues, functions, files = _load_fixture()
     checker = _checker()
     flagged = {(row["path"], row["line"]): row for row in issues}

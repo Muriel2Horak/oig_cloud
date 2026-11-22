@@ -163,8 +163,10 @@ class Repo:
         self.sources[rel] = text
 
     def commit(self, msg, *paths):
+        # -f: scope tests commit tracked files under ignored directories on purpose; some git
+        # versions refuse a plain `git add` of such a path.
         for p in paths:
-            self.git("add", "--", p)
+            self.git("add", "-f", "--", p)
         if (self.root / ".sonar" / "local.properties").exists():
             self.git("add", "--", ".sonar/local.properties")
         self.git("commit", "-q", "-m", msg)
