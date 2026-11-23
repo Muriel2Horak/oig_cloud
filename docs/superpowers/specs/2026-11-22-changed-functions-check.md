@@ -22,13 +22,48 @@ Python (`custom_components`, `scripts`):
 
 TypeScript / JavaScript (`custom_components/oig_cloud/www_v2`):
 
-- Q1 S3776 `sonarjs/cognitive-complexity` 15; Q2 S3358 `sonarjs/no-nested-conditional`;
-  Q3 S107 max 7 parameters; Q4 unused variables; Q5 S1871 / S4144 / S1186 duplicated branch,
-  identical function, empty function.
 - Tool: `scripts/quality/changed-functions-check.mjs` (repo root, next to the Python tool; its
   dependencies `eslint-plugin-sonarjs` and `typescript-eslint` are root devDependencies, so the root
-  `npm ci` installs everything), ESLint with `eslint-plugin-sonarjs`, reports mapped to functions,
-  ratchet against the merge-base. Tests: root vitest, `tests/fe/unit/quality/`.
+  `npm ci` installs everything), ESLint `Linter` API, reports mapped to functions, ratchet against the
+  merge-base. Tests: root vitest, `tests/fe/unit/quality/`.
+- Rule set = exactly the rules ACTIVE in the oig-cloud "Sonar agentic AI" profile per language
+  (checked 2026-11-23, `api/rules/search activation=true`); a rule that is inactive in Sonar is not
+  checked. Use the `eslint-plugin-sonarjs` implementation of a Sonar rule key wherever the plugin ships
+  one; a generic ESLint rule only where it does not, configured with the Sonar rule's exemptions.
+
+  | Q | Sonar key | TS | JS | parameter |
+  |---|---|---|---|---|
+  | Q1 | S3776 cognitive complexity | active | active | threshold 15 |
+  | Q2 | S3358 nested conditional | active | active | |
+  | Q3 | S107 parameters | active | active | max 7 |
+  | Q4 | S1854 dead store | active | active | |
+  | Q4 | S1481 unused local variable | INACTIVE | active | |
+  | - | S1172 unused parameter | INACTIVE | INACTIVE | never checked |
+  | Q5 | S1871 / S4144 / S1186 duplicated branch, identical function, empty function | active | active | |
+
+  Module-level rules (e.g. S1128 unused import) are out of scope: the check is per function.
+
+Function identity for the ratchet (design round 2, 2026-11-23). Replaces label/text identity, which
+review `review-independently-review-typescript-9d2997` rejected: identical same-label callbacks
+(`node.ts:1790/1794`) can never be matched by text, and one-of-N same-label callback edits failed closed.
+
+- Touched = a head function whose line range contains an added or modified line of
+  `git diff -U0 -M <merge-base> HEAD` for that file. Only touched functions are checked. Identity is
+  never computed for untouched functions, so they can never fail the check, block it, or exit 2.
+- Base partner of a touched function, in this order:
+  1. Its first line (the line of its anchor token) is an unchanged diff line: the partner is the base
+     function whose anchor sits on the mapped base line and has the same kind and label. Line shifts
+     above it do not matter.
+  2. Its first line is inside a hunk: the partner is the single base function of the same label whose
+     anchor lies on a removed line of that same hunk; if no same-label one, the single base function
+     of any label anchored there.
+  3. Otherwise none: the function is NEW and must pass every rule (= Sonar's thresholds, never
+     stricter). Two or more candidates in step 2 also mean NEW.
+- File renames (`-M`) map to the base path, so a renamed file is not a file of new functions.
+- Report ownership: a report of a function-scoped rule maps to exactly one function by its anchor
+  (sonarjs `getMainFunctionTokenLocation`); zero or more than one owner for a report inside a touched
+  function -> exit 2 (fail closed). Reports outside every touched function are ignored.
+- Exit codes and output line as the Python tool.
 
 <!-- fleet-spec: 2026-11-22-oig-cloud-changed-functions-check -->
 
@@ -68,9 +103,11 @@ acceptance:
 ### REQ 3 — TypeScript changed-functions check for www_v2
 
 Acceptance: `scripts/quality/changed-functions-check.mjs --base <rev>` checks every added or modified TS/JS function
-in www_v2 main code against the merge-base with ratchet semantics (Q1-Q5); every ESLint report maps to
-exactly one function or the tool fails closed (exit 2); exit codes as REQ 1; its S3776 values equal the
-SonarQube values at the P0 baseline for every flagged TS/JS function (committed fixture).
+in www_v2 main code against the merge-base with ratchet semantics, the per-language active rule set and
+the diff-mapped function identity above; every report inside a touched function maps to exactly one
+function or the tool fails closed (exit 2); untouched functions never affect the result; exit codes as
+REQ 1; its S3776 values equal the SonarQube values at the P0 baseline for every flagged TS/JS function
+(committed fixture).
 
 ```fleet-req
 id: 2026-11-22-oig-cloud-changed-functions-check-REQ-3
