@@ -8,7 +8,8 @@ Status: ACCEPTED. Parent design: agent-ops
   or modifies. Untouched functions are never checked.
 - Semantics = ratchet (operator form 2026-11-21): a NEW function must pass every rule; a MODIFIED
   function must not get worse (complexity and parameter count may not rise above the merge-base value,
-  no new finding of the other rules inside it).
+  and the per-function count of findings of each other rule key may not rise; a replaced finding,
+  one removed and one added in the same function, passes; decided 2026-11-23).
 - Thresholds equal Sonar's (profile "Sonar agentic AI"), never stricter.
 - File scope for both languages comes from `.sonar/local.properties`: the check sees exactly the files
   Sonar analyzes as main code.
