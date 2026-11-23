@@ -281,9 +281,14 @@ export function analyzeFile(code, filename) {
   walkAst(sourceCode.ast, (node) => {
     let key = null;
     if (node.type === 'TSDeclareFunction' && node.id?.name) key = `function:${node.id.name}`;
-    if (node.type === 'TSDeclareMethod') {
-      const className = node.parent?.parent?.id?.name ?? '<anonymous-class>';
-      key = `method:${className}:${node.key?.name ?? sourceCode.getText(node.key)}`;
+    if (node.type === 'TSEmptyBodyFunctionExpression') {
+      const parent = node.parent;
+      if (parent?.type === 'MethodDefinition') {
+        const className = parent.parent?.parent?.id?.name ?? '<anonymous-class>';
+        key = `method:${className}:${parent.key?.name ?? sourceCode.getText(parent.key)}`;
+      } else if (parent?.type === 'FunctionDeclaration' && parent.id?.name) {
+        key = `function:${parent.id.name}`;
+      }
     }
     if (!key) return;
     const count = (node.params ?? []).filter((param) => param.type !== 'TSParameterProperty'
@@ -393,6 +398,16 @@ function emptyMetrics(fn) {
   return { fn, complexity: 0, suppressed: false, params: fn.params, findings: new Map() };
 }
 
+function isNeverReadLocalDeclaration(report, sourceCode) {
+  for (const scope of sourceCode.scopeManager.scopes) {
+    const reference = scope.references.find((item) => item.identifier.range[0] === report.start);
+    if (!reference || reference.identifier.parent?.type !== 'VariableDeclarator'
+      || reference.identifier.parent.id !== reference.identifier) continue;
+    return !reference.resolved?.references.some((item) => item.isRead());
+  }
+  return false;
+}
+
 // Metrics of `targets` only. A report inside a target must map to exactly one function, else fail closed.
 export function collectMetrics(analysis, targets, filename = '<file>') {
   const result = new Map(targets.map((fn) => [fn, emptyMetrics(fn)]));
@@ -411,7 +426,9 @@ export function collectMetrics(analysis, targets, filename = '<file>') {
       if (!match) throw new CheckError(`${filename}:${message.line}: cannot read cognitive complexity from ESLint`);
       metrics.complexity = Number(match[1]);
       metrics.suppressed = isNoSonar(message, analysis.sourceCode);
-    } else if (!isNoSonar(message, analysis.sourceCode)) {
+    } else if (!isNoSonar(message, analysis.sourceCode)
+      && !(analysis.language === 'ts' && message.ruleId === 'sonarjs/no-dead-store'
+        && isNeverReadLocalDeclaration(report, analysis.sourceCode))) {
       const key = RULES[message.ruleId].key;
       const findings = metrics.findings.get(key) ?? [];
       findings.push({
