@@ -14,7 +14,7 @@ const sonarjsDir = path.dirname(require.resolve('eslint-plugin-sonarjs/package.j
 const { getMainFunctionTokenLocation } = require(path.join(sonarjsDir, 'cjs/helpers/location.js'));
 
 const FUNCTION_TYPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
-const FILE_GLOBS = ['**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs', '**/*.ts', '**/*.tsx'];
+const FILE_GLOBS = ['**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs', '**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'];
 const SOURCE_PREFIX = 'custom_components/oig_cloud/www_v2/';
 const COMPLEXITY_THRESHOLD = 15;
 const MAX_PARAMETERS = 7;
@@ -103,7 +103,7 @@ function underRoot(filename, root) {
 
 export function isMainCodePath(filename, scope) {
   const normalizedPath = filename.replaceAll('\\', '/');
-  if (!normalizedPath.startsWith(SOURCE_PREFIX) || !/\.(?:js|jsx|mjs|cjs|ts|tsx)$/.test(normalizedPath)) return false;
+  if (!normalizedPath.startsWith(SOURCE_PREFIX) || !/\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts)$/.test(normalizedPath)) return false;
   if (!scope.sources.some((root) => underRoot(normalizedPath, root))) return false;
   if (scope.exclusions.some((pattern) => pattern.test(normalizedPath))) return false;
 
@@ -228,14 +228,16 @@ function extendedStart(node) {
 }
 
 export function languageOf(filename) {
-  return /\.tsx?$/.test(filename) ? 'ts' : 'js';
+  return /\.(?:tsx?|mts|cts)$/.test(filename) ? 'ts' : 'js';
 }
 
 function lintConfig(language) {
   const rules = {};
   for (const [id, spec] of Object.entries(RULES)) {
     if (!spec.langs.includes(language)) continue;
-    rules[id] = id === COGNITIVE_RULE ? ['error', 0] : 'error';
+    rules[id] = id === COGNITIVE_RULE ? ['error', 0]
+      : id === '@typescript-eslint/no-empty-function' ? ['error', { allow: ['arrowFunctions'] }]
+        : 'error';
   }
   return [{
     files: FILE_GLOBS,
@@ -275,10 +277,35 @@ export function analyzeFile(code, filename) {
 
   const nodes = [];
   walkAst(sourceCode.ast, (node) => { if (FUNCTION_TYPES.has(node.type) && node.body) nodes.push(node); });
+  const overloadParams = new Map();
+  walkAst(sourceCode.ast, (node) => {
+    let key = null;
+    if (node.type === 'TSDeclareFunction' && node.id?.name) key = `function:${node.id.name}`;
+    if (node.type === 'TSDeclareMethod') {
+      const className = node.parent?.parent?.id?.name ?? '<anonymous-class>';
+      key = `method:${className}:${node.key?.name ?? sourceCode.getText(node.key)}`;
+    }
+    if (!key) return;
+    const count = (node.params ?? []).filter((param) => param.type !== 'TSParameterProperty'
+      && !(param.type === 'Identifier' && param.name === 'this')).length;
+    overloadParams.set(key, Math.max(overloadParams.get(key) ?? 0, count));
+  });
   const functions = nodes.map((node) => {
     const anchor = getMainFunctionTokenLocation(node, node.parent, { sourceCode });
     if (!anchor) throw new CheckError(`${filename}: no function anchor for ${functionLabel(node, sourceCode)}`);
     const start = extendedStart(node);
+    const params = node.params.filter((param) => !(param.type === 'Identifier' && param.name === 'this')).length;
+    const ordinaryParams = node.params.filter((param) => param.type !== 'TSParameterProperty'
+      && !(param.type === 'Identifier' && param.name === 'this')).length;
+    const parent = node.parent;
+    const overloadKey = node.id?.name ? `function:${node.id.name}`
+      : parent?.type === 'MethodDefinition'
+        ? `method:${parent.parent?.parent?.id?.name ?? '<anonymous-class>'}:${parent.key?.name ?? sourceCode.getText(parent.key)}`
+        : null;
+    const maxParams = Math.max(params, overloadKey ? overloadParams.get(overloadKey) ?? 0 : 0);
+    const amdExempt = isAmdFactoryCallback(node);
+    const parameterPropertyExempt = node.params.some((param) => param.type === 'TSParameterProperty')
+      && ordinaryParams <= MAX_PARAMETERS;
     return {
       node,
       anchor,
@@ -288,14 +315,64 @@ export function analyzeFile(code, filename) {
       range: [start, node.range[1]],
       startLine: sourceCode.getLocFromIndex(start).line,
       endLine: node.loc.end.line,
-      params: node.params.filter((param) => !(param.type === 'Identifier' && param.name === 'this')).length,
+      params: maxParams,
+      paramsSuppressed: amdExempt || parameterPropertyExempt
+        || sourceCode.getAllComments().some((comment) => comment.loc.start.line === anchor.start.line
+          && /\bNOSONAR\b/i.test(comment.value)),
     };
   });
   const reports = messages.filter((message) => RULES[message.ruleId]).map((message) => ({
     message,
     ...reportRange(message, sourceCode),
   }));
-  return { sourceCode, functions, reports, language };
+  // Sonar S1186 checks named declarations, methods, and variable-bound functions only.
+  // Its decorator exempts onXxx/noop names; anonymous callbacks are not findings.
+  for (const fn of functions) {
+    const parent = fn.node.parent;
+    const variable = parent?.type === 'VariableDeclarator' && parent.init === fn.node ? parent : null;
+    const isEmptyArrowVariable = fn.node.type === 'ArrowFunctionExpression' && variable
+      && fn.node.body.type === 'BlockStatement' && fn.node.body.body.length === 0;
+    if (!isEmptyArrowVariable) continue;
+    const name = variable.id.type === 'Identifier' ? variable.id.name : '';
+    if (/^on[A-Z]/.test(name) || /noop/i.test(name)) continue;
+    const location = sourceCode.getLocFromIndex(fn.node.body.range[0]);
+    const message = {
+      ruleId: '@typescript-eslint/no-empty-function',
+      line: location.line,
+      column: location.column + 1,
+      endLine: location.line,
+      endColumn: location.column + 2,
+      message: 'Unexpected empty function.',
+    };
+    reports.push({ message, ...reportRange(message, sourceCode) });
+  }
+  const effectiveReports = reports.filter((report) => {
+    if (report.message.ruleId !== '@typescript-eslint/no-empty-function') return true;
+    const owner = resolveReportOwners(report, functions)[0];
+    if (!owner) return true;
+    const parent = owner.node.parent;
+    const applicable = owner.node.type === 'FunctionDeclaration'
+      || parent?.type === 'MethodDefinition'
+      || parent?.type === 'VariableDeclarator' && parent.init === owner.node;
+    return applicable && !/^on[A-Z]/.test(owner.idLabel) && !/noop/i.test(owner.idLabel);
+  });
+  return { sourceCode, functions, reports: effectiveReports, language };
+}
+
+function isAmdFactoryCallback(node) {
+  const call = node.parent;
+  if (call?.type !== 'CallExpression') return false;
+  const callee = call.callee;
+  const amdCall = (callee.type === 'Identifier' && ['define', 'require'].includes(callee.name))
+    || (callee.type === 'MemberExpression' && callee.property.type === 'Identifier'
+      && ['define', 'require'].includes(callee.property.name)
+      && callee.object.type === 'MemberExpression' && callee.object.object.type === 'Identifier'
+      && callee.object.object.name === 'sap' && callee.object.property.type === 'Identifier'
+      && callee.object.property.name === 'ui');
+  if (!amdCall) return false;
+  const index = call.arguments.indexOf(node);
+  const dependencies = index > 0 ? call.arguments[index - 1] : null;
+  return dependencies?.type === 'ArrayExpression' && node.params.length <= dependencies.elements.length;
 }
 
 const sameAnchorStart = (fn, message) => fn.anchor.start.line === message.line
@@ -316,20 +393,6 @@ function emptyMetrics(fn) {
   return { fn, complexity: 0, suppressed: false, params: fn.params, findings: new Map() };
 }
 
-// S1854 also reports a variable that is never read; that is S1481's case, which is inactive for TypeScript.
-function isNeverReadVariable(report, sourceCode) {
-  for (const scope of sourceCode.scopeManager.scopes) {
-    const reference = scope.references.find((item) => item.identifier.range[0] === report.start);
-    if (reference) return !reference.resolved || !reference.resolved.references.some((item) => item.isRead());
-  }
-  return false;
-}
-
-function skipsNeverRead(report, analysis) {
-  return analysis.language === 'ts' && report.message.ruleId === 'sonarjs/no-dead-store'
-    && isNeverReadVariable(report, analysis.sourceCode);
-}
-
 // Metrics of `targets` only. A report inside a target must map to exactly one function, else fail closed.
 export function collectMetrics(analysis, targets, filename = '<file>') {
   const result = new Map(targets.map((fn) => [fn, emptyMetrics(fn)]));
@@ -348,9 +411,17 @@ export function collectMetrics(analysis, targets, filename = '<file>') {
       if (!match) throw new CheckError(`${filename}:${message.line}: cannot read cognitive complexity from ESLint`);
       metrics.complexity = Number(match[1]);
       metrics.suppressed = isNoSonar(message, analysis.sourceCode);
-    } else if (!isNoSonar(message, analysis.sourceCode) && !skipsNeverRead(report, analysis)) {
+    } else if (!isNoSonar(message, analysis.sourceCode)) {
       const key = RULES[message.ruleId].key;
-      metrics.findings.set(key, (metrics.findings.get(key) ?? 0) + 1);
+      const findings = metrics.findings.get(key) ?? [];
+      findings.push({
+        line: message.line,
+        column: message.column,
+        lineText: analysis.sourceCode.lines[message.line - 1] ?? '',
+        start: report.start,
+        end: report.end,
+      });
+      metrics.findings.set(key, findings);
     }
   }
   return result;
@@ -368,9 +439,37 @@ export function fileComplexities(code, filename) {
 export function parseDiff(text) {
   const files = [];
   let current = null;
+  const decodePath = (value) => {
+    if (!value.startsWith('"')) return value.replace(/\t.*$/, '');
+    const end = value.lastIndexOf('"');
+    if (end <= 0) throw new CheckError(`cannot parse quoted git path: ${value}`);
+    const encoded = value.slice(1, end);
+    const bytes = [];
+    const escapes = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '\\': 92, '"': 34 };
+    for (let index = 0; index < encoded.length;) {
+      if (encoded[index] !== '\\') {
+        const point = encoded.codePointAt(index);
+        bytes.push(...Buffer.from(String.fromCodePoint(point), 'utf8'));
+        index += point > 0xffff ? 2 : 1;
+        continue;
+      }
+      index += 1;
+      if (/[0-7]/.test(encoded[index] ?? '')) {
+        const digits = /^[0-7]{1,3}/.exec(encoded.slice(index))?.[0];
+        if (!digits) throw new CheckError(`cannot parse quoted git path: ${value}`);
+        bytes.push(Number.parseInt(digits, 8));
+        index += digits.length;
+      } else {
+        const escaped = encoded[index++];
+        if (!(escaped in escapes)) throw new CheckError(`cannot parse quoted git path: ${value}`);
+        bytes.push(escapes[escaped]);
+      }
+    }
+    return Buffer.from(bytes).toString('utf8');
+  };
   const stripPath = (value, prefix) => {
-    const raw = value.replace(/\t.*$/, '');
-    return raw === '/dev/null' ? null : raw.replace(prefix, '');
+    const raw = decodePath(value);
+    return raw === '/dev/null' ? null : raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
   };
   for (const line of text.split('\n')) {
     if (line.startsWith('diff --git ')) {
@@ -379,9 +478,9 @@ export function parseDiff(text) {
     } else if (!current) {
       continue;
     } else if (line.startsWith('--- ')) {
-      current.oldPath = stripPath(line.slice(4), /^a\//);
+      current.oldPath = stripPath(line.slice(4), 'a/');
     } else if (line.startsWith('+++ ')) {
-      current.newPath = stripPath(line.slice(4), /^b\//);
+      current.newPath = stripPath(line.slice(4), 'b/');
     } else if (line.startsWith('@@ ')) {
       const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
       if (!match) throw new CheckError(`cannot parse hunk header: ${line}`);
@@ -416,19 +515,24 @@ export function findPartner(fn, baseFunctions, hunks) {
     const mapped = mapToBaseLine(line, hunks);
     const same = baseFunctions.filter((base) => base.anchor.start.line === mapped
       && base.kind === fn.kind && base.idLabel === fn.idLabel);
+    const sameAnchor = same.filter((base) => base.anchor.start.column === fn.anchor.start.column);
+    if (sameAnchor.length === 1) return sameAnchor[0];
     return same.length === 1 ? same[0] : null;
   }
   const removedEnd = hunk.oldStart + hunk.oldCount - 1;
   const candidates = baseFunctions.filter((base) => hunk.oldCount > 0
     && base.anchor.start.line >= hunk.oldStart && base.anchor.start.line <= removedEnd);
-  const sameLabel = candidates.filter((base) => base.idLabel === fn.idLabel);
+  const sameAnchor = candidates.filter((base) => base.kind === fn.kind && base.idLabel === fn.idLabel
+    && base.anchor.start.column === fn.anchor.start.column);
+  if (sameAnchor.length === 1) return sameAnchor[0];
+  const sameLabel = candidates.filter((base) => base.kind === fn.kind && base.idLabel === fn.idLabel);
   if (sameLabel.length === 1) return sameLabel[0];
   return sameLabel.length === 0 && candidates.length === 1 ? candidates[0] : null;
 }
 
 // ---- ratchet ----
 
-function compareFunction(head, base) {
+function compareFunction(head, base, hunks) {
   const out = [];
   const baseGoverns = base && !base.suppressed;
   if (!head.suppressed) {
@@ -436,14 +540,50 @@ function compareFunction(head, base) {
       out.push(['S3776', baseGoverns ? base.complexity : 0, head.complexity]);
     }
   }
-  if (base ? head.params > base.params : head.params > MAX_PARAMETERS) {
-    out.push(['S107', base ? base.params : 0, head.params]);
+  const baseHasParamsFinding = base && !base.fn.paramsSuppressed;
+  if (!head.fn.paramsSuppressed && (baseHasParamsFinding
+    ? head.params > base.params : head.params > MAX_PARAMETERS)) {
+    out.push(['S107', baseHasParamsFinding ? base.params : 0, head.params]);
   }
-  for (const [key, count] of head.findings) {
-    const baseCount = base?.findings.get(key) ?? 0;
-    if (count > baseCount) out.push([key, baseCount, count]);
+  for (const [key, findings] of head.findings) {
+    const baseline = base?.findings.get(key) ?? [];
+    const unmatched = [...baseline];
+    const added = [];
+    for (const finding of findings) {
+      const baseLine = base && mapFindingLine(finding.line, hunks);
+      const match = base && baseLine !== null
+        ? unmatched.findIndex((candidate) => candidate.line === baseLine
+          && candidate.column === mapFindingColumn(finding, candidate))
+        : -1;
+      if (match >= 0) unmatched.splice(match, 1);
+      else added.push(finding);
+    }
+    if (added.length) out.push([key, baseline.length, findings.length]);
   }
   return out;
+}
+
+function mapFindingLine(line, hunks) {
+  const hunk = hunks.find((item) => item.newCount > 0 && item.newStart <= line && line <= hunkNewEnd(item));
+  if (!hunk) return mapToBaseLine(line, hunks);
+  if (hunk.oldCount === 0) return null;
+  const offset = line - hunk.newStart;
+  return hunk.oldStart + Math.min(offset, hunk.oldCount - 1);
+}
+
+function mapFindingColumn(headFinding, baseFinding) {
+  const head = headFinding.lineText;
+  const base = baseFinding.lineText;
+  let prefix = 0;
+  while (prefix < head.length && prefix < base.length && head[prefix] === base[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < head.length - prefix && suffix < base.length - prefix
+    && head[head.length - suffix - 1] === base[base.length - suffix - 1]) suffix += 1;
+  const headColumn = headFinding.column - 1;
+  if (headColumn <= prefix) return headColumn + 1;
+  if (headColumn >= head.length - suffix) return base.length - (head.length - headColumn) + 1;
+  const relative = headColumn - prefix;
+  return prefix + Math.min(relative, base.length - prefix - suffix) + 1;
 }
 
 function checkFile({ filename, headSource, baseSource, hunks }) {
@@ -465,7 +605,7 @@ function checkFile({ filename, headSource, baseSource, hunks }) {
   const findings = [];
   for (const fn of touched) {
     const partner = partners.get(fn);
-    const rows = compareFunction(headMetrics.get(fn), partner ? baseMetrics.get(partner) : null);
+    const rows = compareFunction(headMetrics.get(fn), partner ? baseMetrics.get(partner) : null, hunks);
     for (const [rule, oldValue, newValue] of rows) {
       findings.push({ filename, line: fn.anchor.start.line, label: fn.label, rule, detail: `${oldValue}->${newValue}` });
     }

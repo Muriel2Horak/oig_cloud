@@ -190,6 +190,20 @@ describe('identical same-label callbacks', () => {
     expect(result.stdout.trim().split('\n')).toHaveLength(1);
   });
 
+  it('maps a touched same-line sibling by its unchanged anchor column', () => {
+    const first = 'items.forEach((v) => { use(v); });';
+    const second = `items.forEach((v) => {\n${Array.from({ length: 20 }, (_, i) => `  if (v > ${i}) use(v);`).join('\n')}\n});`;
+    const base = `${first} ${second}\n`;
+    const edited = base.replace('if (v > 0) use(v);', 'if (v > 0) use(v + 1);');
+    expect(ratchet({ [sourcePath()]: base }, { [sourcePath()]: edited }).status).toBe(0);
+
+    const worse = edited.replace('if (v > 0) use(v + 1);', 'if (v > 0) use(v + 1);\n  if (v > 20) use(v);');
+    const result = ratchet({ [sourcePath()]: base }, { [sourcePath()]: worse });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('S3776 20->21');
+    expect(result.stdout).not.toContain('S3776 0->');
+  });
+
   it('a new callback inserted among same-label siblings is NEW', () => {
     const hot = body(Array.from({ length: 16 }, (_, i) => `if (a > ${i}) { work(item); }`).join(' '));
     const base = two(plain, plain);
@@ -261,6 +275,38 @@ describe('active rules per language', () => {
     expect(js.stdout).toContain('S1481 0->1');
   });
 
+  it('S1854 catches never-read overwritten TypeScript writes without enabling S1481', () => {
+    const deadStore = 'export function f(a: number) {\n  let total = 0;\n  total = a * 2;\n  total = a * 3;\n  return a;\n}\n';
+    const ts = ratchet({ [sourcePath()]: '' }, { [sourcePath()]: deadStore });
+    expect(ts.status).toBe(1);
+    expect(ts.stdout).toContain('f S1854 0->2');
+
+    const js = ratchet({ [sourcePath('probe.js')]: '' }, { [sourcePath('probe.js')]: deadStore.replace('a: number', 'a') });
+    expect(js.status).toBe(1);
+    expect(js.stdout).toContain('S1854 0->2');
+  });
+
+  it('S107 mirrors parameter-property, AMD factory, overload, and NOSONAR exemptions', () => {
+    const properties = `export class Bag {\n  constructor(${Array.from({ length: 8 }, (_, i) => `public v${i}: number`).join(', ')}) { console.log(this.v0); }\n}\n`;
+    expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: properties }).status).toBe(0);
+
+    const ordinary = `export function f(${Array.from({ length: 8 }, (_, i) => `p${i}: number`).join(', ')}) { return p0; }\n`;
+    const tooMany = ratchet({ [sourcePath()]: '' }, { [sourcePath()]: ordinary });
+    expect(tooMany.status).toBe(1);
+    expect(tooMany.stdout).toContain('f S107 0->8');
+
+    const amd = `define(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], function (a, b, c, d, e, f, g, h) { use(a); });\n`;
+    expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: amd }).status).toBe(0);
+
+    const overload = `export class Bag {\n  method(a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number): void;\n  method(...args: any[]) { use(args); }\n}\n`;
+    const overloaded = ratchet({ [sourcePath()]: '' }, { [sourcePath()]: overload });
+    expect(overloaded.status).toBe(1);
+    expect(overloaded.stdout).toContain('Bag.method S107 0->8');
+
+    const sonar = `export function f(a, b, c, d, e, f, g, h) { return 0; } // NOSONAR\n`;
+    expect(ratchet({ [sourcePath('probe.js')]: '' }, { [sourcePath('probe.js')]: sonar }).status).toBe(0);
+  });
+
   it('S1854 dead store fails TS and JS', () => {
     const code = 'export function f(a) {\n  let total = 0;\n  total = a * 2;\n  total = a * 3;\n  return total;\n}\n';
     for (const name of ['probe.ts', 'probe.js']) {
@@ -270,11 +316,21 @@ describe('active rules per language', () => {
     }
   });
 
-  it('S3358 nested conditional and S1186 empty function are checked in modified functions', () => {
+  it('S3358 nested conditional and non-exempt S1186 empty function are checked', () => {
     const nested = 'export function f(a, b) {\n  return a ? (b ? 1 : 2) : 3;\n}\n';
     expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: nested.replace('(a, b)', '(a: boolean, b: boolean)') }).stdout).toContain('S3358 0->1');
-    const empty = 'export const noop = () => {};\n';
+    const empty = 'export function unimplemented() {}\n';
     expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: empty }).stdout).toContain('S1186 0->1');
+    const exemptions = 'export function onDismiss() {}\nexport const noop = () => {};\nsetTimeout(() => {}, 0);\n';
+    expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: exemptions }).status).toBe(0);
+  });
+
+  it('S3358 cannot trade an old issue in one expression for a new issue in another', () => {
+    const base = 'export function f(a: boolean, b: boolean) {\n  const first = a ? (b ? 1 : 2) : 3;\n  const second = a ? 4 : 5;\n  return first + second;\n}\n';
+    const head = 'export function f(a: boolean, b: boolean) {\n  const first = a ? 1 : 3;\n  const second = a ? (b ? 4 : 6) : 5;\n  return first + second;\n}\n';
+    const result = ratchet({ [sourcePath()]: base }, { [sourcePath()]: head });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('f S3358 1->1');
   });
 
   it('an existing finding in a modified function is not worse', () => {
@@ -305,6 +361,24 @@ describe('scope and errors', () => {
     expect(runCheck(repo, base).status).toBe(0);
     const control = ratchet({ [sourcePath()]: '' }, { [sourcePath()]: hot });
     expect(control.status).toBe(1);
+  });
+
+  it('checks .mts, .cts, and C-quoted filenames without losing rename mapping', () => {
+    for (const name of ['probe.mts', 'probe.cts', 'quote".ts']) {
+      const result = ratchet({ [sourcePath(name)]: '' }, { [sourcePath(name)]: complexityFunction('hot', 16) });
+      expect(result.status, name).toBe(1);
+      expect(result.stdout).toContain('hot S3776 0->16');
+    }
+
+    const oldName = sourcePath('old".ts');
+    const newName = sourcePath('new".ts');
+    const baseCode = `${complexityFunction('legacy', 20)}${complexityFunction('edited', 2)}`;
+    const { repo, base } = createRepo({ [oldName]: baseCode });
+    git(repo, 'mv', oldName, newName);
+    fs.writeFileSync(path.join(repo, newName), baseCode.replace('value += 1', 'value += 2'));
+    git(repo, 'add', '--', newName);
+    git(repo, 'commit', '-m', 'rename quoted file and edit');
+    expect(runCheck(repo, base).status).toBe(0);
   });
 
   it('exit 2 for an unresolved base revision', () => {
@@ -351,7 +425,7 @@ describe('report ownership fails closed', () => {
     const outer = analysis.functions.find((fn) => fn.label === 'outer');
     const metrics = collectMetrics(analysis, [outer]);
     expect(metrics.get(outer).complexity).toBe(3);
-    expect(metrics.get(outer).findings.get('S3358')).toBe(1);
+    expect(metrics.get(outer).findings.get('S3358')).toHaveLength(1);
     const owners = resolveReportOwners(analysis.reports.find((r) => r.message.ruleId === 'sonarjs/cognitive-complexity'), analysis.functions);
     expect(owners).toHaveLength(1);
   });
