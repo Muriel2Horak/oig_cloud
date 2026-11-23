@@ -32,3 +32,28 @@ jobs:
 
       - name: Check added or modified functions
         run: python scripts/quality/changed-functions-check --base ${{ github.event.pull_request.base.sha }}
+
+  ts:
+    name: TypeScript changed-functions check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Tool tests and Sonar conformance
+        run: npx vitest run tests/fe/unit/quality
+
+      - name: Check added or modified functions
+        run: node scripts/quality/changed-functions-check.mjs --base ${{ github.event.pull_request.base.sha }}
