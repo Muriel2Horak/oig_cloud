@@ -267,9 +267,11 @@ describe('active rules per language', () => {
     }
   });
 
-  it('S1481 unused local: passes TS, fails JS', () => {
-    const code = 'export function f(a) {\n  const unusedLocal = a + 1;\n  return a;\n}\n';
-    expect(ratchet({ [sourcePath('probe.ts')]: '' }, { [sourcePath('probe.ts')]: code.replace('(a)', '(a: number)') }).status).toBe(0);
+  it('unused local with a non-literal initializer fails TS as S1854 and JS as S1481', () => {
+    const code = 'export function f(a) {\n  const unusedLocal = compute(a);\n  return a;\n}\n';
+    const ts = ratchet({ [sourcePath('probe.ts')]: '' }, { [sourcePath('probe.ts')]: code.replace('(a)', '(a: number)') });
+    expect(ts.status).toBe(1);
+    expect(ts.stdout).toContain('f S1854 0->1');
     const js = ratchet({ [sourcePath('probe.js')]: '' }, { [sourcePath('probe.js')]: code });
     expect(js.status).toBe(1);
     expect(js.stdout).toContain('S1481 0->1');
@@ -325,18 +327,39 @@ describe('active rules per language', () => {
     expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: exemptions }).status).toBe(0);
   });
 
-  it('S3358 cannot trade an old issue in one expression for a new issue in another', () => {
+  it('S3358 replaced finding (one removed, one added) in a modified function passes by count', () => {
     const base = 'export function f(a: boolean, b: boolean) {\n  const first = a ? (b ? 1 : 2) : 3;\n  const second = a ? 4 : 5;\n  return first + second;\n}\n';
     const head = 'export function f(a: boolean, b: boolean) {\n  const first = a ? 1 : 3;\n  const second = a ? (b ? 4 : 6) : 5;\n  return first + second;\n}\n';
     const result = ratchet({ [sourcePath()]: base }, { [sourcePath()]: head });
+    expect(result.status).toBe(0);
+  });
+
+  it('S3358 count rising 1->2 in a modified function exits 1', () => {
+    const base = 'export function f(a: boolean, b: boolean) {\n  return a ? (b ? 1 : 2) : 3;\n}\n';
+    const head = 'export function f(a: boolean, b: boolean) {\n  return a ? (b ? 1 : 2) : (b ? 4 : 5);\n}\n';
+    const result = ratchet({ [sourcePath()]: base }, { [sourcePath()]: head });
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('f S3358 1->1');
+    expect(result.stdout).toContain('f S3358 1->2');
+  });
+
+  it('unchanged S3358 finding moved by lines deleted above it is 1->1 and exits 0', () => {
+    const base = 'export function f(a: boolean, b: boolean) {\n  const pad = 0;\n  const unused = pad;\n  return a ? (b ? 1 : 2) : 3;\n}\n';
+    const head = 'export function f(a: boolean, b: boolean) {\n  return a ? (b ? 1 : 2) : 3;\n}\n';
+    expect(ratchet({ [sourcePath()]: base }, { [sourcePath()]: head }).status).toBe(0);
   });
 
   it('an existing finding in a modified function is not worse', () => {
     const base = 'export function f(a: boolean, b: boolean) {\n  return a ? (b ? 1 : 2) : 3;\n}\n';
     const head = base.replace('? 1 : 2', '? 5 : 2');
     expect(ratchet({ [sourcePath()]: base }, { [sourcePath()]: head }).status).toBe(0);
+  });
+
+  it('S1186 empty arrow bound to a variable with only a comment body is not empty', () => {
+    const code = 'export const handler = () => { /* intentional */ };\n';
+    expect(ratchet({ [sourcePath()]: '' }, { [sourcePath()]: code }).status).toBe(0);
+    const bare = ratchet({ [sourcePath()]: '' }, { [sourcePath()]: 'export const handler = () => {};\n' });
+    expect(bare.status).toBe(1);
+    expect(bare.stdout).toContain('handler S1186 0->1');
   });
 
   it('honors NOSONAR on the issue line', () => {

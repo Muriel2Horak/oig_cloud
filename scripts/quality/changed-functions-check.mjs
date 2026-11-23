@@ -336,7 +336,8 @@ export function analyzeFile(code, filename) {
     const parent = fn.node.parent;
     const variable = parent?.type === 'VariableDeclarator' && parent.init === fn.node ? parent : null;
     const isEmptyArrowVariable = fn.node.type === 'ArrowFunctionExpression' && variable
-      && fn.node.body.type === 'BlockStatement' && fn.node.body.body.length === 0;
+      && fn.node.body.type === 'BlockStatement' && fn.node.body.body.length === 0
+      && sourceCode.getCommentsInside(fn.node.body).length === 0;
     if (!isEmptyArrowVariable) continue;
     const name = variable.id.type === 'Identifier' ? variable.id.name : '';
     if (/^on[A-Z]/.test(name) || /noop/i.test(name)) continue;
@@ -398,16 +399,6 @@ function emptyMetrics(fn) {
   return { fn, complexity: 0, suppressed: false, params: fn.params, findings: new Map() };
 }
 
-function isNeverReadLocalDeclaration(report, sourceCode) {
-  for (const scope of sourceCode.scopeManager.scopes) {
-    const reference = scope.references.find((item) => item.identifier.range[0] === report.start);
-    if (!reference || reference.identifier.parent?.type !== 'VariableDeclarator'
-      || reference.identifier.parent.id !== reference.identifier) continue;
-    return !reference.resolved?.references.some((item) => item.isRead());
-  }
-  return false;
-}
-
 // Metrics of `targets` only. A report inside a target must map to exactly one function, else fail closed.
 export function collectMetrics(analysis, targets, filename = '<file>') {
   const result = new Map(targets.map((fn) => [fn, emptyMetrics(fn)]));
@@ -426,15 +417,12 @@ export function collectMetrics(analysis, targets, filename = '<file>') {
       if (!match) throw new CheckError(`${filename}:${message.line}: cannot read cognitive complexity from ESLint`);
       metrics.complexity = Number(match[1]);
       metrics.suppressed = isNoSonar(message, analysis.sourceCode);
-    } else if (!isNoSonar(message, analysis.sourceCode)
-      && !(analysis.language === 'ts' && message.ruleId === 'sonarjs/no-dead-store'
-        && isNeverReadLocalDeclaration(report, analysis.sourceCode))) {
+    } else if (!isNoSonar(message, analysis.sourceCode)) {
       const key = RULES[message.ruleId].key;
       const findings = metrics.findings.get(key) ?? [];
       findings.push({
         line: message.line,
         column: message.column,
-        lineText: analysis.sourceCode.lines[message.line - 1] ?? '',
         start: report.start,
         end: report.end,
       });
@@ -549,7 +537,7 @@ export function findPartner(fn, baseFunctions, hunks) {
 
 // ---- ratchet ----
 
-function compareFunction(head, base, hunks) {
+function compareFunction(head, base) {
   const out = [];
   const baseGoverns = base && !base.suppressed;
   if (!head.suppressed) {
@@ -562,45 +550,12 @@ function compareFunction(head, base, hunks) {
     ? head.params > base.params : head.params > MAX_PARAMETERS)) {
     out.push(['S107', baseHasParamsFinding ? base.params : 0, head.params]);
   }
+  // Per-function count per Sonar rule key: the count may not rise (operator ratchet decision).
   for (const [key, findings] of head.findings) {
     const baseline = base?.findings.get(key) ?? [];
-    const unmatched = [...baseline];
-    const added = [];
-    for (const finding of findings) {
-      const baseLine = base && mapFindingLine(finding.line, hunks);
-      const match = base && baseLine !== null
-        ? unmatched.findIndex((candidate) => candidate.line === baseLine
-          && candidate.column === mapFindingColumn(finding, candidate))
-        : -1;
-      if (match >= 0) unmatched.splice(match, 1);
-      else added.push(finding);
-    }
-    if (added.length) out.push([key, baseline.length, findings.length]);
+    if (findings.length > baseline.length) out.push([key, baseline.length, findings.length]);
   }
   return out;
-}
-
-function mapFindingLine(line, hunks) {
-  const hunk = hunks.find((item) => item.newCount > 0 && item.newStart <= line && line <= hunkNewEnd(item));
-  if (!hunk) return mapToBaseLine(line, hunks);
-  if (hunk.oldCount === 0) return null;
-  const offset = line - hunk.newStart;
-  return hunk.oldStart + Math.min(offset, hunk.oldCount - 1);
-}
-
-function mapFindingColumn(headFinding, baseFinding) {
-  const head = headFinding.lineText;
-  const base = baseFinding.lineText;
-  let prefix = 0;
-  while (prefix < head.length && prefix < base.length && head[prefix] === base[prefix]) prefix += 1;
-  let suffix = 0;
-  while (suffix < head.length - prefix && suffix < base.length - prefix
-    && head[head.length - suffix - 1] === base[base.length - suffix - 1]) suffix += 1;
-  const headColumn = headFinding.column - 1;
-  if (headColumn <= prefix) return headColumn + 1;
-  if (headColumn >= head.length - suffix) return base.length - (head.length - headColumn) + 1;
-  const relative = headColumn - prefix;
-  return prefix + Math.min(relative, base.length - prefix - suffix) + 1;
 }
 
 function checkFile({ filename, headSource, baseSource, hunks }) {
@@ -622,7 +577,7 @@ function checkFile({ filename, headSource, baseSource, hunks }) {
   const findings = [];
   for (const fn of touched) {
     const partner = partners.get(fn);
-    const rows = compareFunction(headMetrics.get(fn), partner ? baseMetrics.get(partner) : null, hunks);
+    const rows = compareFunction(headMetrics.get(fn), partner ? baseMetrics.get(partner) : null);
     for (const [rule, oldValue, newValue] of rows) {
       findings.push({ filename, line: fn.anchor.start.line, label: fn.label, rule, detail: `${oldValue}->${newValue}` });
     }
