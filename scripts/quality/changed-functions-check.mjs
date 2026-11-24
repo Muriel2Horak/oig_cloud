@@ -116,8 +116,20 @@ export function isMainCodePath(filename, scope) {
   return true;
 }
 
+const GIT_CANDIDATES = ['/usr/bin/git', '/usr/local/bin/git', '/opt/homebrew/bin/git'];
+let gitPath = null;
+
+// Resolve git from fixed system directories only, never from PATH (Sonar S4036).
+function gitBinary() {
+  if (gitPath === null) {
+    gitPath = GIT_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? '';
+  }
+  if (!gitPath) throw new CheckError(`git not found in ${GIT_CANDIDATES.join(', ')}`);
+  return gitPath;
+}
+
 function git(repo, args, options = {}) {
-  const result = spawnSync('git', ['-C', repo, ...args], {
+  const result = spawnSync(gitBinary(), ['-C', repo, ...args], {
     encoding: options.encoding ?? 'utf8',
     input: options.input,
     maxBuffer: 20 * 1024 * 1024,
@@ -131,14 +143,14 @@ function git(repo, args, options = {}) {
 }
 
 function gitAllowMissing(repo, args) {
-  const result = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
+  const result = spawnSync(gitBinary(), ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
   if (result.error) throw new CheckError(`git ${args[0]} failed: ${result.error.message}`);
   return result.status === 0 ? result.stdout : null;
 }
 
 function ignoredPaths(repo, filenames) {
   if (filenames.length === 0) return new Set();
-  const result = spawnSync('git', ['-C', repo, 'check-ignore', '--no-index', '-z', '--stdin'], {
+  const result = spawnSync(gitBinary(), ['-C', repo, 'check-ignore', '--no-index', '-z', '--stdin'], {
     input: Buffer.from(`${filenames.join('\0')}\0`),
     encoding: 'buffer',
     maxBuffer: 20 * 1024 * 1024,

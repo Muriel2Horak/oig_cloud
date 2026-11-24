@@ -50,7 +50,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Tool tests and Sonar conformance
         run: npx vitest run tests/fe/unit/quality
