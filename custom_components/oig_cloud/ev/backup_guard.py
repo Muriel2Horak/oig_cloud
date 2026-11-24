@@ -105,6 +105,25 @@ class OverloadTimer:
         return now - self.since >= OVERLOAD_GRACE
 
 
+# The box's "other errors" register shows bit 4 while the inverter is
+# overloaded: on 21. 11. 2026 it went 0 -> 4 within a minute of every 11 kW
+# charge start in Home 1 and back to 0 in Home UPS or bypass.
+OVERLOAD_ERROR_BIT = 4
+
+
+def inverter_overloaded(hass: Any, box_id: Optional[str]) -> bool:
+    """The box reports an inverter overload (``tbl_invertor_prms_err_else``)."""
+    if hass is None or not box_id:
+        return False
+    state = hass.states.get(f"sensor.oig_local_{box_id}_tbl_invertor_prms_err_else")
+    if state is None:
+        return False
+    try:
+        return bool(int(float(state.state)) & OVERLOAD_ERROR_BIT)
+    except (TypeError, ValueError):
+        return False
+
+
 def breaker_limit_w(options: Mapping[str, Any]) -> Optional[float]:
     breaker = float(options.get(CONF_GRID_BREAKER_A, DEFAULT_GRID_BREAKER_A) or 0.0)
     if breaker <= 0:

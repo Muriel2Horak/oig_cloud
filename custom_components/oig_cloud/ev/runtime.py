@@ -168,6 +168,7 @@ class EvRuntime:
         # UPS, and ask for it. A car on the backup output starts only there.
         self.box_in_ups: Optional[Callable[[], Optional[bool]]] = None
         self.request_ups: Optional[Callable[[], None]] = None
+        self.planned_box_mode: Optional[Callable[[], Optional[str]]] = None
         # Controller state that must survive a restart (the limit to restore).
         self.control_state: Dict[str, Any] = {}
         self.controller: Any = None

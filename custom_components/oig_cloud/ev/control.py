@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -85,6 +85,8 @@ LIMIT_SETTLE = timedelta(minutes=10)
 MANUAL_HOLD_FALLBACK = timedelta(hours=12)
 # Mains phase voltage (CZ, ČSN EN 50160): amps from planned kW.
 PHASE_VOLTAGE_V = 230.0
+# Lowest current an AC charger offers (IEC 61851: 6 A).
+MIN_CHARGE_A = 6.0
 _ON = {"on", "true"}
 
 
@@ -116,6 +118,14 @@ class EvController:
         # Since when a start waits for the box to report Home UPS (car on the
         # backup output).
         self.ups_wait_since: Optional[datetime] = None
+        # Heating before departure keeps the wallbox on until the departure:
+        # the car heats from the grid, not from its own battery, and charges
+        # back to the target afterwards.
+        self.preheat_until: Optional[datetime] = None
+        # While the grid is dear (the battery plan runs Home 1), the heating
+        # charge runs at the lowest current from the home battery. The value
+        # the current entity had before, restored afterwards.
+        self.reduced_from_a: Optional[float] = None
         self._unsub: Any = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
@@ -205,9 +215,9 @@ class EvController:
             # Unplugging ends a manual hold and forgets the last command.
             self.manual_hold_until = None
             self.last_command = None
+        await self._apply_precondition(now, options, plugged)
         await self._apply_switch(now, options, plugged)
         await self._apply_limit(now, options)
-        await self._apply_precondition(now, options, plugged)
 
     async def _apply_switch(self, now: datetime, options: Dict[str, Any], plugged: bool) -> None:
         mode = options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE)
@@ -227,9 +237,11 @@ class EvController:
             self.manual_hold_until = departure if departure and departure > now else now + MANUAL_HOLD_FALLBACK
             self.last_command = None
             _LOGGER.info("EV control: manual change, holding until %s", self.manual_hold_until)
-        want = bool(plan.charge_now)
+        preheating = self.preheating(now)
+        want = bool(plan.charge_now) or preheating
         if not want:
             self.ups_wait_since = None
+        await self._apply_preheat_current(options, plan, preheating)
         if self.manual_hold_until is not None:
             # The hold ends at departure, or as soon as the switch is back
             # where the plan wants it (the person undid their change).
@@ -238,7 +250,7 @@ class EvController:
             self.manual_hold_until = None
             if current == want:
                 self.last_command = _Command(want, now)
-        if want and options.get(CONF_EV_CURRENT_CONTROL, DEFAULT_EV_CURRENT_CONTROL):
+        if want and not self.on_home_battery() and options.get(CONF_EV_CURRENT_CONTROL, DEFAULT_EV_CURRENT_CONTROL):
             await self._apply_current(options, plan)
         if current == want:
             if last is None or last.on != want:
@@ -246,12 +258,62 @@ class EvController:
             return
         if last is not None and last.on == want and now - last.at <= settle:
             return  # sent, the device has not answered yet
-        if want and not self._box_ready_for_car(now, options):
+        if want and not self.on_home_battery() and not self._box_ready_for_car(now, options):
             return
         if await self._set_charging(switch, options, want):
             self.last_command = _Command(want, now)
             if want:
                 self.ups_wait_since = None
+
+    def preheating(self, now: datetime) -> bool:
+        """The car heats for a departure and the wallbox stays on until then."""
+        if self.preheat_until is None:
+            return False
+        if now >= self.preheat_until or self.runtime.last_plugged is False:
+            self.preheat_until = None
+            return False
+        return True
+
+    def on_home_battery(self) -> bool:
+        """The heating charge runs at the lowest current from the home battery.
+
+        The auto-switch watchdog then leaves the box in Home 1 and steps in
+        only when the box reports an inverter overload.
+        """
+        return self.reduced_from_a is not None
+
+    def _grid_is_dear(self) -> bool:
+        """The battery plan runs Home 1 now: grid power costs more than stored."""
+        hook = getattr(self.runtime, "planned_box_mode", None)
+        mode = hook() if callable(hook) else None
+        return mode is not None and mode != backup_guard.HOME_UPS
+
+    async def _apply_preheat_current(self, options: Dict[str, Any], plan: Any, preheating: bool) -> None:
+        """Lowest charge current while heating at a dear grid price, else back."""
+        entity = options.get(CONF_EV_CURRENT_ENTITY)
+        state = self._number(entity)
+        reduce = (
+            state is not None
+            and preheating
+            and not plan.charge_now
+            and backup_guard.on_backup(options)
+            and self._grid_is_dear()
+        )
+        if reduce and state is not None:
+            low = max(MIN_CHARGE_A, float(state.attributes.get("min", MIN_CHARGE_A) or MIN_CHARGE_A))
+            if self.reduced_from_a is None:
+                self.reduced_from_a = float(state.state)
+            if abs(float(state.state) - low) >= 1:
+                if await self._call("number", "set_value", {"entity_id": entity, "value": low}):
+                    self.last_current_a = int(low)
+                    _LOGGER.info("EV control: heating on the home battery at %s A (grid is dear)", int(low))
+            return
+        if self.reduced_from_a is not None:
+            back = self.reduced_from_a
+            self.reduced_from_a = None
+            if state is not None and abs(float(state.state) - back) >= 1:
+                await self._call("number", "set_value", {"entity_id": entity, "value": back})
+                self.last_current_a = int(back)
 
     def _box_ready_for_car(self, now: datetime, options: Dict[str, Any]) -> bool:
         """A car on the backup output starts only once the box is in Home UPS.
@@ -335,7 +397,7 @@ class EvController:
             target
             and self.runtime.set_car_limit()
             and plan is not None
-            and (plan.charge_now or self._charge_soon(now, plan))
+            and (plan.charge_now or self._charge_soon(now, plan) or self.preheat_until is not None)
             and value < target - 0.5
         ):
             await self._set_limit(now, entity, state, target)
@@ -359,12 +421,31 @@ class EvController:
         if await self._call("number", "set_value", {"entity_id": entity, "value": wanted}):
             self._last_limit_cmd = (wanted, now)
 
+    def _departure_day(self, now: datetime) -> Any:
+        """The next day, leaving at the "charged by" time when the user set one.
+
+        24. 11. 2026: "charged by 05:00" was set for a 05:00 departure, but the
+        heating followed the profile's 07:00 and would have started at 06:40.
+        """
+        day = self.runtime.next_day
+        override = getattr(self.runtime, "charge_override", None)
+        until = getattr(override, "until", None)
+        if (
+            day is None
+            or getattr(override, "mode", None) != "by"
+            or until is None
+            or until <= now
+            or until.date() != day.day
+        ):
+            return day
+        return replace(day, departure=until)
+
     async def _apply_precondition(self, now: datetime, options: Dict[str, Any], plugged: bool) -> None:
         climate = options.get(CONF_EV_CLIMATE_ENTITY)
         if not climate:
             self.last_precondition = None
             return
-        day = self.runtime.next_day
+        day = self._departure_day(now)
         decision = decide_precondition(
             day,
             now,
@@ -390,6 +471,8 @@ class EvController:
             data["hvac_mode"] = hvac
         if await self._call("climate", "set_temperature", data):
             self.preconditioned_for = day.departure
+            if plugged and options.get(CONF_EV_CONTROL_MODE, DEFAULT_EV_CONTROL_MODE) == MODE_WALLBOX:
+                self.preheat_until = day.departure
             window = options.get(CONF_EV_WINDOW_HEATING_ENTITY)
             if window:
                 await self._call("switch", "turn_on", {"entity_id": window})
@@ -412,6 +495,8 @@ class EvController:
             "precondition": self.last_precondition.as_dict() if self.last_precondition else None,
             "climate_entity": options.get(CONF_EV_CLIMATE_ENTITY) or None,
             "error": self.last_error,
+            "preheat_until": self.preheat_until.isoformat() if self.preheat_until else None,
+            "heating_on_home_battery": self.on_home_battery(),
             "waiting_for_ups_since": (
                 self.ups_wait_since.isoformat() if self.ups_wait_since else None
             ),

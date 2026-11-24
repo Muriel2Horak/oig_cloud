@@ -330,10 +330,35 @@ def _entry_options(sensor: Any) -> Dict[str, Any]:
     return dict(getattr(entry, "options", None) or {})
 
 
+def _ev_on_home_battery(sensor: Any) -> bool:
+    """The car heats at the lowest current from the home battery (ev.control)."""
+    hass = getattr(sensor, "_hass", None)
+    entry = getattr(sensor, "_config_entry", None)
+    entry_id = getattr(entry, "entry_id", None)
+    if hass is None or not entry_id:
+        return False
+    from ...ev.runtime import get_ev_runtime
+
+    runtime = get_ev_runtime(hass, entry_id)
+    controller = getattr(runtime, "controller", None)
+    check = getattr(controller, "on_home_battery", None)
+    return bool(check()) if callable(check) else False
+
+
 def ev_backup_car_drawing(sensor: Any) -> bool:
-    """The car on the box's backup output draws power (it needs Home UPS)."""
+    """The car on the box's backup output needs Home UPS now.
+
+    It draws power, unless it heats at the lowest current from the home
+    battery: then only an inverter overload the box reports counts.
+    """
     try:
-        return backup_guard.car_drawing(getattr(sensor, "_hass", None), _entry_options(sensor))
+        hass = getattr(sensor, "_hass", None)
+        options = _entry_options(sensor)
+        if not backup_guard.car_drawing(hass, options):
+            return False
+        if _ev_on_home_battery(sensor):
+            return backup_guard.inverter_overloaded(hass, getattr(sensor, "_box_id", None))
+        return True
     except Exception:  # never let the car stop a mode change
         return False
 
@@ -366,7 +391,7 @@ async def enforce_ev_backup_ups(sensor: Any, now: datetime) -> bool:
     if not backup_guard.on_backup(options):
         return False
     hass = getattr(sensor, "_hass", None)
-    drawing = backup_guard.car_drawing(hass, options)
+    drawing = ev_backup_car_drawing(sensor)
     in_ups = get_current_box_mode(sensor) == SERVICE_MODE_HOME_UPS
     timer = getattr(sensor, "_ev_overload_timer", None)
     if timer is None:

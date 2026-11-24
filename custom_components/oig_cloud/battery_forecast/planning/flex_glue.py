@@ -204,8 +204,17 @@ def _attach_box_hooks(sensor: Any, ev_runtime: Any) -> None:
             request_ev_backup_ups(sensor, REASON_EV_BACKUP_PRESTART, {"source": "ev_control"})
         )
 
+    def planned_box_mode() -> Optional[str]:
+        from .auto_switch import get_mode_switch_timeline, get_planned_mode_for_time
+
+        timeline, _ = get_mode_switch_timeline(sensor)
+        if not timeline:
+            return None
+        return get_planned_mode_for_time(sensor, dt_util.now(), timeline)
+
     ev_runtime.box_in_ups = box_in_ups
     ev_runtime.request_ups = request_ups
+    ev_runtime.planned_box_mode = planned_box_mode
 
 
 def _ev_runtime(sensor: Any) -> Any:

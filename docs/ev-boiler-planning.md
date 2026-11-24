@@ -162,3 +162,12 @@ Teď:
 - **Limit běhů za den:** nově až 48 (jeden za půlhodinu). U Martina je 30.
 - **Přítomnost** dál blokuje každý běh, když nikdo není doma. Profil v bootstrapu nebo s nízkou důvěrou běhy nedává.
 - Log: „Circulation: N expected draws (half hours) ahead, runs …“.
+
+## Předehřev auta: odjezd podle „Mít nabito do“, nabíjení během topení (24. 11. 2026)
+
+24. 11. bylo nastavené „Mít nabito do 05:00“ na odjezd v 5:00. Nabíjení proběhlo (03:30–04:15, v 04:03 100 %). Předehřev se ale řídil odjezdem z profilu (07:00), takže by začal až v 06:40.
+
+- **Odjezd pro předehřev:** když je zapnuté „Mít nabito do“ a jeho čas padne na den příštího odjezdu, bere se jako odjezd. `EvController._departure_day`.
+- **Nabíjení během topení:** když auto začne topit na wallboxu (režim řízení „wallbox“), wallbox zůstane zapnutý až do odjezdu. Auto pak topí ze sítě, ne ze své baterie, a co topením spotřebuje, dobije zpátky na cíl (limit v autě se přepíše na cíl i během topení).
+- **Drahá elektřina:** když plán domácí baterie právě jede Home 1, tedy elektřina ze sítě je dražší než z baterie, a wallbox je na záložním výstupu, nastaví se nabíjecí proud na nejnižší hodnotu (6 A, asi 4,1 kW třífázově). Auto pak topí a dobíjí z domácí baterie. Po topení se vrátí původní proud. Proud se zapisuje do `ev_current_entity`; bez ní se tento krok přeskočí.
+- **Střídač:** v tomto režimu watchdog nechá box v Home 1 a Home UPS vynutí, jen když box hlásí přetížení střídače (`tbl_invertor_prms_err_else`, bit 4) déle než 60 s. 21. 11. se ten bit objevil do minuty od každého startu nabíjení 11 kW v Home 1. Mimo topení platí dál, že auto na záložním výstupu nabíjí jen v Home UPS.

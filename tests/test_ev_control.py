@@ -289,3 +289,73 @@ def test_a_dashboard_choice_releases_the_hold():
     ctl.manual_hold_until = DEPARTURE
     ctl.release_manual_hold()
     assert ctl.manual_hold_until is None and ctl.last_command is None
+
+
+# ── heating for the departure: 24. 11. 2026 ──────────────────────────────
+
+HEAT = {
+    **WALLBOX,
+    "ev_climate_entity": "climate.car",
+    "ev_climate_when": "always",
+    "ev_current_entity": "number.amps",
+    "ev_on_backup_circuit": True,
+}
+
+
+def _heat_runtime(mode="Home 1", amps="16", override_until=None):
+    states = {
+        "switch.wb": "off",
+        "climate.car": ("off", {"hvac_modes": ["heat_cool", "off"]}),
+        "number.amps": (amps, {"min": 0, "max": 32}),
+    }
+    runtime = _Runtime(states, HEAT, plan=_plan(False), day=_day())
+    runtime.planned_box_mode = lambda: mode
+    runtime.box_in_ups = lambda: mode == "Home UPS"
+    runtime.request_ups = lambda: None
+    if override_until is not None:
+        runtime.charge_override = SimpleNamespace(mode="by", until=override_until)
+    return runtime
+
+
+async def test_charged_by_time_is_the_departure_for_heating():
+    """"Charged by 05:00" was set; the heating waited for the profile's 07:00."""
+    five = DEPARTURE.replace(hour=5)
+    runtime = _heat_runtime(override_until=five)
+    runtime.next_day = _day(departure=DEPARTURE.replace(hour=7))
+    ctl = EvController(runtime)
+    await ctl.async_apply(five - timedelta(minutes=19))
+    assert ("climate", "set_temperature", {"entity_id": "climate.car", "temperature": 22.0, "hvac_mode": "heat_cool"}) \
+        in runtime.hass.services.calls
+    assert ctl.preheat_until == five
+
+
+async def test_heating_keeps_the_wallbox_on_until_departure():
+    runtime = _heat_runtime(mode="Home UPS")
+    ctl = EvController(runtime)
+    await ctl.async_apply(DEPARTURE - timedelta(minutes=19))
+    assert ("switch", "turn_on", {"entity_id": "switch.wb"}) in runtime.hass.services.calls
+    assert ctl.preheating(DEPARTURE - timedelta(minutes=5))
+    # Cheap grid (the plan charges the battery): full current stays.
+    assert not ctl.on_home_battery()
+    assert not any(c[0] == "number" for c in runtime.hass.services.calls)
+    # After the departure the plan decides again.
+    runtime.hass.states.values["switch.wb"] = "on"
+    await ctl.async_apply(DEPARTURE + timedelta(minutes=1))
+    assert ctl.preheat_until is None
+    assert runtime.hass.services.calls[-1] == ("switch", "turn_off", {"entity_id": "switch.wb"})
+
+
+async def test_dear_grid_heats_at_six_amps_from_the_home_battery_and_restores():
+    runtime = _heat_runtime(mode="Home 1")
+    ctl = EvController(runtime)
+    await ctl.async_apply(DEPARTURE - timedelta(minutes=19))
+    calls = runtime.hass.services.calls
+    assert ("number", "set_value", {"entity_id": "number.amps", "value": 6.0}) in calls
+    # Home 1 stays: no wait for Home UPS, the wallbox goes on at once.
+    assert ("switch", "turn_on", {"entity_id": "switch.wb"}) in calls
+    assert ctl.on_home_battery()
+    runtime.hass.states.values["number.amps"] = ("6", {"min": 0, "max": 32})
+    runtime.hass.states.values["switch.wb"] = "on"
+    await ctl.async_apply(DEPARTURE + timedelta(minutes=1))
+    assert not ctl.on_home_battery()
+    assert ("number", "set_value", {"entity_id": "number.amps", "value": 16.0}) in runtime.hass.services.calls

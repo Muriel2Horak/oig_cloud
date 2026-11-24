@@ -354,3 +354,23 @@ async def test_off_the_backup_output_the_car_starts_at_once():
     await EvController(runtime).async_apply(NOW)
     assert runtime.hass.services.calls == [("switch", "turn_on", {"entity_id": "switch.wb"})]
     assert runtime.requests == 0
+
+
+@pytest.mark.asyncio
+async def test_heating_on_the_home_battery_stays_in_home_1_until_the_box_reports_overload(
+    switch_runtime, monkeypatch  # noqa: F811
+):
+    runtime = _backup_runtime(switch_runtime, 4.2)
+    runtime.sensor._timeline_data = [{"time": runtime.clock.now.isoformat(), "mode_name": "HOME I"}]
+    monkeypatch.setattr(auto_switch, "_ev_on_home_battery", lambda sensor: True)
+    runtime.values["sensor.oig_local_123_tbl_invertor_prms_err_else"] = ("0", {})
+    await auto_switch.auto_switch_watchdog_tick(runtime.sensor, runtime.clock.now)
+    runtime.clock.now += timedelta(seconds=90)
+    await auto_switch.auto_switch_watchdog_tick(runtime.sensor, runtime.clock.now)
+    assert _mode_calls(runtime) == []
+    # The inverter overloads: Home UPS after a minute.
+    runtime.values["sensor.oig_local_123_tbl_invertor_prms_err_else"] = ("4", {})
+    await auto_switch.auto_switch_watchdog_tick(runtime.sensor, runtime.clock.now)
+    runtime.clock.now += timedelta(seconds=60)
+    await auto_switch.auto_switch_watchdog_tick(runtime.sensor, runtime.clock.now)
+    assert _mode_calls(runtime) == ["Home UPS"]
