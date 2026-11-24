@@ -6,14 +6,22 @@ import asyncio
 import copy
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.core import callback
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_change,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ...shared.energy_publisher import EnergyMqttPublisher
 from ..planning import auto_switch as auto_switch_module
+from ..planning.energy_telemetry_job import EnergyTelemetryJob, share_energy_data
+from ..planning.live_load import handle_live_load_reading, live_load_enabled
 
 _LOGGER = logging.getLogger(__name__)
 DATE_FMT = "%Y-%m-%d"
@@ -36,6 +44,12 @@ async def async_added_to_hass(sensor) -> None:
 
     _schedule_forecast_refresh(sensor)
     _subscribe_profiles(sensor)
+    _subscribe_live_load(sensor)
+    if share_energy_data(sensor):
+        # Store and broker work: never hold up setup (start-up performance rule).
+        _create_background_task(
+            sensor, _async_start_energy_telemetry(sensor), "oig_cloud_energy_telemetry"
+        )
     _schedule_initial_refresh(sensor)
     _schedule_aggregations(sensor)
 
@@ -190,6 +204,81 @@ def _schedule_forecast_refresh(sensor) -> None:
             )
         )
     _LOGGER.info(" Scheduled forecast refresh every 15 minutes")
+
+
+def _live_load_watts(state) -> float | None:
+    try:
+        value = float(state.state)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return None if math.isnan(value) else value
+
+
+def _subscribe_live_load(sensor) -> None:
+    """Follow the backup load so a jump replans at once (planning.live_load).
+
+    A state listener only: no database work here (start-up performance rule).
+    """
+    hass = getattr(sensor, "_hass", None) or getattr(sensor, "hass", None)
+    if hass is None or not hasattr(hass, "states") or not live_load_enabled(sensor):
+        return
+    entity_id = f"sensor.oig_{sensor._box_id}_actual_aco_p"
+    current = hass.states.get(entity_id)
+    watts = _live_load_watts(current) if current is not None else None
+    if watts is not None:
+        handle_live_load_reading(
+            sensor, getattr(current, "last_updated", None) or dt_util.now(), watts
+        )
+
+    @callback
+    def _on_change(event) -> None:
+        new_state = event.data.get("new_state")
+        reading = _live_load_watts(new_state) if new_state is not None else None
+        if reading is None:
+            return
+        handle_live_load_reading(
+            sensor, getattr(new_state, "last_updated", None) or dt_util.now(), reading
+        )
+
+    sensor.async_on_remove(async_track_state_change_event(hass, [entity_id], _on_change))
+
+
+async def _async_start_energy_telemetry(sensor):
+    """Anonymous energy slots, hourly, with the user's consent only.
+
+    The salt of the install hash is generated once and kept in the install's
+    own storage; it never leaves it.
+    """
+    import secrets
+
+    hass = getattr(sensor, "_hass", None) or getattr(sensor, "hass", None)
+    if hass is None or not share_energy_data(sensor):
+        return None
+    entry_id = getattr(sensor._config_entry, "entry_id", "default")
+    store = Store(hass, version=1, key=f"oig_cloud.energy_telemetry_{entry_id}")
+    data = await store.async_load() or {}
+    salt = data.get("salt") if isinstance(data, dict) else None
+    if not isinstance(salt, str) or len(salt) < 32:
+        salt = secrets.token_hex(16)
+        await store.async_save({"salt": salt})
+    publisher = EnergyMqttPublisher(entry_id=str(entry_id))
+    if not await publisher.async_start():
+        return None
+    job = EnergyTelemetryJob(sensor, publisher=publisher, salt=salt)
+
+    async def _tick(now):
+        try:
+            await job.async_run(now)
+        except Exception as err:  # telemetry never breaks the planner
+            _LOGGER.debug("Energy telemetry tick failed: %s", err)
+
+    sensor.async_on_remove(async_track_time_change(hass, _tick, minute=7, second=0))
+
+    async def _shutdown() -> None:
+        await publisher.async_shutdown()
+
+    sensor.async_on_remove(lambda: hass.async_create_task(_shutdown()))
+    return job
 
 
 def _subscribe_profiles(sensor) -> None:

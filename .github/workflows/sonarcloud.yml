@@ -11,7 +11,7 @@ on:
 jobs:
   sonarcloud:
     name: SonarCloud Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 3.14.3 is not built for ubuntu-latest (26.04) yet
     timeout-minutes: 60
 
     steps:

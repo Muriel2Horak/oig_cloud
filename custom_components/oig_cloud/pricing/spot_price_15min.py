@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..battery_forecast.utils_common import get_tariff_for_datetime
+from ..pricing.price_formula import import_price_15min
 from ..pricing.spot_price_15min_base import BasePrice15MinSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,58 +83,4 @@ class SpotPrice15MinSensor(BasePrice15MinSensor):
         self, spot_price_czk: float, target_datetime: datetime
     ) -> float:
         """Vypočítat finální cenu včetně obchodních a distribučních poplatků a DPH."""
-        options = self._entry.options
-
-        pricing_model = options.get("spot_pricing_model", "percentage")
-        positive_fee_percent = options.get("spot_positive_fee_percent", 15.0)
-        negative_fee_percent = options.get("spot_negative_fee_percent", 9.0)
-        fixed_fee_mwh = options.get("spot_fixed_fee_mwh", 0.0)
-        positive_fee_percent_nt = options.get(
-            "spot_positive_fee_percent_nt", positive_fee_percent
-        )
-        negative_fee_percent_nt = options.get(
-            "spot_negative_fee_percent_nt", negative_fee_percent
-        )
-        fixed_fee_mwh_nt = options.get("spot_fixed_fee_mwh_nt", fixed_fee_mwh)
-        distribution_fee_vt_kwh = options.get("distribution_fee_vt_kwh", 1.50)
-        distribution_fee_nt_kwh = options.get("distribution_fee_nt_kwh", 1.20)
-        vat_rate = options.get("vat_rate", 21.0)
-
-        current_tariff = self._get_tariff_for_datetime(target_datetime)
-
-        if pricing_model == "percentage":
-            if spot_price_czk >= 0:
-                fee_percent = (
-                    positive_fee_percent_nt
-                    if current_tariff == "NT"
-                    else positive_fee_percent
-                )
-                commercial_price = spot_price_czk * (1 + fee_percent / 100.0)
-            else:
-                fee_percent = (
-                    negative_fee_percent_nt
-                    if current_tariff == "NT"
-                    else negative_fee_percent
-                )
-                commercial_price = spot_price_czk * (1 - fee_percent / 100.0)
-        elif pricing_model == "fixed_prices":
-            fixed_price_vt = options.get("fixed_commercial_price_vt", 4.50)
-            fixed_price_nt = options.get("fixed_commercial_price_nt", fixed_price_vt)
-            commercial_price = (
-                fixed_price_vt if current_tariff == "VT" else fixed_price_nt
-            )
-        else:
-            fee_mwh = (
-                fixed_fee_mwh_nt if current_tariff == "NT" else fixed_fee_mwh
-            )
-            fixed_fee_kwh = fee_mwh / 1000.0
-            commercial_price = spot_price_czk + fixed_fee_kwh
-
-        distribution_fee = (
-            distribution_fee_vt_kwh
-            if current_tariff == "VT"
-            else distribution_fee_nt_kwh
-        )
-
-        price_without_vat = commercial_price + distribution_fee
-        return round(price_without_vat * (1 + vat_rate / 100.0), 2)
+        return import_price_15min(spot_price_czk, target_datetime, self._entry.options)

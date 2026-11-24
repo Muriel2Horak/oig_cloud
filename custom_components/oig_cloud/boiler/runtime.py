@@ -18,6 +18,8 @@ from ..const import (
     CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_ENABLED,
+    CONF_BOILER_CIRCULATION_PRESENCE_ENTITY,
+    CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
     CONF_BOILER_CIRCULATION_LEAD_MINUTES,
     CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
@@ -46,6 +48,7 @@ from ..const import (
     DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES,
     DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
     DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES,
+    DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
     DEFAULT_BOILER_CIRCULATION_RUN_MINUTES,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
@@ -1276,6 +1279,33 @@ async def _async_build_legionella_obligation(
 # R5: Circulation pre-peak scheduling helpers
 # ---------------------------------------------------------------------------
 
+# Demand windows the circulation schedule looks at (today and tomorrow morning).
+CIRCULATION_HORIZON_HOURS = 30
+_HOME_STATES = {"home", "on", "true", "occupied", "present"}
+
+
+def _someone_home(hass: Any, entity_id: Optional[str]) -> bool:
+    """True without a presence entity or when it says someone is home.
+
+    A zone counts its people (state is a number), a person or device_tracker
+    says "home", a binary_sensor or input_boolean says "on". An unknown or
+    unavailable entity counts as home, so a broken tracker never stops the
+    circulation.
+    """
+    if not entity_id:
+        return True
+    state = hass.states.get(entity_id) if hass is not None else None
+    if state is None:
+        return True
+    value = str(state.state).strip().lower()
+    if value in ("unknown", "unavailable", ""):
+        return True
+    try:
+        return float(value) > 0
+    except ValueError:
+        return value in _HOME_STATES
+
+
 def _build_circulation_schedule(
     *,
     demand_targets: list[DemandTarget],
@@ -1310,6 +1340,57 @@ def _build_circulation_schedule(
     except Exception as err:  # pragma: no cover
         _LOGGER.warning("Circulation schedule build failed: %s", err, exc_info=True)
         return []
+
+
+# Draw history is grouped in half hours: a draw that moves by a few minutes
+# from day to day still counts for its half hour.
+CIRCULATION_BLOCK_SLOTS = 2
+
+
+def _build_draw_targets(
+    *,
+    coordinator: Any,
+    now: datetime,
+    horizon_hours: int,
+    min_probability: float = DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT / 100.0,
+) -> list[DemandTarget]:
+    """One target per half hour in which hot water was drawn on enough similar days.
+
+    The circulation pump has to run before every draw the history expects,
+    small ones too (washing hands), not only before the heating plan's
+    readiness windows (noise floor, at most three a day). A half hour counts
+    when at least ``min_probability`` of the days of the same category (workday
+    / weekend x season, holidays as weekend) had a draw in it. Same confidence
+    gate as the windows.
+    """
+    demand_profiler = getattr(coordinator, "_demand_profiler", None)
+    if demand_profiler is None:
+        return []
+    horizon_end = now + timedelta(hours=horizon_hours)
+    block_minutes = 15 * CIRCULATION_BLOCK_SLOTS
+    targets: list[DemandTarget] = []
+    for day_offset in range(2):
+        day = (now + timedelta(days=day_offset)).date()
+        category = _get_day_category(now + timedelta(days=day_offset))
+        demand_map = demand_profiler.get_demand_map(category)
+        if demand_map.confidence < MIN_CONFIDENCE_THRESHOLD or demand_map.meta.level == "bootstrap":
+            continue
+        probabilities = demand_profiler.draw_probability(category, CIRCULATION_BLOCK_SLOTS)
+        day_start = datetime.combine(day, datetime.min.time(), tzinfo=now.tzinfo)
+        label_day = "today" if day_offset == 0 else "tomorrow"
+        for block, probability in enumerate(probabilities):
+            if probability < min_probability:
+                continue
+            start = day_start + timedelta(minutes=block * block_minutes)
+            if now < start < horizon_end:
+                targets.append(
+                    DemandTarget(
+                        start=start,
+                        required_kwh=0.0,
+                        label=f"{label_day}_draw_{start:%H%M}_{round(probability * 100)}pct",
+                    )
+                )
+    return targets
 
 
 async def _async_actuate_circulation_pump(
@@ -2979,11 +3060,14 @@ class BoilerRuntime:
             return
 
         now = dt_util.now()
+        self._refresh_circulation_runs(now, config)
         inside_run = False
         for run_start, run_end, _label in self._circulation_runs:
             if run_start <= now < run_end:
                 inside_run = True
                 break
+        if inside_run and not _someone_home(self.hass, config.get(CONF_BOILER_CIRCULATION_PRESENCE_ENTITY)):
+            inside_run = False  # nobody home: no warm loop needed
 
         if inside_run and not self._circulation_pump_on:
             success = await _async_actuate_circulation_pump(
@@ -3000,6 +3084,44 @@ class BoilerRuntime:
                 turn_on=False,
             )
             self._circulation_pump_on = False
+
+    def _refresh_circulation_runs(self, now: datetime, config: dict[str, Any]) -> None:
+        """Rebuild the circulation schedule from the demand profile every cycle.
+
+        The boiler plan is cached for up to a day; the schedule built with it
+        covered only its own day, so a plan made in the evening had no run for
+        the next morning.
+        """
+        if getattr(self.coordinator, "_demand_profiler", None) is None:
+            return
+        try:
+            # Every draw of the profile, small ones too, not only the (at most
+            # three) readiness windows the heating plan uses (22. 11. 2026).
+            targets = _build_draw_targets(
+                coordinator=self.coordinator,
+                now=now,
+                horizon_hours=CIRCULATION_HORIZON_HOURS,
+                min_probability=float(
+                    config.get(
+                        CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
+                        DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT,
+                    )
+                )
+                / 100.0,
+            )
+        except Exception as err:  # keep the last schedule
+            _LOGGER.warning("Circulation schedule refresh failed: %s", err)
+            return
+        runs = _build_circulation_schedule(demand_targets=targets, now=now, config=config)
+        summary = (len(targets), [r[0].isoformat() for r in runs])
+        if summary != getattr(self, "_circulation_summary", None):
+            self._circulation_summary = summary
+            _LOGGER.info(
+                "Circulation: %d expected draws (half hours) ahead, runs %s",
+                len(targets),
+                ", ".join(f"{r[0]:%d.%m %H:%M}-{r[1]:%H:%M}" for r in runs) or "none",
+            )
+        self._circulation_runs = runs
 
     def _is_home5_currently_set(self) -> bool:
         """Return True when the hardware home_grid_v bit is already ON.

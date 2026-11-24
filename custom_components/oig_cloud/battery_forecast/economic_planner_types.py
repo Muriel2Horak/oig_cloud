@@ -46,6 +46,15 @@ class PlannerInputs:
     # Wear per kWh taken out of the battery (CZK/kWh). Fed from the battery cycle
     # cost option; 0 leaves wear out of the objective.
     battery_wear_czk_per_kwh: float = 0.0
+    # Per slot, may Home UPS charge from the grid here? False where the main
+    # breaker belongs to the car or the boiler (planning.flex_loads). None
+    # allows every slot. The hard minimum still wins: where Home 1 would end
+    # below it, UPS stays the legal action.
+    ups_allowed: Optional[List[bool]] = None
+    # Per slot, must the box be in Home UPS? True where the car on the box's
+    # backup output charges: in Home 1 the inverter would feed it from the
+    # battery and overload (ev.backup_guard). Wins over ups_allowed.
+    ups_required: Optional[List[bool]] = None
 
     @property
     def planning_min_kwh(self) -> float:
@@ -89,6 +98,12 @@ class PlannerInputs:
             raise ValueError("Load forecast cannot be negative")
 
         if self.export_prices is not None and len(self.export_prices) != n_intervals:
+            raise ValueError("Forecast lengths must match intervals count")
+
+        if self.ups_allowed is not None and len(self.ups_allowed) != n_intervals:
+            raise ValueError("Forecast lengths must match intervals count")
+
+        if self.ups_required is not None and len(self.ups_required) != n_intervals:
             raise ValueError("Forecast lengths must match intervals count")
 
         if not (0.0 <= self.battery_wear_czk_per_kwh < float("inf")):

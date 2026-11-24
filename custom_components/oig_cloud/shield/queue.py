@@ -140,6 +140,7 @@ def _get_timeout_minutes(service_name: str) -> int:
 
 
 async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) -> None:
+    _stop_watching(info.get("params") or {})
     if service_name == "oig_cloud.set_formating_mode":
         _LOGGER.info(
             "[OIG Shield] Formating mode dokončeno po 2 minutách (automaticky)"
@@ -431,6 +432,8 @@ async def _process_pending_service(
         return True
 
     if _entities_match(shield, service_name, info, timeout_minutes):
+        if not _mode_applied(shield, info):
+            return False
         await _handle_entity_completion(shield, service_name, info)
         return True
 
@@ -438,6 +441,82 @@ async def _process_pending_service(
         return await _check_proxy_acceptance(shield, service_name, info)
 
     return False
+
+
+# Home UPS with a charge current: the box reports the new mode at the START of
+# applying it ("HG IV-UPS Start"), then runs its SetAsReq sequence and at its
+# end resets the AC charge current (inverter command MUCHGC0500). A charge
+# current written before that is lost. Measured 17. 11. 2026 16:16 UTC: mode
+# event 16:16:31, MUCHGC0500 16:17:11, sequence end ~16:17:20; the proxy's own
+# inflight limit for the mode ended at 16:17:56.
+EVENTS_ENTITY_ID = "sensor.oig_local_oig_proxy_tbl_events_content"
+SETTINGS_APPLIED_TEXT = "SetAsReq End"
+# Without a visible "SetAsReq End" the charge step waits this long after the
+# mode readback (sequence ~50 s + the proxy's 60 s inflight limit).
+MODE_APPLY_WAIT_S = 90
+
+
+def _mode_applied(shield: Any, info: Dict[str, Any]) -> bool:
+    """A Home UPS step that a charge current follows ends only when applied.
+
+    From the mode readback on it waits for the box's "SetAsReq End" (watched
+    once, so the check runs the moment it comes) or MODE_APPLY_WAIT_S.
+    """
+    params = info.get("params") or {}
+    if not params.get("_await_readback"):
+        return True
+    if params.get("_applied_at") is not None:
+        return True
+    now = time.time()
+    readback_at = params.get("_readback_at")
+    if readback_at is None:
+        params["_readback_at"] = readback_at = now
+        _LOGGER.info(
+            "[SHIELD CHECK] Box reports the mode; the charge current waits until the box applied it"
+        )
+        _watch_settings_applied(shield, params)
+        schedule_acceptance_check(shield, MODE_APPLY_WAIT_S)
+    if now - readback_at >= MODE_APPLY_WAIT_S:
+        _stop_watching(params)
+        return True
+    return False
+
+
+# Unsubscribe callbacks per step; kept out of the params, which are logged.
+_APPLIED_WATCHERS: Dict[int, Any] = {}
+
+
+def _stop_watching(params: Dict[str, Any]) -> None:
+    unsub = _APPLIED_WATCHERS.pop(id(params), None)
+    if callable(unsub):
+        unsub()
+
+
+def _watch_settings_applied(shield: Any, params: Dict[str, Any]) -> None:
+    try:
+        from homeassistant.helpers.event import async_track_state_change_event
+
+        from ..shared.background import start_background
+    except ImportError:  # pragma: no cover
+        return
+
+    @callback
+    def _on_event(event: Any) -> None:
+        new_state = event.data.get("new_state")
+        text = str(getattr(new_state, "state", "") or "").strip()
+        if not text.startswith(SETTINGS_APPLIED_TEXT):
+            return
+        params["_applied_at"] = time.time()
+        _stop_watching(params)
+        _LOGGER.info("[SHIELD CHECK] Box applied the mode (SetAsReq End); the charge current follows")
+        start_background(shield.hass, shield._check_loop(datetime.now()), "oig_cloud_shield_applied")
+
+    try:
+        _APPLIED_WATCHERS[id(params)] = async_track_state_change_event(
+            shield.hass, [EVENTS_ENTITY_ID], _on_event
+        )
+    except Exception as err:  # the 90 s fallback still releases the step
+        _LOGGER.debug("Watching SetAsReq End failed: %s", err)
 
 
 # How long a proxy write may wait for the proxy's result before it counts as

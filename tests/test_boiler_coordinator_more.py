@@ -943,3 +943,45 @@ def test_runtime_activity_ignores_older_timestamp_and_same_timestamp_wins():
     assert len(spy.calls) == 2
     assert len(runtime.timeline_buffer) == 1
     assert runtime.timeline_buffer[0]["top_temp_c"] == 55.0
+
+
+@pytest.mark.asyncio
+async def test_circulation_ticks_without_the_energy_profile(monkeypatch):
+    """A gas-heated boiler has no electric profile: no plan, but the
+    circulation pump still follows the demand profile (17. 11. 2026)."""
+    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
+    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+    hass = DummyHass()
+    coordinator = module.BoilerCoordinator(hass, {}, entry_id="e1")
+    coordinator._current_profile = None
+    coordinator._should_update_profile = lambda now: False
+
+    async def _temps():
+        return {"top": 55.0, "bottom": 45.0, "upper_zone": 55.0, "lower_zone": 45.0}
+
+    monkeypatch.setattr(coordinator._thermal_read_model, "read_temperatures", _temps)
+    monkeypatch.setattr(coordinator._thermal_read_model, "calculate_energy_state", lambda _t: {})
+    monkeypatch.setattr(coordinator._energy_state_adapter, "track_energy_sources", lambda: {})
+    calls = []
+
+    class _Runtime:
+        _circulation_runs = []
+
+        async def async_create_plan(self):
+            calls.append("plan")
+
+        def get_current_plan(self):
+            return None
+
+        async def _async_tick_circulation_pump(self):
+            calls.append("circulation")
+
+        async def _async_tick_home5_maneuver(self):
+            calls.append("home5")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.runtime.get_boiler_runtime",
+        lambda hass, entry_id, box_id: _Runtime(),
+    )
+    await coordinator._async_update_data()
+    assert calls == ["circulation", "home5"]

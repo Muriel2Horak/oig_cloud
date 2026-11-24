@@ -71,6 +71,12 @@ CONF_BOILER_CIRCULATION_LEAD_MINUTES = "boiler_circulation_lead_minutes"
 CONF_BOILER_CIRCULATION_RUN_MINUTES = "boiler_circulation_run_minutes"
 CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = "boiler_circulation_max_runs_per_day"
 CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES = "boiler_circulation_min_gap_minutes"
+# Optional presence (zone, person, device_tracker, binary_sensor, input_boolean):
+# no circulation while nobody is home.
+CONF_BOILER_CIRCULATION_PRESENCE_ENTITY = "boiler_circulation_presence_entity"
+# A half hour gets a circulation run when hot water was drawn in it on at
+# least this share (%) of the similar days (workday / weekend x season).
+CONF_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT = "boiler_circulation_min_draw_probability_pct"
 # R3/R7: Home 5 maneuver (battery-discharge boiler heating)
 # Box-level capability flag — also gates control-panel buttons (F5).
 CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
@@ -116,6 +122,10 @@ DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES = 15
 DEFAULT_BOILER_CIRCULATION_RUN_MINUTES = 10
 DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = 3
 DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
+# One day in ten: on the reference household (22. 11. 2026) this keeps the
+# mornings and evenings and the weekend's small midday draws, and leaves out
+# the half hours with a single draw in a month.
+DEFAULT_BOILER_CIRCULATION_MIN_DRAW_PROBABILITY_PCT = 10
 # R3/R7: Home 5 maneuver defaults
 DEFAULT_BOX_HAS_HOME56 = False
 DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False
@@ -136,6 +146,113 @@ CONF_BOILER_MAX_TEMP_C = "boiler_max_temp_c"  # arbitrage over-heat ceiling
 DEFAULT_BOILER_MAX_TEMP_C = 65.0
 CONF_BOILER_ALT_POWER_KW = "boiler_alt_power_kw"  # alt thermal power into tank (lead-time)
 DEFAULT_BOILER_ALT_POWER_KW = 0.0  # 0 = unknown → alt not actively pre-scheduled
+
+# Boiler wired to the box's backup output (the battery can feed it). The
+# reference install has it on the non-backup circuit (the heating estimator
+# reads its power from acinb), so by default its heat is a grid-side load.
+CONF_BOILER_ON_BACKUP_CIRCUIT = "boiler_on_backup_circuit"
+DEFAULT_BOILER_ON_BACKUP_CIRCUIT = False
+
+# Electric car (ev/): charging planned like the home battery's UPS slots.
+CONF_ENABLE_EV = "enable_ev"
+CONF_EV_SOC_ENTITY = "ev_soc_entity"
+CONF_EV_PLUGGED_ENTITY = "ev_plugged_entity"  # optional; unset = always plugged
+CONF_EV_CHARGE_LIMIT_ENTITY = "ev_charge_limit_entity"  # optional number/sensor (%)
+CONF_EV_CHARGE_LIMIT_PCT = "ev_charge_limit_pct"
+DEFAULT_EV_CHARGE_LIMIT_PCT = 100.0
+CONF_EV_CHARGER_POWER_ENTITY = "ev_charger_power_entity"  # optional (kW or W)
+CONF_EV_CAPACITY_KWH = "ev_capacity_kwh"  # charger kWh per 100 %; 0 = learn
+DEFAULT_EV_CAPACITY_KWH = 0.0
+CONF_EV_MAX_POWER_KW = "ev_max_power_kw"
+DEFAULT_EV_MAX_POWER_KW = 11.0  # three-phase 16 A wallbox
+CONF_EV_MIN_POWER_KW = "ev_min_power_kw"
+DEFAULT_EV_MIN_POWER_KW = 4.14  # IEC 61851 minimum 6 A x 3 phases x 230 V
+# What the car is charged to before the predicted departure: "limit" = its
+# charge limit (backtest 5-11/2026 on the reference PHEV: 22 kWh driven on
+# fuel in six months against 215 kWh with the p80 need, since unused charge
+# carries over to the next day); "need" = the typical day's use (p80).
+CONF_EV_TARGET_MODE = "ev_target_mode"
+DEFAULT_EV_TARGET_MODE = "limit"
+CONF_EV_PHASES = "ev_phases"
+DEFAULT_EV_PHASES = 3
+KEY_EV_RUNTIME = "ev_runtime"
+# Calendar: Czech public holidays count as a Sunday; a trip without a time
+# leaves at this hour.
+CONF_EV_HOLIDAYS = "ev_holidays"
+DEFAULT_EV_HOLIDAYS = True
+CONF_EV_TRIP_DEPARTURE = "ev_trip_departure"
+DEFAULT_EV_TRIP_DEPARTURE = "07:00"
+# Control: what switches the charging. "none" = the plan only (an automation
+# acts on the plan sensor), "wallbox" = the wallbox's pause/resume switch
+# (local), "car" = the car's charging switch (vendor cloud).
+CONF_EV_CONTROL_MODE = "ev_control_mode"
+DEFAULT_EV_CONTROL_MODE = "none"
+EV_CONTROL_MODES = ("none", "wallbox", "car")
+CONF_EV_SWITCH_ENTITY = "ev_switch_entity"  # switch or input_boolean
+# Some chargers expose "pause" (on = paused) instead of "charge" (on = charging).
+CONF_EV_SWITCH_INVERTED = "ev_switch_inverted"
+DEFAULT_EV_SWITCH_INVERTED = False
+CONF_EV_CURRENT_ENTITY = "ev_current_entity"  # optional number (A)
+CONF_EV_CURRENT_CONTROL = "ev_current_control"
+DEFAULT_EV_CURRENT_CONTROL = False
+# The user's own charge target (0 = the car's limit), and whether the
+# integration writes it into the car before each charge (cars that reset their
+# limit after charging).
+CONF_EV_TARGET_LIMIT_PCT = "ev_target_limit_pct"
+DEFAULT_EV_TARGET_LIMIT_PCT = 0
+CONF_EV_SET_CAR_LIMIT = "ev_set_car_limit"
+DEFAULT_EV_SET_CAR_LIMIT = False
+CONF_EV_RAISE_LIMIT_FOR_TRIP = "ev_raise_limit_for_trip"
+DEFAULT_EV_RAISE_LIMIT_FOR_TRIP = False
+# The wallbox hangs on the box's backup output: in Home 1 the inverter feeds the
+# car from the battery and overloads (21. 11. 2026: 11 kW car, inverter error
+# ERR_ELSE=4, box bypass after ~2 min). The car then only charges in Home UPS.
+CONF_EV_ON_BACKUP_CIRCUIT = "ev_on_backup_circuit"
+DEFAULT_EV_ON_BACKUP_CIRCUIT = False
+# Heating the car before departure.
+CONF_EV_CLIMATE_ENTITY = "ev_climate_entity"
+CONF_EV_CLIMATE_WHEN = "ev_climate_when"  # off|cold|always|calendar
+DEFAULT_EV_CLIMATE_WHEN = "off"
+CONF_EV_CLIMATE_TEMP_C = "ev_climate_temp_c"
+DEFAULT_EV_CLIMATE_TEMP_C = 22.0
+CONF_EV_CLIMATE_MINUTES = "ev_climate_minutes"
+DEFAULT_EV_CLIMATE_MINUTES = 20
+CONF_EV_CLIMATE_COLD_C = "ev_climate_cold_c"
+DEFAULT_EV_CLIMATE_COLD_C = 5.0
+CONF_EV_OUTSIDE_TEMP_ENTITY = "ev_outside_temp_entity"  # sensor or weather
+CONF_EV_CLIMATE_PLUGGED_ONLY = "ev_climate_plugged_only"
+DEFAULT_EV_CLIMATE_PLUGGED_ONLY = True
+CONF_EV_WINDOW_HEATING_ENTITY = "ev_window_heating_entity"  # optional switch
+SIGNAL_EV_PLAN_UPDATED = "oig_cloud_ev_plan_updated_{entry_id}"
+
+# Main breaker shared by the car, the boiler and the battery's grid charging.
+CONF_GRID_BREAKER_A = "grid_breaker_a"
+DEFAULT_GRID_BREAKER_A = 25.0  # the most common Czech main breaker (3 x 25 A)
+CONF_GRID_RESERVE_A = "grid_reserve_a"
+DEFAULT_GRID_RESERVE_A = 2.0  # 15-min averages hide short peaks of the house
+CONF_GRID_PHASES = "grid_phases"
+DEFAULT_GRID_PHASES = 3
+# Who gets the breaker first (planning.flex_loads); comma-separated.
+CONF_FLEX_PRIORITY = "flex_priority"
+DEFAULT_FLEX_PRIORITY = "ev,boiler,battery"
+# PV surplus goes to the battery before the non-backup circuit, as the box
+# does in Home 1/2/UPS. Off = the priority above also orders the surplus.
+CONF_FLEX_PV_BATTERY_FIRST = "flex_pv_battery_first"
+DEFAULT_FLEX_PV_BATTERY_FIRST = True
+
+# Live backup load in the near-term forecast and a replan when it jumps
+# (battery_forecast/planning/live_load.py). Off by default: replayed on the
+# reference box's real data 7.-15. 11. 2026 it changed the money by +0.9 CZK
+# (worse) over nine days, so it stays opt-in until it shows a gain.
+CONF_LIVE_LOAD_REPLAN = "live_load_replan"
+DEFAULT_LIVE_LOAD_REPLAN = False
+
+# Spot price forecast beyond the published day-ahead prices
+# (battery_forecast/data/price_forecast.py). Shadow scores it without using it.
+CONF_PRICE_FORECAST_ENTITY = "price_forecast_entity"
+CONF_PRICE_FORECAST_MODE = "price_forecast_mode"
+DEFAULT_PRICE_FORECAST_MODE = "off"
+PRICE_FORECAST_MODES = ("off", "shadow", "on")
 
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"
@@ -172,6 +289,11 @@ SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 TELEMETRY_MQTT_HOST = "telemetry.muriel-cz.cz"
 TELEMETRY_MQTT_PORT = 1883
 TELEMETRY_MQTT_PREFIX = "oig/cloud-telemetry"
+# Anonymous energy slots (shared/energy_telemetry.py): consent only, TLS only.
+TELEMETRY_ENERGY_PORT = 8883
+TELEMETRY_ENERGY_PREFIX = "oig/energy"
+CONF_SHARE_ENERGY_DATA = "share_energy_data"
+DEFAULT_SHARE_ENERGY_DATA = False
 
 # CBB Modes (Battery Box Control Modes) per BR-1
 HOME_I = 0  # Grid priority (normal operation)

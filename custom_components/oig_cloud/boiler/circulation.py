@@ -24,6 +24,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Sequence
 
+# Runs are planned this far ahead (the schedule is rebuilt every cycle).
+HORIZON_HOURS = 24
+
 
 def build_circulation_runs(
     demand_targets: Sequence[Any],
@@ -42,8 +45,8 @@ def build_circulation_runs(
     - Only included when the window is future-or-active at ``now``.
     - Deduplicated: if a candidate start falls within ``min_gap_min`` of the
       previous accepted run's start, it is skipped.
-    - Capped at ``max_runs`` runs per local calendar *day* (keyed on
-      ``now.date()``).
+    - Capped at ``max_runs`` runs per local calendar day of the run start.
+    - Planned for the next ``HORIZON_HOURS`` (today and tomorrow morning).
 
     ``demand_targets`` must be an iterable of objects with ``.start``
     (``datetime``, aware) and ``.label`` (``str``) attributes — compatible with
@@ -55,8 +58,9 @@ def build_circulation_runs(
     if not demand_targets or lead_min < 0 or run_min <= 0 or max_runs <= 0:
         return []
 
-    today = now.date()
+    horizon = now + timedelta(hours=HORIZON_HOURS)
     accepted: list[tuple[datetime, datetime, str]] = []
+    runs_per_day: dict[Any, int] = {}
 
     # Sort by demand start so we process chronologically.
     try:
@@ -76,18 +80,14 @@ def build_circulation_runs(
         if run_end <= now:
             continue
 
-        # Only keep runs within the current local calendar day.
-        if run_start.date() != today and run_end.date() != today:
-            # Both start and end fall outside today → skip.
-            # (If run crosses midnight the start may be yesterday; end today →
-            # keep so "active" runs crossing 00:00 are still acted on.)
-            if run_start.date() < today:
-                # run started yesterday but ends today: keep only if end > now
-                if run_end <= now:
-                    continue
-            else:
-                # run_start is tomorrow → skip
-                continue
+        # The next 24 hours (today and tomorrow morning): the schedule is
+        # rebuilt every coordinator cycle, so tomorrow's first run must exist
+        # before midnight.
+        if run_start >= horizon:
+            continue
+        day = run_start.date()
+        if runs_per_day.get(day, 0) >= max_runs:
+            continue
 
         # Minimum gap deduplication.
         if accepted:
@@ -97,9 +97,7 @@ def build_circulation_runs(
                 continue
 
         accepted.append((run_start, run_end, label))
-
-        if len(accepted) >= max_runs:
-            break
+        runs_per_day[day] = runs_per_day.get(day, 0) + 1
 
     return accepted
 

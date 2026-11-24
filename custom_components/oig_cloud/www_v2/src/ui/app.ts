@@ -50,6 +50,8 @@ import '@/ui/features/flow';
 import '@/ui/features/flow/grid-charging-dialog';
 import '@/ui/features/pricing';
 import '@/ui/features/boiler';
+import '@/ui/features/ev';
+import { loadEvData, type EvData } from '@/data/ev-data';
 import '@/ui/features/control-panel';
 import '@/ui/features/analytics';
 import '@/ui/features/weather';
@@ -74,6 +76,7 @@ const DEFAULT_TABS: Tab[] = [
   { id: 'flow', label: 'Toky', icon: 'mdi:lightning-bolt' },
   { id: 'pricing', label: 'Ceny', icon: 'mdi:cash' },
   { id: 'boiler', label: 'Bojler', icon: 'mdi:water-boiler' },
+  { id: 'ev', label: 'Auto', icon: 'mdi:car-electric' },
   { id: 'settings', label: 'Nastavení', icon: 'mdi:cog' },
 ];
 
@@ -112,6 +115,11 @@ export class OigApp extends LitElement {
   @state() private enableBoiler = true;
   @state() private enableStatistics = true;
   @state() private enablePrediction = true;
+  // Car tab: hidden until module_config says the car is on (it is opt-in).
+  @state() private enableEv = false;
+  @state() private evData: EvData | null = null;
+  @state() private evLoading = false;
+  private evRefreshTimer: number | null = null;
 
   private get boilerLang() {
     return resolveLang(this.hass);
@@ -122,6 +130,7 @@ export class OigApp extends LitElement {
     return DEFAULT_TABS.filter((tab) => {
       if (tab.id === 'pricing') return this.enablePricing;
       if (tab.id === 'boiler') return this.enableBoiler;
+      if (tab.id === 'ev') return this.enableEv;
       return true;
     });
   }
@@ -711,6 +720,10 @@ export class OigApp extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    if (this.evRefreshTimer != null) {
+      window.clearInterval(this.evRefreshTimer);
+      this.evRefreshTimer = null;
+    }
     window.removeEventListener('pageshow', this.onPageShow);
     document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange);
     window.removeEventListener('keydown', this.onSimulatorKeydown);
@@ -721,7 +734,7 @@ export class OigApp extends LitElement {
     if (changed.has('hass') && !changed.has('loading')) {
       void this.rebindHassContext();
     }
-    if (changed.has('enablePricing') || changed.has('enableBoiler')) {
+    if (changed.has('enablePricing') || changed.has('enableBoiler') || changed.has('enableEv')) {
       if (!this.visibleTabs.some((tab) => tab.id === this.activeTab)) {
         this.activeTab = this.visibleTabs[0]?.id ?? 'flow';
       }
@@ -739,6 +752,7 @@ export class OigApp extends LitElement {
       if (this.activeTab === 'boiler' && (!this.boilerState || this.boilerDirty)) {
         void this.loadBoilerDataAsync();
       }
+      this.syncEvRefresh();
     }
   }
 
@@ -1041,9 +1055,34 @@ export class OigApp extends LitElement {
         this.enableBoiler = cfg.modules.enable_boiler !== false;
         this.enableStatistics = cfg.modules.enable_statistics !== false;
         this.enablePrediction = cfg.modules.enable_battery_prediction !== false;
+        this.enableEv = cfg.modules.enable_ev === true;
       }
     } catch {
       // silently ignore — defaults (Home 5/6 hidden, tabs visible) are safe
+    }
+  }
+
+  /** Car tab data, refreshed every minute while the tab is open. */
+  private async loadEvDataAsync(): Promise<void> {
+    this.evLoading = true;
+    try {
+      this.evData = await loadEvData();
+    } finally {
+      this.evLoading = false;
+    }
+  }
+
+  private syncEvRefresh(): void {
+    if (this.activeTab === 'ev') {
+      void this.loadEvDataAsync();
+      if (this.evRefreshTimer == null) {
+        this.evRefreshTimer = window.setInterval(() => {
+          if (document.visibilityState !== 'hidden') void this.loadEvDataAsync();
+        }, 60_000);
+      }
+    } else if (this.evRefreshTimer != null) {
+      window.clearInterval(this.evRefreshTimer);
+      this.evRefreshTimer = null;
     }
   }
 
@@ -1656,6 +1695,14 @@ export class OigApp extends LitElement {
                  </div>
                ` : nothing}
                ${this._renderBoilerTabSafe()}
+             </div>
+
+             <!-- ===== CAR TAB ===== -->
+             <div class="tab-content ${this.activeTab === 'ev' ? 'active' : ''}">
+               ${this.activeTab === 'ev' ? html`
+                 <oig-ev-tab .data=${this.evData} ?loading=${this.evLoading}
+                   @oig-ev-refresh=${() => void this.loadEvDataAsync()}></oig-ev-tab>
+               ` : nothing}
              </div>
 
              <!-- ===== SETTINGS TAB ===== -->

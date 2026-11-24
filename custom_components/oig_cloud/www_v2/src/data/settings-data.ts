@@ -21,6 +21,7 @@ export interface ModulesConfig {
   enable_extended_sensors: boolean;
   enable_chmu_warnings: boolean;
   box_has_home56: boolean;
+  enable_ev?: boolean;
 }
 
 export interface BatteryConfig {
@@ -92,6 +93,7 @@ export interface BoilerConfig {
   boiler_circulation_run_minutes: number | null;
   boiler_circulation_max_runs_per_day: number | null;
   boiler_circulation_min_gap_minutes: number | null;
+  boiler_circulation_min_draw_probability_pct: number | null;
   // Anti-legionella
   boiler_legionella_interval_days: number | null;
   boiler_legionella_target_temp_c: number | null;

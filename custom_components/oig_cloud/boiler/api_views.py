@@ -595,6 +595,9 @@ def _build_simulation_summary(plan_result: Any) -> dict[str, Any]:
     }
 
 
+SIMULATION_PLANNER_BUDGET_SECONDS = 120.0
+
+
 def _run_boiler_simulation(
     payload: dict[str, Any],
     base_config: dict[str, Any],
@@ -706,7 +709,12 @@ def _run_boiler_simulation(
         alt_power_kw=_float_config(merged_config, CONF_BOILER_ALT_POWER_KW, 0.0),
     )
 
-    plan_result = plan_comfort_core(planner_input, now=now)
+    # A what-if run is not on the 5-min control path: no wall-clock budget cut,
+    # so the same preset gives the same plan on a loaded host too (the 5 s live
+    # budget made two identical runs differ under load).
+    plan_result = plan_comfort_core(
+        planner_input, now=now, budget_seconds=SIMULATION_PLANNER_BUDGET_SECONDS
+    )
 
     return {
         "entry_id": entry_id,

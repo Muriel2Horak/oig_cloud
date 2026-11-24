@@ -11,6 +11,7 @@ from homeassistant.helpers.event import async_call_later, async_track_point_in_t
 from homeassistant.util import dt as dt_util
 
 from ...const import CONF_AUTO_MODE_SWITCH, DOMAIN
+from ...ev import backup_guard
 from ..types import (
     CBB_MODE_SERVICE_MAP,
     INTERVAL_MINUTES,
@@ -44,6 +45,14 @@ except Exception:  # pragma: no cover
 _LOGGER = logging.getLogger(__name__)
 # Operator-selected anti-flapping policy for all automatic/manual mode changes.
 MIN_AUTO_SWITCH_INTERVAL_MINUTES = 5
+# A mode the user set by hand stays at least this long, then to the next slot
+# boundary: long enough for the next planner run to start from it, short
+# enough that a forgotten manual mode does not outlive the plan.
+MANUAL_HOLD_MINUTES = 15
+# The box applies a requested mode within about a minute (mode_reaction_time
+# is ~52 s on the reference box); a change later than this after our request
+# was not ours.
+OWN_REQUEST_TOLERANCE = timedelta(minutes=5)
 WATCHDOG_WARNING_COOLDOWN_SECONDS = 300.0
 
 
@@ -53,6 +62,8 @@ REASON_SCHEDULED_SWITCH = "scheduled_switch"
 REASON_CURRENT_BLOCK = "current_planned_block"
 REASON_MANUAL_OVERRIDE = "manual_override"
 REASON_GUARD_LOCK = "guard_lock"
+REASON_EV_BACKUP_OVERLOAD = "ev_backup_overload"
+REASON_EV_BACKUP_PRESTART = "ev_backup_prestart"
 
 
 @dataclass(slots=True)
@@ -281,6 +292,9 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
         stop_auto_switch_watchdog(sensor)
         return
 
+    if await enforce_ev_backup_ups(sensor, now):
+        return
+
     timeline, _ = get_mode_switch_timeline(sensor)
     if not timeline:
         return
@@ -291,6 +305,8 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
 
     current_mode = get_current_box_mode(sensor)
     if current_mode == desired_mode:
+        if desired_mode == "Home UPS":
+            await ensure_ups_charge_current(sensor, now)
         return
 
     context = SwitchContext(
@@ -307,6 +323,199 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
     await ensure_current_mode(
         sensor, desired_mode, "watchdog enforcement", context=context
     )
+
+
+def _entry_options(sensor: Any) -> Dict[str, Any]:
+    entry = getattr(sensor, "_config_entry", None)
+    return dict(getattr(entry, "options", None) or {})
+
+
+def _ev_on_home_battery(sensor: Any) -> bool:
+    """The car heats at the lowest current from the home battery (ev.control)."""
+    hass = getattr(sensor, "_hass", None)
+    entry = getattr(sensor, "_config_entry", None)
+    entry_id = getattr(entry, "entry_id", None)
+    if hass is None or not entry_id:
+        return False
+    from ...ev.runtime import get_ev_runtime
+
+    runtime = get_ev_runtime(hass, entry_id)
+    controller = getattr(runtime, "controller", None)
+    check = getattr(controller, "on_home_battery", None)
+    return bool(check()) if callable(check) else False
+
+
+def ev_backup_car_drawing(sensor: Any) -> bool:
+    """The car on the box's backup output needs Home UPS now.
+
+    It draws power, unless it heats at the lowest current from the home
+    battery: then only an inverter overload the box reports counts.
+    """
+    try:
+        hass = getattr(sensor, "_hass", None)
+        options = _entry_options(sensor)
+        if not backup_guard.car_drawing(hass, options):
+            return False
+        if _ev_on_home_battery(sensor):
+            return backup_guard.inverter_overloaded(hass, getattr(sensor, "_box_id", None))
+        return True
+    except Exception:  # never let the car stop a mode change
+        return False
+
+
+async def request_ev_backup_ups(sensor: Any, reason_code: str, details: Dict[str, Any]) -> None:
+    """Ask for Home UPS now, past the anti-flapping interval and a manual hold.
+
+    The car on the backup output overloads the inverter in any other mode, so
+    this is protection, not a plan decision.
+    """
+    if get_current_box_mode(sensor) == SERVICE_MODE_HOME_UPS:
+        return
+    context = SwitchContext(
+        reason_code=reason_code,
+        precedence_level=PrecedenceLevel.AUTO_SWITCH,
+        precedence_name=PrecedenceLevel.AUTO_SWITCH.name,
+        decision_source="ev_backup_guard",
+        details=details,
+    )
+    await execute_mode_change(sensor, SERVICE_MODE_HOME_UPS, reason_code, context=context)
+
+
+async def enforce_ev_backup_ups(sensor: Any, now: datetime) -> bool:
+    """Watchdog step for a car on the backup output.
+
+    True while the car draws: then the box stays in (or is forced to) Home UPS
+    and the plan's own mode waits.
+    """
+    options = _entry_options(sensor)
+    if not backup_guard.on_backup(options):
+        return False
+    hass = getattr(sensor, "_hass", None)
+    drawing = ev_backup_car_drawing(sensor)
+    in_ups = get_current_box_mode(sensor) == SERVICE_MODE_HOME_UPS
+    timer = getattr(sensor, "_ev_overload_timer", None)
+    if timer is None:
+        timer = backup_guard.OverloadTimer()
+        sensor._ev_overload_timer = timer
+    if timer.due(now, drawing, in_ups):
+        _LOGGER.warning(
+            "[AutoModeSwitch] Car on the backup output draws %.1f kW in %s since %s: forcing Home UPS",
+            backup_guard.car_draw_kw(hass, options) or 0.0,
+            get_current_box_mode(sensor),
+            timer.since.isoformat() if timer.since else "?",
+        )
+        await request_ev_backup_ups(
+            sensor,
+            REASON_EV_BACKUP_OVERLOAD,
+            {"since": timer.since.isoformat() if timer.since else None},
+        )
+    if drawing and in_ups:
+        await ensure_ups_charge_current(sensor, now)
+    return drawing
+
+
+# Every mode change ends with the box resetting its AC charge current to 50 A
+# (inverter command MUCHGC0500). A Home UPS the integration did not enter
+# itself (restart, manual switch) therefore runs at 50 A unless the configured
+# current is written again; this is done once per Home UPS stretch, after the
+# box finished applying the mode.
+UPS_CHARGE_SETTLE = timedelta(minutes=2)
+
+
+# With the car on the backup output charging in Home UPS, the battery charge
+# current is recomputed at most this often while the load moves.
+UPS_CHARGE_CAR_REFRESH = timedelta(minutes=5)
+# A breaker-limited current is rewritten only when it moved at least this much.
+UPS_CHARGE_CAR_STEP_A = 10
+
+
+def _sensor_watts(hass: Any, entity_id: str) -> Optional[float]:
+    state = hass.states.get(entity_id) if hass is not None else None
+    if state is None:
+        return None
+    try:
+        return float(state.state)
+    except (TypeError, ValueError):
+        return None
+
+
+def _car_limited_charge_amps(sensor: Any, hass: Any, box_id: str, wanted: int) -> int:
+    """The Home UPS charge current that fits the breaker next to the charging car."""
+    from ...control import proxy_control as pc
+
+    backup = _sensor_watts(hass, f"sensor.oig_{box_id}_actual_aco_p")
+    non_backup = _sensor_watts(hass, f"sensor.oig_{box_id}_actual_acinb_wtotal")
+    house = None if backup is None or non_backup is None else backup + non_backup
+    voltage = pc.read_proxy_number(hass, box_id, pc.PARAM_BAT_VOLTAGE)
+    return backup_guard.battery_charge_amps_for_breaker(
+        _entry_options(sensor), house, voltage, wanted
+    )
+
+
+async def ensure_ups_charge_current(sensor: Any, now: datetime) -> bool:
+    """Write the configured Home UPS charge current once per Home UPS stretch.
+
+    While the car on the backup output charges, the current is the one the
+    main breaker leaves next to the house and the car, refreshed when it moves.
+    """
+    hass = getattr(sensor, "_hass", None)
+    entry = getattr(sensor, "_config_entry", None)
+    box_id = getattr(sensor, "_box_id", None)
+    if hass is None or entry is None or not box_id:
+        return False
+    from ...control import proxy_control as pc
+
+    try:
+        amps = pc.ups_charge_current(hass, entry, box_id)
+        current = pc.read_proxy_number(hass, box_id, pc.PARAM_CHARGE_CURRENT)
+    except Exception as err:  # proxy entities missing: nothing to do
+        _LOGGER.debug("[AutoModeSwitch] UPS charge current check skipped: %s", err)
+        return False
+    if not amps:
+        return False
+    car = ev_backup_car_drawing(sensor)
+    if car:
+        try:
+            amps = _car_limited_charge_amps(sensor, hass, box_id, amps)
+        except Exception as err:  # keep the configured current
+            _LOGGER.debug("[AutoModeSwitch] Breaker limit for the car skipped: %s", err)
+    if current is not None and abs(current - amps) < 1:
+        return False
+    since = _get_last_mode_change_time(sensor)
+    if since is None or now - since < UPS_CHARGE_SETTLE:
+        return False
+    sent = getattr(sensor, "_ups_charge_sent_for", None)
+    if car:
+        last_at = getattr(sensor, "_ups_charge_car_sent_at", None)
+        if sent == (since, True) and (
+            (last_at is not None and now - last_at < UPS_CHARGE_CAR_REFRESH)
+            or (current is not None and abs(current - amps) < UPS_CHARGE_CAR_STEP_A)
+        ):
+            return False
+    elif sent in (since, (since, False)):
+        return False  # already written in this Home UPS stretch
+    shield = get_service_shield(sensor)
+    if shield is not None and (
+        getattr(shield, "pending", None) or getattr(shield, "queue", None) or getattr(shield, "running", None)
+    ):
+        return False  # our own mode/charge steps are still running
+    sensor._ups_charge_sent_for = (since, car)
+    if car:
+        sensor._ups_charge_car_sent_at = now
+    try:
+        await hass.services.async_call(
+            DOMAIN, "set_box_mode", {"charge_current": amps, "acknowledgement": True}, blocking=False
+        )
+    except Exception as err:  # never break the watchdog
+        _LOGGER.warning("[AutoModeSwitch] UPS charge current write failed: %s", err)
+        return False
+    _LOGGER.info(
+        "[AutoModeSwitch] Home UPS at %s A%s: writing %s A",
+        current,
+        " with the car charging on the backup output" if car else " after a mode change",
+        amps,
+    )
+    return True
 
 
 def get_planned_mode_for_time(
@@ -446,6 +655,13 @@ async def execute_mode_change(
         return context
 
     now = dt_util.now()
+    if target_mode != SERVICE_MODE_HOME_UPS and ev_backup_car_drawing(sensor):
+        _LOGGER.info(
+            "[AutoModeSwitch] Keeping Home UPS (%s wanted %s): the car on the backup output is charging",
+            reason,
+            target_mode,
+        )
+        return context
     service_shield = get_service_shield(sensor)
     if service_shield and hasattr(service_shield, "has_pending_mode_change"):
         if service_shield.has_pending_mode_change(target_mode):
@@ -510,6 +726,46 @@ async def execute_mode_change(
         return context
 
 
+def manual_hold_until(sensor: Any) -> Optional[datetime]:
+    """End of the hold on a mode the user set by hand, or None when it was ours.
+
+    A change counts as manual when it came after the integration's last
+    request and the integration had asked for something else: its last
+    request was another mode, or that mode long before the box reported the
+    change. A box that has not changed since the request is still applying it
+    (17. 11. 2026: a pending Home 1 was taken for a manual UPS and blocked the
+    plan for 15 minutes). Without any request since start the origin is
+    unknown (our own switch before a restart looks the same), so nothing is
+    held and the 5-minute anti-flapping interval alone applies.
+    """
+    last_changed = _get_last_mode_change_time(sensor)
+    request = getattr(sensor, "_last_auto_switch_request", None)
+    if last_changed is None or not request:
+        return None
+    current_mode = get_current_box_mode(sensor)
+    requested_mode, requested_at = request
+    if last_changed <= requested_at:
+        # The box has not changed since our last request: it is still
+        # applying it (the proxy takes about a minute) or did not take it.
+        # Nobody else changed anything, so there is nothing to hold.
+        return None
+    if (
+        requested_mode == current_mode
+        and abs((last_changed - requested_at).total_seconds())
+        <= OWN_REQUEST_TOLERANCE.total_seconds()
+    ):
+        return None
+    earliest = last_changed + timedelta(minutes=MANUAL_HOLD_MINUTES)
+    boundary = earliest.replace(
+        minute=(earliest.minute // INTERVAL_MINUTES) * INTERVAL_MINUTES,
+        second=0,
+        microsecond=0,
+    )
+    if boundary < earliest:
+        boundary += timedelta(minutes=INTERVAL_MINUTES)
+    return boundary
+
+
 async def ensure_current_mode(
     sensor: Any,
     desired_mode: str,
@@ -522,6 +778,25 @@ async def ensure_current_mode(
             "[AutoModeSwitch] Mode already %s (%s), no action", desired_mode, reason
         )
         return context
+    # Re-asserting the same plan (watchdog, refresh of the current block) waits
+    # out a manual change; a new plan decision at a slot boundary does not.
+    if context is not None and context.reason_code in (
+        REASON_WATCHDOG_ENFORCEMENT,
+        REASON_CURRENT_BLOCK,
+    ):
+        hold_until = manual_hold_until(sensor)
+        now = dt_util.now()
+        if hold_until is not None and now < hold_until:
+            _LOGGER.info(
+                "[AutoModeSwitch] Holding manual mode %s until %s (%s wanted %s)",
+                current_mode,
+                hold_until.isoformat(),
+                reason,
+                desired_mode,
+            )
+            # Rebuild from the plan valid then, as the min-interval path does.
+            schedule_auto_switch_retry(sensor, (hold_until - now).total_seconds())
+            return context
     last_changed = _get_last_mode_change_time(sensor)
     if last_changed:
         now = dt_util.now()
