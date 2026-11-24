@@ -1,0 +1,256 @@
+{
+  "analysisId": "8a602342-1e1e-48ad-9b62-31b69fda2cf6",
+  "revision": "65dfbf2f6884579f6116f863634e866db5c50c98",
+  "sonarServer": "26.10.0.133078",
+  "javascriptAnalyzer": "14.0 (build 46108)",
+  "eslintPluginSonarjs": "4.2.2",
+  "mainCodeFiles": 134,
+  "unflaggedMainCodeFunctionsOver15": 0,
+  "functions": [
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/data/boiler-data.ts",
+      "line": 616,
+      "label": "parsePredictedUsage",
+      "complexity": 30,
+      "issue": "4d5cd2c3-aae2-40cf-bdcf-cbe905762401"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/data/boiler-data.ts",
+      "line": 916,
+      "label": "mapCanonicalToV2",
+      "complexity": 76,
+      "issue": "6cf2e3f0-be7a-4a52-9658-f978270de8f4"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/data/ha-client.ts",
+      "line": 296,
+      "label": "HaClient.dispatchOigRequest",
+      "complexity": 31,
+      "issue": "98f7341d-95b1-4b63-a613-71c453ecf3ef"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/data/shield-controller.ts",
+      "line": 296,
+      "label": "ShieldController.parseServiceRequest",
+      "complexity": 33,
+      "issue": "9584299b-815a-44d5-bde0-10f828f1cc01"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/app.ts",
+      "line": 720,
+      "label": "OigApp.updated",
+      "complexity": 18,
+      "issue": "c1dcddc2-12ef-4327-9989-422b9417ff52"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/app.ts",
+      "line": 1507,
+      "label": "OigApp.render",
+      "complexity": 21,
+      "issue": "4a8c8531-dc0e-4648-8083-9dc9e8c0fe0f"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/components/chart.ts",
+      "line": 181,
+      "label": "OigChart.applyDefaults",
+      "complexity": 23,
+      "issue": "1014f0b7-c367-4233-a685-c425b7ca26a2"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/components/header.ts",
+      "line": 139,
+      "label": "OigHeader.render",
+      "complexity": 20,
+      "issue": "701f5856-2a3c-4cf4-b357-b6d72e6c62eb"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/analytics/blocks.ts",
+      "line": 304,
+      "label": "OigBatteryHealth.render",
+      "complexity": 27,
+      "issue": "07003a44-0e83-4627-8320-d01e62273c50"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-draw-map.ts",
+      "line": 160,
+      "label": "OigBoilerDrawMap._profileSvg",
+      "complexity": 16,
+      "issue": "b683dfc2-aea6-49ba-83ac-eb6cbc3abcc5"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-hero-flow.ts",
+      "line": 316,
+      "label": "OigBoilerHeroFlow.render",
+      "complexity": 55,
+      "issue": "28d6b3bf-13bc-4769-9b3c-9b6d2af9c4a6"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-metric-panel.ts",
+      "line": 210,
+      "label": "OigBoilerMetricPanel._renderSourcePanel",
+      "complexity": 21,
+      "issue": "573fe1df-cc5e-437c-bf76-b3ea691a7484"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-model.ts",
+      "line": 187,
+      "label": "OigBoilerModel.render",
+      "complexity": 40,
+      "issue": "0df4e224-1b50-41d0-98dd-826a6b9de6a8"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-plan-strip.ts",
+      "line": 99,
+      "label": "groupSlotsToBands",
+      "complexity": 22,
+      "issue": "fbd71564-f716-4d9e-8bec-3ec56c7c0cdf"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-soc-chart.ts",
+      "line": 79,
+      "label": "OigBoilerSocChart._svg",
+      "complexity": 25,
+      "issue": "8f4a04b3-bf34-430b-8760-5ca1ecad52ef"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-timeline-chart.ts",
+      "line": 293,
+      "label": "buildFveOverlay",
+      "complexity": 20,
+      "issue": "00fe69a3-7d9c-4abc-8eb7-8b3e44b1369e"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-timeline-chart.ts",
+      "line": 643,
+      "label": "OigBoilerTimelineChart._renderTimeline",
+      "complexity": 66,
+      "issue": "c23dd3d1-8848-4b25-84fd-c112a716e67f"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/boiler/boiler-timeline-chart.ts",
+      "line": 1108,
+      "label": "OigBoilerTimelineChart._buildPowerBars",
+      "complexity": 22,
+      "issue": "f8af9144-b36f-4bdb-abe5-0cdbd20e2458"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/field-renderer.ts",
+      "line": 98,
+      "label": "renderFieldPresenter",
+      "complexity": 26,
+      "issue": "c128ccc7-56d1-4cb5-8eeb-5c4279962bf8"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/canvas.ts",
+      "line": 225,
+      "label": "OigFlowCanvas.updateLines",
+      "complexity": 23,
+      "issue": "45471a51-6fae-493e-b74b-d16fa70763d8"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/node.ts",
+      "line": 2200,
+      "label": "OigFlowNode.renderSolar",
+      "complexity": 43,
+      "issue": "aff4b3d6-22b3-405b-befd-ad056f483d54"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/node.ts",
+      "line": 2399,
+      "label": "OigFlowNode.renderBattery",
+      "complexity": 45,
+      "issue": "52836a7c-fef8-422e-bfb6-fb694f168c15"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/node.ts",
+      "line": 2582,
+      "label": "OigFlowNode.renderInverter",
+      "complexity": 51,
+      "issue": "f9c01dff-c95f-46cc-b41c-6fe9c2bdeeea"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/node.ts",
+      "line": 2752,
+      "label": "OigFlowNode.renderGrid",
+      "complexity": 64,
+      "issue": "6404c12f-025d-4373-92bf-18b2a3ac10b3"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/flow/node.ts",
+      "line": 3031,
+      "label": "OigFlowNode.renderHouse",
+      "complexity": 18,
+      "issue": "5f45d0a2-9530-4d54-a761-6b803efe39aa"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts",
+      "line": 1877,
+      "label": "OigOnboardingWizard.saveAllChangedSections",
+      "complexity": 38,
+      "issue": "c1e74b1f-4dd5-4750-baab-6b332d706caa"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts",
+      "line": 3114,
+      "label": "OigOnboardingWizard.renderStepContent",
+      "complexity": 94,
+      "issue": "f9ad99e6-aaff-4437-af31-9ed9d4a53751"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts",
+      "line": 3897,
+      "label": "OigOnboardingWizard.render",
+      "complexity": 20,
+      "issue": "6eef342e-ff40-401c-aaf0-4ed7646a8f1a"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/pricing/chart.ts",
+      "line": 341,
+      "label": "updateChartDetailLevel",
+      "complexity": 105,
+      "issue": "316f58b6-b2ca-4390-bb13-631957a6f64a"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/pricing/stats.ts",
+      "line": 584,
+      "label": "OigPricingStats.renderPriceTiles",
+      "complexity": 17,
+      "issue": "29d33cb9-2202-4dde-b92b-1e017a1d6a88"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/settings/index.ts",
+      "line": 498,
+      "label": "OigSettings.currentCrossSection",
+      "complexity": 17,
+      "issue": "a4b69bbc-b631-4969-91a2-8a73e8749e3a"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/settings/index.ts",
+      "line": 726,
+      "label": "OigSettings.renderBoilerCard",
+      "complexity": 30,
+      "issue": "65baafe5-5037-43a1-82d3-fa970ed1eaad"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/tiles/tile.ts",
+      "line": 298,
+      "label": "OigTile.render",
+      "complexity": 42,
+      "issue": "ca41ae62-ebdb-455c-86f3-5768142db2ec"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/timeline/dialog.ts",
+      "line": 505,
+      "label": "OigTimelineDialog.renderDayContent",
+      "complexity": 22,
+      "issue": "8e5382cd-76b5-4ed0-a3ae-ff070e3de8d7"
+    },
+    {
+      "path": "custom_components/oig_cloud/www_v2/src/ui/features/timeline/dialog.ts",
+      "line": 1015,
+      "label": "OigTimelineTile.renderDayContent",
+      "complexity": 22,
+      "issue": "014f283d-09bd-4288-8302-2ea9f182eef3"
+    }
+  ]
+}
