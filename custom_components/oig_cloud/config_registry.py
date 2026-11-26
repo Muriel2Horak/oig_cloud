@@ -621,5 +621,16 @@ _register(
     Field("local_event_debounce_ms", "basic", int, default=300, min=0, max=5000,
           step=1, scope="basic",
           show_if=("data_source_mode", ("local_only", "hybrid"))),
+    # Box control through the OIG Proxy while the data source reads locally
+    # (control/proxy_control.py). 0 in the caps means "use the box's own limit":
+    # a_max_chrg for the charge current, the current p_max_feed_grid for export.
+    Field("control_via_proxy", "basic", bool, default=False, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
+    Field("proxy_max_charge_current_a", "basic", int, default=0, min=0,
+          step=1, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
+    Field("proxy_export_limit_w", "basic", int, default=0, min=0,
+          step=1, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
     Field("enable_dashboard", "basic", bool, default=False, scope="basic"),
 )
