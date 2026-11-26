@@ -302,23 +302,37 @@ def _conditional_children(node: ast.AST, path: tuple[str, ...]):
             yield from _conditional_list_children(field_name, value, path)
 
 
+def _visit_function_header(node: FuncNode, findings: Counter[str], suppressed: Set[int]) -> None:
+    exprs = [*node.decorator_list, *node.args.defaults,
+             *[default for default in node.args.kw_defaults if default is not None]]
+    for index, expr in enumerate(exprs):
+        _visit_conditional_node(expr, False, node, (f"header[{index}]",), findings, suppressed)
+
+
+def _record_conditional(node: ast.AST, inside: bool, statement: ast.stmt | None,
+                        path: tuple[str, ...], findings: Counter[str], suppressed: Set[int]) -> None:
+    if isinstance(node, ast.IfExp) and inside and statement is not None and node.lineno not in suppressed:
+        findings[_conditional_anchor(statement) + ":" + repr(path)] += 1
+
+
+def _visit_conditional_children(node: ast.AST, inside: bool, statement: ast.stmt | None,
+                                path: tuple[str, ...], findings: Counter[str], suppressed: Set[int]) -> None:
+    for child, child_path in _conditional_children(node, path):
+        _visit_conditional_node(child, inside, statement, child_path, findings, suppressed)
+
+
 def _visit_conditional_node(node: ast.AST, inside: bool, statement: ast.stmt | None,
                             path: tuple[str, ...], findings: Counter[str], suppressed: Set[int]) -> None:
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        exprs = [*node.decorator_list, *node.args.defaults,
-                 *[d for d in node.args.kw_defaults if d is not None]]
-        for index, expr in enumerate(exprs):
-            _visit_conditional_node(expr, False, node, (f"header[{index}]",), findings, suppressed)
+        _visit_function_header(node, findings, suppressed)
         return
     if isinstance(node, (ast.ClassDef, *_COMPREHENSIONS)):
         return
     if isinstance(node, ast.stmt):
         statement, path = node, ()
-    if isinstance(node, ast.IfExp) and inside and statement is not None and node.lineno not in suppressed:
-        findings[_conditional_anchor(statement) + ":" + repr(path)] += 1
+    _record_conditional(node, inside, statement, path, findings, suppressed)
     inside = isinstance(node, ast.IfExp) or (inside and not isinstance(node, _COND_BOUNDARY))
-    for child, child_path in _conditional_children(node, path):
-        _visit_conditional_node(child, inside, statement, child_path, findings, suppressed)
+    _visit_conditional_children(node, inside, statement, path, findings, suppressed)
 
 
 def _conditional_findings_in(statements: list[ast.stmt], suppressed: Set[int] = frozenset()) -> Counter[str]:
@@ -810,8 +824,6 @@ def _hunk_lines(header: str) -> set[int]:
         return set()
     start = int(m.group(1))
     count = 1 if m.group(2) is None else int(m.group(2))
-    if count == 0:
-        return {start} if start > 0 else set()
     return set(range(start, start + count))
 
 
@@ -1050,6 +1062,10 @@ def _check_file(repo: str, merge_base: str, head: str, file_change: FileChange, 
     if not touched:
         return []
     base_index = _base_index(base_units or [])
+    return _check_touched_units(path, touched, base_index)
+
+
+def _check_touched_units(path: str, touched: list[Unit], base_index: dict[str, list[Unit]]) -> list[Finding]:
     findings: list[Finding] = []
     for unit in touched:
         findings.extend(check_unit(path, unit, base_index.get(unit.qualname)))
