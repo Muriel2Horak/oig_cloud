@@ -55,9 +55,9 @@ def _findings(tmp_path, base_source, head_source, **kwargs):
     return check.check_diff(str(root), base)
 
 
-def test_multiline_signature_edit_counts_parameter_rise(tmp_path):
-    old = "def f(\n" + "".join(f"    p{i},\n" for i in range(13)) + "):\n    return " + " + ".join(f"p{i}" for i in range(13)) + "\n"
-    new = "def f(\n" + "".join(f"    p{i},\n" for i in range(14)) + "):\n    return " + " + ".join(f"p{i}" for i in range(14)) + "\n"
+def test_def_line_signature_edit_counts_parameter_rise(tmp_path):
+    old = "def f(" + ", ".join(f"p{i}" for i in range(13)) + "):\n    return len(locals())\n"
+    new = "def f(" + ", ".join(f"p{i}" for i in range(14)) + "):\n    return len(locals())\n"
     findings = _findings(tmp_path, old, new)
     assert [(item.rule, item.old, item.new) for item in findings] == [("S107", "13", "14")]
 
@@ -113,12 +113,15 @@ def test_ast_loads_ignore_strings_nested_docstrings_and_comments(tmp_path):
 
 def test_global_and_nonlocal_assignments_are_not_unused_locals(tmp_path):
     old = "def f(a):\n    return a\n"
-    new = "def f(a):\n    global shared\n    shared = 1\n    return a\n"
-    assert not [item for item in _findings(tmp_path, old, new) if item.rule == "S1481"]
+    new = "def f(a):\n    global shared\n    shared = 1\n    shared = 2\n    return a\n"
+    assert not [item for item in _findings(tmp_path, old, new) if item.rule == "S1854"]
 
     old = "def outer():\n    x = 1\n    def f(a):\n        return a\n    return f\n"
     new = "def outer():\n    x = 1\n    def f(a):\n        nonlocal x\n        x = 2\n        return a\n    return f\n"
     assert not [item for item in _findings(tmp_path, old, new) if item.rule == "S1481"]
+    nested = check.analyze_module(new)[1]
+    loaded, _, _ = check._scan_names(nested.node)
+    assert "x" not in loaded
 
 
 @pytest.mark.parametrize("scope_call", ["locals()", "vars()", "eval('a')", "exec('a = 1')"])
