@@ -5,9 +5,9 @@ runs the checker by absolute path with cwd in that repository, and asserts on ex
 PARSED finding fields (`path:line qualname rule old->new`). Thresholds are Sonar's: cognitive
 complexity <= 15 (S3776), parameters <= 13 (S107), no nested conditional expression (S3358),
 no unused parameter/local/dead store (S1172/S1481/S1854).
-Ratchet: NEW function must pass; MODIFIED function may not worsen Q1/Q3 nor add a Q2/Q4
-finding; untouched functions are never checked. "Modified" = an added or modified BODY line
-(a signature-only edit does not select the function).
+Ratchet: NEW function must pass; MODIFIED function may not worsen Q1/Q3 nor increase a Q2/Q4
+finding count; untouched functions are never checked. Any changed line in a function header,
+decorator, or body selects that function.
 
 Isolation: git and the checker run with a scrubbed environment (no inherited GIT_*, XDG_*,
 config overrides), a private HOME outside the repository, no templates/hooks, bounded timeouts.
@@ -330,30 +330,38 @@ def test_deleting_adjacent_top_level_line_does_not_select_function(repo):
     assert_clean(repo)
 
 
-def test_deleting_body_line_without_additions_does_not_select_function(repo):
+def test_deleting_body_line_that_orphans_parameter_selects_function(repo):
     scenario(repo, "def f(b):\n    print(b)\n    return 1\n",
              "def f(b):\n    return 1\n")
-    assert_clean(repo)
+    code, findings, _ = repo.check()
+    assert code == 1
+    assert_finding(repo, findings, "f", 4)
 
 
-def test_decorator_only_change_does_not_select_method(repo):
+def test_decorator_only_change_selects_method(repo):
     base = method_with_params(13, decorator="@classmethod", first="cls")
     scenario(repo, base, base.replace("@classmethod", "@staticmethod"))
-    assert_clean(repo)
+    code, findings, _ = repo.check()
+    assert code == 1
+    assert_finding(repo, findings, "K.run", 3, old=13, new=14)
 
 
-def test_signature_only_change_does_not_select_function(repo):
-    # Only the `def` line changes (extra param unused): not an added/modified BODY line.
+def test_signature_only_change_selects_function(repo):
+    # Only the `def` line changes; signature edits are part of the function.
     scenario(repo, "def f(a):\n    return a\n", "def f(a, extra):\n    return a\n")
-    assert_clean(repo)
+    code, findings, _ = repo.check()
+    assert code == 1
+    assert_finding(repo, findings, "f", 3, old=1, new=2)
 
 
-def test_signature_only_param_growth_beyond_limit_is_not_checked(repo):
+def test_signature_only_param_growth_beyond_limit_is_checked(repo):
+    p13 = ", ".join(f"p{i}" for i in range(13))
     p14 = ", ".join(f"p{i}" for i in range(14))
-    p15 = ", ".join(f"p{i}" for i in range(15))
     body = "    return " + " + ".join(f"p{i}" for i in range(14)) + "\n"
-    scenario(repo, f"def many({p14}):\n{body}", f"def many({p15}):\n{body}")
-    assert_clean(repo)
+    scenario(repo, f"def many({p13}):\n{body}", f"def many({p14}):\n{body}")
+    code, findings, _ = repo.check()
+    assert code == 1
+    assert_finding(repo, findings, "many", 3, old=13, new=14)
 
 
 def test_ratchet_compares_against_merge_base_when_base_tip_is_higher(repo):
@@ -588,16 +596,14 @@ def test_modified_function_adding_second_nested_ternary_fails(repo):
     assert_finding(repo, findings, "pick", 2)
 
 
-def test_modified_function_replacing_nested_ternary_with_another_fails(repo):
-    # Same count (1 -> 1), but the finding moved to a different expression: it is a NEW finding.
+def test_modified_function_replacing_nested_ternary_with_another_passes(repo):
+    # Same per-function count (1 -> 1): a replacement does not increase the ratchet.
     base = ("def pick(a, b):\n    x = a if b else (2 if a else 3)\n"
             "    y = a if b else 0\n    return x + y\n")
     head = ("def pick(a, b):\n    x = a if b else 2\n"
             "    y = a if b else (b if a else 0)\n    return x + y\n")
     scenario(repo, base, head)
-    code, findings, _ = repo.check()
-    assert code == 1
-    assert_finding(repo, findings, "pick", 2)
+    assert_clean(repo)
 
 
 def test_modified_function_retained_nested_ternary_shifted_by_unrelated_edit_passes(repo):
@@ -818,12 +824,10 @@ def test_modified_function_using_previously_unused_param_passes(repo):
     assert_clean(repo)
 
 
-def test_modified_function_replacing_unused_param_with_another_fails(repo):
-    # Same count (1 -> 1): `b` becomes used, `a` becomes unused => a different, new finding.
+def test_modified_function_replacing_unused_param_with_another_passes(repo):
+    # Same per-rule count (1 -> 1): `b` becomes used, `a` becomes unused.
     scenario(repo, "def f(a, b):\n    return a\n", "def f(a, b):\n    return b\n")
-    code, findings, _ = repo.check()
-    assert code == 1
-    assert_finding(repo, findings, "f", 4)
+    assert_clean(repo)
 
 
 def test_modified_function_retained_unused_param_shifted_by_unrelated_edit_passes(repo):
