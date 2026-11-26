@@ -304,7 +304,13 @@ def _conditional_children(node: ast.AST, path: tuple[str, ...]):
 
 def _visit_conditional_node(node: ast.AST, inside: bool, statement: ast.stmt | None,
                             path: tuple[str, ...], findings: Counter[str], suppressed: Set[int]) -> None:
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, *_COMPREHENSIONS)):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        exprs = [*node.decorator_list, *node.args.defaults,
+                 *[d for d in node.args.kw_defaults if d is not None]]
+        for index, expr in enumerate(exprs):
+            _visit_conditional_node(expr, False, node, (f"header[{index}]",), findings, suppressed)
+        return
+    if isinstance(node, (ast.ClassDef, *_COMPREHENSIONS)):
         return
     if isinstance(node, ast.stmt):
         statement, path = node, ()
@@ -590,18 +596,14 @@ def _scan_names(func: FuncNode) -> tuple[set[str], dict[str, int], bool]:
         if isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Store):
                 stores[node.id] = stores.get(node.id, 0) + 1
-            else:
+            elif isinstance(node.ctx, ast.Load):
                 loaded.add(node.id)
-        elif isinstance(node, (ast.Global, ast.Nonlocal)):
-            loaded.update(node.names)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _DYNAMIC_SCOPE:
             return loaded, stores, True
     return loaded, stores, False
 
 
-def _unused_params(
-    func: FuncNode, is_method: bool, loaded: set[str], mentions: dict[str, int],
-) -> list[Q4Finding]:
+def _unused_params(func: FuncNode, is_method: bool, loaded: set[str]) -> list[Q4Finding]:
     args = func.args
     params = [*args.posonlyargs, *args.args, *args.kwonlyargs]
     if is_method and not _is_static(func) and (args.posonlyargs or args.args):
@@ -610,7 +612,7 @@ def _unused_params(
     return [
         Q4Finding("S1172", p.arg, p.lineno)
         for p in params
-        if p.arg not in loaded and not p.arg.startswith("_") and mentions.get(p.arg, 1) <= 1
+        if p.arg not in loaded and not p.arg.startswith("_")
     ]
 
 
@@ -625,10 +627,12 @@ def _assigned_name(node: ast.AST) -> ast.Name | None:
 def _unused_locals(func: FuncNode, loaded: set[str], stores: dict[str, int]) -> list[Q4Finding]:
     """S1481: local bound exactly once by plain `name = value` and never read."""
     param_names = {a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)}
+    declared = {name for node in _own_nodes(func) if isinstance(node, (ast.Global, ast.Nonlocal))
+                for name in node.names}
     findings = []
     for node in _own_nodes(func):
         target = _assigned_name(node)
-        if target is None or target.id.startswith("_") or target.id in param_names:
+        if target is None or target.id.startswith("_") or target.id in param_names or target.id in declared:
             continue
         if target.id not in loaded and stores.get(target.id) == 1:
             findings.append(Q4Finding("S1481", target.id, node.lineno))
@@ -640,12 +644,10 @@ def unused_names(
     is_method: bool = False,
     class_has_bases: bool = False,
     referenced: frozenset[str] | set[str] = frozenset(),
-    name_mentions: dict[str, int] | None = None,
 ) -> list[Q4Finding]:
     """Conservative S1172 / S1481 / S1854: report only what Sonar certainly reports.
 
     `referenced`: function names used as a value in the module (callbacks keep their signature).
-    `name_mentions`: occurrences of each identifier in the function's source text.
     """
     loaded, stores, dynamic = _scan_names(func)
     if dynamic:
@@ -655,7 +657,7 @@ def unused_names(
         _is_stub(func) or func.decorator_list or func.name.startswith("__")
         or func.name in referenced or (is_method and class_has_bases)
     )
-    findings = [] if skip_params else _unused_params(func, is_method, loaded, name_mentions or {})
+    findings = [] if skip_params else _unused_params(func, is_method, loaded)
     findings.extend(_unused_locals(func, loaded, stores))
     findings.extend(_dead_stores(func, loaded))
     return findings
@@ -695,14 +697,6 @@ def _referenced_function_names(tree: ast.AST) -> set[str]:
     return refs
 
 
-def _mentions(source_lines: list[str], func: FuncNode) -> dict[str, int]:
-    text = "\n".join(source_lines[func.lineno - 1 : func.end_lineno])
-    counts: dict[str, int] = {}
-    for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text):
-        counts[word] = counts.get(word, 0) + 1
-    return counts
-
-
 def _function_headers(source: str) -> dict[int, int]:
     headers: dict[int, int] = {}
     tokens = iter(tokenize.generate_tokens(io.StringIO(source).readline))
@@ -722,16 +716,13 @@ def _function_headers(source: str) -> dict[int, int]:
     return headers
 
 
-def _body_line(unit: Unit, line: int) -> bool:
-    return (unit.header_end <= line <= unit.end_line
-            and (line > unit.header_end or unit.body_same_line)
-            and line not in unit.declaration_lines)
+def _selected(unit: Unit, line: int) -> bool:
+    return unit.first_line <= line <= unit.end_line
 
 
 class _Walker:
     def __init__(self, source: str) -> None:
         self.tree = ast.parse(source)
-        self.lines = source.splitlines()
         self.headers = _function_headers(source)
         self.nosonar_lines = {
             token.start[0] for token in tokenize.generate_tokens(io.StringIO(source).readline)
@@ -765,8 +756,7 @@ class _Walker:
         unit.q2 = _conditional_findings(node, self.nosonar_lines)
         unit.metrics["Q3"] = parameter_count(node, is_method)
         if not in_function:  # Sonar reports unused names on top-level functions and methods only
-            mentions = _mentions(self.lines, node)
-            for f in unused_names(node, is_method, has_bases, self.referenced, mentions):
+            for f in unused_names(node, is_method, has_bases, self.referenced):
                 if f.line in self.nosonar_lines:
                     continue
                 key = (f.rule, f.name)
@@ -820,6 +810,8 @@ def _hunk_lines(header: str) -> set[int]:
         return set()
     start = int(m.group(1))
     count = 1 if m.group(2) is None else int(m.group(2))
+    if count == 0:
+        return {start} if start > 0 else set()
     return set(range(start, start + count))
 
 
@@ -880,19 +872,41 @@ def _header_path(header: str) -> str | None:
     return path[2:] if path.startswith("b/") else None
 
 
-def changed_lines(repo: str, merge_base: str, head: str) -> dict[str, set[int]]:
-    """Head-side line numbers added or modified per path."""
-    out = git(repo, "diff", "-U0", "--no-renames", "--no-color", "--diff-filter=AM",
+def changed_lines(repo: str, merge_base: str, head: str, renames=None, deleted_base_lines=None) -> dict[str, set[int]]:
+    """Head-side line numbers changed, plus deleted base lines indexed by head path."""
+    out = git(repo, "diff", "-U0", "-M", "--no-color", "--diff-filter=AMR",
               merge_base, head, "--", "*.py")
     result: dict[str, set[int]] = {}
-    path = None
+    path = rename_from = None
+    pending = None
     for line in out.splitlines():
-        if line.startswith("+++ "):
+        if line.startswith("diff --git "):
+            path = rename_from = None
+        elif line.startswith("rename from "):
+            rename_from = _unquote_git_path(line[len("rename from "):])
+        elif line.startswith("rename to "):
+            path = _unquote_git_path(line[len("rename to "):])
+            result.setdefault(path, set())
+            if renames is not None and rename_from is not None:
+                renames[path] = rename_from
+        elif line.startswith("+++ "):
             path = _header_path(line)
             if path is not None:
                 result.setdefault(path, set())
-        elif path is not None:
-            result[path] |= _hunk_lines(line)
+        elif path is not None and line.startswith("@@"):
+            match = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+),0 @@", line)
+            pending = (int(match.group(3)), int(match.group(1)), int(match.group(2) or 1)) if match else None
+            if pending is None:
+                result[path] |= _hunk_lines(line)
+        elif path is not None and pending and line.startswith("-"):
+            before, old_line, remaining = pending
+            if line[1:2] in (" ", "\t") and before > 0:
+                result[path].add(before)
+            if line[1:].lstrip().startswith("@"):
+                result[path].add(before + 1)
+            if deleted_base_lines is not None:
+                deleted_base_lines.setdefault(path, set()).add(old_line)
+            pending = (before, old_line + 1, remaining - 1) if remaining > 1 else None
     return result
 
 
@@ -952,16 +966,16 @@ def check_unit(path: str, unit: Unit, base_units: list[Unit] | None) -> list[Fin
     """Ratchet one changed function. `base_units` is None for a NEW function."""
     findings = _limit_findings(path, unit, base_units)
     old_q2 = Counter() if base_units is None else sum((b.q2 for b in base_units), Counter())
-    added_q2 = unit.q2 - old_q2
-    if added_q2 and base_units:
-        _match_renamed_assignments(unit, base_units, added_q2, old_q2 - unit.q2)
-        added_q2 += Counter()  # Drop zero counts after matching.
-    counted = [("S3358", sum(unit.q2.values()), sum(old_q2.values()))] if added_q2 else []
-    for (rule, name), new in sorted(unit.q4.items()):
-        counted.append((rule, new, _base_max(base_units, lambda b, k=(rule, name): b.q4.get(k, 0))))
+    counted = [("S3358", sum(unit.q2.values()), sum(old_q2.values()))]
+    totals: dict[str, int] = {}
+    for (rule, _name), count in unit.q4.items():
+        totals[rule] = totals.get(rule, 0) + count
+    for rule, new in sorted(totals.items()):
+        old = _base_max(base_units, lambda b, r=rule: sum(v for (rr, _), v in b.q4.items() if rr == r))
+        counted.append((rule, new, old))
     findings.extend(
         Finding(path, unit.node.lineno, unit.qualname, rule, str(old), str(new))
-        for rule, new, old in counted if rule == "S3358" or new > old
+        for rule, new, old in counted if new > old
     )
     return findings
 
@@ -978,14 +992,19 @@ def _analyze_or_none(source: str | None, path: str, warn) -> list[Unit] | None:
 
 
 def _check_file(repo: str, merge_base: str, head: str, path: str, lines: set[int], warn,
-                base_in_scope: bool = True) -> list[Finding]:
+                base_in_scope: bool = True, base_path: str | None = None,
+                deleted_base_lines: set[int] | None = None) -> list[Finding]:
     head_units = _analyze_or_none(_show(repo, head, path), path, warn)
     if not head_units:
         return []
-    touched = [u for u in head_units if any(_body_line(u, n) for n in lines)]
+    base_units = _analyze_or_none(_show(repo, merge_base, base_path or path), path, None) if base_in_scope else None
+    deleted = {u.qualname for u in base_units or [] if deleted_base_lines and
+               any(u.first_line <= line <= u.end_line for line in deleted_base_lines)}
+    touched = [u for u in head_units if u.qualname in deleted or any(_selected(u, n) for n in lines)]
     if not touched:
         return []
-    base_units = _analyze_or_none(_show(repo, merge_base, path), path, None) if base_in_scope else None
+    if base_units is None and base_in_scope:
+        base_units = _analyze_or_none(_show(repo, merge_base, base_path or path), path, None)
     base_index = _base_index(base_units or [])
     findings: list[Finding] = []
     for unit in touched:
@@ -1040,13 +1059,16 @@ def check_diff(repo: str, base: str, head: str = "HEAD", warn=None) -> list[Find
         scope = _read_scope(repo, head_properties)
     base_properties = _show(repo, merge_base, ".sonar/local.properties")
     base_scope = _read_scope(repo, base_properties) if base_properties is not None else scope
-    changed = changed_lines(repo, merge_base, head)
-    paths = [path for path, lines in changed.items() if lines and in_scope(path, scope)]
+    renames: dict[str, str] = {}
+    deleted: dict[str, set[int]] = {}
+    changed = changed_lines(repo, merge_base, head, renames, deleted)
+    paths = [path for path, lines in changed.items() if (lines or deleted.get(path)) and in_scope(path, scope)]
     head_ignored = _ignored_at_revision(repo, head, paths) if scope.scm_exclusions else set()
     base_ignored = _ignored_at_revision(repo, merge_base, paths) if base_scope.scm_exclusions else set()
     findings: list[Finding] = []
     for path in sorted(paths):
         if path not in head_ignored:
             findings.extend(_check_file(repo, merge_base, head, path, changed[path], warn,
-                                        path not in base_ignored and in_scope(path, base_scope)))
+                                        path not in base_ignored and in_scope(path, base_scope),
+                                        renames.get(path), deleted.get(path)))
     return findings
