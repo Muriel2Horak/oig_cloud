@@ -815,6 +815,16 @@ def _hunk_lines(header: str) -> set[int]:
     return set(range(start, start + count))
 
 
+def _deletion_lines(header: str) -> set[int]:
+    """Return base-side line numbers removed by a deletion-only hunk."""
+    match = re.match(r"^@@ -(\d+)(?:,(\d+))? \+\d+,0 @@", header)
+    if not match:
+        return set()
+    start = int(match.group(1))
+    count = 1 if match.group(2) is None else int(match.group(2))
+    return set(range(start, start + count))
+
+
 _C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 
 
@@ -872,42 +882,60 @@ def _header_path(header: str) -> str | None:
     return path[2:] if path.startswith("b/") else None
 
 
-def changed_lines(repo: str, merge_base: str, head: str, renames=None, deleted_base_lines=None) -> dict[str, set[int]]:
-    """Head-side line numbers changed, plus deleted base lines indexed by head path."""
-    out = git(repo, "diff", "-U0", "-M", "--no-color", "--diff-filter=AMR",
-              merge_base, head, "--", "*.py")
-    result: dict[str, set[int]] = {}
+@dataclass
+class ChangedPath:
+    lines: set[int] = field(default_factory=set)
+    deleted_base_lines: set[int] = field(default_factory=set)
+    base_path: str | None = None
+
+
+@dataclass
+class FileChange:
+    path: str
+    change: ChangedPath
+    base_in_scope: bool
+
+
+@dataclass
+class DiffContext:
+    repo: str
+    merge_base: str
+    head: str
+    scope: _Scope
+    base_scope: _Scope
+
+
+def _path_change(changes: dict[str, ChangedPath], path: str) -> ChangedPath:
+    return changes.setdefault(path, ChangedPath())
+
+
+def _parse_changed_diff(output: str) -> dict[str, ChangedPath]:
+    changes: dict[str, ChangedPath] = {}
     path = rename_from = None
-    pending = None
-    for line in out.splitlines():
+    for line in output.splitlines():
         if line.startswith("diff --git "):
             path = rename_from = None
         elif line.startswith("rename from "):
             rename_from = _unquote_git_path(line[len("rename from "):])
         elif line.startswith("rename to "):
             path = _unquote_git_path(line[len("rename to "):])
-            result.setdefault(path, set())
-            if renames is not None and rename_from is not None:
-                renames[path] = rename_from
+            _path_change(changes, path).base_path = rename_from
         elif line.startswith("+++ "):
             path = _header_path(line)
             if path is not None:
-                result.setdefault(path, set())
+                _path_change(changes, path)
         elif path is not None and line.startswith("@@"):
-            match = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+),0 @@", line)
-            pending = (int(match.group(3)), int(match.group(1)), int(match.group(2) or 1)) if match else None
-            if pending is None:
-                result[path] |= _hunk_lines(line)
-        elif path is not None and pending and line.startswith("-"):
-            before, old_line, remaining = pending
-            if line[1:2] in (" ", "\t") and before > 0:
-                result[path].add(before)
-            if line[1:].lstrip().startswith("@"):
-                result[path].add(before + 1)
-            if deleted_base_lines is not None:
-                deleted_base_lines.setdefault(path, set()).add(old_line)
-            pending = (before, old_line + 1, remaining - 1) if remaining > 1 else None
-    return result
+            change = _path_change(changes, path)
+            change.lines |= _hunk_lines(line)
+            change.deleted_base_lines |= _deletion_lines(line)
+    return changes
+
+
+def changed_lines(repo: str, merge_base: str, head: str) -> dict[str, ChangedPath]:
+    """Parse added, modified, renamed, and deleted Python lines from the Git diff."""
+    output = git(repo, "diff", "-U0", "-M", "--no-color", "--diff-filter=AMR",
+                 merge_base, head, "--", "*.py")
+    return _parse_changed_diff(output)
 
 
 def _show(repo: str, rev: str, path: str) -> str | None:
@@ -967,17 +995,25 @@ def check_unit(path: str, unit: Unit, base_units: list[Unit] | None) -> list[Fin
     findings = _limit_findings(path, unit, base_units)
     old_q2 = Counter() if base_units is None else sum((b.q2 for b in base_units), Counter())
     counted = [("S3358", sum(unit.q2.values()), sum(old_q2.values()))]
-    totals: dict[str, int] = {}
-    for (rule, _name), count in unit.q4.items():
-        totals[rule] = totals.get(rule, 0) + count
-    for rule, new in sorted(totals.items()):
-        old = _base_max(base_units, lambda b, r=rule: sum(v for (rr, _), v in b.q4.items() if rr == r))
+    for rule, new, old in _q4_counts(unit, base_units):
         counted.append((rule, new, old))
     findings.extend(
         Finding(path, unit.node.lineno, unit.qualname, rule, str(old), str(new))
         for rule, new, old in counted if new > old
     )
     return findings
+
+
+def _q4_counts(unit: Unit, base_units: list[Unit] | None) -> list[tuple[str, int, int]]:
+    totals: dict[str, int] = {}
+    for (rule, _name), count in unit.q4.items():
+        totals[rule] = totals.get(rule, 0) + count
+    return [
+        (rule, new, _base_max(base_units, lambda b, r=rule: sum(
+            value for (base_rule, _), value in b.q4.items() if base_rule == r
+        )))
+        for rule, new in sorted(totals.items())
+    ]
 
 
 def _analyze_or_none(source: str | None, path: str, warn) -> list[Unit] | None:
@@ -991,20 +1027,28 @@ def _analyze_or_none(source: str | None, path: str, warn) -> list[Unit] | None:
         return None
 
 
-def _check_file(repo: str, merge_base: str, head: str, path: str, lines: set[int], warn,
-                base_in_scope: bool = True, base_path: str | None = None,
-                deleted_base_lines: set[int] | None = None) -> list[Finding]:
+def _deleted_functions(base_units: list[Unit] | None, deleted_lines: set[int]) -> set[str]:
+    return {unit.qualname for unit in base_units or []
+            if any(unit.first_line <= line <= unit.end_line for line in deleted_lines)}
+
+
+def _touched_units(head_units: list[Unit], base_units: list[Unit] | None,
+                   change: ChangedPath) -> list[Unit]:
+    deleted = _deleted_functions(base_units, change.deleted_base_lines)
+    return [unit for unit in head_units
+            if unit.qualname in deleted or any(_selected(unit, line) for line in change.lines)]
+
+
+def _check_file(repo: str, merge_base: str, head: str, file_change: FileChange, warn) -> list[Finding]:
+    path, change = file_change.path, file_change.change
     head_units = _analyze_or_none(_show(repo, head, path), path, warn)
     if not head_units:
         return []
-    base_units = _analyze_or_none(_show(repo, merge_base, base_path or path), path, None) if base_in_scope else None
-    deleted = {u.qualname for u in base_units or [] if deleted_base_lines and
-               any(u.first_line <= line <= u.end_line for line in deleted_base_lines)}
-    touched = [u for u in head_units if u.qualname in deleted or any(_selected(u, n) for n in lines)]
+    base_units = (_analyze_or_none(_show(repo, merge_base, change.base_path or path), path, None)
+                  if file_change.base_in_scope else None)
+    touched = _touched_units(head_units, base_units, change)
     if not touched:
         return []
-    if base_units is None and base_in_scope:
-        base_units = _analyze_or_none(_show(repo, merge_base, base_path or path), path, None)
     base_index = _base_index(base_units or [])
     findings: list[Finding] = []
     for unit in touched:
@@ -1059,16 +1103,24 @@ def check_diff(repo: str, base: str, head: str = "HEAD", warn=None) -> list[Find
         scope = _read_scope(repo, head_properties)
     base_properties = _show(repo, merge_base, ".sonar/local.properties")
     base_scope = _read_scope(repo, base_properties) if base_properties is not None else scope
-    renames: dict[str, str] = {}
-    deleted: dict[str, set[int]] = {}
-    changed = changed_lines(repo, merge_base, head, renames, deleted)
-    paths = [path for path, lines in changed.items() if (lines or deleted.get(path)) and in_scope(path, scope)]
-    head_ignored = _ignored_at_revision(repo, head, paths) if scope.scm_exclusions else set()
-    base_ignored = _ignored_at_revision(repo, merge_base, paths) if base_scope.scm_exclusions else set()
+    context = DiffContext(repo, merge_base, head, scope, base_scope)
+    return _check_changed_paths(context, changed_lines(repo, merge_base, head), warn)
+
+
+def _check_changed_paths(context: DiffContext, changes: dict[str, ChangedPath], warn) -> list[Finding]:
+    paths = [path for path, change in changes.items()
+             if (change.lines or change.deleted_base_lines) and in_scope(path, context.scope)]
+    head_ignored = (_ignored_at_revision(context.repo, context.head, paths)
+                    if context.scope.scm_exclusions else set())
+    base_ignored = (_ignored_at_revision(context.repo, context.merge_base, paths)
+                    if context.base_scope.scm_exclusions else set())
     findings: list[Finding] = []
     for path in sorted(paths):
         if path not in head_ignored:
-            findings.extend(_check_file(repo, merge_base, head, path, changed[path], warn,
-                                        path not in base_ignored and in_scope(path, base_scope),
-                                        renames.get(path), deleted.get(path)))
+            file_change = FileChange(
+                path, changes[path],
+                path not in base_ignored and in_scope(path, context.base_scope),
+            )
+            findings.extend(_check_file(context.repo, context.merge_base, context.head,
+                                        file_change, warn))
     return findings
